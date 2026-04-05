@@ -1,0 +1,42 @@
+package com.example.myapplication.data
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+
+@Dao // data access object
+interface TaskDao {
+
+    @Query("SELECT * FROM tasks ORDER BY id ASC")
+    suspend fun getAll(): List<TaskEntity>
+
+    @Insert
+    suspend fun insert(task: TaskEntity): Long
+
+    @Query("UPDATE tasks SET isDone = :isDone WHERE id = :id")
+    suspend fun updateDoneStatus(id: Long, isDone: Boolean)
+
+    @Query("UPDATE tasks SET title = :newTitle WHERE id = :id")
+    suspend fun updateTitle(id: Long, newTitle: String)
+
+    @Query("DELETE FROM tasks WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("UPDATE tasks SET title = :title, dueDate = :dueDate, dueTime = :dueTime WHERE id = :id")
+    suspend fun updateTask(id: Long, title: String, dueDate: String?, dueTime: String?)
+
+    @Query("SELECT * FROM tasks WHERE isDone = 0 ORDER BY id DESC")
+    suspend fun getActiveTasks(): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' ORDER BY id DESC")
+    suspend fun searchTasksByTitle(query: String): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TaskEntity?
+
+    @Query("UPDATE tasks SET isDone = 1 WHERE id = :id")
+    suspend fun markTaskDone(id: Long)
+
+    @Query("UPDATE tasks SET isDone = 0 WHERE id = :id")
+    suspend fun markTaskUndone(id: Long)
+}
