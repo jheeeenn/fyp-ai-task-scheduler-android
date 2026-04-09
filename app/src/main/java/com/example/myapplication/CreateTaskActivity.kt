@@ -222,6 +222,7 @@ class CreateTaskActivity : AppCompatActivity() {
 
                 override fun onError(error: Int) {
                     if (!sessionController.canHandleRecognizerCallbacks()) return
+                    sessionController.onRecognizerError()
                     handleListenFailure(responseManager.listenFailure())
                 }
 

@@ -227,6 +227,7 @@ class HomeActivity : AppCompatActivity() {
                     if (!sessionController.canHandleRecognizerCallbacks()) {
                         return
                     }
+                    sessionController.onRecognizerError()
 
                     when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH,

@@ -50,6 +50,12 @@ class VoiceSessionController(
         onStateChanged(VoiceSessionState.PROCESSING)
     }
 
+    fun onRecognizerError() {
+        if (!canHandleRecognizerCallbacks()) return
+        isListening = false
+        onStateChanged(VoiceSessionState.PROCESSING)
+    }
+
     fun onPartialSpeech() {
         if (!canHandleRecognizerCallbacks()) return
         onStateChanged(VoiceSessionState.LISTENING)

@@ -220,6 +220,7 @@ class EditTaskActivity : AppCompatActivity() {
 
             override fun onError(error: Int) {
                 if (!sessionController.canHandleRecognizerCallbacks()) return
+                sessionController.onRecognizerError()
 
                 when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH,
