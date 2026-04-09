@@ -39,16 +39,17 @@ import com.example.myapplication.ai.LocalIntentClassifier
 import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
+import com.example.myapplication.voice.LocalDialogAct
+import com.example.myapplication.voice.LocalDialogActInterpreter
+import com.example.myapplication.voice.VoiceSessionController
+import com.example.myapplication.voice.VoiceSessionState
 import java.text.SimpleDateFormat
 
 class HomeActivity : AppCompatActivity() {
-    private var assistantSessionActive = false
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var aiRouter: AiRouter
-    private var retryCount = 0
-    private val maxRetryCount = 3
+    private lateinit var sessionController: VoiceSessionController
     private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
     private var assistantBottomSheet: AssistantBottomSheet? = null
     private lateinit var voiceHelper: VoiceHelper
 
@@ -171,6 +172,15 @@ class HomeActivity : AppCompatActivity() {
 
         voiceHelper = VoiceHelper(this)
         responseManager= AssistantResponseManager.fromPreferences(this)
+        sessionController = VoiceSessionController(voiceHelper) { state ->
+            when (state) {
+                VoiceSessionState.LISTENING -> assistantBottomSheet?.setListeningState()
+                VoiceSessionState.PROCESSING -> assistantBottomSheet?.setProcessingState()
+                VoiceSessionState.SPEAKING -> assistantBottomSheet?.setSpeakingState()
+                VoiceSessionState.IDLE -> assistantBottomSheet?.setIdleState()
+                VoiceSessionState.STOPPED -> assistantBottomSheet?.setIdleState()
+            }
+        }
 
         btnTalkAssistant.setOnClickListener {
             if (assistantBottomSheet == null) {
@@ -183,8 +193,7 @@ class HomeActivity : AppCompatActivity() {
                 }
             }
 
-            retryCount = 0
-            assistantSessionActive = true
+            sessionController.beginSession()
             assistantBottomSheet?.show()
             assistantBottomSheet?.clearConversation()
             assistantBottomSheet?.setListeningState()
@@ -196,8 +205,7 @@ class HomeActivity : AppCompatActivity() {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
-                    assistantBottomSheet?.setListeningState()
-                    isListening = true
+                    sessionController.onReadyForSpeech()
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -208,14 +216,11 @@ class HomeActivity : AppCompatActivity() {
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
                 override fun onEndOfSpeech() {
-                    assistantBottomSheet?.setProcessingState()
-                    isListening = false
+                    sessionController.onEndOfSpeech()
                 }
 
                 override fun onError(error: Int) {
-                    isListening = false
-
-                    if (!assistantSessionActive) {
+                    if (!sessionController.canHandleRecognizerCallbacks()) {
                         return
                     }
 
@@ -237,9 +242,7 @@ class HomeActivity : AppCompatActivity() {
                 }
 
                 override fun onResults(results: Bundle?) {
-                    isListening = false
-
-                    if (!assistantSessionActive) {
+                    if (!sessionController.canHandleRecognizerCallbacks()) {
                         return
                     }
 
@@ -247,7 +250,7 @@ class HomeActivity : AppCompatActivity() {
                     val spokenText = matches?.firstOrNull()?.trim()?.lowercase()
 
                     if (!spokenText.isNullOrEmpty()) {
-                        retryCount = 0
+                        sessionController.onFinalSpeechReceived()
                         assistantBottomSheet?.showUserSpeech(spokenText)
                         assistantBottomSheet?.setProcessingState()
                         handleVoiceCommand(spokenText)
@@ -257,7 +260,7 @@ class HomeActivity : AppCompatActivity() {
                 }
 
                 override fun onPartialResults(partialResults: Bundle?) {
-                    if (!assistantSessionActive) return
+                    if (!sessionController.canHandleRecognizerCallbacks()) return
 
                     val partialMatches =
                         partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -265,7 +268,7 @@ class HomeActivity : AppCompatActivity() {
 
                     if (!partialText.isNullOrEmpty()) {
                         assistantBottomSheet?.showUserSpeech(partialText)
-                        assistantBottomSheet?.setListeningState()
+                        sessionController.onPartialSpeech()
                     }
                 }
 
@@ -386,7 +389,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun startVoiceRecognition() {
-        if (isListening) return
+        if (!sessionController.canStartListening()) return
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -414,6 +417,22 @@ class HomeActivity : AppCompatActivity() {
 
     private fun handleVoiceCommand(command: String) {
         val normalized = TextNormalizer.normalize(command)
+        when (LocalDialogActInterpreter.detect(normalized)) {
+            LocalDialogAct.CANCEL,
+            LocalDialogAct.STOP,
+            LocalDialogAct.END -> {
+                endAssistantConversation()
+                return
+            }
+            LocalDialogAct.DELETE,
+            LocalDialogAct.DONE,
+            LocalDialogAct.UNDO -> {
+                speakThenListenAgain("Please say the task title too, for example: mark homework done.")
+                return
+            }
+            else -> {}
+        }
+
         if (isConversationExitCommand(normalized)) {
             endAssistantConversation()
             return
@@ -711,9 +730,8 @@ class HomeActivity : AppCompatActivity() {
             assistantBottomSheet?.setSpeakingState()
             voiceHelper.speak(spokenReply) {
                 runOnUiThread {
-                    retryCount = 0
-                    if (assistantSessionActive) {
-                        assistantBottomSheet?.setListeningState()
+                    if (sessionController.isSessionActive()) {
+                        sessionController.onPartialSpeech()
 
                         startVoiceFlow()
                     } else {
@@ -893,7 +911,7 @@ class HomeActivity : AppCompatActivity() {
 
         voiceHelper.speak(reply) {
             runOnUiThread {
-                if (assistantSessionActive) {
+                if (sessionController.isSessionActive()) {
                     assistantBottomSheet?.setListeningState()
                     startVoiceFlow()
                 } else {
@@ -903,33 +921,25 @@ class HomeActivity : AppCompatActivity() {
         }
     }
     private fun handleListenFailure(reply: String) {
-        if (!assistantSessionActive) {
-            retryCount = 0
-            isListening = false
-            speechRecognizer?.stopListening()
-            assistantBottomSheet?.dismiss()
-            return
-        }
-
-        if (retryCount < maxRetryCount) {
-            retryCount++
-            speakThenListenAgain(reply)
-        } else {
-            assistantSessionActive = false
-            val finalReply = responseManager.stopListening()
-
-            assistantBottomSheet?.showAssistantReply(finalReply)
-            assistantBottomSheet?.setSpeakingState()
-            voiceHelper.speak(finalReply) {
-                runOnUiThread {
-                    retryCount = 0
-                    isListening = false
-                    speechRecognizer?.stopListening()
-                    assistantBottomSheet?.setIdleState()
-                    assistantBottomSheet?.dismiss()
-                }
+        sessionController.handleListenFailure(
+            retryReply = reply,
+            onContinueListening = { startVoiceFlow() },
+            onRetriesExhausted = {
+                val finalReply = responseManager.stopListening()
+                assistantBottomSheet?.showAssistantReply(finalReply)
+                sessionController.speak(
+                    text = finalReply,
+                    continueListening = false,
+                    onContinueListening = { },
+                    onDone = {
+                        runOnUiThread {
+                            try { speechRecognizer?.cancel() } catch (_: Exception) {}
+                            assistantBottomSheet?.dismiss()
+                        }
+                    }
+                )
             }
-        }
+        )
     }
 
     // --> temproray functions before adding this exit intent in Ai router
@@ -963,7 +973,7 @@ class HomeActivity : AppCompatActivity() {
         return exitPhrases.any { phrase -> normalized.contains(phrase) }
     }
     private fun endAssistantConversation() {
-        assistantSessionActive = false
+        sessionController.deactivateSession()
         val reply = responseManager.stopListening()
 
         assistantBottomSheet?.showAssistantReply(reply)
@@ -972,9 +982,7 @@ class HomeActivity : AppCompatActivity() {
 
         voiceHelper.speak(reply) {
             runOnUiThread {
-                retryCount = 0
-                isListening = false
-                speechRecognizer?.cancel()
+                try { speechRecognizer?.cancel() } catch (_: Exception) {}
                 assistantBottomSheet?.setIdleState()
                 assistantBottomSheet?.dismiss()
             }
@@ -1085,9 +1093,8 @@ class HomeActivity : AppCompatActivity() {
             assistantBottomSheet?.setSpeakingState()
             voiceHelper.speak(spokenReply) {
                 runOnUiThread {
-                    retryCount = 0
-                    if (assistantSessionActive) {
-                        assistantBottomSheet?.setListeningState()
+                    if (sessionController.isSessionActive()) {
+                        sessionController.onPartialSpeech()
                         startVoiceFlow()
                     } else {
                         assistantBottomSheet?.setIdleState()
@@ -1130,18 +1137,14 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun forceStopAssistant() {
-        assistantSessionActive = false
-        retryCount = 0
-        isListening = false
-        homeFollowUpContext = HomeFollowUpContext.NONE
-
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
-
-        assistantBottomSheet?.clearHint()
-        assistantBottomSheet?.dismiss()
+        sessionController.hardStop(
+            cancelRecognizer = { try { speechRecognizer?.cancel() } catch (_: Exception) {} },
+            dismissPanel = {
+                assistantBottomSheet?.clearHint()
+                assistantBottomSheet?.dismiss()
+            },
+            clearConversationState = { homeFollowUpContext = HomeFollowUpContext.NONE }
+        )
     }
 
     private fun speakThenOpen(reply: String, action: () -> Unit) {

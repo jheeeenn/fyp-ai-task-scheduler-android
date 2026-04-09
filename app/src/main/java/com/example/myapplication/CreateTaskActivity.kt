@@ -37,6 +37,10 @@ import com.example.myapplication.voice.AssistantResponseManager
 
 
 import com.example.myapplication.voice.TextNormalizer
+import com.example.myapplication.voice.LocalDialogAct
+import com.example.myapplication.voice.LocalDialogActInterpreter
+import com.example.myapplication.voice.VoiceSessionController
+import com.example.myapplication.voice.VoiceSessionState
 import com.example.myapplication.ai.LocalDateParser
 
 import com.example.myapplication.BuildConfig // for gemini api key
@@ -57,12 +61,9 @@ class CreateTaskActivity : AppCompatActivity() {
 
     private var hasConsumedPrefill = false
 
-    private var assistantSessionActive = false
-    private var retryCount = 0
-    private val maxRetryCount = 3
+    private lateinit var sessionController: VoiceSessionController
 
     private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
     private var assistantBottomSheet: AssistantBottomSheet? = null
 
     private var dialogState = CreateTaskDialogState.IDLE
@@ -129,6 +130,15 @@ class CreateTaskActivity : AppCompatActivity() {
 
         voiceHelper = VoiceHelper(this)
         responseManager = AssistantResponseManager()
+        sessionController = VoiceSessionController(voiceHelper) { state ->
+            when (state) {
+                VoiceSessionState.LISTENING -> assistantBottomSheet?.setListeningState()
+                VoiceSessionState.PROCESSING -> assistantBottomSheet?.setProcessingState()
+                VoiceSessionState.SPEAKING -> assistantBottomSheet?.setSpeakingState()
+                VoiceSessionState.IDLE -> assistantBottomSheet?.setIdleState()
+                VoiceSessionState.STOPPED -> assistantBottomSheet?.setIdleState()
+            }
+        }
         localDateParser = LocalDateParser()
 
         resetTaskDraftState()
@@ -150,7 +160,7 @@ class CreateTaskActivity : AppCompatActivity() {
         }
 
         btnCancelTask.setOnClickListener {
-            assistantSessionActive = false
+            sessionController.deactivateSession()
             hasConsumedPrefill = false
            voiceHelper.speak(responseManager.cancelCreate()){
                 runOnUiThread {
@@ -161,7 +171,7 @@ class CreateTaskActivity : AppCompatActivity() {
         }
 
         btnGoHome.setOnClickListener {
-            assistantSessionActive = false
+            sessionController.deactivateSession()
             hasConsumedPrefill = false
             voiceHelper.speak(responseManager.returnHome()){
                 runOnUiThread {
@@ -182,8 +192,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 }
             }
 
-            retryCount = 0
-            assistantSessionActive = true
+            sessionController.beginSession()
             assistantBottomSheet?.show()
             assistantBottomSheet?.clearConversation()
             assistantBottomSheet?.setListeningState()
@@ -193,8 +202,7 @@ class CreateTaskActivity : AppCompatActivity() {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
-                    assistantBottomSheet?.setListeningState()
-                    isListening = true
+                    sessionController.onReadyForSpeech()
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -205,24 +213,22 @@ class CreateTaskActivity : AppCompatActivity() {
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
                 override fun onEndOfSpeech() {
-                    assistantBottomSheet?.setProcessingState()
-                    isListening = false
+                    sessionController.onEndOfSpeech()
                 }
 
                 override fun onError(error: Int) {
-                    isListening = false
+                    if (!sessionController.canHandleRecognizerCallbacks()) return
                     handleListenFailure(responseManager.listenFailure())
                 }
 
                 override fun onResults(results: Bundle?) {
-                    isListening = false
+                    if (!sessionController.canHandleRecognizerCallbacks()) return
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val spokenText = matches?.firstOrNull()?.trim()?.lowercase()
 
                     if (!spokenText.isNullOrEmpty()) {
-                        retryCount = 0
+                        sessionController.onFinalSpeechReceived()
                         assistantBottomSheet?.showUserSpeech(spokenText)
-                        assistantBottomSheet?.setProcessingState()
                         handleVoiceCommand(spokenText)
                     } else {
                         handleListenFailure(responseManager.listenFailure())
@@ -230,7 +236,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 }
 
                 override fun onPartialResults(partialResults: Bundle?) {
-                    if (!assistantSessionActive) return
+                    if (!sessionController.canHandleRecognizerCallbacks()) return
 
                     val partialMatches =
                         partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -238,7 +244,7 @@ class CreateTaskActivity : AppCompatActivity() {
 
                     if (!partialText.isNullOrEmpty()) {
                         assistantBottomSheet?.showUserSpeech(partialText)
-                        assistantBottomSheet?.setListeningState()
+                        sessionController.onPartialSpeech()
                     }
                 }
 
@@ -279,7 +285,7 @@ class CreateTaskActivity : AppCompatActivity() {
         assistantBottomSheet?.show()
         assistantBottomSheet?.clearConversation()
         assistantBottomSheet?.setProcessingState()
-        assistantSessionActive = true
+        sessionController.beginSession()
 
         if (!prefillTitle.isNullOrBlank()) {
             applyTitle(prefillTitle)
@@ -320,7 +326,7 @@ class CreateTaskActivity : AppCompatActivity() {
     }
 
     private fun startVoiceRecognition() {
-        if (isListening) return
+        if (!sessionController.canStartListening()) return
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -348,6 +354,15 @@ class CreateTaskActivity : AppCompatActivity() {
 
     private fun handleVoiceCommand(rawCommand: String) {
         val normalized = TextNormalizer.normalize(rawCommand)
+        when (LocalDialogActInterpreter.detect(normalized)) {
+            LocalDialogAct.CANCEL,
+            LocalDialogAct.STOP,
+            LocalDialogAct.END -> {
+                forceStopAssistant()
+                return
+            }
+            else -> {}
+        }
 
         if (handleFollowUpInput(normalized)) {
             return
@@ -508,8 +523,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 dialogState = CreateTaskDialogState.IDLE
                 pendingTaskState.clear()
 
-                retryCount = 0
-                assistantSessionActive = false
+                sessionController.deactivateSession()
                 hasConsumedPrefill = false
                 //speakThenFinish("Task saved successfully.")
                 speakThenFinish(responseManager.saveSuccess())
@@ -522,8 +536,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 dialogState = CreateTaskDialogState.IDLE
                 pendingTaskState.clear()
 
-                retryCount = 0
-                assistantSessionActive = false
+                sessionController.deactivateSession()
                 hasConsumedPrefill = false
                 //speakThenFinish("Task saved, but reminder could not be scheduled.")
                 speakThenFinish(responseManager.savePartialFailure())
@@ -1056,23 +1069,20 @@ class CreateTaskActivity : AppCompatActivity() {
         }
     }
     private fun handleListenFailure(reply: String) {
-        if (retryCount < maxRetryCount && assistantSessionActive) {
-            retryCount++
-            speakThenListenAgain(reply)
-        } else {
-            //val finalReply = "I will stop listening now. Tap Talk to Assistant when you are ready."
-            val finalReply = responseManager.stopListening()
-            assistantBottomSheet?.showAssistantReply(finalReply)
-            assistantBottomSheet?.setIdleState()
-
-            voiceHelper.speak(finalReply) {
-                runOnUiThread {
-                    retryCount = 0
-                    assistantSessionActive = false
-                    assistantBottomSheet?.dismiss()
-                }
+        sessionController.handleListenFailure(
+            retryReply = reply,
+            onContinueListening = { startVoiceFlow() },
+            onRetriesExhausted = {
+                val finalReply = responseManager.stopListening()
+                assistantBottomSheet?.showAssistantReply(finalReply)
+                sessionController.speak(
+                    text = finalReply,
+                    continueListening = false,
+                    onContinueListening = { },
+                    onDone = { runOnUiThread { assistantBottomSheet?.dismiss() } }
+                )
             }
-        }
+        )
     }
     private fun speakThenFinish(text: String) {
         assistantBottomSheet?.showAssistantReply(text)
@@ -1099,8 +1109,7 @@ class CreateTaskActivity : AppCompatActivity() {
         selectedDay = null
 
         dialogState = CreateTaskDialogState.IDLE
-        retryCount = 0
-        assistantSessionActive = false
+        sessionController.deactivateSession()
 
         etTaskTitle.setText("")
         tvSelectedDate.text = "Selected date: No date selected"
@@ -1133,18 +1142,14 @@ class CreateTaskActivity : AppCompatActivity() {
     }
 
     private fun forceStopAssistant() {
-        assistantSessionActive = false
-        retryCount = 0
-        isListening = false
-        dialogState = CreateTaskDialogState.IDLE
-
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
-
-        assistantBottomSheet?.clearHint()
-        assistantBottomSheet?.dismiss()
+        sessionController.hardStop(
+            cancelRecognizer = { try { speechRecognizer?.cancel() } catch (_: Exception) {} },
+            dismissPanel = {
+                assistantBottomSheet?.clearHint()
+                assistantBottomSheet?.dismiss()
+            },
+            clearConversationState = { dialogState = CreateTaskDialogState.IDLE }
+        )
     }
 
     override fun onDestroy() {
