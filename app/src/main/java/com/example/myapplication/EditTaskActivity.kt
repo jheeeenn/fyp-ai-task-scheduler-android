@@ -189,12 +189,16 @@ class EditTaskActivity : AppCompatActivity() {
                 }
             }
 
-            sessionController.beginSession()
             assistantBottomSheet?.show()
             assistantBottomSheet?.clearConversation()
-            assistantBottomSheet?.setListeningState()
-            if (sessionController.isSessionActive()) {
-                startVoiceFlow()
+            window.decorView.post {
+                if (assistantBottomSheet?.isShowing == true) {
+                    sessionController.beginSession()
+                    assistantBottomSheet?.setListeningState()
+                    if (sessionController.isSessionActive()) {
+                        startVoiceFlow()
+                    }
+                }
             }
         }
 
@@ -303,9 +307,10 @@ class EditTaskActivity : AppCompatActivity() {
             } else {
                 "You are editing ${etTaskTitle.text}. What would you like to change?"
             }
-            sessionController.beginSession()
-
             window.decorView.postDelayed({
+                if (assistantBottomSheet?.isShowing == true && !sessionController.isSessionActive()) {
+                    sessionController.beginSession()
+                }
                 assistantBottomSheet?.showAssistantReply(introReply)
                 assistantBottomSheet?.setSpeakingState()
 

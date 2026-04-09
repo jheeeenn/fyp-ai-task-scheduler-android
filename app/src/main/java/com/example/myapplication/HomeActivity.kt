@@ -193,11 +193,15 @@ class HomeActivity : AppCompatActivity() {
                 }
             }
 
-            sessionController.beginSession()
             assistantBottomSheet?.show()
             assistantBottomSheet?.clearConversation()
-            assistantBottomSheet?.setListeningState()
-            startVoiceFlow()
+            window.decorView.post {
+                if (assistantBottomSheet?.isShowing == true) {
+                    sessionController.beginSession()
+                    assistantBottomSheet?.setListeningState()
+                    startVoiceFlow()
+                }
+            }
         }
 
 

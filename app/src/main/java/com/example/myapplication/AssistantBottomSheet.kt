@@ -16,9 +16,17 @@ import android.graphics.drawable.GradientDrawable
 class AssistantBottomSheet(
     private val activity: AppCompatActivity
 ) : BottomSheetDialog(activity) {
+    private enum class PendingVisualState {
+        IDLE,
+        LISTENING,
+        PROCESSING,
+        SPEAKING
+    }
+
     private var onDoubleTapCancel: (() -> Unit)? = null
     private var lastTapTime: Long = 0L
     private val doubleTapWindowMs = 350L
+    private var pendingVisualState: PendingVisualState = PendingVisualState.IDLE
 
     private lateinit var assistantRoot: View
     private var defaultBorderColor: Int = 0
@@ -65,6 +73,8 @@ class AssistantBottomSheet(
             lastTapTime = now
         }
 
+        applyPendingVisualStateIfReady()
+
     }
     fun setOnDoubleTapCancelListener(listener: (() -> Unit)?) {
         onDoubleTapCancel = listener
@@ -77,26 +87,35 @@ class AssistantBottomSheet(
         tvAssistantHint.text = ""
     }
     fun setIdleState() {
+        pendingVisualState = PendingVisualState.IDLE
+        if (!isViewReady()) return
         stopStateAnimation()
         tvState.text = "Assistant ready"
     }
 
     fun setListeningState() {
+        pendingVisualState = PendingVisualState.LISTENING
+        if (!isViewReady()) return
         tvState.text = "Listening..."
         startListeningAnimation()
     }
 
     fun setProcessingState() {
+        pendingVisualState = PendingVisualState.PROCESSING
+        if (!isViewReady()) return
         tvState.text = "Processing..."
         startProcessingAnimation()
     }
 
     fun setErrorState(text: String) {
+        if (!isViewReady()) return
         stopStateAnimation()
         tvState.text = text
     }
 
     fun setSpeakingState() {
+        pendingVisualState = PendingVisualState.SPEAKING
+        if (!isViewReady()) return
         tvState.text = "Speaking..."
         startSpeakingAnimation()
     }
@@ -193,5 +212,21 @@ class AssistantBottomSheet(
     }
     private fun Int.dpToPx(): Int {
         return (this * activity.resources.displayMetrics.density).toInt()
+    }
+
+    private fun isViewReady(): Boolean {
+        return this::tvState.isInitialized &&
+                this::stateContainer.isInitialized &&
+                this::assistantRoot.isInitialized
+    }
+
+    private fun applyPendingVisualStateIfReady() {
+        if (!isViewReady()) return
+        when (pendingVisualState) {
+            PendingVisualState.IDLE -> setIdleState()
+            PendingVisualState.LISTENING -> setListeningState()
+            PendingVisualState.PROCESSING -> setProcessingState()
+            PendingVisualState.SPEAKING -> setSpeakingState()
+        }
     }
 }

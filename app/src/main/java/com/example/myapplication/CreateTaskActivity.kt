@@ -192,11 +192,15 @@ class CreateTaskActivity : AppCompatActivity() {
                 }
             }
 
-            sessionController.beginSession()
             assistantBottomSheet?.show()
             assistantBottomSheet?.clearConversation()
-            assistantBottomSheet?.setListeningState()
-            startVoiceFlow()
+            window.decorView.post {
+                if (assistantBottomSheet?.isShowing == true) {
+                    sessionController.beginSession()
+                    assistantBottomSheet?.setListeningState()
+                    startVoiceFlow()
+                }
+            }
         }
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
@@ -275,17 +279,22 @@ class CreateTaskActivity : AppCompatActivity() {
         resetTaskDraftState()
 
         if (assistantBottomSheet == null) {
-            assistantBottomSheet?.setOnDoubleTapCancelListener {
-                runOnUiThread {
-                    forceStopAssistant()
-                }
-            }
             assistantBottomSheet = AssistantBottomSheet(this)
+        }
+        assistantBottomSheet?.setOnDoubleTapCancelListener {
+            runOnUiThread {
+                forceStopAssistant()
+            }
         }
         assistantBottomSheet?.show()
         assistantBottomSheet?.clearConversation()
         assistantBottomSheet?.setProcessingState()
-        sessionController.beginSession()
+        window.decorView.post {
+            if (assistantBottomSheet?.isShowing == true) {
+                sessionController.beginSession()
+                assistantBottomSheet?.setProcessingState()
+            }
+        }
 
         if (!prefillTitle.isNullOrBlank()) {
             applyTitle(prefillTitle)
