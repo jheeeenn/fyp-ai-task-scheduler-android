@@ -1,23 +1,19 @@
 package com.example.myapplication
 
-import android.Manifest
 import android.app.AlarmManager
 import android.app.DatePickerDialog
 import android.app.PendingIntent
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.speech.RecognizerIntent
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
@@ -29,9 +25,7 @@ import java.util.Calendar
 
 import com.example.myapplication.voice.CreateTaskDialogState
 
-
-import android.speech.RecognitionListener
-import android.speech.SpeechRecognizer
+import android.util.Log
 import com.example.myapplication.ai.TimePreferenceLearner
 import com.example.myapplication.voice.AssistantResponseManager
 
@@ -46,7 +40,13 @@ import com.example.myapplication.ai.GeminiCloudNlpExtractor
 import com.example.myapplication.ai.LocalIntentClassifier
 import com.example.myapplication.ai.LocalTaskParser
 
-class CreateTaskActivity : AppCompatActivity() {
+import com.example.myapplication.voice.AssistantVoiceHost
+import com.example.myapplication.voice.AssistantVoiceSession
+
+class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
+
+    private lateinit var assistantSession: AssistantVoiceSession
+
     private lateinit var aiRouter: AiRouter
     private lateinit var localDateParser: LocalDateParser
     private lateinit var responseManager: AssistantResponseManager
@@ -57,13 +57,7 @@ class CreateTaskActivity : AppCompatActivity() {
 
     private var hasConsumedPrefill = false
 
-    private var assistantSessionActive = false
-    private var retryCount = 0
-    private val maxRetryCount = 3
 
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
-    private var assistantBottomSheet: AssistantBottomSheet? = null
 
     private var dialogState = CreateTaskDialogState.IDLE
     private val pendingTaskState = PendingTaskState()
@@ -87,10 +81,9 @@ class CreateTaskActivity : AppCompatActivity() {
     private val audioPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                startVoiceRecognition()
+                assistantSession.onAudioPermissionGranted()
             } else {
-                voiceHelper.speak(responseManager.microphonePermissionNeeded())
-                //voiceHelper.speak("Microphone permission is needed for voice commands.")
+                assistantSession.onAudioPermissionDenied()
             }
         }
 
@@ -128,8 +121,16 @@ class CreateTaskActivity : AppCompatActivity() {
         timePreferenceLearner = TimePreferenceLearner(AppDatabase.getInstance(this).learnedTimePreferenceDao())
 
         voiceHelper = VoiceHelper(this)
-        responseManager = AssistantResponseManager()
+        responseManager = AssistantResponseManager.fromPreferences(this)
         localDateParser = LocalDateParser()
+
+        assistantSession = AssistantVoiceSession(
+            activity = this,
+            host = this,
+            voiceHelper = voiceHelper,
+            responseManager = responseManager,
+            audioPermissionLauncher = audioPermissionLauncher
+        )
 
         resetTaskDraftState()
 
@@ -150,101 +151,24 @@ class CreateTaskActivity : AppCompatActivity() {
         }
 
         btnCancelTask.setOnClickListener {
-            assistantSessionActive = false
             hasConsumedPrefill = false
-           voiceHelper.speak(responseManager.cancelCreate()){
-                runOnUiThread {
-                    assistantBottomSheet?.dismiss()
-                    finish()
-                }
+            assistantSession.speakThenRun(responseManager.cancelCreate()) {
+                finish()
             }
         }
 
         btnGoHome.setOnClickListener {
-            assistantSessionActive = false
             hasConsumedPrefill = false
-            voiceHelper.speak(responseManager.returnHome()){
-                runOnUiThread {
-                    assistantBottomSheet?.dismiss()
-                    finish()
-                }
+            assistantSession.speakThenRun(responseManager.returnHome()) {
+                finish()
             }
         }
 
         btnTalkAssistant.setOnClickListener {
-            if (assistantBottomSheet == null) {
-                assistantBottomSheet = AssistantBottomSheet(this)
-            }
-
-            assistantBottomSheet?.setOnDoubleTapCancelListener {
-                runOnUiThread {
-                    forceStopAssistant()
-                }
-            }
-
-            retryCount = 0
-            assistantSessionActive = true
-            assistantBottomSheet?.show()
-            assistantBottomSheet?.clearConversation()
-            assistantBottomSheet?.setListeningState()
-            startVoiceFlow()
+            assistantSession.startSession()
         }
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    assistantBottomSheet?.setListeningState()
-                    isListening = true
-                }
 
-                override fun onBeginningOfSpeech() {
-                    assistantBottomSheet?.setListeningState()
-                }
-
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-
-                override fun onEndOfSpeech() {
-                    assistantBottomSheet?.setProcessingState()
-                    isListening = false
-                }
-
-                override fun onError(error: Int) {
-                    isListening = false
-                    handleListenFailure(responseManager.listenFailure())
-                }
-
-                override fun onResults(results: Bundle?) {
-                    isListening = false
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val spokenText = matches?.firstOrNull()?.trim()?.lowercase()
-
-                    if (!spokenText.isNullOrEmpty()) {
-                        retryCount = 0
-                        assistantBottomSheet?.showUserSpeech(spokenText)
-                        assistantBottomSheet?.setProcessingState()
-                        handleVoiceCommand(spokenText)
-                    } else {
-                        handleListenFailure(responseManager.listenFailure())
-                    }
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {
-                    if (!assistantSessionActive) return
-
-                    val partialMatches =
-                        partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val partialText = partialMatches?.firstOrNull()?.trim()
-
-                    if (!partialText.isNullOrEmpty()) {
-                        assistantBottomSheet?.showUserSpeech(partialText)
-                        assistantBottomSheet?.setListeningState()
-                    }
-                }
-
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
     } // end of onCreate()
 
     //function definitions
@@ -268,18 +192,8 @@ class CreateTaskActivity : AppCompatActivity() {
 
         resetTaskDraftState()
 
-        if (assistantBottomSheet == null) {
-            assistantBottomSheet?.setOnDoubleTapCancelListener {
-                runOnUiThread {
-                    forceStopAssistant()
-                }
-            }
-            assistantBottomSheet = AssistantBottomSheet(this)
-        }
-        assistantBottomSheet?.show()
-        assistantBottomSheet?.clearConversation()
-        assistantBottomSheet?.setProcessingState()
-        assistantSessionActive = true
+        assistantSession.startPassiveSession(clearConversation = true)
+        assistantSession.getBottomSheet()?.setProcessingState()
 
         if (!prefillTitle.isNullOrBlank()) {
             applyTitle(prefillTitle)
@@ -306,48 +220,14 @@ class CreateTaskActivity : AppCompatActivity() {
         moveToNextMissingStep()
     }
 
-    private fun startVoiceFlow() {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (hasPermission) {
-            startVoiceRecognition()
-        } else {
-            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    private fun startVoiceRecognition() {
-        if (isListening) return
-
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                2500L
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                1800L
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                3000L
-            )
-        }
-
-        speechRecognizer?.startListening(intent)
-    }
 
     private fun handleVoiceCommand(rawCommand: String) {
         val normalized = TextNormalizer.normalize(rawCommand)
+        // log
+        Log.d(
+            "CREATE_VOICE",
+            "raw='$rawCommand' normalized='$normalized' dialogState=$dialogState title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}' selectedDate='$selectedDate' selectedTime='$selectedTime'"
+        )
 
         if (handleFollowUpInput(normalized)) {
             return
@@ -415,6 +295,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 selectedDate = formatDate(pickedYear, pickedMonth, pickedDay)
                 tvSelectedDate.text = "Selected date: $selectedDate"
 
+                assistantSession.pauseListeningForAssistantSpeech()
                 voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
                 //voiceHelper.speak("Date selected: $selectedDate")
             },
@@ -440,6 +321,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 selectedTime = formatTime(pickedHour, pickedMinute)
                 tvSelectedTime.text = "Selected time: $selectedTime"
 
+                assistantSession.pauseListeningForAssistantSpeech()
                 voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
                     //voiceHelper.speak("Time selected: $selectedTime")
             },
@@ -507,12 +389,9 @@ class CreateTaskActivity : AppCompatActivity() {
                 ).show()
                 dialogState = CreateTaskDialogState.IDLE
                 pendingTaskState.clear()
-
-                retryCount = 0
-                assistantSessionActive = false
                 hasConsumedPrefill = false
-                //speakThenFinish("Task saved successfully.")
                 speakThenFinish(responseManager.saveSuccess())
+
             } else {
                 Toast.makeText(
                     this@CreateTaskActivity,
@@ -521,11 +400,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 ).show()
                 dialogState = CreateTaskDialogState.IDLE
                 pendingTaskState.clear()
-
-                retryCount = 0
-                assistantSessionActive = false
                 hasConsumedPrefill = false
-                //speakThenFinish("Task saved, but reminder could not be scheduled.")
                 speakThenFinish(responseManager.savePartialFailure())
             }
         }
@@ -608,6 +483,8 @@ class CreateTaskActivity : AppCompatActivity() {
                 "Selected date and time is already in the past.",
                 Toast.LENGTH_LONG
             ).show()
+
+            assistantSession.pauseListeningForAssistantSpeech()
             //voiceHelper.speak("The selected date and time is already in the past.")
             voiceHelper.speak(responseManager.pastDateTime())
             return false
@@ -647,6 +524,7 @@ class CreateTaskActivity : AppCompatActivity() {
             .replace(Regex("\\bp\\.?\\s*m\\.?\\b"), "pm")
             .replace(Regex("\\bat\\b"), " ")
             .replace(Regex("\\s*:\\s*"), ":")
+            .replace(Regex("[.,!?]+$"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
 
@@ -683,20 +561,35 @@ class CreateTaskActivity : AppCompatActivity() {
         return false
     }
     private fun handleFollowUpInput(normalized: String): Boolean {
+        // log
+        Log.d(
+            "CREATE_FOLLOWUP",
+            "dialogState=$dialogState normalized='$normalized' title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}'"
+        )
+
         return when (dialogState) {
-            CreateTaskDialogState.WAITING_FOR_TITLE -> {
-                if (normalized.isNotBlank()) {
+                CreateTaskDialogState.WAITING_FOR_TITLE -> {
+
+                    Log.d("CREATE_FOLLOWUP", "WAITING_FOR_TITLE")
+
+                if (looksLikeReasonableTitle(normalized)) {
                     applyTitle(normalized)
                     moveToNextMissingStep()
                     true
                 } else {
-                    false
+                    speakAndContinueListening(responseManager.askTaskTitle())
+                    true
                 }
             }
 
             CreateTaskDialogState.WAITING_FOR_DATE -> {
+
+                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_DATE")
+
                 if (applySpokenDate(normalized)) {
                     pendingTaskState.dateText = normalized
+
+                    assistantSession.pauseListeningForAssistantSpeech()
                     voiceHelper.speak(responseManager.dateSet(selectedDate ?: ""))
                     moveToNextMissingStep()
                     true
@@ -707,11 +600,16 @@ class CreateTaskActivity : AppCompatActivity() {
             }
 
             CreateTaskDialogState.WAITING_FOR_TIME -> {
+
+                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_TIME")
+
                 if (suggestedLearnedTime != null && isYes(normalized)) {
                     if (applySpokenTime(suggestedLearnedTime!!)) {
                         pendingTaskState.timeText = suggestedLearnedTime
                         pendingSemanticTimePhrase = null
                         suggestedLearnedTime = null
+
+                        assistantSession.pauseListeningForAssistantSpeech()
                         voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
                         moveToNextMissingStep()
                         return true
@@ -734,6 +632,8 @@ class CreateTaskActivity : AppCompatActivity() {
 
                     pendingSemanticTimePhrase = null
                     suggestedLearnedTime = null
+
+                    assistantSession.pauseListeningForAssistantSpeech()
                     voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
                     moveToNextMissingStep()
                     true
@@ -749,6 +649,8 @@ class CreateTaskActivity : AppCompatActivity() {
                                 pendingTaskState.timeText = candidateTime
                                 pendingSemanticTimePhrase = null
                                 suggestedLearnedTime = null
+
+                                assistantSession.pauseListeningForAssistantSpeech()
                                 voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
                                 moveToNextMissingStep()
                             } else if (timePreferenceLearner.isSemanticPhrase(candidateTime)) {
@@ -767,7 +669,39 @@ class CreateTaskActivity : AppCompatActivity() {
                 }
             }
 
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> {
+                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_CHANGE_FIELD")
+
+                when {
+                    normalized == "title" || normalized.contains("change title") || normalized.contains("edit title") -> {
+                        dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
+                        speakAndContinueListening(responseManager.askChangeTitle())
+                        true
+                    }
+
+                    normalized == "date" || normalized.contains("change date") || normalized.contains("edit date") -> {
+                        dialogState = CreateTaskDialogState.WAITING_FOR_DATE
+                        speakAndContinueListening(responseManager.askChangeDate())
+                        true
+                    }
+
+                    normalized == "time" || normalized.contains("change time") || normalized.contains("edit time") -> {
+                        dialogState = CreateTaskDialogState.WAITING_FOR_TIME
+                        speakAndContinueListening(responseManager.askChangeTime())
+                        true
+                    }
+
+                    else -> {
+                        speakAndContinueListening(responseManager.askWhatToChange())
+                        true
+                    }
+                }
+            }
+
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> {
+
+                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_SAVE_CONFIRMATION")
+
                 if (isYes(normalized)) {
                     dialogState = CreateTaskDialogState.READY_TO_SAVE
                     saveTask()
@@ -775,6 +709,7 @@ class CreateTaskActivity : AppCompatActivity() {
                 }
 
                 if (isNo(normalized)) {
+                    dialogState = CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD
                     speakAndContinueListening(responseManager.askWhatToChange())
                     return true
                 }
@@ -882,15 +817,29 @@ class CreateTaskActivity : AppCompatActivity() {
     private fun looksLikeReasonableTitle(value: String): Boolean {
         if (value.isBlank()) return false
 
-        val cleaned = value.trim()
+        val cleaned = value.trim().lowercase()
 
         if (cleaned.length < 3) return false
 
         val blocked = listOf(
+            "title",
+            "date",
+            "time",
+            "change title",
+            "change date",
+            "change time",
+            "edit title",
+            "edit date",
+            "edit time",
             "yes",
+            "yeah",
+            "yep",
+            "sure",
             "no",
+            "nope",
             "okay",
             "ok",
+            "alright",
             "save",
             "confirm",
             "cancel",
@@ -945,18 +894,27 @@ class CreateTaskActivity : AppCompatActivity() {
 
 
     private fun moveToNextMissingStep() {
+        // log
+        Log.d(
+            "CREATE_STATE",
+            "title='${pendingTaskState.title}' selectedDate='$selectedDate' selectedTime='$selectedTime' semantic='$pendingSemanticTimePhrase'"
+        )
+
         when {
             pendingTaskState.title.isNullOrBlank() -> {
+                Log.d("CREATE_STATE", "next=WAITING_FOR_TITLE")
                 dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
                 speakAndContinueListening(responseManager.askTaskTitle())
             }
 
             pendingTaskState.dateText.isNullOrBlank() || selectedDate.isNullOrBlank() -> {
+                Log.d("CREATE_STATE", "next=WAITING_FOR_DATE")
                 dialogState = CreateTaskDialogState.WAITING_FOR_DATE
                 speakAndContinueListening(responseManager.askTaskDate())
             }
 
             pendingTaskState.timeText.isNullOrBlank() || selectedTime.isNullOrBlank() -> {
+                Log.d("CREATE_STATE", "next=WAITING_FOR_TIME")
                 dialogState = CreateTaskDialogState.WAITING_FOR_TIME
 
                 lifecycleScope.launch {
@@ -992,6 +950,7 @@ class CreateTaskActivity : AppCompatActivity() {
             }
 
             else -> {
+                Log.d("CREATE_STATE", "next=WAITING_FOR_SAVE_CONFIRMATION")
                 dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
                 speakAndContinueListening(responseManager.confirmTaskSummary(buildTaskSummary()))
             }
@@ -1007,83 +966,45 @@ class CreateTaskActivity : AppCompatActivity() {
         return dialogState == CreateTaskDialogState.WAITING_FOR_TITLE ||
                 dialogState == CreateTaskDialogState.WAITING_FOR_DATE ||
                 dialogState == CreateTaskDialogState.WAITING_FOR_TIME ||
+                dialogState == CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD ||
                 dialogState == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
     }
 
     private fun speakAndContinueListening(text: String) {
-        assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.setProcessingState()
-
         val hint = when (dialogState) {
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> responseManager.hintYesNo()
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> responseManager.hintChangeFields()
             CreateTaskDialogState.WAITING_FOR_TITLE,
             CreateTaskDialogState.WAITING_FOR_DATE,
             CreateTaskDialogState.WAITING_FOR_TIME -> responseManager.hintChangeFields()
             else -> ""
         }
 
-        assistantBottomSheet?.showAssistantHint(hint)
-
-        voiceHelper.speak(text) {
-            runOnUiThread {
-                if (shouldContinueConversation()) {
-                    assistantBottomSheet?.setListeningState()
-                    startVoiceFlow()
-                } else {
-                    assistantBottomSheet?.setIdleState()
-                    assistantBottomSheet?.clearHint()
-                }
-            }
-        }
+        assistantSession.getBottomSheet()?.showAssistantHint(hint)
+        assistantSession.speak(
+            text = text,
+            listenAgain = shouldContinueConversation()
+        )
     }
 
     private fun speakWithPanel(text: String) {
-        assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.clearHint()
-        assistantBottomSheet?.setIdleState()
-        voiceHelper.speak(text)
+        assistantSession.getBottomSheet()?.clearHint()
+        assistantSession.speak(text, listenAgain = false)
     }
 
     private fun speakThenListenAgain(text: String) {
-        assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.setErrorState(text)
-
-        voiceHelper.speak(text) {
-            runOnUiThread {
-                assistantBottomSheet?.setListeningState()
-                startVoiceFlow()
-            }
-        }
+        assistantSession.speakThenListenAgain(text)
     }
+
     private fun handleListenFailure(reply: String) {
-        if (retryCount < maxRetryCount && assistantSessionActive) {
-            retryCount++
-            speakThenListenAgain(reply)
-        } else {
-            //val finalReply = "I will stop listening now. Tap Talk to Assistant when you are ready."
-            val finalReply = responseManager.stopListening()
-            assistantBottomSheet?.showAssistantReply(finalReply)
-            assistantBottomSheet?.setIdleState()
-
-            voiceHelper.speak(finalReply) {
-                runOnUiThread {
-                    retryCount = 0
-                    assistantSessionActive = false
-                    assistantBottomSheet?.dismiss()
-                }
-            }
-        }
+        assistantSession.handleListenFailure(reply)
     }
-    private fun speakThenFinish(text: String) {
-        assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.showAssistantHint(responseManager.followUpAnythingElse())
-        assistantBottomSheet?.setIdleState()
 
-        voiceHelper.speak(text) {
-            runOnUiThread {
-                assistantBottomSheet?.dismiss()
-                finish()
-            }
+
+    private fun speakThenFinish(text: String) {
+        assistantSession.getBottomSheet()?.showAssistantHint(responseManager.followUpAnythingElse())
+        assistantSession.speakThenRun(text) {
+            finish()
         }
     }
 
@@ -1099,25 +1020,28 @@ class CreateTaskActivity : AppCompatActivity() {
         selectedDay = null
 
         dialogState = CreateTaskDialogState.IDLE
-        retryCount = 0
-        assistantSessionActive = false
 
         etTaskTitle.setText("")
         tvSelectedDate.text = "Selected date: No date selected"
         tvSelectedTime.text = "Selected time: No time selected"
     }
+
     private fun clearPrefillExtras() {
         intent.removeExtra("prefill_title")
         intent.removeExtra("prefill_date_text")
         intent.removeExtra("prefill_time_text")
     }
 
-        private fun isYes(normalized: String): Boolean {
+    private fun isYes(normalized: String): Boolean {
         val value = normalized.trim().lowercase()
         return value == "yes" ||
                 value == "yes yes" ||
                 value == "yeah" ||
                 value == "yep" ||
+                value == "sure" ||
+                value == "okay" ||
+                value == "ok" ||
+                value == "alright" ||
                 value == "save" ||
                 value == "okay yes" ||
                 value == "ok yes"
@@ -1126,31 +1050,37 @@ class CreateTaskActivity : AppCompatActivity() {
     private fun isNo(normalized: String): Boolean {
         val value = normalized.trim().lowercase()
         return value == "no" ||
+                value == "no no" ||
                 value == "nope" ||
+                value == "no thanks" ||
+                value == "no need" ||
                 value == "don't save" ||
                 value == "do not save" ||
                 value == "not now"
     }
 
     private fun forceStopAssistant() {
-        assistantSessionActive = false
-        retryCount = 0
-        isListening = false
         dialogState = CreateTaskDialogState.IDLE
+        assistantSession.forceStop()
+    }
 
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
+    override fun onAssistantFinalText(text: String) {
+        handleVoiceCommand(text)
+    }
 
-        assistantBottomSheet?.clearHint()
-        assistantBottomSheet?.dismiss()
+    override fun onAssistantCancelled() {
+        dialogState = CreateTaskDialogState.IDLE
+        suggestedLearnedTime = null
+        pendingSemanticTimePhrase = null
+    }
+
+    override fun onAssistantSessionStopped() {
+        suggestedLearnedTime = null
+        pendingSemanticTimePhrase = null
     }
 
     override fun onDestroy() {
-        assistantBottomSheet?.dismiss()
-        assistantBottomSheet = null
-        speechRecognizer?.destroy()
+        assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()
     }

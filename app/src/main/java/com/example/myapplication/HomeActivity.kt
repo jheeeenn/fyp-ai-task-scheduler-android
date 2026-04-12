@@ -8,7 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.speech.RecognizerIntent
+
 import android.util.Log
 import android.widget.Button
 import android.widget.TextView
@@ -25,8 +25,7 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.Locale
 
-import android.speech.RecognitionListener
-import android.speech.SpeechRecognizer
+
 import com.example.myapplication.ai.AiRouter
 import com.example.myapplication.ai.GeminiCloudNlpExtractor
 
@@ -35,21 +34,31 @@ import com.example.myapplication.voice.TextNormalizer
 
 import com.example.myapplication.BuildConfig // for gemini api key
 import com.example.myapplication.ai.AiIntent
+import com.example.myapplication.ai.LocalConversationIntentClassifier
 import com.example.myapplication.ai.LocalIntentClassifier
 import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
 
-class HomeActivity : AppCompatActivity() {
-    private var assistantSessionActive = false
+import com.example.myapplication.voice.AssistantVoiceHost
+import com.example.myapplication.voice.AssistantVoiceSession
+
+import com.example.myapplication.ai.ConversationIntent
+import com.example.myapplication.ai.TaskMatcher
+
+import com.example.myapplication.ai.TaskResolutionState
+import com.example.myapplication.ai.PendingTaskAction
+
+class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
+
+    private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
+
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var aiRouter: AiRouter
-    private var retryCount = 0
-    private val maxRetryCount = 3
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
-    private var assistantBottomSheet: AssistantBottomSheet? = null
+
+
+    private lateinit var assistantSession: AssistantVoiceSession
     private lateinit var voiceHelper: VoiceHelper
 
     private enum class QueryReplyMode {
@@ -62,18 +71,20 @@ class HomeActivity : AppCompatActivity() {
         NONE,
         AFTER_NO_TASKS,
         AFTER_TASK_SUMMARY,
-        AFTER_TASK_DETAILS
+        AFTER_TASK_DETAILS,
+        TASK_MATCH_AMBIGUITY
     }
-
+    private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
+
     private var lastQueryWasToday = false
 
     private val audioPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                startVoiceRecognition()
+                assistantSession.onAudioPermissionGranted()
             } else {
-                voiceHelper.speak(responseManager.microphonePermissionNeeded())
+                assistantSession.onAudioPermissionDenied()
             }
         }
     private var hasShownPermissionDialog = false
@@ -92,6 +103,7 @@ class HomeActivity : AppCompatActivity() {
             checkExactAlarmPermissionAfterReturn()
         }
 
+    private var ambiguityRetryCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,6 +121,7 @@ class HomeActivity : AppCompatActivity() {
             localTaskParser,
             cloudExtractor
         )
+        conversationIntentClassifier = LocalConversationIntentClassifier(this)
 
         val greetingText = findViewById<TextView>(R.id.greetingText)
         val overviewText = findViewById<TextView>(R.id.overviewText)
@@ -172,107 +185,35 @@ class HomeActivity : AppCompatActivity() {
         voiceHelper = VoiceHelper(this)
         responseManager= AssistantResponseManager.fromPreferences(this)
 
+        assistantSession = AssistantVoiceSession(
+            activity = this,
+            host = this,
+            voiceHelper = voiceHelper,
+            responseManager = responseManager,
+            audioPermissionLauncher = audioPermissionLauncher
+        )
+
         btnTalkAssistant.setOnClickListener {
-            if (assistantBottomSheet == null) {
-                assistantBottomSheet = AssistantBottomSheet(this)
-            }
-
-            assistantBottomSheet?.setOnDoubleTapCancelListener {
-                runOnUiThread {
-                    forceStopAssistant()
-                }
-            }
-
-            retryCount = 0
-            assistantSessionActive = true
-            assistantBottomSheet?.show()
-            assistantBottomSheet?.clearConversation()
-            assistantBottomSheet?.setListeningState()
-            startVoiceFlow()
+            assistantSession.startSession()
         }
 
 
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    assistantBottomSheet?.setListeningState()
-                    isListening = true
-                }
 
-                override fun onBeginningOfSpeech() {
-                    assistantBottomSheet?.setListeningState()
-                }
-
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-
-                override fun onEndOfSpeech() {
-                    assistantBottomSheet?.setProcessingState()
-                    isListening = false
-                }
-
-                override fun onError(error: Int) {
-                    isListening = false
-
-                    if (!assistantSessionActive) {
-                        return
-                    }
-
-                    when (error) {
-                        SpeechRecognizer.ERROR_NO_MATCH,
-                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                            handleListenFailure(responseManager.listenFailure())
-                        }
-
-                        SpeechRecognizer.ERROR_CLIENT,
-                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
-                            // ignore these transient recognizer-side interruptions
-                        }
-
-                        else -> {
-                            handleListenFailure(responseManager.listenFailure())
-                        }
-                    }
-                }
-
-                override fun onResults(results: Bundle?) {
-                    isListening = false
-
-                    if (!assistantSessionActive) {
-                        return
-                    }
-
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val spokenText = matches?.firstOrNull()?.trim()?.lowercase()
-
-                    if (!spokenText.isNullOrEmpty()) {
-                        retryCount = 0
-                        assistantBottomSheet?.showUserSpeech(spokenText)
-                        assistantBottomSheet?.setProcessingState()
-                        handleVoiceCommand(spokenText)
-                    } else {
-                        handleListenFailure(responseManager.listenFailure())
-                    }
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {
-                    if (!assistantSessionActive) return
-
-                    val partialMatches =
-                        partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val partialText = partialMatches?.firstOrNull()?.trim()
-
-                    if (!partialText.isNullOrEmpty()) {
-                        assistantBottomSheet?.showUserSpeech(partialText)
-                        assistantBottomSheet?.setListeningState()
-                    }
-                }
-
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
     } // end of onCreate
+    override fun onAssistantFinalText(text: String) {
+        handleVoiceCommand(text)
+    }
+
+    override fun onAssistantCancelled() {
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        clearPendingTaskMatchState()
+    }
+
+    override fun onAssistantSessionStopped() {
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        clearPendingTaskMatchState()
+    }
 
     override fun onResume(){
         super.onResume()
@@ -372,57 +313,61 @@ class HomeActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun startVoiceFlow() {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
 
-        if (hasPermission) {
-            startVoiceRecognition()
-        } else {
-            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
 
-    private fun startVoiceRecognition() {
-        if (isListening) return
 
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                3500L
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                2500L
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                4000L
-            )
-        }
-
-        speechRecognizer?.startListening(intent)
-    }
 
     private fun handleVoiceCommand(command: String) {
         val normalized = TextNormalizer.normalize(command)
+
+        // log
+        Log.d("HOME_VOICE", "raw='$command' normalized='$normalized' context=$homeFollowUpContext")
+
+
+
         if (isConversationExitCommand(normalized)) {
             endAssistantConversation()
             return
         }
+
+        if (homeFollowUpContext == HomeFollowUpContext.TASK_MATCH_AMBIGUITY) {
+            handleTaskMatchAmbiguity(normalized)
+            return
+        }
+
+        if (homeFollowUpContext != HomeFollowUpContext.NONE) {
+            val convoResult = conversationIntentClassifier.classify(normalized)
+
+            // log
+            Log.d(
+                "HOME_CONVO",
+                "text='$normalized' predicted=${convoResult.intent} confidence=${convoResult.confidence} context=$homeFollowUpContext"
+            )
+
+            if (convoResult.intent != ConversationIntent.UNKNOWN &&
+                convoResult.confidence >= 0.30f) {
+                // log
+                Log.d("HOME_CONVO", "conversation intent accepted locally")
+
+                if (handleConversationIntent(convoResult.intent)) {
+                    return
+                }
+            } else {
+                //log
+                Log.d("HOME_CONVO", "conversation intent not accepted, falling through")
+            }
+        }
+
         if (handleHomeFollowUp(normalized)) {
+
+            // log
+            Log.d("HOME_FOLLOWUP", "handled by old hard-coded follow-up: '$normalized'")
             return
         }
         lifecycleScope.launch {
             try {
+                // log
+                Log.d("HOME_ROUTING", "falling through to AiRouter with text='$normalized'")
                 val aiResult = aiRouter.process(normalized)
 
                 Log.d(
@@ -430,227 +375,278 @@ class HomeActivity : AppCompatActivity() {
                     "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
                             " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}"
                 )
-                // create task
+
+                // branches for actions
                 when (aiResult.intent) {
+                    // create task
                     AiIntent.CREATE_TASK.name -> {
+                        //log
+                        Log.d("HOME_ACTION", "CREATE_TASK -> open CreateTaskActivity")
+
                         val reply = responseManager.openCreateTaskReply(aiResult.source)
 
-                        speakThenNavigate(reply) {
-                            val intent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
+                        assistantSession.speakThenRun(reply) {
+                            val openCreateIntent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
                                 putExtra("prefill_title", aiResult.taskTitle)
                                 putExtra("prefill_date_text", aiResult.dateText)
                                 putExtra("prefill_time_text", aiResult.timeText)
                             }
-                            startActivity(intent)
+                            startActivity(openCreateIntent)
                         }
                     }
+
                     // query on task
                     AiIntent.QUERY_TASK.name -> {
+                        // log
+                        Log.d("HOME_ACTION", "QUERY_TASK -> handleQueryTask")
+
                         handleQueryTask(normalized)
                     }
                     // delete task
                     AiIntent.DELETE_TASK.name -> {
+                        Log.d("HOME_ACTION", "DELETE_TASK -> trying task match")
+
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getAll() }
-                            val matchedTask = findBestTaskMatch(aiResult.targetTaskTitle ?: aiResult.taskTitle, tasks)
 
-                            if (matchedTask == null) {
-                                val reply = "I couldn't find that task. Please say the task title again."
-                                /*assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
-                                }*/
-                                speakThenListenAgain(reply)
-                            } else {
-                                withContext(Dispatchers.IO) {
-                                    dao.deleteById(matchedTask.id)
+                            // to prevent user accidently matching a completed task for deletion
+                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+
+                            val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
+                            val matchResult = findTaskMatchResult(spokenPhrase, tasks)
+
+                            when {
+                                matchResult.isAmbiguous &&
+                                        matchResult.bestTask != null &&
+                                        matchResult.secondTask != null -> {
+                                    askTaskMatchClarification(
+                                        action = PendingTaskAction.DELETE,
+                                        bestTask = matchResult.bestTask,
+                                        secondTask = matchResult.secondTask
+                                    )
                                 }
 
-                                ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
-                                refreshOverview()
+                                matchResult.bestTask != null -> {
+                                    val matchedTask = matchResult.bestTask
 
-                                val reply = "${matchedTask.title} deleted."
-                                assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
+                                    withContext(Dispatchers.IO) {
+                                        dao.deleteById(matchedTask.id)
+                                    }
+
+                                    ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
+                                    refreshOverview()
+
+                                    assistantSession.speak("${matchedTask.title} deleted.", listenAgain = false)
+                                }
+
+                                else -> {
+                                    assistantSession.speakThenListenAgain(
+                                        "I couldn't find a matching task. Please say the task title again."
+                                    )
                                 }
                             }
                         }
                     }
+
                     // edit task or update it
-                    /*AiIntent.UPDATE_TASK.name -> {
-                        val reply = responseManager.updateNotReady()
-                        assistantBottomSheet?.showAssistantReply(reply)
-                        assistantBottomSheet?.setSpeakingState()
-                        voiceHelper.speak(reply) {
-                            runOnUiThread {
-                                assistantBottomSheet?.setIdleState()
-                            }
-                        }
-                    }*/
+
                     AiIntent.UPDATE_TASK.name -> {
+                        // log
+                        Log.d("HOME_ACTION", "UPDATE_TASK -> trying task match")
+
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
-                            val matchedTask = findBestTaskMatch(aiResult.targetTaskTitle ?: aiResult.taskTitle, tasks)
 
-                            if (matchedTask == null) {
-                                val reply = "I couldn't find that task. Please try saying the task title again."
-                                /*assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
-                                }*/
-                                speakThenListenAgain(reply)
-                            } else {
-                                val reply = "Okay, opening edit task."
-                                speakThenNavigate(reply) {
-                                    val intent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
-                                        putExtra("task_id", matchedTask.id)
-                                        putExtra("task_title", matchedTask.title)
-                                        putExtra("task_date", matchedTask.dueDate)
-                                        putExtra("task_time", matchedTask.dueTime)
-                                        putExtra("opened_by_assistant", true)
+                            val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
+                            val matchResult = findTaskMatchResult(spokenPhrase, tasks)
+
+                            when {
+                                matchResult.isAmbiguous &&
+                                        matchResult.bestTask != null &&
+                                        matchResult.secondTask != null -> {
+                                    askTaskMatchClarification(
+                                        action = PendingTaskAction.EDIT,
+                                        bestTask = matchResult.bestTask,
+                                        secondTask = matchResult.secondTask
+                                    )
+                                }
+
+                                matchResult.bestTask != null -> {
+                                    val matchedTask = matchResult.bestTask
+                                    val reply = "Okay, opening edit task."
+                                    assistantSession.speakThenRun(reply) {
+                                        val openEditIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
+                                            putExtra("task_id", matchedTask.id)
+                                            putExtra("task_title", matchedTask.title)
+                                            putExtra("task_date", matchedTask.dueDate)
+                                            putExtra("task_time", matchedTask.dueTime)
+                                            putExtra("opened_by_assistant", true)
+                                        }
+                                        startActivity(openEditIntent)
                                     }
-                                    startActivity(intent)
+                                }
+
+                                else -> {
+                                    val reply = "I couldn't find a matching task. Please say the task title again."
+                                    assistantSession.speakThenListenAgain(reply)
                                 }
                             }
                         }
                     }
                     // reschedule task, changing the time and date
-                    /*AiIntent.RESCHEDULE_TASK.name -> {
-                        val reply = responseManager.rescheduleNotReady()
-                        assistantBottomSheet?.showAssistantReply(reply)
-                        assistantBottomSheet?.setSpeakingState()
-                        voiceHelper.speak(reply) {
-                            runOnUiThread {
-                                assistantBottomSheet?.setIdleState()
-                            }
-                        }
-                    }*/
+
                     AiIntent.RESCHEDULE_TASK.name -> {
+                        Log.d("HOME_ACTION", "RESCHEDULE_TASK -> trying task match")
+
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
-                            val matchedTask = findBestTaskMatch(aiResult.targetTaskTitle ?: aiResult.taskTitle, tasks)
 
-                            if (matchedTask == null) {
-                                val reply = "I couldn't find that task. Please try saying the task title again."
-                                /*assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
-                                }*/
-                                speakThenListenAgain(reply)
-                            } else {
-                                val reply = "Okay, opening reschedule."
-                                speakThenNavigate(reply) {
-                                    val intent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
-                                        putExtra("task_id", matchedTask.id)
-                                        putExtra("task_title", matchedTask.title)
-                                        putExtra("task_date", matchedTask.dueDate)
-                                        putExtra("task_time", matchedTask.dueTime)
-                                        putExtra("opened_by_assistant", true)
-                                        putExtra("assistant_mode", "reschedule")
-                                        putExtra("prefill_new_date_text", aiResult.dateText)
-                                        putExtra("prefill_new_time_text", aiResult.timeText)
+                            val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
+                            val matchResult = findTaskMatchResult(spokenPhrase, tasks)
+
+                            when {
+                                matchResult.isAmbiguous &&
+                                        matchResult.bestTask != null &&
+                                        matchResult.secondTask != null -> {
+                                    askTaskMatchClarification(
+                                        action = PendingTaskAction.RESCHEDULE,
+                                        bestTask = matchResult.bestTask,
+                                        secondTask = matchResult.secondTask,
+                                        rescheduleDateText = aiResult.dateText,
+                                        rescheduleTimeText = aiResult.timeText
+                                    )
+                                }
+
+                                matchResult.bestTask != null -> {
+                                    val matchedTask = matchResult.bestTask
+
+                                    assistantSession.speakThenRun("Okay, opening reschedule.") {
+                                        val openRescheduleIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
+                                            putExtra("task_id", matchedTask.id)
+                                            putExtra("task_title", matchedTask.title)
+                                            putExtra("task_date", matchedTask.dueDate)
+                                            putExtra("task_time", matchedTask.dueTime)
+                                            putExtra("opened_by_assistant", true)
+                                            putExtra("assistant_mode", "reschedule")
+                                            putExtra("prefill_new_date_text", aiResult.dateText)
+                                            putExtra("prefill_new_time_text", aiResult.timeText)
+                                        }
+                                        startActivity(openRescheduleIntent)
                                     }
-                                    startActivity(intent)
+                                }
+
+                                else -> {
+                                    assistantSession.speakThenListenAgain(
+                                        "I couldn't find a matching task. Please try saying the task title again."
+                                    )
                                 }
                             }
                         }
                     }
 
+                    // to mark a task done (completing a task)
                     AiIntent.MARK_DONE.name -> {
+                        Log.d("HOME_ACTION", "MARK_DONE -> trying task match")
+
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
-                            val matchedTask = findBestTaskMatch(aiResult.targetTaskTitle ?: aiResult.taskTitle, tasks)
 
-                            if (matchedTask == null) {
-                                val reply = "I couldn't find that task. Please say the task title again."
-                                /*assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
-                                }*/
-                                speakThenListenAgain(reply)
-                            } else {
-                                withContext(Dispatchers.IO) {
-                                    dao.updateDoneStatus(matchedTask.id, true)
+                            val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
+                            val matchResult = findTaskMatchResult(spokenPhrase, tasks)
+
+                            when {
+                                matchResult.isAmbiguous &&
+                                        matchResult.bestTask != null &&
+                                        matchResult.secondTask != null -> {
+                                    askTaskMatchClarification(
+                                        action = PendingTaskAction.MARK_DONE,
+                                        bestTask = matchResult.bestTask,
+                                        secondTask = matchResult.secondTask
+                                    )
                                 }
 
-                                ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
-                                refreshOverview()
+                                matchResult.bestTask != null -> {
+                                    val matchedTask = matchResult.bestTask
 
-                                val reply = "${matchedTask.title} marked as done."
-                                assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
+                                    withContext(Dispatchers.IO) {
+                                        dao.updateDoneStatus(matchedTask.id, true)
+                                    }
+
+                                    ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
+                                    refreshOverview()
+
+                                    assistantSession.speak("${matchedTask.title} marked as done.", listenAgain = false)
+                                }
+
+                                else -> {
+                                    assistantSession.speakThenListenAgain(
+                                        "I couldn't find a matching task. Please say the task title again."
+                                    )
                                 }
                             }
                         }
                     }
 
+                    // to undo a completed task back to a open state
                     AiIntent.MARK_UNDONE.name -> {
+                        Log.d("HOME_ACTION", "MARK_UNDONE -> trying task match")
+
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val tasks = withContext(Dispatchers.IO) { dao.getAll() }
-                            val matchedTask = findBestTaskMatch(aiResult.targetTaskTitle ?: aiResult.taskTitle, tasks)
 
-                            if (matchedTask == null) {
-                                val reply = "I couldn't find that task. Please say the task title again."
-                               /* assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
-                                }*/
-                                speakThenListenAgain(reply)
-                            } else {
-                                withContext(Dispatchers.IO) {
-                                    dao.updateDoneStatus(matchedTask.id, false)
+                            val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
+                            val matchResult = findTaskMatchResult(spokenPhrase, tasks)
+
+                            when {
+                                matchResult.isAmbiguous &&
+                                        matchResult.bestTask != null &&
+                                        matchResult.secondTask != null -> {
+                                    askTaskMatchClarification(
+                                        action = PendingTaskAction.MARK_UNDONE,
+                                        bestTask = matchResult.bestTask,
+                                        secondTask = matchResult.secondTask
+                                    )
                                 }
 
-                                val reopenedTask = matchedTask.copy(isDone = false)
-                                ReminderHelper.scheduleReminderFromTask(this@HomeActivity, reopenedTask)
-                                refreshOverview()
+                                matchResult.bestTask != null -> {
+                                    val matchedTask = matchResult.bestTask
 
-                                val reply = "${matchedTask.title} marked as not done."
-                                assistantBottomSheet?.showAssistantReply(reply)
-                                assistantBottomSheet?.setSpeakingState()
-                                voiceHelper.speak(reply) {
-                                    runOnUiThread { assistantBottomSheet?.setIdleState() }
+                                    withContext(Dispatchers.IO) {
+                                        dao.updateDoneStatus(matchedTask.id, false)
+                                    }
+
+                                    val reopenedTask = matchedTask.copy(isDone = false)
+                                    ReminderHelper.scheduleReminderFromTask(this@HomeActivity, reopenedTask)
+                                    refreshOverview()
+
+                                    assistantSession.speak("${matchedTask.title} marked as not done.", listenAgain = false)
+                                }
+
+                                else -> {
+                                    assistantSession.speakThenListenAgain(
+                                        "I couldn't find a matching task. Please say the task title again."
+                                    )
                                 }
                             }
                         }
                     }
 
                     else -> {
+                        // log
+                        Log.d("HOME_ACTION", "UNKNOWN -> local reply")
+
                         val reply = responseManager.unknownCommand()
-                        assistantBottomSheet?.showAssistantReply(reply)
-                        assistantBottomSheet?.setSpeakingState()
-                        voiceHelper.speak(reply) {
-                            runOnUiThread {
-                                assistantBottomSheet?.setIdleState()
-                            }
-                        }
+                        assistantSession.speak(reply, listenAgain = false)
                     }
                 }
             } catch (e: Exception) {
                 Log.e("AI_ROUTER", "Crash in handleVoiceCommand", e)
                 val reply = responseManager.parserCrash()
-                assistantBottomSheet?.showAssistantReply(reply)
-                assistantBottomSheet?.setErrorState(reply)
-                assistantBottomSheet?.setSpeakingState()
-                voiceHelper.speak(reply) {
-                    runOnUiThread {
-                        assistantBottomSheet?.setIdleState()
-                    }
-                }
+                assistantSession.speak(reply, listenAgain = false)
             }
         }
     }
@@ -680,7 +676,7 @@ class HomeActivity : AppCompatActivity() {
             val replyMode = detectQueryReplyMode(normalized)
             val reply = buildTaskQueryReply(filteredTasks, queryToday, replyMode)
 
-            assistantBottomSheet?.showAssistantReply(reply)
+            assistantSession.speak(reply, listenAgain = false)
 
             val hint = if (filteredTasks.isEmpty()) {
                 responseManager.hintCreateOrRead()
@@ -691,14 +687,19 @@ class HomeActivity : AppCompatActivity() {
                 }
             }
 
-            assistantBottomSheet?.showAssistantHint(hint)
-            assistantBottomSheet?.setIdleState()
+            assistantSession.getBottomSheet()?.showAssistantHint(hint)
+            assistantSession.getBottomSheet()?.setIdleState()
 
             homeFollowUpContext = when {
                 filteredTasks.isEmpty() -> HomeFollowUpContext.AFTER_NO_TASKS
                 replyMode == QueryReplyMode.DETAILED -> HomeFollowUpContext.AFTER_TASK_DETAILS
                 else -> HomeFollowUpContext.AFTER_TASK_SUMMARY
             }
+            // log
+            Log.d(
+                "HOME_QUERY",
+                "queryToday=$queryToday replyMode=$replyMode taskCount=${filteredTasks.size} nextContext=$homeFollowUpContext"
+            )
 
             val spokenFollowUp = when {
                 filteredTasks.isEmpty() -> responseManager.followUpCreateAfterNoTasks()
@@ -708,17 +709,11 @@ class HomeActivity : AppCompatActivity() {
 
             val spokenReply = responseManager.combineReplyWithFollowUp(reply, spokenFollowUp)
 
-            assistantBottomSheet?.setSpeakingState()
+            assistantSession.getBottomSheet()?.setSpeakingState()
             voiceHelper.speak(spokenReply) {
                 runOnUiThread {
-                    retryCount = 0
-                    if (assistantSessionActive) {
-                        assistantBottomSheet?.setListeningState()
-
-                        startVoiceFlow()
-                    } else {
-                        assistantBottomSheet?.setIdleState()
-                    }
+                    assistantSession.getBottomSheet()?.setListeningState()
+                    assistantSession.startVoiceFlow()
                 }
             }
         }
@@ -774,15 +769,6 @@ class HomeActivity : AppCompatActivity() {
     ): String {
         val intro = responseManager.queryIntro(tasks.size, queryToday)
 
-        /*val taskDetails = tasks.take(responseManager.getMaxTasksForMode(QueryDetailMode.NORMAL)).joinToString(" ") { task ->
-            buildCompactTaskSpeech(task)
-        }
-
-        *//*val moreText = if (tasks.size > 2) {
-            responseManager.queryAndMore(tasks.size - 2)
-        } else {
-            ""
-        }*/
         val maxTasks = responseManager.getMaxTasksForMode(QueryDetailMode.NORMAL)
 
         val taskDetails = tasks.take(maxTasks).joinToString(" ") { task ->
@@ -804,15 +790,6 @@ class HomeActivity : AppCompatActivity() {
     ): String {
         val intro = responseManager.queryIntro(tasks.size, queryToday)
 
-        /*val taskDetails = tasks.take(responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED)).joinToString(" ") { task ->
-            buildSingleTaskSpeech(task)
-        }
-
-        val moreText = if (tasks.size > 5) {
-            responseManager.queryAndMore(tasks.size - 5)
-        } else {
-            ""
-        }*/
 
         val maxTasks = responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED)
 
@@ -874,63 +851,10 @@ class HomeActivity : AppCompatActivity() {
 
 
     // puase after speack input
-    private fun speakThenNavigate(reply: String, action: () -> Unit) {
-        assistantBottomSheet?.showAssistantReply(reply)
-        assistantBottomSheet?.setSpeakingState()
 
-        voiceHelper.speak(reply) {
-            runOnUiThread {
-                assistantBottomSheet?.setIdleState()
-                assistantBottomSheet?.dismiss()
-                action()
-            }
-        }
-    }
 
-    private fun speakThenListenAgain(reply: String) {
-        assistantBottomSheet?.showAssistantReply(reply)
-        assistantBottomSheet?.setSpeakingState()
 
-        voiceHelper.speak(reply) {
-            runOnUiThread {
-                if (assistantSessionActive) {
-                    assistantBottomSheet?.setListeningState()
-                    startVoiceFlow()
-                } else {
-                    assistantBottomSheet?.setIdleState()
-                }
-            }
-        }
-    }
-    private fun handleListenFailure(reply: String) {
-        if (!assistantSessionActive) {
-            retryCount = 0
-            isListening = false
-            speechRecognizer?.stopListening()
-            assistantBottomSheet?.dismiss()
-            return
-        }
 
-        if (retryCount < maxRetryCount) {
-            retryCount++
-            speakThenListenAgain(reply)
-        } else {
-            assistantSessionActive = false
-            val finalReply = responseManager.stopListening()
-
-            assistantBottomSheet?.showAssistantReply(finalReply)
-            assistantBottomSheet?.setSpeakingState()
-            voiceHelper.speak(finalReply) {
-                runOnUiThread {
-                    retryCount = 0
-                    isListening = false
-                    speechRecognizer?.stopListening()
-                    assistantBottomSheet?.setIdleState()
-                    assistantBottomSheet?.dismiss()
-                }
-            }
-        }
-    }
 
     // --> temproray functions before adding this exit intent in Ai router
     private fun isConversationExitCommand(normalized: String): Boolean {
@@ -963,24 +887,16 @@ class HomeActivity : AppCompatActivity() {
         return exitPhrases.any { phrase -> normalized.contains(phrase) }
     }
     private fun endAssistantConversation() {
-        assistantSessionActive = false
-        val reply = responseManager.stopListening()
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        assistantSession.getBottomSheet()?.clearHint()
+        clearPendingTaskMatchState()
+        assistantSession.speakThenStop(responseManager.stopListening())
 
-        assistantBottomSheet?.showAssistantReply(reply)
-        assistantBottomSheet?.clearHint()
-        assistantBottomSheet?.setSpeakingState()
-
-        voiceHelper.speak(reply) {
-            runOnUiThread {
-                retryCount = 0
-                isListening = false
-                speechRecognizer?.cancel()
-                assistantBottomSheet?.setIdleState()
-                assistantBottomSheet?.dismiss()
-            }
-        }
     }
+
+
     private fun handleHomeFollowUp(normalized: String): Boolean {
+
         return when (homeFollowUpContext) {
             HomeFollowUpContext.AFTER_NO_TASKS -> {
                 when {
@@ -1049,7 +965,9 @@ class HomeActivity : AppCompatActivity() {
             }
 
             HomeFollowUpContext.NONE -> false
+            HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> false
         }
+
     }
     private fun handleDetailedFollowUpQuery() {
         lifecycleScope.launch {
@@ -1073,25 +991,20 @@ class HomeActivity : AppCompatActivity() {
 
             homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
 
-            assistantBottomSheet?.showAssistantReply(reply)
-            assistantBottomSheet?.showAssistantHint(responseManager.followUpAnythingElse())
-            assistantBottomSheet?.setIdleState()
+            assistantSession.getBottomSheet()?.showAssistantReply(reply)
+            assistantSession.getBottomSheet()?.showAssistantHint(responseManager.followUpAnythingElse())
+            assistantSession.getBottomSheet()?.setIdleState()
 
             val spokenReply = responseManager.combineReplyWithFollowUp(
                 reply,
                 responseManager.followUpAnythingElse()
             )
 
-            assistantBottomSheet?.setSpeakingState()
+            assistantSession.getBottomSheet()?.setSpeakingState()
             voiceHelper.speak(spokenReply) {
                 runOnUiThread {
-                    retryCount = 0
-                    if (assistantSessionActive) {
-                        assistantBottomSheet?.setListeningState()
-                        startVoiceFlow()
-                    } else {
-                        assistantBottomSheet?.setIdleState()
-                    }
+                    assistantSession.getBottomSheet()?.setListeningState()
+                    assistantSession.startVoiceFlow()
                 }
             }
         }
@@ -1100,49 +1013,175 @@ class HomeActivity : AppCompatActivity() {
         homeFollowUpContext = HomeFollowUpContext.NONE
         val reply = responseManager.followUpCreateAccepted()
 
-        speakThenNavigate(reply) {
+        assistantSession.speakThenRun(reply) {
             startActivity(Intent(this@HomeActivity, CreateTaskActivity::class.java))
         }
     }
-    private fun normalizeTaskMatchText(text: String): String {
-        var value = text.lowercase().trim()
-        value = value.replace(Regex("[^a-z0-9\\s]"), "")
-        value = value.replace(Regex("\\s+"), " ").trim()
 
-        if (value.endsWith("s") && value.length > 3) {
-            value = value.dropLast(1)
-        }
 
-        return value
-    }
-
-    private fun findBestTaskMatch(
+    private fun findTaskMatchResult(
         spokenTitle: String?,
         tasks: List<com.example.myapplication.data.TaskEntity>
+    ): com.example.myapplication.ai.TaskMatchResult {
+        val result = TaskMatcher.findBestTaskMatch(spokenTitle, tasks)
+
+        Log.d(
+            "TASK_MATCH",
+            "spoken='$spokenTitle' best='${result.bestTask?.title}' bestScore=${result.bestScore} second='${result.secondTask?.title}' secondScore=${result.secondScore} ambiguous=${result.isAmbiguous}"
+        )
+
+        return result
+    }
+    private fun clearPendingTaskMatchState() {
+        taskResolutionState = taskResolutionState.clear()
+        ambiguityRetryCount = 0
+    }
+    private fun findTaskById(
+        taskId: Long?,
+        tasks: List<com.example.myapplication.data.TaskEntity>
     ): com.example.myapplication.data.TaskEntity? {
-        if (spokenTitle.isNullOrBlank()) return null
+        if (taskId == null) return null
+        return tasks.firstOrNull { it.id == taskId }
+    }
+    private fun resolveAmbiguousTaskChoice(
+        normalized: String,
+        tasks: List<com.example.myapplication.data.TaskEntity>
+    ): com.example.myapplication.data.TaskEntity? {
+        val firstTask = findTaskById(taskResolutionState.candidate1Id, tasks)
+        val secondTask = findTaskById(taskResolutionState.candidate2Id, tasks)
 
-        val normalizedSpoken = normalizeTaskMatchText(spokenTitle)
+        if (normalized.contains("first")) return firstTask
+        if (normalized.contains("second")) return secondTask
 
-        return tasks.firstOrNull { normalizeTaskMatchText(it.title) == normalizedSpoken }
-            ?: tasks.firstOrNull { normalizeTaskMatchText(it.title).contains(normalizedSpoken) }
-            ?: tasks.firstOrNull { normalizedSpoken.contains(normalizeTaskMatchText(it.title)) }
+        val result = TaskMatcher.findBestTaskMatch(normalized, listOfNotNull(firstTask, secondTask))
+        return result.bestTask
     }
 
-    private fun forceStopAssistant() {
-        assistantSessionActive = false
-        retryCount = 0
-        isListening = false
-        homeFollowUpContext = HomeFollowUpContext.NONE
+    private fun askTaskMatchClarification(
 
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
+        action: PendingTaskAction,
+        bestTask: com.example.myapplication.data.TaskEntity,
+        secondTask: com.example.myapplication.data.TaskEntity,
+        rescheduleDateText: String? = null,
+        rescheduleTimeText: String? = null
+    ) {
+
+        taskResolutionState = TaskResolutionState(
+            action = action,
+            candidate1Id = bestTask.id,
+            candidate2Id = secondTask.id,
+            rescheduleDateText = rescheduleDateText,
+            rescheduleTimeText = rescheduleTimeText
+        )
+        ambiguityRetryCount = 0
+        homeFollowUpContext = HomeFollowUpContext.TASK_MATCH_AMBIGUITY
+
+        assistantSession.speakThenListenAgain(
+            "I found two possible tasks: ${bestTask.title}, or ${secondTask.title}. Which one did you mean?"
+        )
+    }
+
+    private fun handleTaskMatchAmbiguity(normalized: String) {
+        lifecycleScope.launch {
+            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+            val tasks = withContext(Dispatchers.IO) {
+                when (taskResolutionState.action) {
+                    PendingTaskAction.MARK_UNDONE -> dao.getAll()
+                    else -> dao.getActiveTasks()
+                }
+            }
+
+            val chosenTask = resolveAmbiguousTaskChoice(normalized, tasks)
+
+            if (chosenTask == null) {
+                ambiguityRetryCount++
+
+                if (ambiguityRetryCount >= 2) {
+                    clearPendingTaskMatchState()
+                    homeFollowUpContext = HomeFollowUpContext.NONE
+
+                    assistantSession.speakThenListenAgain(
+                        "I still couldn't tell which task you meant. Let's start over. Please say the full command again."
+                    )
+                } else {
+                    assistantSession.speakThenListenAgain(
+                        "I still couldn't tell which one you meant. Please say the first one, the second one, or say the task title."
+                    )
+                }
+                return@launch
+            }
+
+            val action = taskResolutionState.action
+            val rescheduleDate = taskResolutionState.rescheduleDateText
+            val rescheduleTime = taskResolutionState.rescheduleTimeText
+
+            clearPendingTaskMatchState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+
+            when (action) {
+                PendingTaskAction.EDIT -> {
+                    assistantSession.speakThenRun("Okay, opening edit task.") {
+                        val openEditIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
+                            putExtra("task_id", chosenTask.id)
+                            putExtra("task_title", chosenTask.title)
+                            putExtra("task_date", chosenTask.dueDate)
+                            putExtra("task_time", chosenTask.dueTime)
+                            putExtra("opened_by_assistant", true)
+                        }
+                        startActivity(openEditIntent)
+                    }
+                }
+
+                PendingTaskAction.RESCHEDULE -> {
+                    assistantSession.speakThenRun("Okay, opening reschedule.") {
+                        val openRescheduleIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
+                            putExtra("task_id", chosenTask.id)
+                            putExtra("task_title", chosenTask.title)
+                            putExtra("task_date", chosenTask.dueDate)
+                            putExtra("task_time", chosenTask.dueTime)
+                            putExtra("opened_by_assistant", true)
+                            putExtra("assistant_mode", "reschedule")
+                            putExtra("prefill_new_date_text", rescheduleDate)
+                            putExtra("prefill_new_time_text", rescheduleTime)
+                        }
+                        startActivity(openRescheduleIntent)
+                    }
+                }
+
+                PendingTaskAction.DELETE -> {
+                    withContext(Dispatchers.IO) {
+                        dao.deleteById(chosenTask.id)
+                    }
+                    ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
+                    refreshOverview()
+                    assistantSession.speak("${chosenTask.title} deleted.", listenAgain = false)
+                }
+
+                PendingTaskAction.MARK_DONE -> {
+                    withContext(Dispatchers.IO) {
+                        dao.updateDoneStatus(chosenTask.id, true)
+                    }
+                    ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
+                    refreshOverview()
+                    assistantSession.speak("${chosenTask.title} marked as done.", listenAgain = false)
+                }
+
+                PendingTaskAction.MARK_UNDONE -> {
+                    withContext(Dispatchers.IO) {
+                        dao.updateDoneStatus(chosenTask.id, false)
+                    }
+                    ReminderHelper.scheduleReminderFromTask(this@HomeActivity, chosenTask.copy(isDone = false))
+                    refreshOverview()
+                    assistantSession.speak("${chosenTask.title} marked as not done.", listenAgain = false)
+                }
+
+                PendingTaskAction.NONE -> {
+                    assistantSession.speak(responseManager.unknownCommand(), listenAgain = false)
+                }
+            }
         }
-
-        assistantBottomSheet?.clearHint()
-        assistantBottomSheet?.dismiss()
     }
+
 
     private fun speakThenOpen(reply: String, action: () -> Unit) {
         voiceHelper.speak(reply) {
@@ -1150,9 +1189,116 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleConversationIntent(intent: ConversationIntent): Boolean {
+        // log
+        Log.d("HOME_CONVO_ACTION", "intent=$intent context=$homeFollowUpContext")
+
+        return when (homeFollowUpContext) {
+            HomeFollowUpContext.AFTER_NO_TASKS -> {
+                when (intent) {
+                    ConversationIntent.CONFIRM_YES,
+                    ConversationIntent.CREATE_ONE -> {
+                        // log
+                        Log.d("HOME_CONVO_ACTION", "opening create from follow-up")
+                        openCreateTaskFromFollowUp()
+                        true
+                    }
+
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        // log
+                        Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
+                        endAssistantConversation()
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+
+            HomeFollowUpContext.AFTER_TASK_SUMMARY -> {
+                when (intent) {
+                    ConversationIntent.CONFIRM_YES,
+                    ConversationIntent.READ_ALL -> {
+                        // log
+                        Log.d("HOME_CONVO_ACTION", "reading all from follow-up")
+                        handleDetailedFollowUpQuery()
+                        true
+                    }
+
+                    ConversationIntent.CREATE_ONE -> {
+                        // log
+                        Log.d("HOME_CONVO_ACTION", "opening create from follow-up")
+                        openCreateTaskFromFollowUp()
+                        true
+                    }
+
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        //log
+                        Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
+                        endAssistantConversation()
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+
+            HomeFollowUpContext.AFTER_TASK_DETAILS -> {
+                when (intent) {
+                    ConversationIntent.CREATE_ONE -> {
+                        // log
+                        Log.d("HOME_CONVO_ACTION", "opening create from follow-up")
+                        openCreateTaskFromFollowUp()
+                        true
+                    }
+
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        // log
+                        Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
+
+                        endAssistantConversation()
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+
+            HomeFollowUpContext.NONE -> false
+
+            // stopping inside ambiguity flow
+            // let the user to say "no" during ambiguity confirmation
+            HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> {
+                when (intent) {
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        clearPendingTaskMatchState()
+                        endAssistantConversation()
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+    }
+
+    private fun extractSpokenTaskPhrase(
+        aiResult: com.example.myapplication.ai.AiParsedCommand,
+        normalized: String
+    ): String {
+        return aiResult.targetTaskTitle
+            ?: aiResult.taskTitle
+            ?: normalized
+    }
+
+
+
     override fun onDestroy() {
         super.onDestroy()
-        speechRecognizer?.destroy()
+        assistantSession.destroy()
         voiceHelper.shutdown()
     }
 }
