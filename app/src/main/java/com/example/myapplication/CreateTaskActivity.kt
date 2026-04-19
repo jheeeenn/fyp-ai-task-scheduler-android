@@ -39,11 +39,13 @@ import com.example.myapplication.ai.AiRouter
 import com.example.myapplication.ai.GeminiCloudNlpExtractor
 import com.example.myapplication.ai.LocalIntentClassifier
 import com.example.myapplication.ai.LocalTaskParser
+import com.example.myapplication.voice.AssistantPromptHelper
 
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
 class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
+    private lateinit var promptHelper: AssistantPromptHelper
 
     private lateinit var assistantSession: AssistantVoiceSession
 
@@ -131,6 +133,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             responseManager = responseManager,
             audioPermissionLauncher = audioPermissionLauncher
         )
+
+        promptHelper = AssistantPromptHelper(assistantSession, responseManager)
 
         resetTaskDraftState()
 
@@ -675,19 +679,19 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 when {
                     normalized == "title" || normalized.contains("change title") || normalized.contains("edit title") -> {
                         dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-                        speakAndContinueListening(responseManager.askChangeTitle())
+                        promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
                         true
                     }
 
                     normalized == "date" || normalized.contains("change date") || normalized.contains("edit date") -> {
                         dialogState = CreateTaskDialogState.WAITING_FOR_DATE
-                        speakAndContinueListening(responseManager.askChangeDate())
+                        promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
                         true
                     }
 
                     normalized == "time" || normalized.contains("change time") || normalized.contains("edit time") -> {
                         dialogState = CreateTaskDialogState.WAITING_FOR_TIME
-                        speakAndContinueListening(responseManager.askChangeTime())
+                        promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
                         true
                     }
 
@@ -904,13 +908,13 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             pendingTaskState.title.isNullOrBlank() -> {
                 Log.d("CREATE_STATE", "next=WAITING_FOR_TITLE")
                 dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-                speakAndContinueListening(responseManager.askTaskTitle())
+                promptHelper.askTitle()
             }
 
             pendingTaskState.dateText.isNullOrBlank() || selectedDate.isNullOrBlank() -> {
                 Log.d("CREATE_STATE", "next=WAITING_FOR_DATE")
                 dialogState = CreateTaskDialogState.WAITING_FOR_DATE
-                speakAndContinueListening(responseManager.askTaskDate())
+                promptHelper.askDate()
             }
 
             pendingTaskState.timeText.isNullOrBlank() || selectedTime.isNullOrBlank() -> {
@@ -943,7 +947,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                         }
                     } else {
                         runOnUiThread {
-                            speakAndContinueListening(responseManager.askTaskTime())
+                            promptHelper.askTime()
                         }
                     }
                 }
@@ -952,7 +956,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             else -> {
                 Log.d("CREATE_STATE", "next=WAITING_FOR_SAVE_CONFIRMATION")
                 dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-                speakAndContinueListening(responseManager.confirmTaskSummary(buildTaskSummary()))
+                promptHelper.askSaveTask(buildTaskSummary())
             }
         }
     }
@@ -974,9 +978,9 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val hint = when (dialogState) {
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> responseManager.hintYesNo()
             CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> responseManager.hintChangeFields()
-            CreateTaskDialogState.WAITING_FOR_TITLE,
-            CreateTaskDialogState.WAITING_FOR_DATE,
-            CreateTaskDialogState.WAITING_FOR_TIME -> responseManager.hintChangeFields()
+            CreateTaskDialogState.WAITING_FOR_TITLE -> responseManager.hintTitle()
+            CreateTaskDialogState.WAITING_FOR_DATE -> responseManager.hintDate()
+            CreateTaskDialogState.WAITING_FOR_TIME -> responseManager.hintTime()
             else -> ""
         }
 

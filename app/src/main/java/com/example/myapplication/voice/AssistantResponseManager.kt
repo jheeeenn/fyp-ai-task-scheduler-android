@@ -434,6 +434,164 @@ class AssistantResponseManager(
         AssistantTone.PROFESSIONAL -> "Would you like me to read the full list?"
     }
 
+    fun hintTitle(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You can say the task title now."
+        AssistantTone.NEUTRAL -> "Say the task title."
+        AssistantTone.PROFESSIONAL -> "Please say the task title."
+    }
+
+    fun hintDate(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You can say tomorrow, next Monday, or 25 March."
+        AssistantTone.NEUTRAL -> "Say a date like tomorrow, next Monday, or 25 March."
+        AssistantTone.PROFESSIONAL -> "Please provide a date such as tomorrow, next Monday, or 25 March."
+    }
+
+    fun hintTime(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You can say 8 PM, 3 30 PM, or after lunch."
+        AssistantTone.NEUTRAL -> "Say a time like 8 PM, 3 30 PM, or after lunch."
+        AssistantTone.PROFESSIONAL -> "Please provide a time such as 8 PM, 3 30 PM, or after lunch."
+    }
+
+    fun confirmEditSummary(summary: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, I updated it. I now have $summary. Should I save the changes?"
+        AssistantTone.NEUTRAL -> "I updated it. I now have $summary. Should I save the changes?"
+        AssistantTone.PROFESSIONAL -> "The task has been updated. I now have $summary. Would you like to save the changes?"
+    }
+
+    fun taskMatchAmbiguous(title1: String, title2: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I found two possible tasks: $title1, or $title2. Which one did you mean?"
+        AssistantTone.NEUTRAL -> "I found two possible tasks: $title1, or $title2. Which one did you mean?"
+        AssistantTone.PROFESSIONAL -> "I found two possible matching tasks: $title1, or $title2. Please tell me which one you meant."
+    }
+
+    fun taskMatchAmbiguityRetry(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I still couldn’t tell which one you meant. Please say the first one, the second one, or say the task title."
+        AssistantTone.NEUTRAL -> "I still could not tell which one you meant. Say the first one, the second one, or say the task title."
+        AssistantTone.PROFESSIONAL -> "I could not determine which task you meant. Please say the first one, the second one, or say the task title."
+    }
+
+    fun taskMatchAmbiguityReset(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I still couldn’t tell which task you meant. Let’s start over. Please say the full command again."
+        AssistantTone.NEUTRAL -> "I still could not tell which task you meant. Please say the full command again."
+        AssistantTone.PROFESSIONAL -> "I could not resolve the task selection. Please provide the full command again."
+    }
+
+    fun hintAmbiguityChoice(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You can say first one, second one, or say the task title."
+        AssistantTone.NEUTRAL -> "Say first one, second one, or the task title."
+        AssistantTone.PROFESSIONAL -> "Please say first one, second one, or the task title."
+    }
+
+    fun deleteSuccess(title: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, I deleted $title."
+        AssistantTone.NEUTRAL -> "$title deleted."
+        AssistantTone.PROFESSIONAL -> "$title has been deleted."
+    }
+
+    fun markDoneSuccess(title: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, I marked $title as done."
+        AssistantTone.NEUTRAL -> "$title marked as done."
+        AssistantTone.PROFESSIONAL -> "$title has been marked as done."
+    }
+
+    fun markUndoneSuccess(title: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, I marked $title as not done."
+        AssistantTone.NEUTRAL -> "$title marked as not done."
+        AssistantTone.PROFESSIONAL -> "$title has been marked as not done."
+    }
+
+    fun taskMatchNotFound(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I couldn’t find a matching task. Please say the task title again."
+        AssistantTone.NEUTRAL -> "I could not find a matching task. Please say the task title again."
+        AssistantTone.PROFESSIONAL -> "I could not find a matching task. Please provide the task title again."
+    }
+
+
+    fun openEditTask(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, opening edit task."
+        AssistantTone.NEUTRAL -> "Opening edit task."
+        AssistantTone.PROFESSIONAL -> "Opening the edit task screen."
+    }
+
+    fun openReschedule(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, opening reschedule."
+        AssistantTone.NEUTRAL -> "Opening reschedule."
+        AssistantTone.PROFESSIONAL -> "Opening the reschedule screen."
+    }
+
+    fun editIntro(title: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You are editing $title. What would you like to change?"
+        AssistantTone.NEUTRAL -> "You are editing $title. What would you like to change?"
+        AssistantTone.PROFESSIONAL -> "You are editing $title. Please tell me what you would like to change."
+    }
+
+    fun rescheduleIntro(title: String, changedDate: Boolean, changedTime: Boolean): String {
+        val updateText = when {
+            changedDate && changedTime -> " I updated the date and time."
+            changedDate -> " I updated the date."
+            changedTime -> " I updated the time."
+            else -> ""
+        }
+
+        return when (tone) {
+            AssistantTone.FRIENDLY -> "You are rescheduling $title.$updateText Would you like me to save the changes?"
+            AssistantTone.NEUTRAL -> "You are rescheduling $title.$updateText Would you like me to save the changes?"
+            AssistantTone.PROFESSIONAL -> "You are rescheduling $title.$updateText Would you like to save the changes?"
+        }
+    }
+
+    fun editDeleteCurrent(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, deleting this task."
+        AssistantTone.NEUTRAL -> "Deleting this task."
+        AssistantTone.PROFESSIONAL -> "Deleting the current task."
+    }
+
+    fun editHelp(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You can say change title, change date, change time, save, or delete this task."
+        AssistantTone.NEUTRAL -> "Say change title, change date, change time, save, or delete this task."
+        AssistantTone.PROFESSIONAL -> "You may say change title, change date, change time, save, or delete this task."
+    }
+
+    fun editContextReminder(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "You are editing a task. Tell me what you want to change."
+        AssistantTone.NEUTRAL -> "You are editing a task. Tell me what you want to change."
+        AssistantTone.PROFESSIONAL -> "You are editing a task. Please tell me what you would like to change."
+    }
+
+    fun invalidEditDate(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I couldn’t understand the date. Try saying tomorrow, next Monday, or 25 March."
+        AssistantTone.NEUTRAL -> "I could not understand the date. Try saying tomorrow, next Monday, or 25 March."
+        AssistantTone.PROFESSIONAL -> "I could not interpret the date. Please say a date such as tomorrow, next Monday, or 25 March."
+    }
+
+    fun invalidEditTime(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I couldn’t understand the time. Try saying 3 PM, afternoon, or after lunch."
+        AssistantTone.NEUTRAL -> "I could not understand the time. Try saying 3 PM, afternoon, or after lunch."
+        AssistantTone.PROFESSIONAL -> "I could not interpret the time. Please say a time such as 3 PM, afternoon, or after lunch."
+    }
+
+    fun invalidEditTitle(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I didn’t catch the new title. Please say it again."
+        AssistantTone.NEUTRAL -> "I did not catch the new title. Please say it again."
+        AssistantTone.PROFESSIONAL -> "Please provide the new title again."
+    }
+
+    fun cancelEdit(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, cancelling task editing."
+        AssistantTone.NEUTRAL -> "Cancelling task editing."
+        AssistantTone.PROFESSIONAL -> "Task editing has been cancelled."
+    }
+
+    fun returnHomeFromEdit(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, returning home."
+        AssistantTone.NEUTRAL -> "Returning home."
+        AssistantTone.PROFESSIONAL -> "Returning to the home screen."
+    }
+    fun editParseFailure(): String = when (tone) {
+        AssistantTone.FRIENDLY -> "I ran into a problem understanding that. Please try again."
+        AssistantTone.NEUTRAL -> "I had trouble understanding that. Please try again."
+        AssistantTone.PROFESSIONAL -> "I could not process that request. Please try again."
+    }
     companion object {
         fun fromPreferences(context: android.content.Context): AssistantResponseManager {
             val prefs = context.getSharedPreferences(

@@ -132,15 +132,11 @@ class TodayTasksActivity : AppCompatActivity() {
         }
 
         btnTalkAssistant.setOnClickListener {
-            //startActivity(Intent(this, AssistantActivity::class.java))
-            startActivity(Intent(this, HomeActivity::class.java))
-            android.widget.Toast.makeText(
-                this,
-                "Voice assistant will be added here",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val intent = Intent(this, HomeActivity::class.java).apply {
+                putExtra("open_assistant_on_arrival", true)
+            }
+            startActivity(intent)
         }
-
         updateActionButtonsState()
     }
 

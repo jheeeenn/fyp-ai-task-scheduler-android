@@ -51,7 +51,7 @@ import com.example.myapplication.ai.TaskResolutionState
 import com.example.myapplication.ai.PendingTaskAction
 
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
-
+    private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
     private lateinit var responseManager: AssistantResponseManager
@@ -193,11 +193,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             audioPermissionLauncher = audioPermissionLauncher
         )
 
+
+
         btnTalkAssistant.setOnClickListener {
             assistantSession.startSession()
         }
 
-
+        // to open the assistant from today task and scheduled task pages
+        shouldOpenAssistantOnResume = intent.getBooleanExtra("open_assistant_on_arrival", false)
 
 
     } // end of onCreate
@@ -223,6 +226,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         if(!hasShownPermissionDialog && !allRequiredPermissionsReady()){
             hasShownPermissionDialog = true
             showReminderSetupDialog()
+        }
+
+        if (shouldOpenAssistantOnResume) {
+            shouldOpenAssistantOnResume = false
+            window.decorView.post {
+                assistantSession.startSession()
+            }
         }
     }
     private fun refreshOverview(){
@@ -436,12 +446,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
                                     refreshOverview()
 
-                                    assistantSession.speak("${matchedTask.title} deleted.", listenAgain = false)
+                                    assistantSession.speak(responseManager.deleteSuccess(matchedTask.title), listenAgain = false)
                                 }
 
                                 else -> {
                                     assistantSession.speakThenListenAgain(
-                                        "I couldn't find a matching task. Please say the task title again."
+                                        responseManager.taskMatchNotFound()
                                     )
                                 }
                             }
@@ -474,7 +484,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
-                                    val reply = "Okay, opening edit task."
+                                    val reply = responseManager.openEditTask()
                                     assistantSession.speakThenRun(reply) {
                                         val openEditIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                                             putExtra("task_id", matchedTask.id)
@@ -488,7 +498,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 }
 
                                 else -> {
-                                    val reply = "I couldn't find a matching task. Please say the task title again."
+                                    val reply = responseManager.taskMatchNotFound()
                                     assistantSession.speakThenListenAgain(reply)
                                 }
                             }
@@ -522,7 +532,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
 
-                                    assistantSession.speakThenRun("Okay, opening reschedule.") {
+                                    assistantSession.speakThenRun(responseManager.openReschedule()) {
                                         val openRescheduleIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                                             putExtra("task_id", matchedTask.id)
                                             putExtra("task_title", matchedTask.title)
@@ -539,7 +549,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                 else -> {
                                     assistantSession.speakThenListenAgain(
-                                        "I couldn't find a matching task. Please try saying the task title again."
+                                        responseManager.taskMatchNotFound()
                                     )
                                 }
                             }
@@ -578,12 +588,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
                                     refreshOverview()
 
-                                    assistantSession.speak("${matchedTask.title} marked as done.", listenAgain = false)
+                                    assistantSession.speak(responseManager.markDoneSuccess(matchedTask.title), listenAgain = false)
                                 }
 
                                 else -> {
                                     assistantSession.speakThenListenAgain(
-                                        "I couldn't find a matching task. Please say the task title again."
+                                       // "I couldn't find a matching task. Please say the task title again."
+                                        responseManager.taskMatchNotFound()
+
                                     )
                                 }
                             }
@@ -623,12 +635,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     ReminderHelper.scheduleReminderFromTask(this@HomeActivity, reopenedTask)
                                     refreshOverview()
 
-                                    assistantSession.speak("${matchedTask.title} marked as not done.", listenAgain = false)
+                                    assistantSession.speak(responseManager.markUndoneSuccess(matchedTask.title), listenAgain = false)
                                 }
 
                                 else -> {
                                     assistantSession.speakThenListenAgain(
-                                        "I couldn't find a matching task. Please say the task title again."
+                                      //  "I couldn't find a matching task. Please say the task title again."
+                                        responseManager.taskMatchNotFound()
+
                                     )
                                 }
                             }
@@ -676,19 +690,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val replyMode = detectQueryReplyMode(normalized)
             val reply = buildTaskQueryReply(filteredTasks, queryToday, replyMode)
 
-            assistantSession.speak(reply, listenAgain = false)
-
             val hint = if (filteredTasks.isEmpty()) {
                 responseManager.hintCreateOrRead()
             } else {
                 when (replyMode) {
-                    QueryReplyMode.SHORT, QueryReplyMode.NORMAL -> responseManager.followUpReadAllTasks()
-                    QueryReplyMode.DETAILED -> responseManager.followUpAnythingElse()
+                    QueryReplyMode.SHORT, QueryReplyMode.NORMAL -> responseManager.hintYesNo()
+                    QueryReplyMode.DETAILED -> responseManager.hintCreateOrRead()
                 }
             }
 
             assistantSession.getBottomSheet()?.showAssistantHint(hint)
-            assistantSession.getBottomSheet()?.setIdleState()
 
             homeFollowUpContext = when {
                 filteredTasks.isEmpty() -> HomeFollowUpContext.AFTER_NO_TASKS
@@ -709,13 +720,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             val spokenReply = responseManager.combineReplyWithFollowUp(reply, spokenFollowUp)
 
-            assistantSession.getBottomSheet()?.setSpeakingState()
-            voiceHelper.speak(spokenReply) {
-                runOnUiThread {
-                    assistantSession.getBottomSheet()?.setListeningState()
-                    assistantSession.startVoiceFlow()
-                }
-            }
+            assistantSession.speak(
+                text = spokenReply,
+                listenAgain = true
+            )
         }
     }
     private fun detectQueryReplyMode(normalized: String): QueryReplyMode {
@@ -992,7 +1000,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
 
             assistantSession.getBottomSheet()?.showAssistantReply(reply)
-            assistantSession.getBottomSheet()?.showAssistantHint(responseManager.followUpAnythingElse())
+
+            assistantSession.getBottomSheet()?.showAssistantHint(
+                responseManager.hintCreateOrRead()
+            )
+
             assistantSession.getBottomSheet()?.setIdleState()
 
             val spokenReply = responseManager.combineReplyWithFollowUp(
@@ -1000,13 +1012,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 responseManager.followUpAnythingElse()
             )
 
-            assistantSession.getBottomSheet()?.setSpeakingState()
-            voiceHelper.speak(spokenReply) {
-                runOnUiThread {
-                    assistantSession.getBottomSheet()?.setListeningState()
-                    assistantSession.startVoiceFlow()
-                }
-            }
+            assistantSession.speak(
+                text = spokenReply,
+                listenAgain = true
+            )
         }
     }
     private fun openCreateTaskFromFollowUp() {
@@ -1076,8 +1085,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         ambiguityRetryCount = 0
         homeFollowUpContext = HomeFollowUpContext.TASK_MATCH_AMBIGUITY
 
+        assistantSession.getBottomSheet()?.showAssistantHint(responseManager.hintAmbiguityChoice())
         assistantSession.speakThenListenAgain(
-            "I found two possible tasks: ${bestTask.title}, or ${secondTask.title}. Which one did you mean?"
+            responseManager.taskMatchAmbiguous(bestTask.title, secondTask.title)
         )
     }
 
@@ -1101,11 +1111,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     homeFollowUpContext = HomeFollowUpContext.NONE
 
                     assistantSession.speakThenListenAgain(
-                        "I still couldn't tell which task you meant. Let's start over. Please say the full command again."
+                        responseManager.taskMatchAmbiguityReset()
                     )
                 } else {
                     assistantSession.speakThenListenAgain(
-                        "I still couldn't tell which one you meant. Please say the first one, the second one, or say the task title."
+                        responseManager.taskMatchAmbiguityRetry()
                     )
                 }
                 return@launch
@@ -1120,7 +1130,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             when (action) {
                 PendingTaskAction.EDIT -> {
-                    assistantSession.speakThenRun("Okay, opening edit task.") {
+                    assistantSession.speakThenRun(responseManager.openEditTask()) {
                         val openEditIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                             putExtra("task_id", chosenTask.id)
                             putExtra("task_title", chosenTask.title)
@@ -1133,7 +1143,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
 
                 PendingTaskAction.RESCHEDULE -> {
-                    assistantSession.speakThenRun("Okay, opening reschedule.") {
+                    assistantSession.speakThenRun(responseManager.openReschedule()) {
                         val openRescheduleIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                             putExtra("task_id", chosenTask.id)
                             putExtra("task_title", chosenTask.title)
@@ -1154,7 +1164,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
                     refreshOverview()
-                    assistantSession.speak("${chosenTask.title} deleted.", listenAgain = false)
+                    assistantSession.speak(responseManager.deleteSuccess(chosenTask.title), listenAgain = false)
                 }
 
                 PendingTaskAction.MARK_DONE -> {
@@ -1163,7 +1173,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
                     refreshOverview()
-                    assistantSession.speak("${chosenTask.title} marked as done.", listenAgain = false)
+                    assistantSession.speak(responseManager.markDoneSuccess(chosenTask.title), listenAgain = false)
                 }
 
                 PendingTaskAction.MARK_UNDONE -> {
@@ -1172,7 +1182,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ReminderHelper.scheduleReminderFromTask(this@HomeActivity, chosenTask.copy(isDone = false))
                     refreshOverview()
-                    assistantSession.speak("${chosenTask.title} marked as not done.", listenAgain = false)
+                    assistantSession.speak(responseManager.markUndoneSuccess(chosenTask.title), listenAgain = false)
                 }
 
                 PendingTaskAction.NONE -> {
@@ -1184,8 +1194,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
     private fun speakThenOpen(reply: String, action: () -> Unit) {
-        voiceHelper.speak(reply) {
-            runOnUiThread { action() }
+        assistantSession.speakThenRun(reply) {
+            action()
         }
     }
 

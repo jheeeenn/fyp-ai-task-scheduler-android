@@ -13,15 +13,20 @@ object TextNormalizer {
     )
 
     private val replacements = linkedMapOf(
-        "set title by " to "set title buy ",
         "tmr" to "tomorrow",
         "tommorow" to "tomorrow",
+        "tomoro" to "tomorrow",
         "moning" to "morning",
-        "2 o clock" to "2 pm"
+        "2 o clock" to "2 pm",
+        "read it all" to "read all",
+        "rate of" to "read all",
+        "reddit of" to "read all",
+        "no need lah" to "no need"
     )
 
     fun normalize(raw: String): String {
         var text = raw.lowercase().trim()
+        text = text.replace(Regex("[.,!?]+"), " ")
 
         // Normalize punctuated AM/PM forms:
         // "p. m." -> "pm", "a.m." -> "am", etc.

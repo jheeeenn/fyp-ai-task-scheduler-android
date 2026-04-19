@@ -25,6 +25,7 @@ import com.example.myapplication.ai.LocalIntentClassifier
 import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.voice.AssistantPromptHelper
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.TextNormalizer
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ private enum class EditFieldTarget {
 
 
 class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
+    private lateinit var promptHelper: AssistantPromptHelper
     private lateinit var assistantSession: AssistantVoiceSession
     private var isForceStoppingAssistant = false
     private var pendingFieldTarget = EditFieldTarget.NONE
@@ -111,6 +113,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             audioPermissionLauncher = audioPermissionLauncher
         )
 
+        promptHelper = AssistantPromptHelper(assistantSession, responseManager)
+
         val localIntentClassifier = LocalIntentClassifier(this)
         val localTaskParser = LocalTaskParser()
         val cloudExtractor = GeminiCloudNlpExtractor(BuildConfig.GEMINI_API_KEY)
@@ -156,13 +160,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
 
         btnCancelTask.setOnClickListener {
-            assistantSession.speakThenRun("Okay, cancelling task editing.") {
+            assistantSession.speakThenRun(responseManager.cancelEdit()) {
                 finish()
             }
         }
 
         btnGoHome.setOnClickListener {
-            assistantSession.speakThenRun("Okay, returning home.") {
+            assistantSession.speakThenRun(responseManager.returnHomeFromEdit()) {
                 finish()
             }
         }
@@ -180,7 +184,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             assistantSession.startPassiveSession(clearConversation = true)
             isForceStoppingAssistant = false
 
-            val introReply = if (assistantMode == "reschedule") {
+            /*val introReply = if (assistantMode == "reschedule") {
                 waitingForSaveConfirmation = true
                 buildString {
                     append("You are rescheduling ${etTaskTitle.text}.")
@@ -199,6 +203,16 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 }
             } else {
                 "You are editing ${etTaskTitle.text}. What would you like to change?"
+            }*/
+            val introReply = if (assistantMode == "reschedule") {
+                waitingForSaveConfirmation = true
+                responseManager.rescheduleIntro(
+                    title = etTaskTitle.text.toString(),
+                    changedDate = !prefillNewDateText.isNullOrBlank(),
+                    changedTime = !prefillNewTimeText.isNullOrBlank()
+                )
+            } else {
+                responseManager.editIntro(etTaskTitle.text.toString())
             }
 
             window.decorView.postDelayed({
@@ -353,22 +367,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
-       /* if (waitingForSaveConfirmation) {
-            when {
-                isYes(normalized) -> {
-                    waitingForSaveConfirmation = false
-                    assistantSession.dismissPanel()
-                    saveTask()
-                    return
-                }
-
-                isNo(normalized) -> {
-                    waitingForSaveConfirmation = false
-                    speak("Okay. What else would you like to change?")
-                    return
-                }
-            }
-        }*/
         if (waitingForSaveConfirmation) {
             when {
                 isYes(normalized) -> {
@@ -380,28 +378,28 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
                 isNo(normalized) -> {
                     waitingForSaveConfirmation = false
-                    speak("Okay. What else would you like to change?")
+                    promptHelper.askWhatToChange()
                     return
                 }
 
                 isDateFieldCommand(normalized) -> {
                     waitingForSaveConfirmation = false
                     pendingFieldTarget = EditFieldTarget.DATE
-                    speak("Sure. What date would you like to set?")
+                    promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
                     return
                 }
 
                 isTimeFieldCommand(normalized) -> {
                     waitingForSaveConfirmation = false
                     pendingFieldTarget = EditFieldTarget.TIME
-                    speak("Sure. What time would you like to set?")
+                    promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
                     return
                 }
 
                 isTitleFieldCommand(normalized) -> {
                     waitingForSaveConfirmation = false
                     pendingFieldTarget = EditFieldTarget.TITLE
-                    speak("Sure. What should the new title be?")
+                    promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
                     return
                 }
 
@@ -428,26 +426,26 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         when {
             isDateFieldCommand(normalized) -> {
                 pendingFieldTarget = EditFieldTarget.DATE
-                speak("Sure. What date would you like to set?")
+                promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
                 return
             }
 
             isTimeFieldCommand(normalized) -> {
                 pendingFieldTarget = EditFieldTarget.TIME
-                speak("Sure. What time would you like to set?")
+                promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
                 return
             }
 
             isTitleFieldCommand(normalized) -> {
                 pendingFieldTarget = EditFieldTarget.TITLE
-                speak("Sure. What should the new title be?")
+                promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
                 return
             }
 
             normalized == "delete" ||
                     normalized == "delete task" ||
                     normalized == "delete this" -> {
-                speak("Deleting this task.")
+                speak(responseManager.editDeleteCurrent())
                 lifecycleScope.launch {
                     val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
                     withContext(Dispatchers.IO) {
@@ -469,7 +467,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     processEditCommand(result)
                 }
             } catch (_: Exception) {
-                speak("I ran into a problem understanding that. Please try again.")
+                speak(responseManager.editParseFailure())
             }
         }
     }
@@ -497,12 +495,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     pendingFieldTarget = EditFieldTarget.NONE
                     askToSaveChanges()
                 } else {
-                    speak("Say the date, the time, the title, save, or delete this task.")
+                    speak(responseManager.editHelp())
                 }
             }
 
             AiIntent.DELETE_TASK.name -> {
-                speak("Deleting this task.")
+                speak(responseManager.editDeleteCurrent())
                 lifecycleScope.launch {
                     val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
                     withContext(Dispatchers.IO) {
@@ -515,15 +513,15 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             }
 
             AiIntent.QUERY_TASK.name -> {
-                speak("You are editing a task. Say the date, the time, the title, save, or delete.")
+                speak(responseManager.editHelp())
             }
 
             AiIntent.CREATE_TASK.name -> {
-                speak("You are editing a task. Tell me what you want to change.")
+                speak(responseManager.editContextReminder())
             }
 
             else -> {
-                speak("I didn't understand. Say the date, the time, the title, save, or delete this task.")
+                speak(responseManager.editHelp())
             }
         }
     }
@@ -715,7 +713,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         return when (pendingFieldTarget) {
             EditFieldTarget.TITLE -> {
                 if (normalized.isBlank()) {
-                    speak("I didn't catch the new title. Please say it again.")
+                    speak(responseManager.invalidEditTitle())
                 } else {
                     etTaskTitle.setText(normalized)
                     pendingFieldTarget = EditFieldTarget.NONE
@@ -729,7 +727,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     pendingFieldTarget = EditFieldTarget.NONE
                     askToSaveChanges()
                 } else {
-                    speak("I couldn't understand the date. Try saying something like tomorrow, next Monday, or 25 March.")
+                    speak(responseManager.invalidEditDate())
                 }
                 true
             }
@@ -741,7 +739,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     pendingFieldTarget = EditFieldTarget.NONE
                     askToSaveChanges()
                 } else {
-                    speak("I couldn't understand the time. Try saying 3 PM, afternoon, or after lunch.")
+                    speak(responseManager.invalidEditTime())
                 }
                 true
             }
@@ -805,10 +803,18 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 value == "don't save" ||
                 value == "do not save"
     }
+    private fun buildEditSummary(): String {
+        val title = etTaskTitle.text.toString().trim().ifBlank { "Untitled task" }
+        val date = selectedDate ?: "no date"
+        val time = selectedTime ?: "no time"
+        return "$title, $date, $time"
+    }
+
     private fun askToSaveChanges() {
         waitingForSaveConfirmation = true
-        speak("I updated the task. Would you like me to save it?")
+        promptHelper.askSaveChanges(buildEditSummary())
     }
+
     private fun isSaveCommand(normalized: String): Boolean {
         val value = normalized.trim().lowercase()
         return value == "save" ||
@@ -824,18 +830,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         pendingFieldTarget = EditFieldTarget.NONE
         isForceStoppingAssistant = false
         assistantSession.forceStop()
-    }
-
-    private fun speakThenListenAgain(text: String) {
-        assistantSession.getBottomSheet()?.showAssistantReply(text)
-        assistantSession.getBottomSheet()?.setErrorState(text)
-
-        voiceHelper.speak(text) {
-            runOnUiThread {
-                assistantSession.getBottomSheet()?.setListeningState()
-                assistantSession.startVoiceFlow()
-            }
-        }
     }
 
     override fun onAssistantFinalText(text: String) {
