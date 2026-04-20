@@ -3,6 +3,12 @@ package com.example.myapplication.ai
 class LocalTaskParser {
 
     private val localDateParser = LocalDateParser()
+    private val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
+    private val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
+    private val quarterPastPattern = Regex("""\bquarter\s+past\s+\d{1,2}\s?(am|pm)\b""")
+    private val halfPastPattern = Regex("""\bhalf\s+past\s+\d{1,2}\s?(am|pm)\b""")
+    private val quarterToPattern = Regex("""\bquarter\s+to\s+\d{1,2}\s?(am|pm)\b""")
+    private val oClockPattern = Regex("""\b\d{1,2}\s*o'?clock\s?(am|pm)\b""")
 
     fun parse(normalizedText: String, localIntentResult: LocalIntentResult): AiParsedCommand {
         return when (localIntentResult.intent) {
@@ -95,20 +101,9 @@ class LocalTaskParser {
             extractedTime = semanticMatch
             working = working.replace(semanticMatch, " ").trim()
         } else {
-            val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
-            val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
-
-            val twelveMatch = twelveHourPattern.find(working)
-            if (twelveMatch != null) {
-                extractedTime = twelveMatch.value.trim()
-                working = working.replace(twelveMatch.value, " ").trim()
-            } else {
-                val twentyFourMatch = twentyFourHourPattern.find(working)
-                if (twentyFourMatch != null) {
-                    extractedTime = twentyFourMatch.value.trim()
-                    working = working.replace(twentyFourMatch.value, " ").trim()
-                }
-            }
+            val extracted = extractClockTimePhrase(working)
+            extractedTime = extracted.first
+            working = extracted.second
         }
 
         // Clean leftover connector words
@@ -190,20 +185,9 @@ class LocalTaskParser {
             extractedTime = semanticMatch
             working = working.replace(semanticMatch, " ").trim()
         } else {
-            val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
-            val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
-
-            val twelveMatch = twelveHourPattern.find(working)
-            if (twelveMatch != null) {
-                extractedTime = twelveMatch.value.trim()
-                working = working.replace(twelveMatch.value, " ").trim()
-            } else {
-                val twentyFourMatch = twentyFourHourPattern.find(working)
-                if (twentyFourMatch != null) {
-                    extractedTime = twentyFourMatch.value.trim()
-                    working = working.replace(twentyFourMatch.value, " ").trim()
-                }
-            }
+            val extracted = extractClockTimePhrase(working)
+            extractedTime = extracted.first
+            working = extracted.second
         }
 
         working = working
@@ -289,20 +273,9 @@ class LocalTaskParser {
             extractedTime = semanticMatch
             working = working.replace(semanticMatch, " ").trim()
         } else {
-            val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
-            val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
-
-            val twelveMatch = twelveHourPattern.find(working)
-            if (twelveMatch != null) {
-                extractedTime = twelveMatch.value.trim()
-                working = working.replace(twelveMatch.value, " ").trim()
-            } else {
-                val twentyFourMatch = twentyFourHourPattern.find(working)
-                if (twentyFourMatch != null) {
-                    extractedTime = twentyFourMatch.value.trim()
-                    working = working.replace(twentyFourMatch.value, " ").trim()
-                }
-            }
+            val extracted = extractClockTimePhrase(working)
+            extractedTime = extracted.first
+            working = extracted.second
         }
 
         working = working
@@ -334,6 +307,26 @@ class LocalTaskParser {
             }
         }
         return text.trim()
+    }
+
+    private fun extractClockTimePhrase(text: String): Pair<String?, String> {
+        val regexes = listOf(
+            twelveHourPattern,
+            twentyFourHourPattern,
+            quarterPastPattern,
+            halfPastPattern,
+            quarterToPattern,
+            oClockPattern
+        )
+
+        for (regex in regexes) {
+            val match = regex.find(text) ?: continue
+            val value = match.value.trim()
+            val updated = text.replace(match.value, " ").replace(Regex("\\s+"), " ").trim()
+            return Pair(value, updated)
+        }
+
+        return Pair(null, text)
     }
 
     private fun parseMarkDoneTask(

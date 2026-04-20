@@ -27,6 +27,7 @@ import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.voice.AssistantPromptHelper
 import com.example.myapplication.voice.AssistantResponseManager
+import com.example.myapplication.voice.SpokenTimeParser
 import com.example.myapplication.voice.TextNormalizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -587,80 +588,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun applySpokenTime(timeText: String): Boolean {
-        val cleaned = timeText
-            .lowercase()
-            .replace("a.m.", "am")
-            .replace("p.m.", "pm")
-            .replace(Regex("\\ba\\.?\\s*m\\.?\\b"), "am")
-            .replace(Regex("\\bp\\.?\\s*m\\.?\\b"), "pm")
-            .replace(Regex("\\bat\\b"), " ")
-            .replace(Regex("\\s*:\\s*"), ":")
-            .replace(Regex("[.,!?]+$"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        val semanticTimes = mapOf(
-            "morning" to Pair(9, 0),
-            "this morning" to Pair(9, 0),
-            "noon" to Pair(12, 0),
-            "afternoon" to Pair(15, 0),
-            "this afternoon" to Pair(15, 0),
-            "evening" to Pair(19, 0),
-            "tonight" to Pair(20, 0),
-            "after lunch" to Pair(14, 0),
-            "after dinner" to Pair(20, 0)
-        )
-
-        val semanticMatch = semanticTimes[cleaned]
-        if (semanticMatch != null) {
-            selectedHour24 = semanticMatch.first
-            selectedMinute = semanticMatch.second
-            selectedTime = formatTime(semanticMatch.first, semanticMatch.second)
-            tvSelectedTime.text = "Selected time: $selectedTime"
-            return true
-        }
-
-        val twelveHourPattern = Regex("""^(\d{1,2})(?::|\s)?(\d{2})?\s*(am|pm)$""")
-        val twentyFourHourPattern = Regex("""^(\d{1,2})(?::|\s)(\d{2})$""")
-
-        val twelveMatch = twelveHourPattern.find(cleaned)
-        if (twelveMatch != null) {
-            val hourRaw = twelveMatch.groupValues[1].toIntOrNull() ?: return false
-            val minuteRaw = if (twelveMatch.groupValues[2].isNotEmpty()) {
-                twelveMatch.groupValues[2].toIntOrNull() ?: return false
-            } else {
-                0
-            }
-            val amPm = twelveMatch.groupValues[3]
-
-            if (hourRaw !in 1..12 || minuteRaw !in 0..59) return false
-
-            var hour24 = hourRaw
-            if (amPm == "pm" && hour24 != 12) hour24 += 12
-            if (amPm == "am" && hour24 == 12) hour24 = 0
-
-            selectedHour24 = hour24
-            selectedMinute = minuteRaw
-            selectedTime = formatTime(hour24, minuteRaw)
-            tvSelectedTime.text = "Selected time: $selectedTime"
-            return true
-        }
-
-        val twentyFourMatch = twentyFourHourPattern.find(cleaned)
-        if (twentyFourMatch != null) {
-            val hour24 = twentyFourMatch.groupValues[1].toIntOrNull() ?: return false
-            val minute = twentyFourMatch.groupValues[2].toIntOrNull() ?: return false
-
-            if (hour24 !in 0..23 || minute !in 0..59) return false
-
-            selectedHour24 = hour24
-            selectedMinute = minute
-            selectedTime = formatTime(hour24, minute)
-            tvSelectedTime.text = "Selected time: $selectedTime"
-            return true
-        }
-
-        return false
+        val parsed = SpokenTimeParser.parseToHourMinute(timeText) ?: return false
+        selectedHour24 = parsed.first
+        selectedMinute = parsed.second
+        selectedTime = formatTime(parsed.first, parsed.second)
+        tvSelectedTime.text = "Selected time: $selectedTime"
+        return true
     }
 
     private fun parseExistingDate(date: String?) {

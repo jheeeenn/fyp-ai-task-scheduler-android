@@ -50,9 +50,9 @@ class AssistantResponseManager(
 
     fun askTaskTime(): String {
         return when (tone) {
-            AssistantTone.FRIENDLY -> "And what time should I set?"
-            AssistantTone.NEUTRAL -> "What time should I use?"
-            AssistantTone.PROFESSIONAL -> "Please provide the reminder time."
+            AssistantTone.FRIENDLY -> "And what time should I set? You can say 8 PM or 8:24 PM."
+            AssistantTone.NEUTRAL -> "What time should I use? For example, 8 PM or 8:24 PM."
+            AssistantTone.PROFESSIONAL -> "Please provide the reminder time, for example 8 PM or 8:24 PM."
         }
     }
 
@@ -122,9 +122,9 @@ class AssistantResponseManager(
     }
 
     fun invalidTime(): String = when (tone) {
-        AssistantTone.FRIENDLY -> "I didn’t catch the time. Please say something like 8 PM."
-        AssistantTone.NEUTRAL -> "I could not understand the time. Try saying 8 PM or 3 30 PM."
-        AssistantTone.PROFESSIONAL -> "Please provide the time in a format such as 8 PM."
+        AssistantTone.FRIENDLY -> "I didn’t catch the time. Please say something like 8 PM, 8:24 PM, or 12:01 AM."
+        AssistantTone.NEUTRAL -> "I could not understand the time. Try saying 8 PM, 8:24 PM, or 12:01 AM."
+        AssistantTone.PROFESSIONAL -> "Please provide the time in a format such as 8 PM, 8:24 PM, or 12:01 AM."
     }
 
     fun helpCreateTask(): String = when (tone) {
@@ -248,9 +248,9 @@ class AssistantResponseManager(
     }
 
     fun semanticTimeNeedsExact(phrase: String): String = when (tone) {
-        AssistantTone.FRIENDLY -> "I understood the time as $phrase. Please tell me an exact clock time, for example 8 PM."
-        AssistantTone.NEUTRAL -> "I understood the time as $phrase. Please tell me an exact clock time."
-        AssistantTone.PROFESSIONAL -> "I interpreted the time as $phrase. Please provide an exact time."
+        AssistantTone.FRIENDLY -> "I understood the time as $phrase. Please tell me an exact clock time, for example 8 PM or 8:24 PM."
+        AssistantTone.NEUTRAL -> "I understood the time as $phrase. Please tell me an exact clock time, for example 8 PM or 8:24 PM."
+        AssistantTone.PROFESSIONAL -> "I interpreted the time as $phrase. Please provide an exact time, such as 8 PM or 8:24 PM."
     }
 
     fun learnedTimeSuggestion(phrase: String, learnedTime: String): String = when (tone) {
@@ -565,9 +565,9 @@ class AssistantResponseManager(
     }
 
     fun invalidEditTime(): String = when (tone) {
-        AssistantTone.FRIENDLY -> "I couldn’t understand the time. Try saying 3 PM, afternoon, or after lunch."
-        AssistantTone.NEUTRAL -> "I could not understand the time. Try saying 3 PM, afternoon, or after lunch."
-        AssistantTone.PROFESSIONAL -> "I could not interpret the time. Please say a time such as 3 PM, afternoon, or after lunch."
+        AssistantTone.FRIENDLY -> "I couldn’t understand the time. Try saying 3 PM, 3:45 PM, afternoon, or after lunch."
+        AssistantTone.NEUTRAL -> "I could not understand the time. Try saying 3 PM, 3:45 PM, afternoon, or after lunch."
+        AssistantTone.PROFESSIONAL -> "I could not interpret the time. Please say a time such as 3 PM, 3:45 PM, afternoon, or after lunch."
     }
 
     fun invalidEditTitle(): String = when (tone) {
@@ -634,6 +634,5 @@ class UserPreferenceState {
         }
     }
 }
-
 
 
