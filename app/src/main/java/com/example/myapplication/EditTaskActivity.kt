@@ -770,17 +770,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 normalized == "rename"
     }
 
-    private fun extractAfterPrefix(
-        normalized: String,
-        prefixes: List<String>
-    ): String? {
-        for (prefix in prefixes.sortedByDescending { it.length }) {
-            if (normalized.startsWith(prefix)) {
-                return normalized.removePrefix(prefix).trim().ifBlank { null }
-            }
-        }
-        return null
-    }
     private fun isYes(normalized: String): Boolean {
         val value = normalized.trim().lowercase()
         return value == "yes" ||
@@ -823,13 +812,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 value == "safe" ||
                 value == "okay save" ||
                 value == "ok save"
-    }
-
-    private fun forceStopAssistant() {
-        waitingForSaveConfirmation = false
-        pendingFieldTarget = EditFieldTarget.NONE
-        isForceStoppingAssistant = false
-        assistantSession.forceStop()
     }
 
     override fun onAssistantFinalText(text: String) {

@@ -25,7 +25,7 @@ class TodayTasksActivity : AppCompatActivity() {
     private lateinit var adapter: TaskAdapter
     private lateinit var dao: com.example.myapplication.data.TaskDao
     private var todayTasks: List<TaskEntity> = emptyList()
-    private var currentFilter = "all"
+
     private var selectedTaskId: Long? = null
 
 
@@ -189,41 +189,5 @@ class TodayTasksActivity : AppCompatActivity() {
         btnTaskDone.text = if (selectedTask?.isDone == true) "Undo" else "Done"
     }
 
-/*    private fun showTaskOptions(task: TaskEntity) {
-        val options = arrayOf("Edit", "Delete", "Cancel")
 
-        AlertDialog.Builder(this)
-            .setTitle("Task Options")
-            .setItems(options) { dialog, which ->
-                when (which) {
-                    0 -> {
-                        val intent = Intent(this, EditTaskActivity::class.java)
-                        intent.putExtra("task_id", task.id)
-                        intent.putExtra("task_title", task.title)
-                        intent.putExtra("task_date", task.dueDate)
-                        intent.putExtra("task_time", task.dueTime)
-                        startActivity(intent)
-                    }
-
-                    1 -> {
-                        AlertDialog.Builder(this)
-                            .setTitle("Delete task?")
-                            .setMessage("Are you sure you want to delete:\n\n${task.title}")
-                            .setPositiveButton("Delete") { _, _ ->
-                                lifecycleScope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        dao.deleteById(task.id)
-                                    }
-                                    loadTasks()
-                                }
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-
-                    else -> dialog.dismiss()
-                }
-            }
-            .show()
-    }*/
 }

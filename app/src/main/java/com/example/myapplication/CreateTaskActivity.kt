@@ -961,11 +961,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
     }
 
-    private fun isTaskReadyToSave(): Boolean {
-        return !pendingTaskState.title.isNullOrBlank() &&
-                !selectedDate.isNullOrBlank() &&
-                !selectedTime.isNullOrBlank()
-    }
     private fun shouldContinueConversation(): Boolean {
         return dialogState == CreateTaskDialogState.WAITING_FOR_TITLE ||
                 dialogState == CreateTaskDialogState.WAITING_FOR_DATE ||
@@ -1063,10 +1058,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 value == "not now"
     }
 
-    private fun forceStopAssistant() {
-        dialogState = CreateTaskDialogState.IDLE
-        assistantSession.forceStop()
-    }
+
 
     override fun onAssistantFinalText(text: String) {
         handleVoiceCommand(text)
