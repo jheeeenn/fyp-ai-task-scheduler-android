@@ -95,7 +95,8 @@ class LocalTaskParser {
             extractedTime = semanticMatch
             working = working.replace(semanticMatch, " ").trim()
         } else {
-            val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
+            //val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
+            val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
             val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
 
             val twelveMatch = twelveHourPattern.find(working)
@@ -190,7 +191,8 @@ class LocalTaskParser {
             extractedTime = semanticMatch
             working = working.replace(semanticMatch, " ").trim()
         } else {
-            val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
+            //val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
+            val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
             val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
 
             val twelveMatch = twelveHourPattern.find(working)
@@ -289,7 +291,8 @@ class LocalTaskParser {
             extractedTime = semanticMatch
             working = working.replace(semanticMatch, " ").trim()
         } else {
-            val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
+            //val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
+            val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
             val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
 
             val twelveMatch = twelveHourPattern.find(working)

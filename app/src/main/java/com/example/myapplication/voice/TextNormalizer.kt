@@ -38,6 +38,11 @@ object TextNormalizer {
             "${match.groupValues[1]} ${match.groupValues[2]}"
         }
 
+        // normalize "8:24pm" -> "8:24 pm"
+        text = text.replace(Regex("\\b(\\d{1,2}:\\d{2})(am|pm)\\b")) { match ->
+            "${match.groupValues[1]} ${match.groupValues[2]}"
+        }
+
         fillerWords.forEach { filler ->
             text = text.replace(filler, " ")
         }

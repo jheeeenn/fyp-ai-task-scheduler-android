@@ -528,6 +528,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             .replace(Regex("\\bp\\.?\\s*m\\.?\\b"), "pm")
             .replace(Regex("\\bat\\b"), " ")
             .replace(Regex("\\s*:\\s*"), ":")
+            .replace(Regex("""\b(\d{1,2}):(\d{2})(am|pm)\b"""), "$1:$2 $3")
+            .replace(Regex("""\b(\d{1,2})(am|pm)\b"""), "$1 $2")
             .replace(Regex("[.,!?]+$"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -1080,4 +1082,5 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         voiceHelper.shutdown()
         super.onDestroy()
     }
+
 }
