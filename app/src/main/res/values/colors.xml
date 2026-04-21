@@ -2,4 +2,31 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Accessible, modern palette inspired by iOS contrast and spacing -->
+    <color name="ui_bg_primary">#090B14</color>
+    <color name="ui_bg_secondary">#11162A</color>
+    <color name="ui_bg_tertiary">#1A2340</color>
+
+    <color name="ui_surface">#F4F7FF</color>
+    <color name="ui_surface_alt">#E8EEFF</color>
+    <color name="ui_surface_selected">#DDE7FF</color>
+
+    <color name="ui_text_primary_dark">#F6F8FF</color>
+    <color name="ui_text_secondary_dark">#C9D5FF</color>
+    <color name="ui_text_muted_dark">#9EB1E8</color>
+
+    <color name="ui_text_primary_light">#101A38</color>
+    <color name="ui_text_secondary_light">#374A82</color>
+
+    <color name="ui_accent_primary">#4F7BFF</color>
+    <color name="ui_accent_primary_dark">#2E5AE0</color>
+    <color name="ui_accent_secondary">#6EA8FF</color>
+
+    <color name="ui_success">#0E8C61</color>
+    <color name="ui_warning">#B35C00</color>
+    <color name="ui_danger">#B42342</color>
+
+    <color name="ui_outline">#89A4F0</color>
+    <color name="ui_outline_soft">#5069A8</color>
 </resources>
