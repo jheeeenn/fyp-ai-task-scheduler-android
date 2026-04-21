@@ -3,6 +3,58 @@ package com.example.myapplication.ai
 class LocalTaskParser {
 
     private val localDateParser = LocalDateParser()
+    private val quarterPastPattern = Regex("""\bquarter\s+past\s+\d{1,2}(?::\d{2})?\s?(am|pm)\b""")
+    private val halfPastPattern = Regex("""\bhalf\s+past\s+\d{1,2}(?::\d{2})?\s?(am|pm)\b""")
+    private val quarterToPattern = Regex("""\bquarter\s+to\s+\d{1,2}(?::\d{2})?\s?(am|pm)\b""")
+    private val oClockPattern = Regex("""\b\d{1,2}\s*o'?clock\s?(am|pm)\b""")
+    private val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
+    private val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
+
+    private fun extractTimePhrase(text: String): Pair<String?, String> {
+        val semanticTimePatterns = listOf(
+            "after breakfast",
+            "morning",
+            "this morning",
+            "before lunch",
+            "at lunch",
+            "after lunch",
+            "noon",
+            "afternoon",
+            "this afternoon",
+            "after class",
+            "evening",
+            "after dinner",
+            "tonight",
+            "midnight",
+            "midday"
+        )
+
+        semanticTimePatterns.firstOrNull { phrase ->
+            text.contains(phrase)
+        }?.let { match ->
+            return match to text.replace(match, " ").replace(Regex("\\s+"), " ").trim()
+        }
+
+        val regexes = listOf(
+            quarterPastPattern,
+            halfPastPattern,
+            quarterToPattern,
+            oClockPattern,
+            twelveHourPattern,
+            twentyFourHourPattern
+        )
+
+        for (regex in regexes) {
+            val match = regex.find(text)
+            if (match != null) {
+                val phrase = match.value
+                val cleaned = text.replace(phrase, " ").replace(Regex("\\s+"), " ").trim()
+                return phrase to cleaned
+            }
+        }
+
+        return null to text
+    }
 
     fun parse(normalizedText: String, localIntentResult: LocalIntentResult): AiParsedCommand {
         return when (localIntentResult.intent) {
@@ -71,46 +123,13 @@ class LocalTaskParser {
         // Extract time
         var extractedTime: String? = null
 
-        val semanticTimePatterns = listOf(
-            "after breakfast",
-            "morning",
-            "this morning",
-            "before lunch",
-            "at lunch",
-            "after lunch",
-            "noon",
-            "afternoon",
-            "this afternoon",
-            "after class",
-            "evening",
-            "after dinner",
-            "tonight"
-        )
-
-        val semanticMatch = semanticTimePatterns.firstOrNull { phrase ->
-            working.contains(phrase)
+        val (matchedTimePhrase, workingAfterTimeRemoval) = extractTimePhrase(working)
+        if (!matchedTimePhrase.isNullOrBlank()) {
+            extractedTime = matchedTimePhrase
+            working = workingAfterTimeRemoval
         }
 
-        if (semanticMatch != null) {
-            extractedTime = semanticMatch
-            working = working.replace(semanticMatch, " ").trim()
-        } else {
-            //val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
-            val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
-            val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
 
-            val twelveMatch = twelveHourPattern.find(working)
-            if (twelveMatch != null) {
-                extractedTime = twelveMatch.value.trim()
-                working = working.replace(twelveMatch.value, " ").trim()
-            } else {
-                val twentyFourMatch = twentyFourHourPattern.find(working)
-                if (twentyFourMatch != null) {
-                    extractedTime = twentyFourMatch.value.trim()
-                    working = working.replace(twentyFourMatch.value, " ").trim()
-                }
-            }
-        }
 
         // Clean leftover connector words
         working = working
@@ -167,45 +186,10 @@ class LocalTaskParser {
 
         var extractedTime: String? = null
 
-        val semanticTimePatterns = listOf(
-            "after breakfast",
-            "morning",
-            "this morning",
-            "before lunch",
-            "at lunch",
-            "after lunch",
-            "noon",
-            "afternoon",
-            "this afternoon",
-            "after class",
-            "evening",
-            "after dinner",
-            "tonight"
-        )
-
-        val semanticMatch = semanticTimePatterns.firstOrNull { phrase ->
-            working.contains(phrase)
-        }
-
-        if (semanticMatch != null) {
-            extractedTime = semanticMatch
-            working = working.replace(semanticMatch, " ").trim()
-        } else {
-            //val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
-            val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
-            val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
-
-            val twelveMatch = twelveHourPattern.find(working)
-            if (twelveMatch != null) {
-                extractedTime = twelveMatch.value.trim()
-                working = working.replace(twelveMatch.value, " ").trim()
-            } else {
-                val twentyFourMatch = twentyFourHourPattern.find(working)
-                if (twentyFourMatch != null) {
-                    extractedTime = twentyFourMatch.value.trim()
-                    working = working.replace(twentyFourMatch.value, " ").trim()
-                }
-            }
+        val (matchedTimePhrase, workingAfterTimeRemoval) = extractTimePhrase(working)
+        if (!matchedTimePhrase.isNullOrBlank()) {
+            extractedTime = matchedTimePhrase
+            working = workingAfterTimeRemoval
         }
 
         working = working
@@ -267,45 +251,10 @@ class LocalTaskParser {
 
         var extractedTime: String? = null
 
-        val semanticTimePatterns = listOf(
-            "after breakfast",
-            "morning",
-            "this morning",
-            "before lunch",
-            "at lunch",
-            "after lunch",
-            "noon",
-            "afternoon",
-            "this afternoon",
-            "after class",
-            "evening",
-            "after dinner",
-            "tonight"
-        )
-
-        val semanticMatch = semanticTimePatterns.firstOrNull { phrase ->
-            working.contains(phrase)
-        }
-
-        if (semanticMatch != null) {
-            extractedTime = semanticMatch
-            working = working.replace(semanticMatch, " ").trim()
-        } else {
-            //val twelveHourPattern = Regex("""\b\d{1,2}(:\d{2})?\s?(am|pm)\b""")
-            val twelveHourPattern = Regex("""\b\d{1,2}(?:(?::|\s)\d{2})?\s?(am|pm)\b""")
-            val twentyFourHourPattern = Regex("""\b\d{1,2}(?::|\s)\d{2}\b""")
-
-            val twelveMatch = twelveHourPattern.find(working)
-            if (twelveMatch != null) {
-                extractedTime = twelveMatch.value.trim()
-                working = working.replace(twelveMatch.value, " ").trim()
-            } else {
-                val twentyFourMatch = twentyFourHourPattern.find(working)
-                if (twentyFourMatch != null) {
-                    extractedTime = twentyFourMatch.value.trim()
-                    working = working.replace(twentyFourMatch.value, " ").trim()
-                }
-            }
+        val (matchedTimePhrase, workingAfterTimeRemoval) = extractTimePhrase(working)
+        if (!matchedTimePhrase.isNullOrBlank()) {
+            extractedTime = matchedTimePhrase
+            working = workingAfterTimeRemoval
         }
 
         working = working

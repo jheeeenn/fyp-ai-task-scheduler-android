@@ -44,6 +44,8 @@ import com.example.myapplication.voice.AssistantPromptHelper
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
+import com.example.myapplication.voice.SpokenTimeParser
+
 class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
 
@@ -520,52 +522,15 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun applySpokenTime(timeText: String): Boolean {
-        val cleaned = timeText
-            .lowercase()
-            .replace("a.m.", "am")
-            .replace("p.m.", "pm")
-            .replace(Regex("\\ba\\.?\\s*m\\.?\\b"), "am")
-            .replace(Regex("\\bp\\.?\\s*m\\.?\\b"), "pm")
-            .replace(Regex("\\bat\\b"), " ")
-            .replace(Regex("\\s*:\\s*"), ":")
-            .replace(Regex("""\b(\d{1,2}):(\d{2})(am|pm)\b"""), "$1:$2 $3")
-            .replace(Regex("""\b(\d{1,2})(am|pm)\b"""), "$1 $2")
-            .replace(Regex("[.,!?]+$"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+        val parsed = SpokenTimeParser.parseToHourMinute(timeText) ?: return false
 
-        val patterns = listOf(
-            "h:mm a",
-            "hh:mm a",
-            "h a",
-            "hh a",
-            "H:mm",
-            "HH:mm"
-        )
-
-        for (pattern in patterns) {
-            try {
-                val formatter = java.text.SimpleDateFormat(pattern, java.util.Locale.UK)
-                formatter.isLenient = false
-                val parsed = formatter.parse(cleaned) ?: continue
-
-                val calendar = Calendar.getInstance()
-                calendar.time = parsed
-
-                val hour24 = calendar.get(Calendar.HOUR_OF_DAY)
-                val minute = calendar.get(Calendar.MINUTE)
-
-                selectedHour24 = hour24
-                selectedMinute = minute
-                selectedTime = formatTime(hour24, minute)
-                tvSelectedTime.text = "Selected time: $selectedTime"
-                return true
-            } catch (_: Exception) {
-            }
-        }
-
-        return false
+        selectedHour24 = parsed.first
+        selectedMinute = parsed.second
+        selectedTime = formatTime(parsed.first, parsed.second)
+        tvSelectedTime.text = "Selected time: $selectedTime"
+        return true
     }
+
     private fun handleFollowUpInput(normalized: String): Boolean {
         // log
         Log.d(
