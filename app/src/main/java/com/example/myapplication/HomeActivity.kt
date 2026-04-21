@@ -144,25 +144,25 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
         // Navigation buttons
-        btnTodayTasks.setOnClickListener {
+        btnTodayTasks.setOnClickListenerWithHaptic {
             //startActivity(Intent(this, TodayTasksActivity::class.java))
             speakThenOpen("opening today's task.") {
                 startActivity(Intent(this, TodayTasksActivity::class.java))
             }
         }
-        btnCreateTask.setOnClickListener {
+        btnCreateTask.setOnClickListenerWithHaptic {
             speakThenOpen("opening task create.") {
                 startActivity(Intent(this, CreateTaskActivity::class.java))
             }
         }
 
-        btnScheduledTasks.setOnClickListener {
+        btnScheduledTasks.setOnClickListenerWithHaptic {
             speakThenOpen("opening scheduled task.") {
                 startActivity(Intent(this, MainActivity::class.java))
             }
         }
 
-        btnSettings.setOnClickListener {
+        btnSettings.setOnClickListenerWithHaptic {
             speakThenOpen("opening settings.") {
                 startActivity(Intent(this, SettingsActivity::class.java))
             }
@@ -195,7 +195,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
 
-        btnTalkAssistant.setOnClickListener {
+        btnTalkAssistant.setOnClickListenerWithHaptic {
             assistantSession.startSession()
         }
 

@@ -56,7 +56,7 @@ class SettingsActivity : AppCompatActivity() {
         loadSettings()
         updateUiValues()
 
-        cardTone.setOnClickListener {
+        cardTone.setOnClickListenerWithHaptic {
             showOptionDialog(
                 title = "Assistant Tone",
                 options = listOf("Friendly", "Neutral", "Professional"),
@@ -68,7 +68,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        cardReplyLength.setOnClickListener {
+        cardReplyLength.setOnClickListenerWithHaptic {
             showOptionDialog(
                 title = "Reply Length",
                 options = listOf("Short", "Normal", "Detailed"),
@@ -80,7 +80,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        cardLargeText.setOnClickListener {
+        cardLargeText.setOnClickListenerWithHaptic {
             showOptionDialog(
                 title = "Large Text",
                 options = listOf("Off", "On"),
@@ -92,7 +92,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        cardHighContrast.setOnClickListener {
+        cardHighContrast.setOnClickListenerWithHaptic {
             showOptionDialog(
                 title = "High Contrast",
                 options = listOf("Off", "On"),
@@ -104,11 +104,11 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        btnGoHome.setOnClickListener {
+        btnGoHome.setOnClickListenerWithHaptic {
             finish()
         }
 
-        btnTalkAssistant.setOnClickListener {
+        btnTalkAssistant.setOnClickListenerWithHaptic {
             Toast.makeText(this, "Voice settings assistant can be added later.", Toast.LENGTH_SHORT).show()
         }
     }
@@ -162,7 +162,7 @@ class SettingsActivity : AppCompatActivity() {
             radioGroupOptions.addView(radioButton)
         }
 
-        btnDialogSave.setOnClickListener {
+        btnDialogSave.setOnClickListenerWithHaptic {
             val checkedId = radioGroupOptions.checkedRadioButtonId
             if (checkedId != -1) {
                 val selectedButton = radioGroupOptions.findViewById<RadioButton>(checkedId)

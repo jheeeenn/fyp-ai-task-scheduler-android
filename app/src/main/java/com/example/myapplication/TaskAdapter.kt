@@ -47,7 +47,7 @@ class TaskAdapter(
             else R.drawable.bg_task_card
         )
 
-        holder.itemView.setOnClickListener {
+        holder.itemView.setOnClickListenerWithHaptic {
             selectedTaskId = if (selectedTaskId == task.id) null else task.id
             notifyDataSetChanged()
             onTaskSelected(tasks.find { it.id == selectedTaskId })
