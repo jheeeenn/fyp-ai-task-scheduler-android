@@ -43,6 +43,7 @@
 
     <Button
         android:id="@+id/addButton"
+        android:hapticFeedbackEnabled="true"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Add Task"

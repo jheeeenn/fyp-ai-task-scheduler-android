@@ -1,25 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/assistantRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
     android:background="@drawable/bg_assistant_panel"
-    android:paddingStart="24dp"
-    android:paddingTop="24dp"
-    android:paddingEnd="24dp"
-    android:paddingBottom="28dp"
-    android:minHeight="420dp">
+    android:minHeight="420dp"
+    android:orientation="vertical"
+    android:paddingStart="22dp"
+    android:paddingTop="22dp"
+    android:paddingEnd="22dp"
+    android:paddingBottom="26dp">
 
     <TextView
         android:id="@+id/assistantTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Assistant"
-        android:textColor="#FFFFFF"
-        android:textSize="24sp"
+        android:text="Voice Assistant"
+        android:textColor="@color/ui_text_primary_dark"
+        android:textSize="28sp"
         android:textStyle="bold" />
 
     <LinearLayout
@@ -27,19 +26,19 @@
         android:layout_width="match_parent"
         android:layout_height="72dp"
         android:layout_marginTop="14dp"
-        android:background="#2A2047"
+        android:background="@drawable/bg_info_panel"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp">
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp">
 
         <TextView
             android:id="@+id/tvAssistantState"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Listening..."
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
+            android:textColor="@color/ui_text_primary_dark"
+            android:textSize="23sp"
             android:textStyle="bold" />
     </LinearLayout>
 
@@ -47,10 +46,10 @@
         android:id="@+id/tvUserLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="18dp"
         android:text="You said"
-        android:textColor="#B8AEDB"
-        android:textSize="15sp"
+        android:textColor="@color/ui_text_muted_dark"
+        android:textSize="16sp"
         android:textStyle="bold" />
 
     <TextView
@@ -58,23 +57,23 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:background="#201836"
-        android:padding="18dp"
+        android:background="@drawable/bg_info_panel"
+        android:importantForAccessibility="yes"
+        android:lineSpacingExtra="5dp"
+        android:minHeight="98dp"
+        android:padding="16dp"
         android:text=""
-        android:textColor="#FFFFFF"
-        android:textSize="24sp"
-        android:lineSpacingExtra="6dp"
-        android:minHeight="100dp"
-        android:importantForAccessibility="yes" />
+        android:textColor="@color/ui_text_primary_dark"
+        android:textSize="24sp" />
 
     <TextView
         android:id="@+id/tvAssistantLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
+        android:layout_marginTop="18dp"
         android:text="Assistant reply"
-        android:textColor="#B8AEDB"
-        android:textSize="15sp"
+        android:textColor="@color/ui_text_muted_dark"
+        android:textSize="16sp"
         android:textStyle="bold" />
 
     <TextView
@@ -82,23 +81,23 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:background="#251D42"
-        android:padding="18dp"
-        android:text=""
-        android:textColor="#D9CCFF"
-        android:textSize="22sp"
-        android:lineSpacingExtra="6dp"
+        android:background="@drawable/bg_info_panel"
+        android:importantForAccessibility="yes"
+        android:lineSpacingExtra="5dp"
         android:minHeight="88dp"
-        android:importantForAccessibility="yes" />
+        android:padding="16dp"
+        android:text=""
+        android:textColor="@color/ui_text_primary_dark"
+        android:textSize="22sp" />
 
     <TextView
         android:id="@+id/tvHintLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
+        android:layout_marginTop="18dp"
         android:text="What you can say next"
-        android:textColor="#B8AEDB"
-        android:textSize="15sp"
+        android:textColor="@color/ui_text_muted_dark"
+        android:textSize="16sp"
         android:textStyle="bold" />
 
     <TextView
@@ -106,13 +105,13 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:background="#1D1730"
-        android:padding="16dp"
-        android:text=""
-        android:textColor="#E5DFFF"
-        android:textSize="18sp"
+        android:background="@drawable/bg_info_panel"
+        android:importantForAccessibility="yes"
         android:lineSpacingExtra="4dp"
         android:minHeight="68dp"
-        android:importantForAccessibility="yes" />
+        android:padding="16dp"
+        android:text=""
+        android:textColor="@color/ui_text_secondary_dark"
+        android:textSize="19sp" />
 
 </LinearLayout>
