@@ -144,33 +144,33 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             applyIncomingPrefill()
         }, 1500)
 
-        btnPickDate.setOnClickListener {
+        btnPickDate.setOnClickListenerWithHaptic {
             openDatePicker()
         }
 
-        btnPickTime.setOnClickListener {
+        btnPickTime.setOnClickListenerWithHaptic {
             openTimePicker()
         }
 
-        btnSaveTask.setOnClickListener {
+        btnSaveTask.setOnClickListenerWithHaptic {
             saveTask()
         }
 
-        btnCancelTask.setOnClickListener {
+        btnCancelTask.setOnClickListenerWithHaptic {
             hasConsumedPrefill = false
             assistantSession.speakThenRun(responseManager.cancelCreate()) {
                 finish()
             }
         }
 
-        btnGoHome.setOnClickListener {
+        btnGoHome.setOnClickListenerWithHaptic {
             hasConsumedPrefill = false
             assistantSession.speakThenRun(responseManager.returnHome()) {
                 finish()
             }
         }
 
-        btnTalkAssistant.setOnClickListener {
+        btnTalkAssistant.setOnClickListenerWithHaptic {
             assistantSession.startSession()
         }
 

@@ -9,8 +9,8 @@ import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.graphics.Color
 import android.view.animation.LinearInterpolator
-
 import android.graphics.drawable.GradientDrawable
+import android.view.HapticFeedbackConstants
 
 
 class AssistantBottomSheet(
@@ -58,8 +58,10 @@ class AssistantBottomSheet(
         tvAssistantHint = view.findViewById(R.id.tvAssistantHint)
 
         assistantRoot.setOnClickListener {
+            assistantRoot.performTapHapticFeedback()
             val now = System.currentTimeMillis()
             if (now - lastTapTime <= doubleTapWindowMs) {
+                assistantRoot.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 onDoubleTapCancel?.invoke()
             }
             lastTapTime = now

@@ -156,25 +156,25 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             applySpokenTime(prefillNewTimeText)
         }
 
-        btnPickDate.setOnClickListener { openDatePicker() }
-        btnPickTime.setOnClickListener { openTimePicker() }
-        btnSaveTask.setOnClickListener { saveTask() }
-        btnDeleteTask.setOnClickListener { confirmDeleteTask() }
+        btnPickDate.setOnClickListenerWithHaptic { openDatePicker() }
+        btnPickTime.setOnClickListenerWithHaptic { openTimePicker() }
+        btnSaveTask.setOnClickListenerWithHaptic { saveTask() }
+        btnDeleteTask.setOnClickListenerWithHaptic { confirmDeleteTask() }
 
 
-        btnCancelTask.setOnClickListener {
+        btnCancelTask.setOnClickListenerWithHaptic {
             assistantSession.speakThenRun(responseManager.cancelEdit()) {
                 finish()
             }
         }
 
-        btnGoHome.setOnClickListener {
+        btnGoHome.setOnClickListenerWithHaptic {
             assistantSession.speakThenRun(responseManager.returnHomeFromEdit()) {
                 finish()
             }
         }
 
-        btnTalkAssistant.setOnClickListener {
+        btnTalkAssistant.setOnClickListenerWithHaptic {
             assistantSession.startSession()
         }
 

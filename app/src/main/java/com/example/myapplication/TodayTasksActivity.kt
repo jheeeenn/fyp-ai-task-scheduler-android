@@ -59,10 +59,10 @@ class TodayTasksActivity : AppCompatActivity() {
 
 
 
-        btnTaskDone.setOnClickListener {
+        btnTaskDone.setOnClickListenerWithHaptic {
             val task = getCurrentlySelectedTask() ?: run {
                 Toast.makeText(this, "Please select a task first", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+                return@setOnClickListenerWithHaptic
             }
 
             lifecycleScope.launch {
@@ -85,10 +85,10 @@ class TodayTasksActivity : AppCompatActivity() {
             }
         }
 
-        btnTaskEdit.setOnClickListener {
+        btnTaskEdit.setOnClickListenerWithHaptic {
             val task = getCurrentlySelectedTask() ?: run {
                 Toast.makeText(this, "Please select a task first", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+                return@setOnClickListenerWithHaptic
             }
 
             val intent = Intent(this, EditTaskActivity::class.java)
@@ -99,10 +99,10 @@ class TodayTasksActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        btnTaskDelete.setOnClickListener {
+        btnTaskDelete.setOnClickListenerWithHaptic {
             val task = getCurrentlySelectedTask() ?: run {
                 Toast.makeText(this, "Please select a task first", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+                return@setOnClickListenerWithHaptic
             }
 
             AlertDialog.Builder(this)
@@ -122,16 +122,16 @@ class TodayTasksActivity : AppCompatActivity() {
                 .show()
         }
 
-        btnCreateNewTask.setOnClickListener {
+        btnCreateNewTask.setOnClickListenerWithHaptic {
             startActivity(Intent(this, CreateTaskActivity::class.java))
         }
 
-        btnGoHome.setOnClickListener {
+        btnGoHome.setOnClickListenerWithHaptic {
             finish()
             //startActivity(Intent(this, HomeActivity::class.java))
         }
 
-        btnTalkAssistant.setOnClickListener {
+        btnTalkAssistant.setOnClickListenerWithHaptic {
             val intent = Intent(this, HomeActivity::class.java).apply {
                 putExtra("open_assistant_on_arrival", true)
             }
