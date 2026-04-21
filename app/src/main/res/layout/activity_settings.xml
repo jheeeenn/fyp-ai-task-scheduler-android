@@ -28,20 +28,12 @@
                 android:id="@+id/tvSettingsTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:accessibilityHeading="true"
                 android:layout_marginTop="4dp"
                 android:text="Settings"
                 android:textColor="@color/ui_text_primary_dark"
                 android:textSize="32sp"
                 android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvSettingsHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Adjust assistant response and accessibility preferences."
-                android:textColor="@color/ui_text_secondary_dark"
-                android:textSize="18sp" />
 
             <LinearLayout
                 android:id="@+id/cardTone"
@@ -50,7 +42,9 @@
                 android:layout_marginTop="20dp"
                 android:background="@drawable/bg_task_card"
                 android:clickable="true"
+                android:contentDescription="Assistant tone setting"
                 android:focusable="true"
+                android:hapticFeedbackEnabled="true"
                 android:minHeight="96dp"
                 android:orientation="vertical"
                 android:padding="20dp">
@@ -81,7 +75,9 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_task_card"
                 android:clickable="true"
+                android:contentDescription="Assistant reply length setting"
                 android:focusable="true"
+                android:hapticFeedbackEnabled="true"
                 android:minHeight="96dp"
                 android:orientation="vertical"
                 android:padding="20dp">
@@ -112,7 +108,9 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_task_card"
                 android:clickable="true"
+                android:contentDescription="Large text accessibility setting"
                 android:focusable="true"
+                android:hapticFeedbackEnabled="true"
                 android:minHeight="96dp"
                 android:orientation="vertical"
                 android:padding="20dp">
@@ -143,7 +141,9 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_task_card"
                 android:clickable="true"
+                android:contentDescription="High contrast accessibility setting"
                 android:focusable="true"
+                android:hapticFeedbackEnabled="true"
                 android:minHeight="96dp"
                 android:orientation="vertical"
                 android:padding="20dp">
@@ -177,6 +177,7 @@
         android:layout_marginBottom="10dp"
         android:background="@drawable/bg_anchor_home_button"
         android:backgroundTint="@null"
+        android:contentDescription="Go to home screen"
         android:text="Home"
         android:textAllCaps="false"
         android:textColor="@color/ui_text_primary_dark"
@@ -190,13 +191,15 @@
     <Button
         android:id="@+id/btnTalkAssistant"
         android:layout_width="0dp"
-        android:layout_height="74dp"
+        android:layout_height="104dp"
         android:background="@drawable/bg_anchor_assistant_button"
         android:backgroundTint="@null"
+        android:contentDescription="Open voice assistant. Primary action button"
+        android:hapticFeedbackEnabled="true"
         android:text="Talk to Assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"
-        android:textSize="22sp"
+        android:textSize="24sp"
         android:textStyle="bold"
         app:backgroundTint="@null"
         app:layout_constraintBottom_toBottomOf="parent"

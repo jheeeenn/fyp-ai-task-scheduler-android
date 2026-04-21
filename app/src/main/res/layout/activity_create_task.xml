@@ -13,10 +13,10 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:fillViewport="true"
-        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintTop_toTopOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -28,6 +28,7 @@
                 android:id="@+id/tvCreateTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:accessibilityHeading="true"
                 android:text="Create Task"
                 android:textColor="@color/ui_text_primary_dark"
                 android:textSize="36sp"
@@ -39,7 +40,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:background="@drawable/bg_input_field"
+                android:contentDescription="Task title input"
                 android:hint="Task title"
+                android:importantForAutofill="yes"
                 android:inputType="textCapSentences"
                 android:minHeight="72dp"
                 android:paddingHorizontal="18dp"
@@ -48,27 +51,35 @@
                 android:textColorHint="@color/ui_text_muted_dark"
                 android:textSize="24sp" />
 
-            <TextView
-                android:id="@+id/tvDateSectionLabel"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="Date"
-                android:textColor="@color/ui_text_primary_dark"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:importantForAccessibility="yes"
+                android:orientation="vertical"
+                android:screenReaderFocusable="true">
 
-            <TextView
-                android:id="@+id/tvSelectedDate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_info_panel"
-                android:padding="16dp"
-                android:text="No date selected"
-                android:textColor="@color/ui_text_primary_dark"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvDateSectionLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Date"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvSelectedDate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_info_panel"
+                    android:padding="16dp"
+                    android:text="No date selected"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <Button
                 android:id="@+id/btnPickDate"
@@ -77,6 +88,8 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_create_button"
                 android:backgroundTint="@null"
+                android:contentDescription="Select task date"
+                android:hapticFeedbackEnabled="true"
                 android:text="Select Date"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_text_primary_light"
@@ -84,27 +97,35 @@
                 android:textStyle="bold"
                 app:backgroundTint="@null" />
 
-            <TextView
-                android:id="@+id/tvTimeSectionLabel"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="Time"
-                android:textColor="@color/ui_text_primary_dark"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:importantForAccessibility="yes"
+                android:orientation="vertical"
+                android:screenReaderFocusable="true">
 
-            <TextView
-                android:id="@+id/tvSelectedTime"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_info_panel"
-                android:padding="16dp"
-                android:text="No time selected"
-                android:textColor="@color/ui_text_primary_dark"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvTimeSectionLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Time"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvSelectedTime"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_info_panel"
+                    android:padding="16dp"
+                    android:text="No time selected"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <Button
                 android:id="@+id/btnPickTime"
@@ -113,6 +134,8 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_create_button"
                 android:backgroundTint="@null"
+                android:contentDescription="Select task time"
+                android:hapticFeedbackEnabled="true"
                 android:text="Select Time"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_text_primary_light"
@@ -127,6 +150,8 @@
                 android:layout_marginTop="18dp"
                 android:background="@drawable/bg_anchor_assistant_button"
                 android:backgroundTint="@null"
+                android:contentDescription="Save task"
+                android:hapticFeedbackEnabled="true"
                 android:text="Save Task"
                 android:textAllCaps="false"
                 android:textColor="@color/white"
@@ -141,6 +166,7 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_action_button_disabled"
                 android:backgroundTint="@null"
+                android:contentDescription="Cancel task creation"
                 android:text="Cancel"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_text_primary_dark"
@@ -157,6 +183,7 @@
         android:layout_marginBottom="10dp"
         android:background="@drawable/bg_anchor_home_button"
         android:backgroundTint="@null"
+        android:contentDescription="Go to home screen"
         android:text="Home"
         android:textAllCaps="false"
         android:textColor="@color/ui_text_primary_dark"
@@ -164,23 +191,25 @@
         android:textStyle="bold"
         app:backgroundTint="@null"
         app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <Button
         android:id="@+id/btnTalkAssistant"
         android:layout_width="0dp"
-        android:layout_height="74dp"
+        android:layout_height="104dp"
         android:background="@drawable/bg_anchor_assistant_button"
         android:backgroundTint="@null"
+        android:contentDescription="Open voice assistant. Primary action button"
+        android:hapticFeedbackEnabled="true"
         android:text="Talk to Assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"
-        android:textSize="22sp"
+        android:textSize="24sp"
         android:textStyle="bold"
         app:backgroundTint="@null"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

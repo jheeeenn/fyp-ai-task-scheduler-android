@@ -23,6 +23,8 @@
 
     <Button
         android:id="@+id/btnDialogSave"
+        android:contentDescription="Save selected setting option"
+        android:hapticFeedbackEnabled="true"
         android:layout_width="match_parent"
         android:layout_height="62dp"
         android:layout_marginTop="22dp"

@@ -12,13 +12,14 @@
         android:id="@+id/titleText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:accessibilityHeading="true"
         android:text="Scheduled Tasks"
         android:textColor="@color/ui_text_primary_dark"
         android:textSize="36sp"
         android:textStyle="bold"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintTop_toTopOf="parent" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/taskRecyclerView"
@@ -28,11 +29,12 @@
         android:layout_marginBottom="12dp"
         android:background="@drawable/bg_section_panel"
         android:clipToPadding="false"
+        android:contentDescription="Task list"
         android:padding="12dp"
-        app:layout_constraintTop_toBottomOf="@id/titleText"
         app:layout_constraintBottom_toTopOf="@id/taskActionBar"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintTop_toBottomOf="@id/titleText" />
 
     <LinearLayout
         android:id="@+id/taskActionBar"
@@ -42,17 +44,19 @@
         android:baselineAligned="false"
         android:orientation="horizontal"
         app:layout_constraintBottom_toTopOf="@id/btnCreateNewTask"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
 
         <Button
             android:id="@+id/btnTaskDone"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
             android:layout_marginEnd="6dp"
+            android:layout_weight="1"
             android:background="@drawable/bg_action_button"
             android:backgroundTint="@null"
+            android:contentDescription="Mark selected task as done"
+            android:hapticFeedbackEnabled="true"
             android:text="Done"
             android:textAllCaps="false"
             android:textColor="@color/ui_text_primary_light"
@@ -64,10 +68,12 @@
             android:id="@+id/btnTaskEdit"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
             android:layout_marginHorizontal="6dp"
+            android:layout_weight="1"
             android:background="@drawable/bg_action_button"
             android:backgroundTint="@null"
+            android:contentDescription="Edit selected task"
+            android:hapticFeedbackEnabled="true"
             android:text="Edit"
             android:textAllCaps="false"
             android:textColor="@color/ui_text_primary_light"
@@ -79,10 +85,12 @@
             android:id="@+id/btnTaskDelete"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
             android:layout_marginStart="6dp"
+            android:layout_weight="1"
             android:background="@drawable/bg_action_button"
             android:backgroundTint="@null"
+            android:contentDescription="Delete selected task"
+            android:hapticFeedbackEnabled="true"
             android:text="Delete"
             android:textAllCaps="false"
             android:textColor="@color/ui_danger"
@@ -98,6 +106,8 @@
         android:layout_marginBottom="10dp"
         android:background="@drawable/bg_create_button"
         android:backgroundTint="@null"
+        android:contentDescription="Create a new task"
+        android:hapticFeedbackEnabled="true"
         android:text="Create New Task"
         android:textAllCaps="false"
         android:textColor="@color/ui_text_primary_light"
@@ -105,8 +115,8 @@
         android:textStyle="bold"
         app:backgroundTint="@null"
         app:layout_constraintBottom_toTopOf="@id/btnGoHome"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <Button
         android:id="@+id/btnGoHome"
@@ -115,6 +125,7 @@
         android:layout_marginBottom="10dp"
         android:background="@drawable/bg_anchor_home_button"
         android:backgroundTint="@null"
+        android:contentDescription="Go to home screen"
         android:text="Home"
         android:textAllCaps="false"
         android:textColor="@color/ui_text_primary_dark"
@@ -122,23 +133,25 @@
         android:textStyle="bold"
         app:backgroundTint="@null"
         app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <Button
         android:id="@+id/btnTalkAssistant"
         android:layout_width="0dp"
-        android:layout_height="74dp"
+        android:layout_height="104dp"
         android:background="@drawable/bg_anchor_assistant_button"
         android:backgroundTint="@null"
+        android:contentDescription="Open voice assistant. Primary action button"
+        android:hapticFeedbackEnabled="true"
         android:text="Talk to Assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"
-        android:textSize="22sp"
+        android:textSize="24sp"
         android:textStyle="bold"
         app:backgroundTint="@null"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
