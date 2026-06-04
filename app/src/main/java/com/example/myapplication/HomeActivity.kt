@@ -49,6 +49,14 @@ import com.example.myapplication.ai.TaskMatcher
 
 import com.example.myapplication.ai.TaskResolutionState
 import com.example.myapplication.ai.PendingTaskAction
+import com.example.myapplication.ai.AiParsedCommand
+import com.example.myapplication.ai.agent.ActionValidator
+import com.example.myapplication.ai.agent.AgentOrchestrator
+import com.example.myapplication.ai.agent.AgentResponseParser
+import com.example.myapplication.ai.agent.ConversationStateManager
+import com.example.myapplication.ai.agent.GemmaLocalClient
+import com.example.myapplication.ai.agent.GemmaPromptBuilder
+import com.example.myapplication.ai.agent.TaskActionExecutor
 
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
@@ -56,6 +64,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var aiRouter: AiRouter
+    private lateinit var agentOrchestrator: AgentOrchestrator
+    private lateinit var gemmaLocalClient: GemmaLocalClient
+    private val agentConversationStateManager = ConversationStateManager()
 
 
     private lateinit var assistantSession: AssistantVoiceSession
@@ -122,6 +133,37 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             cloudExtractor
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
+
+        val taskDao = AppDatabase.getInstance(this).taskDao()
+        gemmaLocalClient = GemmaLocalClient(
+            context = this,
+            modelPath = BuildConfig.GEMMA_MODEL_PATH
+        )
+        agentOrchestrator = AgentOrchestrator(
+            gemmaLocalClient = gemmaLocalClient,
+            promptBuilder = GemmaPromptBuilder(),
+            responseParser = AgentResponseParser(),
+            actionValidator = ActionValidator(),
+            stateManager = agentConversationStateManager,
+            taskDao = taskDao,
+            actionExecutor = TaskActionExecutor(
+                legacyExecutor = { aiResult, sourceText, preferredReply ->
+                    executeLegacyAiCommand(aiResult, sourceText, preferredReply)
+                },
+                dailyBriefingExecutor = { gemmaResponse ->
+                    handleDailyBriefing(gemmaResponse)
+                },
+                conversationalResponder = { reply, listenAgain ->
+                    assistantSession.speak(reply, listenAgain = listenAgain)
+                }
+            ),
+            fallbackExecutor = { aiResult, sourceText, preferredReply ->
+                executeLegacyAiCommand(aiResult, sourceText, preferredReply)
+            },
+            fallbackParser = { sourceText ->
+                aiRouter.process(sourceText)
+            }
+        )
 
         val greetingText = findViewById<TextView>(R.id.greetingText)
         val overviewText = findViewById<TextView>(R.id.overviewText)
@@ -376,24 +418,33 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         lifecycleScope.launch {
             try {
-                // log
-                Log.d("HOME_ROUTING", "falling through to AiRouter with text='$normalized'")
-                val aiResult = aiRouter.process(normalized)
+                Log.d("HOME_AGENT", "Gemma-first routing with text='$normalized'")
+                agentOrchestrator.process(normalized)
+            } catch (e: Exception) {
+                Log.e("HOME_AGENT", "Crash in Gemma-first routing", e)
+                assistantSession.speak(responseManager.parserCrash(), listenAgain = false)
+            }
+        }
+    }
 
-                Log.d(
-                    "AI_ROUTER",
-                    "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
-                            " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}"
-                )
+    private suspend fun executeLegacyAiCommand(
+        aiResult: AiParsedCommand,
+        normalized: String,
+        preferredCreateReply: String? = null
+    ) {
+        Log.d(
+            "AI_ROUTER",
+            "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
+                    " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}"
+        )
 
-                // branches for actions
-                when (aiResult.intent) {
+        when (aiResult.intent) {
                     // create task
                     AiIntent.CREATE_TASK.name -> {
                         //log
                         Log.d("HOME_ACTION", "CREATE_TASK -> open CreateTaskActivity")
 
-                        val reply = responseManager.openCreateTaskReply(aiResult.source)
+                        val reply = preferredCreateReply ?: responseManager.openCreateTaskReply(aiResult.source)
 
                         assistantSession.speakThenRun(reply) {
                             val openCreateIntent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
@@ -649,20 +700,91 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         }
                     }
 
-                    else -> {
-                        // log
-                        Log.d("HOME_ACTION", "UNKNOWN -> local reply")
+            else -> {
+                // log
+                Log.d("HOME_ACTION", "UNKNOWN -> local reply")
 
-                        val reply = responseManager.unknownCommand()
-                        assistantSession.speak(reply, listenAgain = false)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("AI_ROUTER", "Crash in handleVoiceCommand", e)
-                val reply = responseManager.parserCrash()
+                val reply = responseManager.unknownCommand()
                 assistantSession.speak(reply, listenAgain = false)
             }
         }
+    }
+
+
+    private suspend fun handleDailyBriefing(gemmaResponse: String?) {
+        val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+        val allTasks = withContext(Dispatchers.IO) { dao.getAll() }
+        val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+            .format(Calendar.getInstance().time)
+
+        val todayTasks = allTasks.filter { !it.isDone && it.dueDate == today }
+        val overdueTasks = allTasks.filter { task ->
+            !task.isDone && !task.dueDate.isNullOrBlank() && isDateBeforeToday(task.dueDate)
+        }
+        val unscheduledTasks = allTasks.filter { !it.isDone && it.dueDate.isNullOrBlank() }
+
+        val reply = buildDailyBriefingReply(
+            gemmaResponse = gemmaResponse,
+            todayCount = todayTasks.size,
+            overdueCount = overdueTasks.size,
+            unscheduledCount = unscheduledTasks.size,
+            todayTaskTitles = todayTasks.take(3).map { it.title },
+            overdueTaskTitles = overdueTasks.take(2).map { it.title }
+        )
+
+        assistantSession.speak(reply, listenAgain = false)
+    }
+
+    private fun isDateBeforeToday(dateText: String?): Boolean {
+        if (dateText.isNullOrBlank()) return false
+        return try {
+            val formatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+            val parsed = formatter.parse(dateText) ?: return false
+            val todayCalendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            parsed.before(todayCalendar.time)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun buildDailyBriefingReply(
+        gemmaResponse: String?,
+        todayCount: Int,
+        overdueCount: Int,
+        unscheduledCount: Int,
+        todayTaskTitles: List<String>,
+        overdueTaskTitles: List<String>
+    ): String {
+        val safeGemmaLead = gemmaResponse
+            ?.takeIf { it.isNotBlank() }
+            ?.take(160)
+
+        val todaySummary = when {
+            todayCount == 0 -> "You have no tasks scheduled for today."
+            todayCount == 1 -> "You have 1 task today: ${todayTaskTitles.joinToString()}."
+            else -> "You have $todayCount tasks today. First up: ${todayTaskTitles.joinToString()}."
+        }
+
+        val overdueSummary = when {
+            overdueCount == 0 -> ""
+            overdueCount == 1 -> " You also have 1 overdue task: ${overdueTaskTitles.joinToString()}."
+            else -> " You also have $overdueCount overdue tasks, including ${overdueTaskTitles.joinToString()}."
+        }
+
+        val unscheduledSummary = if (unscheduledCount > 0) {
+            " You have $unscheduledCount active task${if (unscheduledCount == 1) "" else "s"} without a date."
+        } else {
+            ""
+        }
+
+        return listOfNotNull(safeGemmaLead, todaySummary + overdueSummary + unscheduledSummary)
+            .joinToString(" ")
+            .trim()
     }
 
 
@@ -1309,6 +1431,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     override fun onDestroy() {
         super.onDestroy()
         assistantSession.destroy()
+        gemmaLocalClient.close()
         voiceHelper.shutdown()
     }
 }

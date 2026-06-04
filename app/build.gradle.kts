@@ -8,10 +8,14 @@ plugins {
 }
 
 val localProperties = Properties().apply {
-    load(FileInputStream(rootProject.file("local.properties")))
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
 }
 
 val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "")
+val gemmaModelPath = localProperties.getProperty("GEMMA_MODEL_PATH", "/data/local/tmp/llm/model_version.task")
 
 android {
     namespace = "com.example.myapplication"
@@ -34,6 +38,11 @@ android {
             "String",
             "GEMINI_API_KEY",
             "\"$geminiApiKey\""
+        )
+        buildConfigField(
+            "String",
+            "GEMMA_MODEL_PATH",
+            "\"$gemmaModelPath\""
         )
     }
 
@@ -76,6 +85,9 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Gemini
+    // Gemini cloud fallback
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Local Gemma / MediaPipe LLM inference
+    implementation("com.google.mediapipe:tasks-genai:0.10.27")
 }
