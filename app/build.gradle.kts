@@ -15,7 +15,7 @@ val localProperties = Properties().apply {
 }
 
 val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "")
-val gemmaModelPath = localProperties.getProperty("GEMMA_MODEL_PATH", "/data/local/tmp/llm/model_version.task")
+val gemmaModelPath = localProperties.getProperty("GEMMA_MODEL_PATH", "/data/local/tmp/llm/model.litertlm")
 
 android {
     namespace = "com.example.myapplication"
@@ -88,6 +88,6 @@ dependencies {
     // Gemini cloud fallback
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Local Gemma / MediaPipe LLM inference
-    implementation("com.google.mediapipe:tasks-genai:0.10.27")
+    // Local Gemma / LiteRT-LM inference for .litertlm models
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.12.0")
 }

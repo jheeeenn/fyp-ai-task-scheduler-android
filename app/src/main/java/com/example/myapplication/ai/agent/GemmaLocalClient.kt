@@ -2,7 +2,9 @@ package com.example.myapplication.ai.agent
 
 import android.content.Context
 import android.util.Log
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -13,35 +15,40 @@ class GemmaLocalClient(
     private val modelPath: String,
     private val timeoutMs: Long = 20_000L
 ) {
-    private var llmInference: LlmInference? = null
+    private var engine: Engine? = null
 
     suspend fun generate(prompt: String): String = withTimeout(timeoutMs) {
         withContext(Dispatchers.IO) {
             val modelFile = File(modelPath)
             if (!modelFile.exists()) {
-                throw IllegalStateException("Gemma model file not found at $modelPath")
+                throw IllegalStateException("Gemma .litertlm model file not found at $modelPath")
+            }
+            if (!modelFile.extension.equals("litertlm", ignoreCase = true)) {
+                throw IllegalStateException("Gemma model must be a .litertlm file: $modelPath")
             }
 
-            val inference = llmInference ?: createInference().also { llmInference = it }
-            inference.generateResponse(prompt)
+            val activeEngine = engine ?: createEngine().also { engine = it }
+            activeEngine.createConversation().use { conversation ->
+                conversation.sendMessage(prompt).text
+            }
         }
     }
 
-    private fun createInference(): LlmInference {
-        Log.d("GEMMA_LOCAL", "Initializing Gemma model at $modelPath")
-        val options = LlmInference.LlmInferenceOptions.builder()
-            .setModelPath(modelPath)
-            .setMaxTokens(1024)
-            .setTopK(40)
-            .setTemperature(0.2f)
-            .setRandomSeed(42)
-            .build()
+    private fun createEngine(): Engine {
+        Log.d("GEMMA_LOCAL", "Initializing LiteRT-LM Gemma model at $modelPath")
+        val engineConfig = EngineConfig(
+            modelPath = modelPath,
+            backend = Backend.CPU(),
+            cacheDir = context.cacheDir.path
+        )
 
-        return LlmInference.createFromOptions(context.applicationContext, options)
+        return Engine(engineConfig).also { engine ->
+            engine.initialize()
+        }
     }
 
     fun close() {
-        llmInference?.close()
-        llmInference = null
+        engine?.close()
+        engine = null
     }
 }
