@@ -37,6 +37,11 @@ import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.LocalConversationIntentClassifier
 import com.example.myapplication.ai.LocalIntentClassifier
 import com.example.myapplication.ai.LocalTaskParser
+import com.example.myapplication.ai.agent.ActionValidator
+import com.example.myapplication.ai.agent.AgentOrchestrator
+import com.example.myapplication.ai.agent.LaptopAgentClient
+import com.example.myapplication.ai.agent.TaskActionNormalizer
+import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -56,6 +61,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var aiRouter: AiRouter
+    private lateinit var agentOrchestrator: AgentOrchestrator
 
 
     private lateinit var assistantSession: AssistantVoiceSession
@@ -120,6 +126,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             localIntentClassifier,
             localTaskParser,
             cloudExtractor
+        )
+        agentOrchestrator = AgentOrchestrator(
+            LaptopAgentClient(),
+            TaskAgentResponseParser(),
+            TaskActionNormalizer(),
+            ActionValidator(),
+            aiRouter
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
 
@@ -378,7 +391,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             try {
                 // log
                 Log.d("HOME_ROUTING", "falling through to AiRouter with text='$normalized'")
-                val aiResult = aiRouter.process(normalized)
+                val aiResult = agentOrchestrator.process(normalized)
 
                 Log.d(
                     "AI_ROUTER",
