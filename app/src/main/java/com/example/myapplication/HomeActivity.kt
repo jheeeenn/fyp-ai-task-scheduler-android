@@ -58,7 +58,86 @@ import com.example.myapplication.ai.agent.GemmaLocalClient
 import com.example.myapplication.ai.agent.GemmaPromptBuilder
 import com.example.myapplication.ai.agent.TaskActionExecutor
 
+import android.net.Uri
+import android.widget.Toast
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
+    private val pickGemmaModelLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            if (uri == null) {
+                Toast.makeText(this, "No Gemma model selected.", Toast.LENGTH_SHORT).show()
+                return@registerForActivityResult
+            }
+
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                Log.w("GEMMA_IMPORT", "Persistable permission not available or already granted", e)
+            }
+
+            lifecycleScope.launch {
+                try {
+                    Toast.makeText(
+                        this@HomeActivity,
+                        "Importing Gemma model. This may take a while...",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    val inputStream = contentResolver.openInputStream(uri)
+
+                    if (inputStream == null) {
+                        Toast.makeText(
+                            this@HomeActivity,
+                            "Failed to open selected Gemma model.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@launch
+                    }
+
+                    val savedPath = gemmaLocalClient.copyModelToAppStorage(
+                        inputStream = inputStream,
+                        fileName = "gemma-4-E2B-it.litertlm"
+                    )
+
+                    Toast.makeText(
+                        this@HomeActivity,
+                        "Gemma model imported. Initializing model now...",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    Log.d("GEMMA_IMPORT", "Gemma model copied to $savedPath")
+
+                    val initResult = gemmaLocalClient.initializeModel()
+
+                    initResult.onSuccess {
+                        Toast.makeText(
+                            this@HomeActivity,
+                            "Gemma model initialized successfully.",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        Log.d("GEMMA_IMPORT", "Gemma model initialized successfully")
+                    }.onFailure { e ->
+                        Toast.makeText(
+                            this@HomeActivity,
+                            "Gemma initialization failed: ${e.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        Log.e("GEMMA_IMPORT", "Gemma initialization failed", e)
+                    }
+                } catch (e: Exception) {
+                    Log.e("GEMMA_IMPORT", "Failed to import Gemma model", e)
+                    Toast.makeText(
+                        this@HomeActivity,
+                        "Gemma import failed: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
     private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
@@ -137,7 +216,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val taskDao = AppDatabase.getInstance(this).taskDao()
         gemmaLocalClient = GemmaLocalClient(
             context = this,
-            modelPath = BuildConfig.GEMMA_MODEL_PATH
+            fallbackModelPath = BuildConfig.GEMMA_MODEL_PATH
         )
         agentOrchestrator = AgentOrchestrator(
             gemmaLocalClient = gemmaLocalClient,
@@ -209,6 +288,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 startActivity(Intent(this, SettingsActivity::class.java))
             }
         }
+        btnSettings.setOnLongClickListener {
+            pickGemmaModelLauncher.launch(arrayOf("*/*"))
+            true
+        }
 
         // Notification permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -235,6 +318,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             audioPermissionLauncher = audioPermissionLauncher
         )
 
+        autoInitializeGemmaIfPossible()
 
 
         btnTalkAssistant.setOnClickListenerWithHaptic {
@@ -274,6 +358,29 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             shouldOpenAssistantOnResume = false
             window.decorView.post {
                 assistantSession.startSession()
+            }
+        }
+    }
+    private fun autoInitializeGemmaIfPossible() {
+        if (!gemmaLocalClient.hasUsableModel()) {
+            Log.d("GEMMA_INIT", "No usable Gemma model found. Skipping auto-initialization.")
+            return
+        }
+
+        if (gemmaLocalClient.isInitialized() || gemmaLocalClient.isInitializing()) {
+            Log.d("GEMMA_INIT", "Gemma already initialized or initializing.")
+            return
+        }
+
+        lifecycleScope.launch {
+            Log.d("GEMMA_INIT", "Auto-initializing Gemma model in background...")
+
+            val result = gemmaLocalClient.initializeModel()
+
+            result.onSuccess {
+                Log.d("GEMMA_INIT", "Gemma auto-initialized successfully")
+            }.onFailure { e ->
+                Log.e("GEMMA_INIT", "Gemma auto-initialization failed", e)
             }
         }
     }
@@ -418,13 +525,78 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         lifecycleScope.launch {
             try {
-                Log.d("HOME_AGENT", "Gemma-first routing with text='$normalized'")
+                val quickLocalResult = withContext(Dispatchers.IO) {
+                    aiRouter.process(normalized)
+                }
+
+                val fastLocalIntents = setOf(
+                    AiIntent.CREATE_TASK.name,
+                    AiIntent.QUERY_TASK.name,
+                    AiIntent.UPDATE_TASK.name,
+                    AiIntent.RESCHEDULE_TASK.name,
+                    AiIntent.DELETE_TASK.name,
+                    AiIntent.MARK_DONE.name,
+                    AiIntent.MARK_UNDONE.name
+                )
+
+                val shouldUseFastLocalPath =
+                    quickLocalResult.intent in fastLocalIntents &&
+                            quickLocalResult.confidence >= 0.90f &&
+                            !isGemmaPreferredCommand(normalized)
+
+                if (shouldUseFastLocalPath) {
+                    Log.d(
+                        "HOME_AGENT",
+                        "Fast local path accepted: intent=${quickLocalResult.intent}, confidence=${quickLocalResult.confidence}"
+                    )
+
+                    executeLegacyAiCommand(quickLocalResult, normalized, null)
+                    return@launch
+                }
+
+                if (!gemmaLocalClient.hasUsableModel()) {
+                    Log.d("HOME_AGENT", "Gemma model not imported yet. Using AiRouter fallback.")
+                    executeLegacyAiCommand(quickLocalResult, normalized, null)
+                    return@launch
+                }
+
+                if (!gemmaLocalClient.isInitialized()) {
+                    Log.d("HOME_AGENT", "Gemma model not initialized yet. Using AiRouter fallback.")
+
+                    if (!gemmaLocalClient.isInitializing()) {
+                        autoInitializeGemmaIfPossible()
+                    }
+
+                    executeLegacyAiCommand(quickLocalResult, normalized, null)
+                    return@launch
+                }
+
+                Log.d("HOME_AGENT", "Gemma routing with text='$normalized'")
                 agentOrchestrator.process(normalized)
             } catch (e: Exception) {
-                Log.e("HOME_AGENT", "Crash in Gemma-first routing", e)
+                Log.e("HOME_AGENT", "Crash in assistant routing", e)
                 assistantSession.speak(responseManager.parserCrash(), listenAgain = false)
             }
         }
+    }
+    private fun isGemmaPreferredCommand(normalized: String): Boolean {
+        val text = normalized.lowercase(Locale.getDefault())
+
+        val gemmaKeywords = listOf(
+            "break down",
+            "split",
+            "plan",
+            "routine",
+            "daily briefing",
+            "brief my day",
+            "what should i do",
+            "suggest",
+            "help me organize",
+            "help me plan",
+            "schedule my day"
+        )
+
+        return gemmaKeywords.any { keyword -> text.contains(keyword) }
     }
 
     private suspend fun executeLegacyAiCommand(

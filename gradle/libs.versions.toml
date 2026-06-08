@@ -1,6 +1,6 @@
 [versions]
 agp = "8.7.2"
-kotlin = "2.0.21"
+kotlin = "2.3.21"
 coreKtx = "1.15.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
@@ -9,7 +9,7 @@ appcompat = "1.7.0"
 material = "1.12.0"
 activity = "1.9.3"
 constraintlayout = "2.2.0"
-ksp = "2.0.21-1.0.25"
+ksp = "2.3.7"
 roomCompiler = "2.8.4"
 
 [libraries]

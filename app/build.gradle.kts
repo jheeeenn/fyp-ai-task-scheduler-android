@@ -1,6 +1,6 @@
 import java.io.FileInputStream
 import java.util.Properties
-
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -15,7 +15,7 @@ val localProperties = Properties().apply {
 }
 
 val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "")
-val gemmaModelPath = localProperties.getProperty("GEMMA_MODEL_PATH", "/data/local/tmp/llm/model.litertlm")
+val gemmaModelPath = "/storage/emulated/0/Download/models/gemma-4-E2B-it.litertlm"
 
 android {
     namespace = "com.example.myapplication"
@@ -61,8 +61,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
+
+}
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.fromTarget("11")
     }
 }
 
@@ -80,7 +83,7 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.1")
 
     // Room
-    val roomVersion = "2.6.1"
+    val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
