@@ -17,10 +17,10 @@ class LaptopAgentClient(
     private val modelId: String = "google/gemma-4-e2b"
 ) {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
-        .callTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(75, TimeUnit.SECONDS)
         .build()
 
     suspend fun process(normalizedText: String): String = withContext(Dispatchers.IO) {
@@ -94,7 +94,7 @@ Rules:
 - confidence must be a number from 0.0 to 1.0.
 - need_clarification and requires_confirmation must be booleans.
 - missing_fields must be an array of strings.
-- plan must be a short string.
+- plan must be an array of short strings. Use an empty array when there is no plan.
 """.trimIndent()
     }
 }

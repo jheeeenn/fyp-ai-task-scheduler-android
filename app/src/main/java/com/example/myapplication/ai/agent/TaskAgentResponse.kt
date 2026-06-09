@@ -13,5 +13,5 @@ data class TaskAgentResponse(
     val need_clarification: Boolean = false,
     val missing_fields: List<String> = emptyList(),
     val requires_confirmation: Boolean = false,
-    val plan: String = ""
+    val plan: List<String> = emptyList()
 )

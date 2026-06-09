@@ -62,10 +62,17 @@ class TaskActionNormalizer {
             AiIntent.RESCHEDULE_TASK.name,
             AiIntent.UPDATE_TASK.name,
             AiIntent.MARK_DONE.name,
-            AiIntent.MARK_UNDONE.name,
-            AiIntent.UNKNOWN.name -> upper
-            "BREAKDOWN_TASK" -> AiIntent.UNKNOWN.name
-            else -> upper
+            AiIntent.MARK_UNDONE.name -> upper
+
+            "BREAKDOWN_TASK",
+            "DAILY_BRIEFING",
+            "CREATE_ROUTINE",
+            "SUGGEST_TASK",
+            "CLARIFY",
+            "CANCEL",
+            AiIntent.UNKNOWN.name -> AiIntent.UNKNOWN.name
+
+            else -> AiIntent.UNKNOWN.name
         }
     }
 

@@ -36,7 +36,7 @@ class TaskAgentResponseParser {
             need_clarification = json.optBoolean("need_clarification", false),
             missing_fields = json.optJSONArray("missing_fields").toStringList(),
             requires_confirmation = json.optBoolean("requires_confirmation", false),
-            plan = json.optString("plan", "")
+            plan = json.optJSONArray("plan").toStringList()
         )
 
         Log.d("TASK_AGENT_PARSE", "action=${response.action}, confidence=${response.confidence}")
