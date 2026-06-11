@@ -172,6 +172,27 @@ class AssistantVoiceSession(
         startVoiceFlow()
     }
 
+    fun submitTypedText(text: String, clearConversation: Boolean = true) {
+        val typedText = text.trim()
+        if (typedText.isEmpty()) return
+
+        ensureInitialized()
+        stopListeningBeforeSpeak()
+
+        retryCount = 0
+        isForceStopping = false
+        assistantSessionActive = true
+
+        assistantBottomSheet?.show()
+        if (clearConversation) {
+            assistantBottomSheet?.clearConversation()
+        }
+        assistantBottomSheet?.showUserSpeech(typedText)
+        assistantBottomSheet?.setProcessingState()
+
+        host.onAssistantFinalText(typedText.lowercase())
+    }
+
     fun startVoiceFlow() {
         val hasPermission = ContextCompat.checkSelfPermission(
             activity,
