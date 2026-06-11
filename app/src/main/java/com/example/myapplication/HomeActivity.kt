@@ -1,5 +1,5 @@
 package com.example.myapplication
-
+// this is a comment for version tally, the current version is 2,1
 import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
@@ -82,12 +82,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         AFTER_NO_TASKS,
         AFTER_TASK_SUMMARY,
         AFTER_TASK_DETAILS,
-        TASK_MATCH_AMBIGUITY
+        TASK_MATCH_AMBIGUITY,
+        DELETE_CONFIRMATION
     }
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
 
     private var lastQueryWasToday = false
+
+    //for delete confirmation when the task intent is 'delete'
+    private var pendingDeleteTaskId: Long? = null
+    private var pendingDeleteTaskTitle: String? = null
 
     private val audioPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -294,11 +299,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     override fun onAssistantCancelled() {
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
+        clearPendingDeleteState()
     }
 
     override fun onAssistantSessionStopped() {
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
+        clearPendingDeleteState()
     }
 
     override fun onResume(){
@@ -521,15 +528,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
-
-                                    withContext(Dispatchers.IO) {
-                                        dao.deleteById(matchedTask.id)
-                                    }
-
-                                    ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
-                                    refreshOverview()
-
-                                    assistantSession.speakThenStop(responseManager.deleteSuccess(matchedTask.title))
+                                    askDeleteConfirmation(matchedTask)
                                 }
 
                                 else -> {
@@ -981,8 +980,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         homeFollowUpContext = HomeFollowUpContext.NONE
         assistantSession.getBottomSheet()?.clearHint()
         clearPendingTaskMatchState()
+        clearPendingDeleteState()
         assistantSession.speakThenStop(responseManager.stopListening())
-
     }
 
 
@@ -1057,6 +1056,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.NONE -> false
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> false
+            HomeFollowUpContext.DELETE_CONFIRMATION -> false
         }
 
     }
@@ -1128,6 +1128,49 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         taskResolutionState = taskResolutionState.clear()
         ambiguityRetryCount = 0
     }
+    private fun askDeleteConfirmation(task: com.example.myapplication.data.TaskEntity) {
+        pendingDeleteTaskId = task.id
+        pendingDeleteTaskTitle = task.title
+        homeFollowUpContext = HomeFollowUpContext.DELETE_CONFIRMATION
+
+        assistantSession.speakThenListenAgain(
+            "Are you sure you want to delete ${task.title}?"
+        )
+    }
+
+    private fun clearPendingDeleteState() {
+        pendingDeleteTaskId = null
+        pendingDeleteTaskTitle = null
+    }
+
+    private fun confirmPendingDelete() {
+        val taskId = pendingDeleteTaskId
+        val title = pendingDeleteTaskTitle
+
+        if (taskId == null || title == null) {
+            clearPendingDeleteState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+            assistantSession.speakThenStop(responseManager.unknownCommand())
+            return
+        }
+
+        lifecycleScope.launch {
+            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+
+            withContext(Dispatchers.IO) {
+                dao.deleteById(taskId)
+            }
+
+            ReminderHelper.cancelReminder(this@HomeActivity, taskId.toInt())
+            refreshOverview()
+
+            clearPendingDeleteState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+
+            assistantSession.speakThenStop(responseManager.deleteSuccess(title))
+        }
+    }
+
     private fun findTaskById(
         taskId: Long?,
         tasks: List<com.example.myapplication.data.TaskEntity>
@@ -1242,12 +1285,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
 
                 PendingTaskAction.DELETE -> {
-                    withContext(Dispatchers.IO) {
-                        dao.deleteById(chosenTask.id)
-                    }
-                    ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
-                    refreshOverview()
-                    assistantSession.speakThenStop(responseManager.deleteSuccess(chosenTask.title))
+                    askDeleteConfirmation(chosenTask)
                 }
 
                 PendingTaskAction.MARK_DONE -> {
@@ -1353,6 +1391,33 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
 
                         endAssistantConversation()
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+            HomeFollowUpContext.DELETE_CONFIRMATION -> {
+                when (intent) {
+                    ConversationIntent.CONFIRM_YES -> {
+                        Log.d("HOME_CONVO_ACTION", "delete confirmed")
+                        confirmPendingDelete()
+                        true
+                    }
+
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        val title = pendingDeleteTaskTitle
+                        clearPendingDeleteState()
+                        homeFollowUpContext = HomeFollowUpContext.NONE
+
+                        assistantSession.speakThenStop(
+                            if (title != null) {
+                                "Okay, I will not delete $title."
+                            } else {
+                                "Okay, I will not delete it."
+                            }
+                        )
                         true
                     }
 
