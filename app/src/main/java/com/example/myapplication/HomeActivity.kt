@@ -121,7 +121,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
         val localIntentClassifier = LocalIntentClassifier(this)
         val localTaskParser = LocalTaskParser()
-        Log.d("GEMINI_KEY_CHECK", "key='${BuildConfig.GEMINI_API_KEY}'")
+        //Log.d("GEMINI_KEY_CHECK", "key='${BuildConfig.GEMINI_API_KEY}'")
         val cloudExtractor = GeminiCloudNlpExtractor(
             BuildConfig.GEMINI_API_KEY
         )
@@ -460,7 +460,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         lifecycleScope.launch {
             try {
                 // log
-                Log.d("HOME_ROUTING", "falling through to AiRouter with text='$normalized'")
+                Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$normalized'")
                 val aiResult = agentOrchestrator.process(normalized)
 
                 Log.d(
@@ -529,7 +529,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
                                     refreshOverview()
 
-                                    assistantSession.speak(responseManager.deleteSuccess(matchedTask.title), listenAgain = false)
+                                    assistantSession.speakThenStop(responseManager.deleteSuccess(matchedTask.title))
                                 }
 
                                 else -> {
@@ -1247,7 +1247,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
                     refreshOverview()
-                    assistantSession.speak(responseManager.deleteSuccess(chosenTask.title), listenAgain = false)
+                    assistantSession.speakThenStop(responseManager.deleteSuccess(chosenTask.title))
                 }
 
                 PendingTaskAction.MARK_DONE -> {
