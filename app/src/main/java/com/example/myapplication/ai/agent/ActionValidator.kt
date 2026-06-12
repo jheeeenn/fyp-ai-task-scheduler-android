@@ -15,7 +15,8 @@ class ActionValidator {
             AiIntent.RESCHEDULE_TASK.name,
             AiIntent.UPDATE_TASK.name,
             AiIntent.MARK_DONE.name,
-            AiIntent.MARK_UNDONE.name
+            AiIntent.MARK_UNDONE.name,
+            AiIntent.BREAKDOWN_TASK.name
         )
 
         if (command.intent !in supportedActions) {
@@ -30,6 +31,16 @@ class ActionValidator {
             AiIntent.CREATE_TASK.name -> {
                 if (command.taskTitle.isNullOrBlank()) {
                     fail("CREATE_TASK requires taskTitle")
+                }
+            }
+
+            AiIntent.BREAKDOWN_TASK.name -> {
+                if (command.taskTitle.isNullOrBlank()) {
+                    fail("BREAKDOWN_TASK requires taskTitle")
+                }
+
+                if (command.plan.size !in 2..4) {
+                    fail("BREAKDOWN_TASK requires 2 to 4 subtasks")
                 }
             }
 

@@ -77,6 +77,12 @@ class LocalTaskParser {
             AiIntent.MARK_DONE -> parseMarkDoneTask(normalizedText, localIntentResult)
             AiIntent.MARK_UNDONE -> parseMarkUndoneTask(normalizedText, localIntentResult)
 
+            AiIntent.BREAKDOWN_TASK -> AiParsedCommand(
+                intent = AiIntent.UNKNOWN.name,
+                confidence = localIntentResult.confidence,
+                source = "local"
+            )
+
             AiIntent.UNKNOWN -> AiParsedCommand(
                 intent = AiIntent.UNKNOWN.name,
                 confidence = localIntentResult.confidence,

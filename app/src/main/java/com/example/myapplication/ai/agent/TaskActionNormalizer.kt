@@ -14,7 +14,8 @@ class TaskActionNormalizer {
         val requiresConfirmation = response.requires_confirmation || normalizedAction == AiIntent.DELETE_TASK.name
 
         when (normalizedAction) {
-            AiIntent.CREATE_TASK.name -> {
+            AiIntent.CREATE_TASK.name,
+            AiIntent.BREAKDOWN_TASK.name -> {
                 if (taskTitle.isBlank() && targetTaskTitle.isNotBlank()) {
                     taskTitle = targetTaskTitle
                 }
@@ -42,7 +43,12 @@ class TaskActionNormalizer {
             recurrence = recurrence.takeIf { it.isNotBlank() },
             priority = priority.takeIf { it.isNotBlank() },
             confidence = response.confidence.coerceIn(0f, 1f),
-            source = "laptop_agent"
+            source = "laptop_agent",
+            plan = response.plan
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .take(4),
+            naturalResponse = response.natural_response.clean().takeIf { it.isNotBlank() }
         )
 
         Log.d(
@@ -62,9 +68,9 @@ class TaskActionNormalizer {
             AiIntent.RESCHEDULE_TASK.name,
             AiIntent.UPDATE_TASK.name,
             AiIntent.MARK_DONE.name,
-            AiIntent.MARK_UNDONE.name -> upper
+            AiIntent.MARK_UNDONE.name,
+            AiIntent.BREAKDOWN_TASK.name -> upper
 
-            "BREAKDOWN_TASK",
             "DAILY_BRIEFING",
             "CREATE_ROUTINE",
             "SUGGEST_TASK",

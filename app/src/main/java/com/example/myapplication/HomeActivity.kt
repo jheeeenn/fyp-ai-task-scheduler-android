@@ -1,5 +1,5 @@
 package com.example.myapplication
-// this is a comment for version tally, the current version is 2,1
+
 import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
@@ -59,6 +59,7 @@ import com.example.myapplication.ai.TaskMatcher
 import com.example.myapplication.ai.TaskResolutionState
 import com.example.myapplication.ai.PendingTaskAction
 
+import com.example.myapplication.data.TaskEntity
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
@@ -83,16 +84,21 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         AFTER_TASK_SUMMARY,
         AFTER_TASK_DETAILS,
         TASK_MATCH_AMBIGUITY,
-        DELETE_CONFIRMATION
+        DELETE_CONFIRMATION,
+        BREAKDOWN_CONFIRMATION
     }
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
-
     private var lastQueryWasToday = false
 
     //for delete confirmation when the task intent is 'delete'
     private var pendingDeleteTaskId: Long? = null
     private var pendingDeleteTaskTitle: String? = null
+
+    // for AI breakdown planning
+    private var pendingBreakdownTitle: String? = null
+    private var pendingBreakdownPlan: List<String> = emptyList()
+    private var pendingBreakdownOriginalRequest: String? = null
 
     private val audioPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -300,12 +306,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
         clearPendingDeleteState()
+        clearPendingBreakdownState()
     }
 
     override fun onAssistantSessionStopped() {
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
         clearPendingDeleteState()
+        clearPendingBreakdownState()
     }
 
     override fun onResume(){
@@ -433,6 +441,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         if (homeFollowUpContext == HomeFollowUpContext.TASK_MATCH_AMBIGUITY) {
             handleTaskMatchAmbiguity(normalized)
             return
+        }
+
+        if (homeFollowUpContext == HomeFollowUpContext.BREAKDOWN_CONFIRMATION) {
+            if (handleBreakdownFollowUp(normalized)) {
+                return
+            }
         }
 
         if (homeFollowUpContext != HomeFollowUpContext.NONE) {
@@ -731,6 +745,30 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         }
                     }
 
+                    // for breakdown tasks
+                    AiIntent.BREAKDOWN_TASK.name -> {
+                        Log.d("HOME_ACTION", "BREAKDOWN_TASK -> start breakdown confirmation")
+
+                        val title = aiResult.taskTitle ?: normalized
+                        val plan = aiResult.plan
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .take(4)
+
+                        if (plan.size < 2) {
+                            assistantSession.speakThenListenAgain(
+                                "I could not create a clear breakdown yet. Please describe the large task again."
+                            )
+                        } else {
+                            startBreakdownConfirmation(
+                                title = title,
+                                plan = plan,
+                                originalRequest = normalized,
+                                naturalResponse = aiResult.naturalResponse
+                            )
+                        }
+                    }
+
                     else -> {
                         // log
                         Log.d("HOME_ACTION", "UNKNOWN -> local reply")
@@ -981,6 +1019,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         assistantSession.getBottomSheet()?.clearHint()
         clearPendingTaskMatchState()
         clearPendingDeleteState()
+        clearPendingBreakdownState()
         assistantSession.speakThenStop(responseManager.stopListening())
     }
 
@@ -1057,6 +1096,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.NONE -> false
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> false
+            HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> false
         }
 
     }
@@ -1168,6 +1208,184 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             homeFollowUpContext = HomeFollowUpContext.NONE
 
             assistantSession.speakThenStop(responseManager.deleteSuccess(title))
+        }
+    }
+    private fun startBreakdownConfirmation(
+        title: String,
+        plan: List<String>,
+        originalRequest: String,
+        naturalResponse: String?
+    ) {
+        pendingBreakdownTitle = title
+        pendingBreakdownPlan = plan.take(4)
+        pendingBreakdownOriginalRequest = originalRequest
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
+
+        assistantSession.getBottomSheet()?.showAssistantHint(
+            "Say yes to create these tasks, no to cancel, or describe how to change the plan."
+        )
+
+        assistantSession.speakThenListenAgain(
+            buildBreakdownProposalSpeech(
+                title = title,
+                plan = pendingBreakdownPlan,
+                naturalResponse = naturalResponse
+            )
+        )
+    }
+
+    private fun buildBreakdownProposalSpeech(
+        title: String,
+        plan: List<String>,
+        naturalResponse: String?
+    ): String {
+        val intro = naturalResponse
+            ?.takeIf { it.isNotBlank() }
+            ?: "I prepared a breakdown for $title."
+
+        val planSpeech = plan.mapIndexed { index, item ->
+            "${index + 1}. $item."
+        }.joinToString(" ")
+
+        return "$intro $planSpeech Do you want me to create these as tasks?"
+    }
+
+    private fun clearPendingBreakdownState() {
+        pendingBreakdownTitle = null
+        pendingBreakdownPlan = emptyList()
+        pendingBreakdownOriginalRequest = null
+    }
+    private fun handleBreakdownFollowUp(normalized: String): Boolean {
+        return when {
+            isBreakdownAccept(normalized) -> {
+                confirmPendingBreakdown()
+                true
+            }
+
+            isBreakdownCancel(normalized) -> {
+                val title = pendingBreakdownTitle
+                clearPendingBreakdownState()
+                homeFollowUpContext = HomeFollowUpContext.NONE
+
+                assistantSession.speakThenStop(
+                    if (title != null) {
+                        "Okay, I will not create subtasks for $title."
+                    } else {
+                        "Okay, I will not create those subtasks."
+                    }
+                )
+                true
+            }
+
+            else -> {
+                regenerateBreakdownWithFeedback(normalized)
+                true
+            }
+        }
+    }
+    private fun confirmPendingBreakdown() {
+        val title = pendingBreakdownTitle
+        val plan = pendingBreakdownPlan
+
+        if (title.isNullOrBlank() || plan.isEmpty()) {
+            clearPendingBreakdownState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+            assistantSession.speakThenStop(responseManager.unknownCommand())
+            return
+        }
+
+        lifecycleScope.launch {
+            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+
+            withContext(Dispatchers.IO) {
+                plan.forEach { subtaskTitle ->
+                    dao.insert(
+                        TaskEntity(
+                            title = subtaskTitle
+                        )
+                    )
+                }
+            }
+
+            refreshOverview()
+
+            val count = plan.size
+            clearPendingBreakdownState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+
+            assistantSession.speakThenStop(
+                "I created $count subtasks for $title."
+            )
+        }
+    }
+
+    private fun isBreakdownAccept(normalized: String): Boolean {
+        return normalized == "yes" ||
+                normalized == "yeah" ||
+                normalized == "yep" ||
+                normalized == "sure" ||
+                normalized.contains("create them") ||
+                normalized.contains("add them") ||
+                normalized.contains("save them")
+    }
+
+    private fun isBreakdownCancel(normalized: String): Boolean {
+        return normalized == "no" ||
+                normalized == "no thanks" ||
+                normalized == "cancel" ||
+                normalized == "stop" ||
+                normalized == "nevermind" ||
+                normalized == "never mind"
+    }
+
+    private fun regenerateBreakdownWithFeedback(feedback: String) {
+        val title = pendingBreakdownTitle
+        val oldPlan = pendingBreakdownPlan
+
+        if (title.isNullOrBlank()) {
+            clearPendingBreakdownState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+            assistantSession.speakThenStop(responseManager.unknownCommand())
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                assistantSession.getBottomSheet()?.showAssistantHint(
+                    "Updating the plan..."
+                )
+
+                val oldPlanText = oldPlan.joinToString("; ")
+
+                val refinementRequest = """
+                Break down this task into 2 to 4 short actionable subtasks.
+                Task: $title
+                Previous subtasks: $oldPlanText
+                User feedback: $feedback
+            """.trimIndent()
+
+                Log.d("HOME_BREAKDOWN", "regenerating breakdown with feedback='$feedback'")
+
+                val result = agentOrchestrator.process(refinementRequest)
+
+                if (result.intent == AiIntent.BREAKDOWN_TASK.name && result.plan.size >= 2) {
+                    startBreakdownConfirmation(
+                        title = result.taskTitle ?: title,
+                        plan = result.plan.take(4),
+                        originalRequest = pendingBreakdownOriginalRequest ?: refinementRequest,
+                        naturalResponse = result.naturalResponse
+                    )
+                } else {
+                    assistantSession.speakThenListenAgain(
+                        "I could not revise the breakdown clearly. Please describe how you want to change it."
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("HOME_BREAKDOWN", "Failed to regenerate breakdown", e)
+                assistantSession.speakThenListenAgain(
+                    "I could not revise the breakdown. Please try again."
+                )
+            }
         }
     }
 
@@ -1425,6 +1643,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
             }
 
+            HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> false
             HomeFollowUpContext.NONE -> false
 
             // stopping inside ambiguity flow
@@ -1460,3 +1679,5 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         voiceHelper.shutdown()
     }
 }
+
+// this is a comment for version tally, the current version is 2.4

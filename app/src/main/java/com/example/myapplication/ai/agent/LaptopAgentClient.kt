@@ -84,7 +84,7 @@ The JSON object must contain these fields:
 natural_response, action, task_title, target_task_title, date, time, recurrence, priority, confidence, need_clarification, missing_fields, requires_confirmation, plan.
 
 Allowed actions:
-CREATE_TASK, QUERY_TASK, RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, MARK_UNDONE, UNKNOWN.
+CREATE_TASK, QUERY_TASK, RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, MARK_UNDONE, BREAKDOWN_TASK, UNKNOWN.
 
 Action rules:
 Use CREATE_TASK for new tasks or reminders.
@@ -95,6 +95,7 @@ Use DELETE_TASK when the user wants to remove an existing task.
 Use MARK_DONE when the user says a task is finished or completed.
 Use MARK_UNDONE when the user wants to reopen a completed task.
 Use UNKNOWN only when the request is not about task scheduling.
+Use BREAKDOWN_TASK only when the user asks to break down, split, divide, or plan a large task into smaller subtasks.
 
 Field rules:
 For CREATE_TASK, put the new task name in task_title and keep target_task_title empty.
@@ -102,6 +103,7 @@ For RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, put t
 For QUERY_TASK, keep task_title and target_task_title empty unless the user asks about one specific task.
 Use empty string for unknown text fields.
 Do not invent dates, times, recurrence, or priority.
+For BREAKDOWN_TASK, put the large task name in task_title and keep target_task_title empty.
 
 Date and time rules:
 If the user says today, date must be "today".
@@ -128,6 +130,8 @@ For RESCHEDULE_TASK, do not put "date" in missing_fields when the user only chan
 
 Plan rules:
 For CREATE_TASK, QUERY_TASK, UPDATE_TASK, RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, plan must be an empty array.
+For BREAKDOWN_TASK, plan must contain 2 to 4 short actionable subtask titles.
+For BREAKDOWN_TASK, date, time, recurrence, and priority should usually be empty unless the user clearly provides them.
 """.trimIndent()
     }
 }

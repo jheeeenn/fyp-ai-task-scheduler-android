@@ -8,5 +8,6 @@ enum class AiIntent {
     RESCHEDULE_TASK,
     MARK_DONE,
     MARK_UNDONE,
+    BREAKDOWN_TASK,
     UNKNOWN
 }
