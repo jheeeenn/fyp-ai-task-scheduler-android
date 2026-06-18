@@ -69,7 +69,7 @@ class TodayTasksActivity : AppCompatActivity() {
                 val newDoneState = !task.isDone
 
                 withContext(Dispatchers.IO) {
-                    dao.updateDoneStatus(task.id, newDoneState)
+                    dao.updateDoneStatusForTaskAndSubtasks(task.id, newDoneState)
                 }
 
                 if (newDoneState) {
@@ -111,7 +111,7 @@ class TodayTasksActivity : AppCompatActivity() {
                 .setPositiveButton("Delete") { _, _ ->
                     lifecycleScope.launch {
                         withContext(Dispatchers.IO) {
-                            dao.deleteById(task.id)
+                            dao.deleteTaskAndSubtasks(task.id)
                         }
                         ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id.toInt())
                         selectedTaskId = null
@@ -147,12 +147,16 @@ class TodayTasksActivity : AppCompatActivity() {
 
     private fun loadTasks(keepSelection: Long? = selectedTaskId) {
         lifecycleScope.launch {
-            val all = withContext(Dispatchers.IO) { dao.getAll() }
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 .format(Calendar.getInstance().time)
+            val taskData = withContext(Dispatchers.IO) {
+                val roots = dao.getRootTasksForDate(today)
+                val subtasks = roots.associate { root -> root.id to dao.getSubtasks(root.id) }
+                roots to subtasks
+            }
 
-            todayTasks = all.filter { it.dueDate == today }
-            adapter.setTasks(todayTasks)
+            todayTasks = taskData.first
+            adapter.setTasksWithSubtasks(todayTasks, taskData.second)
 
             selectedTaskId = if (todayTasks.any { it.id == keepSelection }) keepSelection else null
             adapter.setSelectedTaskId(selectedTaskId)

@@ -338,7 +338,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
-                        dao.deleteById(taskId)
+                        dao.deleteTaskAndSubtasks(taskId)
                     }
                     ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
                     Toast.makeText(
@@ -452,7 +452,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 lifecycleScope.launch {
                     val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
                     withContext(Dispatchers.IO) {
-                        dao.deleteById(taskId)
+                        dao.deleteTaskAndSubtasks(taskId)
                     }
                     ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
                     assistantSession.dismissPanel()
@@ -507,7 +507,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 lifecycleScope.launch {
                     val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
                     withContext(Dispatchers.IO) {
-                        dao.deleteById(taskId)
+                        dao.deleteTaskAndSubtasks(taskId)
                     }
                     ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
                     assistantSession.dismissPanel()

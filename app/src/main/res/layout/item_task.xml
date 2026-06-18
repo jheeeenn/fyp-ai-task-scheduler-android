@@ -37,6 +37,28 @@
         android:textColor="@color/ui_text_secondary_light"
         android:textSize="19sp" />
 
+
+    <TextView
+        android:id="@+id/taskSubtaskSummaryText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="Subtasks: 0 of 0 completed"
+        android:textColor="@color/ui_text_secondary_light"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/taskSubtaskTitlesText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:lineSpacingExtra="2dp"
+        android:text="Subtask titles"
+        android:textColor="@color/ui_text_secondary_light"
+        android:textSize="17sp"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/taskStatusText"
         android:layout_width="match_parent"

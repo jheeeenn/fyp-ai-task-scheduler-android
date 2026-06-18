@@ -434,14 +434,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun formatTime(hour: Int, minute: Int): String {
-        val ampm = if (hour < 12) "AM" else "PM"
-        val formattedHour = when {
-            hour == 0 -> 12
-            hour > 12 -> hour - 12
-            else -> hour
-        }
-        val formattedMinute = minute.toString().padStart(2, '0')
-        return "$formattedHour:$formattedMinute $ampm"
+        return ScheduleTextParser.formatTime(hour, minute)
     }
 
     private fun scheduleReminder(

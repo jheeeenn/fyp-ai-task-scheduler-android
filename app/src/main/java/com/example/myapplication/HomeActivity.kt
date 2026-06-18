@@ -85,7 +85,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         AFTER_TASK_DETAILS,
         TASK_MATCH_AMBIGUITY,
         DELETE_CONFIRMATION,
-        BREAKDOWN_CONFIRMATION
+        BREAKDOWN_CONFIRMATION,
+        BREAKDOWN_SCHEDULE_COLLECTION
     }
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
@@ -99,6 +100,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var pendingBreakdownTitle: String? = null
     private var pendingBreakdownPlan: List<String> = emptyList()
     private var pendingBreakdownOriginalRequest: String? = null
+    private var pendingBreakdownDateText: String? = null
+    private var pendingBreakdownTimeText: String? = null
+    private var currentSubtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
 
     private val audioPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -338,7 +342,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val dao = AppDatabase.getInstance(this).taskDao()
 
         lifecycleScope.launch{
-            val tasks = withContext(Dispatchers.IO){dao.getAll()}
+            val tasks = withContext(Dispatchers.IO){dao.getRootTasks()}
             val today = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 .format(Calendar.getInstance().time)
             val todayCount = tasks.count { task ->
@@ -443,7 +447,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
 
-        if (homeFollowUpContext == HomeFollowUpContext.BREAKDOWN_CONFIRMATION) {
+        if (homeFollowUpContext == HomeFollowUpContext.BREAKDOWN_CONFIRMATION ||
+            homeFollowUpContext == HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+        ) {
             if (handleBreakdownFollowUp(normalized)) {
                 return
             }
@@ -524,7 +530,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
 
                             // to prevent user accidently matching a completed task for deletion
-                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -562,7 +568,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -607,7 +613,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -658,7 +664,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -678,7 +684,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     val matchedTask = matchResult.bestTask
 
                                     withContext(Dispatchers.IO) {
-                                        dao.updateDoneStatus(matchedTask.id, true)
+                                        dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, true)
                                     }
 
                                     ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
@@ -704,7 +710,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getAll() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getRootTasks() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -724,7 +730,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     val matchedTask = matchResult.bestTask
 
                                     withContext(Dispatchers.IO) {
-                                        dao.updateDoneStatus(matchedTask.id, false)
+                                        dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, false)
                                     }
 
                                     val reopenedTask = matchedTask.copy(isDone = false)
@@ -764,7 +770,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 title = title,
                                 plan = plan,
                                 originalRequest = normalized,
-                                naturalResponse = aiResult.naturalResponse
+                                naturalResponse = aiResult.naturalResponse,
+                                dateText = aiResult.dateText,
+                                timeText = aiResult.timeText
                             )
                         }
                     }
@@ -789,7 +797,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun handleQueryTask(normalized: String) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-            val allTasks = withContext(Dispatchers.IO) { dao.getAll() }
+            val taskData = withContext(Dispatchers.IO) {
+                val roots = dao.getRootTasks()
+                val subtasks = roots.associate { root -> root.id to dao.getSubtasks(root.id) }
+                roots to subtasks
+            }
+            val allTasks = taskData.first
+            currentSubtasksByParentId = taskData.second
 
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 .format(Calendar.getInstance().time)
@@ -938,11 +952,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val title = task.title.ifBlank { "Untitled task" }
         val hasTime = !task.dueTime.isNullOrBlank()
 
-        return if (hasTime) {
+        val subtaskSpeech = buildUnfinishedSubtaskSpeech(task.id, compact = true)
+        val base = if (hasTime) {
             "$title at ${task.dueTime}."
         } else {
             "$title."
         }
+        return "$base$subtaskSpeech"
     }
 
     private fun buildSingleTaskSpeech(task: com.example.myapplication.data.TaskEntity): String {
@@ -951,11 +967,29 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val hasDate = !task.dueDate.isNullOrBlank()
         val hasTime = !task.dueTime.isNullOrBlank()
 
-        return when {
+        val base = when {
             hasDate && hasTime -> "$title on ${formatDateForSpeech(task.dueDate)} at ${task.dueTime}."
             hasDate -> "$title on ${formatDateForSpeech(task.dueDate)}."
             hasTime -> "$title at ${task.dueTime}."
             else -> "$title."
+        }
+        return "$base${buildUnfinishedSubtaskSpeech(task.id, compact = false)}"
+    }
+
+    private fun buildUnfinishedSubtaskSpeech(parentTaskId: Long, compact: Boolean): String {
+        val subtasks = currentSubtasksByParentId[parentTaskId].orEmpty()
+        if (subtasks.isEmpty()) return ""
+
+        val unfinished = subtasks.filter { !it.isDone }
+        val intro = " It has ${subtasks.size} subtasks."
+        if (unfinished.isEmpty()) return "$intro All are completed."
+
+        val names = unfinished.take(2).joinToString(", ") { it.title }
+        val more = if (unfinished.size > 2) ", and ${unfinished.size - 2} more" else ""
+        return if (compact) {
+            "$intro ${unfinished.size} unfinished."
+        } else {
+            "$intro ${unfinished.size} are unfinished: $names$more."
         }
     }
 
@@ -1097,13 +1131,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> false
             HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> false
+            HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION -> false
         }
 
     }
     private fun handleDetailedFollowUpQuery() {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-            val allTasks = withContext(Dispatchers.IO) { dao.getAll() }
+            val taskData = withContext(Dispatchers.IO) {
+                val roots = dao.getRootTasks()
+                val subtasks = roots.associate { root -> root.id to dao.getSubtasks(root.id) }
+                roots to subtasks
+            }
+            val allTasks = taskData.first
+            currentSubtasksByParentId = taskData.second
 
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 .format(Calendar.getInstance().time)
@@ -1198,7 +1239,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
 
             withContext(Dispatchers.IO) {
-                dao.deleteById(taskId)
+                dao.deleteTaskAndSubtasks(taskId)
             }
 
             ReminderHelper.cancelReminder(this@HomeActivity, taskId.toInt())
@@ -1214,15 +1255,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         title: String,
         plan: List<String>,
         originalRequest: String,
-        naturalResponse: String?
+        naturalResponse: String?,
+        dateText: String? = null,
+        timeText: String? = null
     ) {
         pendingBreakdownTitle = title
         pendingBreakdownPlan = plan.take(4)
         pendingBreakdownOriginalRequest = originalRequest
+        pendingBreakdownDateText = dateText
+        pendingBreakdownTimeText = timeText
         homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
 
         assistantSession.getBottomSheet()?.showAssistantHint(
-            "Say yes to create these tasks, no to cancel, or describe how to change the plan."
+            "Say yes to create these subtasks, no to cancel, or describe how to change the plan."
         )
 
         assistantSession.speakThenListenAgain(
@@ -1247,18 +1292,29 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             "${index + 1}. $item."
         }.joinToString(" ")
 
-        return "$intro $planSpeech Do you want me to create these as tasks?"
+        return "$intro $planSpeech Do you want me to create this scheduled task with these subtasks?"
     }
 
     private fun clearPendingBreakdownState() {
         pendingBreakdownTitle = null
         pendingBreakdownPlan = emptyList()
         pendingBreakdownOriginalRequest = null
+        pendingBreakdownDateText = null
+        pendingBreakdownTimeText = null
     }
+
     private fun handleBreakdownFollowUp(normalized: String): Boolean {
+        return when (homeFollowUpContext) {
+            HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> handleBreakdownConfirmationFollowUp(normalized)
+            HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION -> handleBreakdownScheduleFollowUp(normalized)
+            else -> false
+        }
+    }
+
+    private fun handleBreakdownConfirmationFollowUp(normalized: String): Boolean {
         return when {
             isBreakdownAccept(normalized) -> {
-                confirmPendingBreakdown()
+                proceedAfterBreakdownApproval()
                 true
             }
 
@@ -1283,7 +1339,60 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
     }
-    private fun confirmPendingBreakdown() {
+
+    private fun proceedAfterBreakdownApproval() {
+        val parsedSchedule = ScheduleTextParser.parse(pendingBreakdownDateText, pendingBreakdownTimeText)
+        pendingBreakdownDateText = parsedSchedule.dueDate ?: pendingBreakdownDateText
+        pendingBreakdownTimeText = parsedSchedule.dueTime ?: pendingBreakdownTimeText
+
+        if (parsedSchedule.isComplete) {
+            createPendingBreakdown(parsedSchedule.dueDate!!, parsedSchedule.dueTime!!)
+            return
+        }
+
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+        val prompt = when {
+            !parsedSchedule.hasDate && !parsedSchedule.hasTime -> "When should I schedule this task?"
+            !parsedSchedule.hasDate -> "What date should I schedule this task for?"
+            else -> "What time should I schedule this task for?"
+        }
+        assistantSession.getBottomSheet()?.showAssistantHint(prompt)
+        assistantSession.speakThenListenAgain(prompt)
+    }
+
+    private fun handleBreakdownScheduleFollowUp(normalized: String): Boolean {
+        if (isBreakdownCancel(normalized)) {
+            val title = pendingBreakdownTitle
+            clearPendingBreakdownState()
+            homeFollowUpContext = HomeFollowUpContext.NONE
+            assistantSession.speakThenStop(
+                if (title != null) "Okay, I will not create subtasks for $title." else "Okay, I will not create those subtasks."
+            )
+            return true
+        }
+
+        val parsedSchedule = ScheduleTextParser.merge(
+            existingDateText = pendingBreakdownDateText,
+            existingTimeText = pendingBreakdownTimeText,
+            newText = normalized
+        )
+        pendingBreakdownDateText = parsedSchedule.dueDate ?: pendingBreakdownDateText
+        pendingBreakdownTimeText = parsedSchedule.dueTime ?: pendingBreakdownTimeText
+
+        if (parsedSchedule.isComplete) {
+            createPendingBreakdown(parsedSchedule.dueDate!!, parsedSchedule.dueTime!!)
+        } else {
+            val prompt = when {
+                !parsedSchedule.hasDate && !parsedSchedule.hasTime -> "When should I schedule this task?"
+                !parsedSchedule.hasDate -> "What date should I schedule this task for?"
+                else -> "What time should I schedule this task for?"
+            }
+            assistantSession.speakThenListenAgain(prompt)
+        }
+        return true
+    }
+
+    private fun createPendingBreakdown(dueDate: String, dueTime: String) {
         val title = pendingBreakdownTitle
         val plan = pendingBreakdownPlan
 
@@ -1296,17 +1405,35 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+            val mainTask = TaskEntity(
+                title = title,
+                dueDate = dueDate,
+                dueTime = dueTime
+            )
 
-            withContext(Dispatchers.IO) {
-                plan.forEach { subtaskTitle ->
+            val insertedParentId = withContext(Dispatchers.IO) {
+                val parentId = dao.insert(mainTask)
+                Log.d("HOME_BREAKDOWN", "main task inserted id=$parentId")
+
+                plan.forEachIndexed { index, subtaskTitle ->
                     dao.insert(
                         TaskEntity(
-                            title = subtaskTitle
+                            title = subtaskTitle,
+                            dueDate = dueDate,
+                            dueTime = dueTime,
+                            parentTaskId = parentId,
+                            subtaskOrder = index
                         )
                     )
+                    Log.d("HOME_BREAKDOWN", "inserted subtask title=$subtaskTitle parentId=$parentId")
                 }
+                parentId
             }
 
+            ReminderHelper.scheduleReminderFromTask(
+                this@HomeActivity,
+                mainTask.copy(id = insertedParentId)
+            )
             refreshOverview()
 
             val count = plan.size
@@ -1314,7 +1441,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             homeFollowUpContext = HomeFollowUpContext.NONE
 
             assistantSession.speakThenStop(
-                "I created $count subtasks for $title."
+                "I created $title with $count subtasks for $dueDate at $dueTime."
             )
         }
     }
@@ -1373,7 +1500,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         title = result.taskTitle ?: title,
                         plan = result.plan.take(4),
                         originalRequest = pendingBreakdownOriginalRequest ?: refinementRequest,
-                        naturalResponse = result.naturalResponse
+                        naturalResponse = result.naturalResponse,
+                        dateText = pendingBreakdownDateText,
+                        timeText = pendingBreakdownTimeText
                     )
                 } else {
                     assistantSession.speakThenListenAgain(
@@ -1440,8 +1569,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
             val tasks = withContext(Dispatchers.IO) {
                 when (taskResolutionState.action) {
-                    PendingTaskAction.MARK_UNDONE -> dao.getAll()
-                    else -> dao.getActiveTasks()
+                    PendingTaskAction.MARK_UNDONE -> dao.getRootTasks()
+                    else -> dao.getRootActiveTasks()
                 }
             }
 
@@ -1508,7 +1637,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                 PendingTaskAction.MARK_DONE -> {
                     withContext(Dispatchers.IO) {
-                        dao.updateDoneStatus(chosenTask.id, true)
+                        dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, true)
                     }
                     ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
                     refreshOverview()
@@ -1517,7 +1646,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                 PendingTaskAction.MARK_UNDONE -> {
                     withContext(Dispatchers.IO) {
-                        dao.updateDoneStatus(chosenTask.id, false)
+                        dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, false)
                     }
                     ReminderHelper.scheduleReminderFromTask(this@HomeActivity, chosenTask.copy(isDone = false))
                     refreshOverview()
@@ -1644,6 +1773,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
 
             HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> false
+            HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION -> false
             HomeFollowUpContext.NONE -> false
 
             // stopping inside ambiguity flow
