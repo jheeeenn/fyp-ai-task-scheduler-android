@@ -13,7 +13,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class LaptopAgentClient(
-    private val endpointUrl: String = "http://192.168.0.242:1234/v1/chat/completions",
+    // static private IP addr for connection to LM studio, change the addr if needed
+    private val endpointUrl: String = "http://192.168.0.132:1234/v1/chat/completions",
     private val modelId: String = "google/gemma-4-e2b"
 ) {
     private val client = OkHttpClient.Builder()
