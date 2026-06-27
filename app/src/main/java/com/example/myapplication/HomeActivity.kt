@@ -1492,6 +1492,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun isBreakdownAccept(normalized: String): Boolean {
         return normalized == "yes" ||
+                normalized == "yes yes" ||
                 normalized == "yeah" ||
                 normalized == "yep" ||
                 normalized == "sure" ||

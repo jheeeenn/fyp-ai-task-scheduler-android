@@ -282,10 +282,22 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val dao = AppDatabase.getInstance(this).taskDao()
 
         lifecycleScope.launch {
+            val existingTask = withContext(Dispatchers.IO) {
+                dao.getById(taskId)
+            }
+
             ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
 
             withContext(Dispatchers.IO) {
                 dao.updateTask(taskId, newTitle, selectedDate, selectedTime)
+
+                if (existingTask?.parentTaskId == null) {
+                    dao.updateSubtasksSchedule(
+                        parentTaskId = taskId,
+                        dueDate = selectedDate,
+                        dueTime = selectedTime
+                    )
+                }
             }
 
             val updatedTask = TaskEntity(
@@ -293,13 +305,19 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 title = newTitle,
                 dueDate = selectedDate,
                 dueTime = selectedTime,
-                isDone = false
+                isDone = false,
+                parentTaskId = existingTask?.parentTaskId,
+                subtaskOrder = existingTask?.subtaskOrder ?: 0
             )
 
-            val scheduled = ReminderHelper.scheduleReminderFromTask(
-                this@EditTaskActivity,
-                updatedTask
-            )
+            val scheduled = if (updatedTask.parentTaskId == null) {
+                ReminderHelper.scheduleReminderFromTask(
+                    this@EditTaskActivity,
+                    updatedTask
+                )
+            } else {
+                true
+            }
 
             if (selectedDate != null && selectedTime != null) {
                 if (scheduled) {

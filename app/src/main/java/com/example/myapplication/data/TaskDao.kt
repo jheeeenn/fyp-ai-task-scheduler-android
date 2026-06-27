@@ -34,6 +34,17 @@ interface TaskDao {
     @Query("UPDATE tasks SET title = :title, dueDate = :dueDate, dueTime = :dueTime WHERE id = :id")
     suspend fun updateTask(id: Long, title: String, dueDate: String?, dueTime: String?)
 
+    @Query("""
+    UPDATE tasks 
+    SET dueDate = :dueDate, dueTime = :dueTime 
+    WHERE parentTaskId = :parentTaskId
+""")
+    suspend fun updateSubtasksSchedule(
+        parentTaskId: Long,
+        dueDate: String?,
+        dueTime: String?
+    )
+
     @Query("SELECT * FROM tasks WHERE isDone = 0 ORDER BY id DESC")
     suspend fun getActiveTasks(): List<TaskEntity>
 
