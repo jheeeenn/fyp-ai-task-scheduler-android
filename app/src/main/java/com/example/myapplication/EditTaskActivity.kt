@@ -545,7 +545,30 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun isConversationExitCommand(normalized: String): Boolean {
-        val exitPhrases = listOf(
+        val taskActionHints = listOf(
+            "mark ",
+            " as done",
+            "complete ",
+            "completed",
+            "delete ",
+            "remove ",
+            "edit ",
+            "update ",
+            "reschedule",
+            "break down",
+            "remind me",
+            "create ",
+            "what task",
+            "what tasks",
+            "show task",
+            "show tasks"
+        )
+
+        if (taskActionHints.any { normalized.contains(it) }) {
+            return false
+        }
+
+        val exactExitCommands = setOf(
             "nothing else",
             "that's all",
             "thats all",
@@ -570,7 +593,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             "thats it"
         )
 
-        return exitPhrases.any { phrase -> normalized.contains(phrase) }
+        return normalized in exactExitCommands
     }
 
     private fun applySpokenDate(dateText: String): Boolean {

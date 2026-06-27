@@ -342,7 +342,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val dao = AppDatabase.getInstance(this).taskDao()
 
         lifecycleScope.launch{
+
             val tasks = withContext(Dispatchers.IO){dao.getRootTasks()}
+
             val today = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 .format(Calendar.getInstance().time)
             val todayCount = tasks.count { task ->
@@ -664,7 +666,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -684,10 +686,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     val matchedTask = matchResult.bestTask
 
                                     withContext(Dispatchers.IO) {
-                                        dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, true)
+                                        if (matchedTask.parentTaskId == null) {
+                                            dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, true)
+                                        } else {
+                                            dao.updateDoneStatus(matchedTask.id, true)
+                                        }
                                     }
 
-                                    ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
+                                    if (matchedTask.parentTaskId == null) {
+                                        ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
+                                    }
+
                                     refreshOverview()
 
                                     assistantSession.speak(responseManager.markDoneSuccess(matchedTask.title), listenAgain = false)
@@ -710,7 +719,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootTasks() }
+                            val tasks = withContext(Dispatchers.IO) { dao.getAll() }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -730,11 +739,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     val matchedTask = matchResult.bestTask
 
                                     withContext(Dispatchers.IO) {
-                                        dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, false)
+                                        if (matchedTask.parentTaskId == null) {
+                                            dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, false)
+                                        } else {
+                                            dao.updateDoneStatus(matchedTask.id, false)
+                                        }
                                     }
 
-                                    val reopenedTask = matchedTask.copy(isDone = false)
-                                    ReminderHelper.scheduleReminderFromTask(this@HomeActivity, reopenedTask)
+                                    if (matchedTask.parentTaskId == null) {
+                                        val reopenedTask = matchedTask.copy(isDone = false)
+                                        ReminderHelper.scheduleReminderFromTask(this@HomeActivity, reopenedTask)
+                                    }
+
                                     refreshOverview()
 
                                     assistantSession.speak(responseManager.markUndoneSuccess(matchedTask.title), listenAgain = false)
@@ -1020,7 +1036,30 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     // --> temproray functions before adding this exit intent in Ai router
     private fun isConversationExitCommand(normalized: String): Boolean {
-        val exitPhrases = listOf(
+        val taskActionHints = listOf(
+            "mark ",
+            " as done",
+            "complete ",
+            "completed",
+            "delete ",
+            "remove ",
+            "edit ",
+            "update ",
+            "reschedule",
+            "break down",
+            "remind me",
+            "create ",
+            "what task",
+            "what tasks",
+            "show task",
+            "show tasks"
+        )
+
+        if (taskActionHints.any { normalized.contains(it) }) {
+            return false
+        }
+
+        val exactExitCommands = setOf(
             "nothing else",
             "that's all",
             "thats all",
@@ -1043,11 +1082,25 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             "finished",
             "that's it",
             "thats it"
-
         )
 
-        return exitPhrases.any { phrase -> normalized.contains(phrase) }
+        return normalized in exactExitCommands
     }
+
+    private fun isSimpleFollowUpEndCommand(normalized: String): Boolean {
+        return normalized == "no" ||
+                normalized == "nothing else" ||
+                normalized == "that's all" ||
+                normalized == "thats all" ||
+                normalized == "done" ||
+                normalized == "i'm done" ||
+                normalized == "im done" ||
+                normalized == "all done" ||
+                normalized == "finished" ||
+                normalized == "that's it" ||
+                normalized == "thats it"
+    }
+
     private fun endAssistantConversation() {
         homeFollowUpContext = HomeFollowUpContext.NONE
         assistantSession.getBottomSheet()?.clearHint()
@@ -1070,13 +1123,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         true
                     }
 
-                    normalized == "no" ||
-                            normalized.contains("nothing else") ||
-                            normalized.contains("that's all") ||
-                            normalized.contains("done") -> {
-                        endAssistantConversation()
-                        true
-                    }
+                    isSimpleFollowUpEndCommand(normalized) -> {
+    endAssistantConversation()
+    true
+}
 
                     else -> false
                 }
@@ -1096,13 +1146,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         true
                     }
 
-                    normalized == "no" ||
-                            normalized.contains("nothing else") ||
-                            normalized.contains("that's all") ||
-                            normalized.contains("done") -> {
-                        endAssistantConversation()
-                        true
-                    }
+                    isSimpleFollowUpEndCommand(normalized) -> {
+    endAssistantConversation()
+    true
+}
 
                     else -> false
                 }
@@ -1115,13 +1162,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         true
                     }
 
-                    normalized == "no" ||
-                            normalized.contains("nothing else") ||
-                            normalized.contains("that's all") ||
-                            normalized.contains("done") -> {
-                        endAssistantConversation()
-                        true
-                    }
+                    isSimpleFollowUpEndCommand(normalized) -> {
+    endAssistantConversation()
+    true
+}
 
                     else -> false
                 }
@@ -1569,7 +1613,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
             val tasks = withContext(Dispatchers.IO) {
                 when (taskResolutionState.action) {
-                    PendingTaskAction.MARK_UNDONE -> dao.getRootTasks()
+                    PendingTaskAction.MARK_DONE -> dao.getActiveTasks()
+                    PendingTaskAction.MARK_UNDONE -> dao.getAll()
                     else -> dao.getRootActiveTasks()
                 }
             }
@@ -1637,18 +1682,37 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                 PendingTaskAction.MARK_DONE -> {
                     withContext(Dispatchers.IO) {
-                        dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, true)
+                        if (chosenTask.parentTaskId == null) {
+                            dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, true)
+                        } else {
+                            dao.updateDoneStatus(chosenTask.id, true)
+                        }
                     }
-                    ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
+
+                    if (chosenTask.parentTaskId == null) {
+                        ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
+                    }
+
                     refreshOverview()
                     assistantSession.speak(responseManager.markDoneSuccess(chosenTask.title), listenAgain = false)
                 }
 
                 PendingTaskAction.MARK_UNDONE -> {
                     withContext(Dispatchers.IO) {
-                        dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, false)
+                        if (chosenTask.parentTaskId == null) {
+                            dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, false)
+                        } else {
+                            dao.updateDoneStatus(chosenTask.id, false)
+                        }
                     }
-                    ReminderHelper.scheduleReminderFromTask(this@HomeActivity, chosenTask.copy(isDone = false))
+
+                    if (chosenTask.parentTaskId == null) {
+                        ReminderHelper.scheduleReminderFromTask(
+                            this@HomeActivity,
+                            chosenTask.copy(isDone = false)
+                        )
+                    }
+
                     refreshOverview()
                     assistantSession.speak(responseManager.markUndoneSuccess(chosenTask.title), listenAgain = false)
                 }

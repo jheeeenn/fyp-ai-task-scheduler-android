@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 
 class LaptopAgentClient(
     // static private IP addr for connection to LM studio, change the addr if needed
-    private val endpointUrl: String = "http://192.168.0.94:1234/v1/chat/completions",
+    private val endpointUrl: String = "http://192.168.0.132:1234/v1/chat/completions",
     private val modelId: String = "google/gemma-4-e2b"
 ) {
     private val client = OkHttpClient.Builder()
