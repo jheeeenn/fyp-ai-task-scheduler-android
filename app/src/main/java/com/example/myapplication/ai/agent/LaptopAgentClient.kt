@@ -107,11 +107,14 @@ Do not invent dates, times, recurrence, or priority.
 For BREAKDOWN_TASK, put the large task name in task_title and keep target_task_title empty.
 
 Date and time rules:
-If the user says today, date must be "today".
-If the user says tomorrow, date must be "tomorrow".
+If the user gives a date phrase, copy it into the date field exactly as spoken where possible.
+Examples of date phrases: today, tomorrow, day after tomorrow, this Monday, next Friday, 28 June, June 28, 28/06/2026.
+Do not convert explicit dates to another format. Android will normalize the date.
+If no date is given, date must be empty.
 If the user gives a time, extract it.
 Use 24-hour time when possible, such as "21:00".
 For RESCHEDULE_TASK, date may be empty if the user only changes the time.
+For QUERY_TASK, include the date field when the user asks about tasks on a specific date or day.
 
 Recurrence and priority rules:
 recurrence must be empty unless the user clearly says the task repeats.

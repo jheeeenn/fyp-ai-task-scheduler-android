@@ -91,6 +91,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
     private var lastQueryWasToday = false
+    private var lastQueryDate: String? = null
 
     //for delete confirmation when the task intent is 'delete'
     private var pendingDeleteTaskId: Long? = null
@@ -809,6 +810,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
     }
 
+    private fun todayDateString(): String {
+        return SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+            .format(Calendar.getInstance().time)
+    }
+
+    private fun resolveQueryDate(normalized: String): String? {
+        return ScheduleTextParser.parseDateFromSentence(normalized)
+    }
 
     private fun handleQueryTask(normalized: String) {
         lifecycleScope.launch {
@@ -821,24 +830,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val allTasks = taskData.first
             currentSubtasksByParentId = taskData.second
 
-            val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-                .format(Calendar.getInstance().time)
+            val today = todayDateString()
+            val queryDate = resolveQueryDate(normalized)
 
-            val queryToday =
-                normalized.contains("today") ||
-                        normalized.contains("anything today") ||
-                        normalized.contains("tasks today")
+            lastQueryDate = queryDate
+            lastQueryWasToday = queryDate == today
 
-            lastQueryWasToday = queryToday
-
-            val filteredTasks = if (queryToday) {
-                allTasks.filter { !it.isDone && it.dueDate == today }
+            val filteredTasks = if (!queryDate.isNullOrBlank()) {
+                allTasks.filter { !it.isDone && it.dueDate == queryDate }
             } else {
                 allTasks.filter { !it.isDone }
             }
 
             val replyMode = detectQueryReplyMode(normalized)
-            val reply = buildTaskQueryReply(filteredTasks, queryToday, replyMode)
+            val reply = buildTaskQueryReply(filteredTasks, lastQueryWasToday, replyMode)
 
             val hint = if (filteredTasks.isEmpty()) {
                 responseManager.hintCreateOrRead()
@@ -859,7 +864,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             // log
             Log.d(
                 "HOME_QUERY",
-                "queryToday=$queryToday replyMode=$replyMode taskCount=${filteredTasks.size} nextContext=$homeFollowUpContext"
+                "queryDate=$queryDate queryToday=$lastQueryWasToday replyMode=$replyMode taskCount=${filteredTasks.size} nextContext=$homeFollowUpContext"
             )
 
             val spokenFollowUp = when {
@@ -1190,18 +1195,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val allTasks = taskData.first
             currentSubtasksByParentId = taskData.second
 
-            val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-                .format(Calendar.getInstance().time)
+            val today = todayDateString()
+            val queryDate = lastQueryDate
+            val queryToday = queryDate == today
 
-            val filteredTasks = if (lastQueryWasToday) {
-                allTasks.filter { !it.isDone && it.dueDate == today }
+            val filteredTasks = if (!queryDate.isNullOrBlank()) {
+                allTasks.filter { !it.isDone && it.dueDate == queryDate }
             } else {
                 allTasks.filter { !it.isDone }
             }
 
             val reply = buildTaskQueryReply(
                 tasks = filteredTasks,
-                queryToday = lastQueryWasToday,
+                queryToday = queryToday,
                 mode = QueryReplyMode.DETAILED
             )
 
