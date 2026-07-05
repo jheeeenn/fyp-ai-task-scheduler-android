@@ -167,6 +167,40 @@
                     android:textSize="18sp" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/cardLmStudioEndpoint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_task_card"
+                android:clickable="true"
+                android:contentDescription="LM Studio endpoint setting"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
+                android:minHeight="96dp"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:id="@+id/tvLmStudioEndpointTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Developer: LM Studio Endpoint"
+                    android:textColor="@color/ui_text_primary_light"
+                    android:textSize="21sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvLmStudioEndpointValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="http://192.168.0.132:1234/v1/chat/completions"
+                    android:textColor="@color/ui_text_secondary_light"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+
         </LinearLayout>
     </ScrollView>
 

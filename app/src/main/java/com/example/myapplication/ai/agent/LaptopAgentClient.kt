@@ -1,6 +1,8 @@
 package com.example.myapplication.ai.agent
 
+import android.content.Context
 import android.util.Log
+import com.example.myapplication.SettingsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -13,10 +15,11 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class LaptopAgentClient(
-    // static private IP addr for connection to LM studio, change the addr if needed
-    private val endpointUrl: String = "http://192.168.0.132:1234/v1/chat/completions",
+    context: Context? = null,
+    private val endpointUrl: String = SettingsActivity.DEFAULT_LM_STUDIO_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
 ) {
+    private val appContext = context?.applicationContext
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -41,8 +44,11 @@ class LaptopAgentClient(
             })
         }
 
+        val requestEndpointUrl = getEndpointUrl()
+        Log.d("LAPTOP_AGENT_CONFIG", "Using LM Studio endpoint: $requestEndpointUrl")
+
         val request = Request.Builder()
-            .url(endpointUrl)
+            .url(requestEndpointUrl)
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
@@ -73,6 +79,14 @@ class LaptopAgentClient(
             Log.e("LAPTOP_AGENT", "LM Studio request timed out or was interrupted", e)
             throw IOException("LM Studio request timed out or was interrupted", e)
         }
+    }
+
+    private fun getEndpointUrl(): String {
+        val configuredEndpoint = appContext
+            ?.getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            ?.getString(SettingsActivity.KEY_LM_STUDIO_ENDPOINT, endpointUrl)
+
+        return configuredEndpoint?.takeIf { it.isNotBlank() } ?: endpointUrl
     }
 
     companion object {

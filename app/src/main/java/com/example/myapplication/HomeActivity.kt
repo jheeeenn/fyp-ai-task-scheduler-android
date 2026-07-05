@@ -148,7 +148,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             cloudExtractor
         )
         agentOrchestrator = AgentOrchestrator(
-            LaptopAgentClient(),
+            LaptopAgentClient(this),
             TaskAgentResponseParser(),
             TaskActionNormalizer(),
             ActionValidator(),

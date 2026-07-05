@@ -1,14 +1,17 @@
 package com.example.myapplication
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
+import android.text.InputType
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
@@ -20,6 +23,8 @@ class SettingsActivity : AppCompatActivity() {
         const val KEY_REPLY_LENGTH = "reply_length"
         const val KEY_LARGE_TEXT = "large_text"
         const val KEY_HIGH_CONTRAST = "high_contrast"
+        const val KEY_LM_STUDIO_ENDPOINT = "lm_studio_endpoint"
+        const val DEFAULT_LM_STUDIO_ENDPOINT = "http://192.168.0.132:1234/v1/chat/completions"
     }
 
     private lateinit var prefs: SharedPreferences
@@ -28,11 +33,13 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvReplyLengthValue: TextView
     private lateinit var tvLargeTextValue: TextView
     private lateinit var tvHighContrastValue: TextView
+    private lateinit var tvLmStudioEndpointValue: TextView
 
     private var assistantTone: String = "Friendly"
     private var replyLength: String = "Normal"
     private var largeText: Boolean = false
     private var highContrast: Boolean = false
+    private var lmStudioEndpoint: String = DEFAULT_LM_STUDIO_ENDPOINT
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +51,7 @@ class SettingsActivity : AppCompatActivity() {
         val cardReplyLength = findViewById<LinearLayout>(R.id.cardReplyLength)
         val cardLargeText = findViewById<LinearLayout>(R.id.cardLargeText)
         val cardHighContrast = findViewById<LinearLayout>(R.id.cardHighContrast)
+        val cardLmStudioEndpoint = findViewById<LinearLayout>(R.id.cardLmStudioEndpoint)
 
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
         val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
@@ -52,6 +60,7 @@ class SettingsActivity : AppCompatActivity() {
         tvReplyLengthValue = findViewById(R.id.tvReplyLengthValue)
         tvLargeTextValue = findViewById(R.id.tvLargeTextValue)
         tvHighContrastValue = findViewById(R.id.tvHighContrastValue)
+        tvLmStudioEndpointValue = findViewById(R.id.tvLmStudioEndpointValue)
 
         loadSettings()
         updateUiValues()
@@ -104,6 +113,10 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        cardLmStudioEndpoint.setOnClickListenerWithHaptic {
+            showLmStudioEndpointDialog()
+        }
+
         btnGoHome.setOnClickListenerWithHaptic {
             finish()
         }
@@ -118,6 +131,8 @@ class SettingsActivity : AppCompatActivity() {
         replyLength = prefs.getString(KEY_REPLY_LENGTH, "Normal") ?: "Normal"
         largeText = prefs.getBoolean(KEY_LARGE_TEXT, false)
         highContrast = prefs.getBoolean(KEY_HIGH_CONTRAST, false)
+        lmStudioEndpoint = prefs.getString(KEY_LM_STUDIO_ENDPOINT, DEFAULT_LM_STUDIO_ENDPOINT)
+            ?: DEFAULT_LM_STUDIO_ENDPOINT
     }
 
     private fun saveSettings() {
@@ -126,6 +141,7 @@ class SettingsActivity : AppCompatActivity() {
             .putString(KEY_REPLY_LENGTH, replyLength)
             .putBoolean(KEY_LARGE_TEXT, largeText)
             .putBoolean(KEY_HIGH_CONTRAST, highContrast)
+            .putString(KEY_LM_STUDIO_ENDPOINT, lmStudioEndpoint)
             .apply()
     }
 
@@ -134,6 +150,63 @@ class SettingsActivity : AppCompatActivity() {
         tvReplyLengthValue.text = replyLength
         tvLargeTextValue.text = if (largeText) "On" else "Off"
         tvHighContrastValue.text = if (highContrast) "On" else "Off"
+        tvLmStudioEndpointValue.text = lmStudioEndpoint
+    }
+
+    private fun showLmStudioEndpointDialog() {
+        val endpointInput = EditText(this).apply {
+            setText(lmStudioEndpoint)
+            setSelectAllOnFocus(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Developer: LM Studio Endpoint")
+            .setView(endpointInput)
+            .setPositiveButton("Save", null)
+            .setNegativeButton("Reset to Default") { _, _ ->
+                lmStudioEndpoint = DEFAULT_LM_STUDIO_ENDPOINT
+                saveSettings()
+                updateUiValues()
+            }
+            .setNeutralButton("Cancel", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val normalizedEndpoint = normalizeLmStudioEndpoint(endpointInput.text.toString())
+                if (normalizedEndpoint == null) {
+                    Toast.makeText(this, "Endpoint cannot be blank.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                lmStudioEndpoint = normalizedEndpoint
+                saveSettings()
+                updateUiValues()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun normalizeLmStudioEndpoint(input: String): String? {
+        val trimmed = input.trim()
+        if (trimmed.isBlank()) return null
+        if (trimmed.endsWith("/v1/chat/completions")) return trimmed
+
+        val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
+        val withoutTrailingSlash = withScheme.trimEnd('/')
+        val schemeEnd = withoutTrailingSlash.indexOf("://") + 3
+        val hasPath = withoutTrailingSlash.substring(schemeEnd).contains("/")
+
+        val baseEndpoint = if (!hasPath && !withoutTrailingSlash.substring(schemeEnd).contains(":")) {
+            "$withoutTrailingSlash:1234"
+        } else {
+            withoutTrailingSlash
+        }
+
+        return "$baseEndpoint/v1/chat/completions"
     }
 
     private fun showOptionDialog(
