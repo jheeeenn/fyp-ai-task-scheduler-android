@@ -3,7 +3,7 @@ package com.example.myapplication.ai.conversation
 import org.json.JSONObject
 
 class ConversationDecisionParser {
-    fun parse(rawContent: String): ConversationDecision {
+    fun parse(rawContent: String, originalUserText: String): ConversationDecision {
         val jsonText = extractJsonObject(rawContent.trim())
         val json = JSONObject(jsonText)
 
@@ -12,15 +12,10 @@ class ConversationDecisionParser {
         }
 
         if (json.has("action")) {
-            return parseLegacyTaskAgentSchema(json)
+            return parseLegacyTaskAgentSchema(json, originalUserText)
         }
 
-        return ConversationDecision(
-            route = ConversationRoute.UNKNOWN,
-            reply = "I can help with task scheduling. Try asking me to create, check, reschedule, delete, complete, or break down a task.",
-            confidence = json.optDouble("confidence", 0.0),
-            listenAgain = true
-        )
+        return unknownDecision(json.optDouble("confidence", 0.0))
     }
 
     private fun extractJsonObject(trimmedContent: String): String {
@@ -47,30 +42,97 @@ class ConversationDecisionParser {
         )
     }
 
-    private fun parseLegacyTaskAgentSchema(json: JSONObject): ConversationDecision {
+    private fun parseLegacyTaskAgentSchema(
+        json: JSONObject,
+        originalUserText: String
+    ): ConversationDecision {
         val action = json.optString("action", "").uppercase()
         val naturalResponse = json.optString("natural_response", "")
         val confidence = json.optDouble("confidence", 0.0)
 
-        return when {
-            action == "UNKNOWN" && naturalResponse.isNotBlank() -> ConversationDecision(
+        if (naturalResponse.isNotBlank() && originalTextLooksConversational(originalUserText)) {
+            return ConversationDecision(
                 route = ConversationRoute.DIRECT_REPLY,
                 reply = naturalResponse,
                 confidence = confidence,
                 listenAgain = true
             )
-            action.isNotBlank() && action != "UNKNOWN" -> ConversationDecision(
+        }
+
+        if (originalTextLooksTaskRelated(originalUserText) && action.isNotBlank() && action != "UNKNOWN") {
+            return ConversationDecision(
                 route = ConversationRoute.TASK_COMMAND,
-                taskText = "",
-                confidence = confidence,
-                listenAgain = true
-            )
-            else -> ConversationDecision(
-                route = ConversationRoute.UNKNOWN,
-                reply = "I can help with task scheduling. Try asking me to create, check, reschedule, delete, complete, or break down a task.",
+                taskText = originalUserText,
                 confidence = confidence,
                 listenAgain = true
             )
         }
+
+        if (naturalResponse.isNotBlank()) {
+            return ConversationDecision(
+                route = ConversationRoute.DIRECT_REPLY,
+                reply = naturalResponse,
+                confidence = confidence,
+                listenAgain = true
+            )
+        }
+
+        return unknownDecision(confidence)
+    }
+
+    private fun unknownDecision(confidence: Double): ConversationDecision {
+        return ConversationDecision(
+            route = ConversationRoute.UNKNOWN,
+            reply = "I can help with task scheduling. Try asking me to create, check, reschedule, delete, complete, or break down a task.",
+            confidence = confidence,
+            listenAgain = true
+        )
+    }
+
+    private fun originalTextLooksConversational(text: String): Boolean {
+        val normalized = text.lowercase()
+        return CONVERSATIONAL_HINTS.any { normalized.contains(it) }
+    }
+
+    private fun originalTextLooksTaskRelated(text: String): Boolean {
+        val normalized = text.lowercase()
+        return TASK_RELATED_HINTS.any { normalized.contains(it) }
+    }
+
+    companion object {
+        private val TASK_RELATED_HINTS = listOf(
+            "remind me",
+            "create task",
+            "add task",
+            "schedule",
+            "what task",
+            "what tasks",
+            "tasks do i have",
+            "do i have anything",
+            "delete",
+            "remove",
+            "reschedule",
+            "move",
+            "change time",
+            "mark",
+            "as done",
+            "complete",
+            "undone",
+            "break down",
+            "split",
+            "edit task",
+            "update task"
+        )
+
+        private val CONVERSATIONAL_HINTS = listOf(
+            "hello",
+            "hi",
+            "hey",
+            "how are you",
+            "what can you do",
+            "help",
+            "thanks",
+            "thank you"
+        )
     }
 }
