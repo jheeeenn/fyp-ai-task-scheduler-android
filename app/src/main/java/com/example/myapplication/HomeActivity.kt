@@ -46,6 +46,10 @@ import com.example.myapplication.ai.agent.AgentOrchestrator
 import com.example.myapplication.ai.agent.LaptopAgentClient
 import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
+import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.ConversationDecisionParser
+import com.example.myapplication.ai.conversation.ConversationOrchestrator
+import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -67,6 +71,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var aiRouter: AiRouter
     private lateinit var agentOrchestrator: AgentOrchestrator
+    private lateinit var conversationOrchestrator: ConversationOrchestrator
 
 
     private lateinit var assistantSession: AssistantVoiceSession
@@ -153,6 +158,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             TaskActionNormalizer(),
             ActionValidator(),
             aiRouter
+        )
+        conversationOrchestrator = ConversationOrchestrator(
+            ConversationAgentClient(this),
+            ConversationDecisionParser()
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
 
@@ -432,6 +441,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
 
+
+    private fun buildConversationAppContextSummary(): String {
+        return "homeFollowUpContext=$homeFollowUpContext, lastQueryDate=$lastQueryDate, lastQueryWasToday=$lastQueryWasToday"
+    }
+
     private fun handleVoiceCommand(command: String) {
         val normalized = TextNormalizer.normalize(command)
 
@@ -489,9 +503,67 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         lifecycleScope.launch {
             try {
+                Log.d("CONVO_ORCH", "normalized='$normalized'")
+                val conversationDecision = try {
+                    conversationOrchestrator.process(
+                        normalizedText = normalized,
+                        appContextSummary = buildConversationAppContextSummary()
+                    )
+                } catch (e: Exception) {
+                    Log.e("CONVO_ORCH", "conversation orchestrator failed; falling back to task agent", e)
+                    null
+                }
+
+                var taskAgentInput = normalized
+                if (conversationDecision != null) {
+                    Log.d(
+                        "CONVO_ORCH",
+                        "route=${conversationDecision.route} confidence=${conversationDecision.confidence} " +
+                                "source=${conversationDecision.source}"
+                    )
+
+                    when (conversationDecision.route) {
+                        ConversationRoute.DIRECT_REPLY -> {
+                            Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
+                            assistantSession.speak(
+                                conversationDecision.reply,
+                                listenAgain = conversationDecision.listenAgain
+                            )
+                            return@launch
+                        }
+                        ConversationRoute.ASK_CLARIFICATION -> {
+                            Log.d("CONVO_ORCH", "handled directly as ASK_CLARIFICATION")
+                            assistantSession.speak(conversationDecision.reply, listenAgain = true)
+                            return@launch
+                        }
+                        ConversationRoute.END_SESSION -> {
+                            Log.d("CONVO_ORCH", "handled directly as END_SESSION")
+                            homeFollowUpContext = HomeFollowUpContext.NONE
+                            if (conversationDecision.reply.isNotBlank()) {
+                                assistantSession.speak(conversationDecision.reply, listenAgain = false)
+                            }
+                            return@launch
+                        }
+                        ConversationRoute.TASK_COMMAND -> {
+                            taskAgentInput = conversationDecision.taskText.ifBlank { normalized }
+                            Log.d("CONVO_ORCH", "routed to task agent with text='$taskAgentInput'")
+                        }
+                        ConversationRoute.UNKNOWN -> {
+                            if (conversationDecision.reply.isNotBlank()) {
+                                Log.d("CONVO_ORCH", "handled directly as UNKNOWN")
+                                assistantSession.speakThenListenAgain(conversationDecision.reply)
+                                return@launch
+                            }
+                            Log.d("CONVO_ORCH", "UNKNOWN with blank reply; routed to task agent fallback")
+                        }
+                    }
+                } else {
+                    Log.d("CONVO_ORCH", "routed to task agent after conversation fallback")
+                }
+
                 // log
-                Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$normalized'")
-                val aiResult = agentOrchestrator.process(normalized)
+                Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$taskAgentInput'")
+                val aiResult = agentOrchestrator.process(taskAgentInput)
 
                 Log.d(
                     "AI_ROUTER",
