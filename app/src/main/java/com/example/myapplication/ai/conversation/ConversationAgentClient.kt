@@ -70,7 +70,10 @@ Return the routing decision using only the required ConversationDecision schema.
             put("temperature", 0.0)
             put("max_tokens", 256)
             put("stream", false)
-            put("response_format", AgentResponseSchemas.conversationDecisionResponseFormat())
+            put(
+                "response_format",
+                AgentResponseSchemas.conversationDecisionResponseFormat()
+            )
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
@@ -82,44 +85,67 @@ Return the routing decision using only the required ConversationDecision schema.
                 })
             })
         }
-        Log.d("CONVO_AGENT_SCHEMA", "Structured ConversationDecision schema enabled")
+
+        Log.d(
+            "CONVO_AGENT_SCHEMA",
+            "Structured ConversationDecision schema enabled"
+        )
 
         val requestEndpointUrl = getEndpointUrl()
-        Log.d("CONVO_AGENT_CONFIG", "Using Conversation Agent endpoint: $requestEndpointUrl")
+        Log.d(
+            "CONVO_AGENT_CONFIG",
+            "Using Conversation Agent endpoint: $requestEndpointUrl"
+        )
 
         val request = Request.Builder()
             .url(requestEndpointUrl)
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .post(
+                payload.toString()
+                    .toRequestBody("application/json".toMediaType())
+            )
             .build()
 
-        try {
+        return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
 
                 if (!response.isSuccessful) {
-                    throw IOException("LM Studio HTTP ${response.code}: $body")
+                    throw IOException(
+                        "LM Studio HTTP ${response.code}: $body"
+                    )
                 }
 
                 val choices = JSONObject(body).optJSONArray("choices")
                 if (choices == null || choices.length() == 0) {
-                    throw IOException("LM Studio response missing choices[0].message.content")
+                    throw IOException(
+                        "LM Studio response missing choices[0].message.content"
+                    )
                 }
 
                 val choice = choices.getJSONObject(0)
                 val message = choice.getJSONObject("message")
+
                 val content = message.optString("content", "")
-                val reasoningChars = message.optString("reasoning_content", "").length
-                val finishReason = choice.optString("finish_reason", "")
+                val reasoningChars =
+                    message.optString("reasoning_content", "").length
+                val finishReason =
+                    choice.optString("finish_reason", "")
 
                 if (content.isBlank()) {
-                    val lengthMessage = if (finishReason == "length") {
-                        " Conversation Agent exhausted its output token budget before producing structured content."
-                    } else {
-                        ""
-                    }
-                    val errorMessage = "Conversation Agent returned blank content. " +
-                            "finishReason=$finishReason, reasoningChars=$reasoningChars.$lengthMessage"
+                    val lengthMessage =
+                        if (finishReason == "length") {
+                            " Conversation Agent exhausted its output token " +
+                                    "budget before producing structured content."
+                        } else {
+                            ""
+                        }
+
+                    val errorMessage =
+                        "Conversation Agent returned blank content. " +
+                                "finishReason=$finishReason, " +
+                                "reasoningChars=$reasoningChars.$lengthMessage"
+
                     Log.e("CONVO_AGENT", errorMessage)
                     throw ConversationAgentResponseException(errorMessage)
                 }
@@ -130,8 +156,15 @@ Return the routing decision using only the required ConversationDecision schema.
             Log.e("CONVO_AGENT", "LM Studio request timed out", e)
             throw IOException("LM Studio request timed out", e)
         } catch (e: java.io.InterruptedIOException) {
-            Log.e("CONVO_AGENT", "LM Studio request timed out or was interrupted", e)
-            throw IOException("LM Studio request timed out or was interrupted", e)
+            Log.e(
+                "CONVO_AGENT",
+                "LM Studio request timed out or was interrupted",
+                e
+            )
+            throw IOException(
+                "LM Studio request timed out or was interrupted",
+                e
+            )
         }
     }
 
