@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 class ConversationAgentClient(
     context: Context? = null,
-    private val endpointUrl: String = SettingsActivity.DEFAULT_LM_STUDIO_ENDPOINT,
+    private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
 ) {
     private val appContext = context?.applicationContext
@@ -57,7 +57,7 @@ $userText
             }
 
             val requestEndpointUrl = getEndpointUrl()
-            Log.d("CONVO_AGENT_CONFIG", "Using LM Studio endpoint: $requestEndpointUrl")
+            Log.d("CONVO_AGENT_CONFIG", "Using Conversation Agent endpoint: $requestEndpointUrl")
 
             val request = Request.Builder()
                 .url(requestEndpointUrl)
@@ -93,11 +93,20 @@ $userText
         }
 
     private fun getEndpointUrl(): String {
-        val configuredEndpoint = appContext
+        val prefs = appContext
             ?.getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE)
-            ?.getString(SettingsActivity.KEY_LM_STUDIO_ENDPOINT, endpointUrl)
 
-        return configuredEndpoint?.takeIf { it.isNotBlank() } ?: endpointUrl
+        val configuredEndpoint = if (prefs?.contains(SettingsActivity.KEY_CONVERSATION_AGENT_ENDPOINT) == true) {
+            prefs.getString(SettingsActivity.KEY_CONVERSATION_AGENT_ENDPOINT, null)
+        } else {
+            null
+        }
+        if (!configuredEndpoint.isNullOrBlank()) return configuredEndpoint
+
+        val legacyEndpoint = prefs?.getString(SettingsActivity.KEY_LM_STUDIO_ENDPOINT, null)
+        if (!legacyEndpoint.isNullOrBlank()) return legacyEndpoint
+
+        return endpointUrl
     }
 
     companion object {

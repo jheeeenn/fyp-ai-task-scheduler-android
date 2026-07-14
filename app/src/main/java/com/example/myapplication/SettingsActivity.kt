@@ -24,7 +24,11 @@ class SettingsActivity : AppCompatActivity() {
         const val KEY_LARGE_TEXT = "large_text"
         const val KEY_HIGH_CONTRAST = "high_contrast"
         const val KEY_LM_STUDIO_ENDPOINT = "lm_studio_endpoint"
+        const val KEY_CONVERSATION_AGENT_ENDPOINT = "conversation_agent_endpoint"
+        const val KEY_TASK_AGENT_ENDPOINT = "task_agent_endpoint"
         const val DEFAULT_LM_STUDIO_ENDPOINT = "http://192.168.0.132:1234/v1/chat/completions"
+        const val DEFAULT_CONVERSATION_AGENT_ENDPOINT = "http://192.168.0.132:1234/v1/chat/completions"
+        const val DEFAULT_TASK_AGENT_ENDPOINT = "http://192.168.0.132:1234/v1/chat/completions"
     }
 
     private lateinit var prefs: SharedPreferences
@@ -33,13 +37,15 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvReplyLengthValue: TextView
     private lateinit var tvLargeTextValue: TextView
     private lateinit var tvHighContrastValue: TextView
-    private lateinit var tvLmStudioEndpointValue: TextView
+    private lateinit var tvConversationAgentEndpointValue: TextView
+    private lateinit var tvTaskAgentEndpointValue: TextView
 
     private var assistantTone: String = "Friendly"
     private var replyLength: String = "Normal"
     private var largeText: Boolean = false
     private var highContrast: Boolean = false
-    private var lmStudioEndpoint: String = DEFAULT_LM_STUDIO_ENDPOINT
+    private var conversationAgentEndpoint: String = DEFAULT_CONVERSATION_AGENT_ENDPOINT
+    private var taskAgentEndpoint: String = DEFAULT_TASK_AGENT_ENDPOINT
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,7 +57,8 @@ class SettingsActivity : AppCompatActivity() {
         val cardReplyLength = findViewById<LinearLayout>(R.id.cardReplyLength)
         val cardLargeText = findViewById<LinearLayout>(R.id.cardLargeText)
         val cardHighContrast = findViewById<LinearLayout>(R.id.cardHighContrast)
-        val cardLmStudioEndpoint = findViewById<LinearLayout>(R.id.cardLmStudioEndpoint)
+        val cardConversationAgentEndpoint = findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint)
+        val cardTaskAgentEndpoint = findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint)
 
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
         val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
@@ -60,7 +67,8 @@ class SettingsActivity : AppCompatActivity() {
         tvReplyLengthValue = findViewById(R.id.tvReplyLengthValue)
         tvLargeTextValue = findViewById(R.id.tvLargeTextValue)
         tvHighContrastValue = findViewById(R.id.tvHighContrastValue)
-        tvLmStudioEndpointValue = findViewById(R.id.tvLmStudioEndpointValue)
+        tvConversationAgentEndpointValue = findViewById(R.id.tvConversationAgentEndpointValue)
+        tvTaskAgentEndpointValue = findViewById(R.id.tvTaskAgentEndpointValue)
 
         loadSettings()
         updateUiValues()
@@ -113,8 +121,28 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        cardLmStudioEndpoint.setOnClickListenerWithHaptic {
-            showLmStudioEndpointDialog()
+        cardConversationAgentEndpoint.setOnClickListenerWithHaptic {
+            showEndpointDialog(
+                title = "Conversation Agent Endpoint",
+                currentValue = conversationAgentEndpoint,
+                defaultValue = DEFAULT_CONVERSATION_AGENT_ENDPOINT
+            ) { endpoint ->
+                conversationAgentEndpoint = endpoint
+                saveSettings()
+                updateUiValues()
+            }
+        }
+
+        cardTaskAgentEndpoint.setOnClickListenerWithHaptic {
+            showEndpointDialog(
+                title = "Task Agent Endpoint",
+                currentValue = taskAgentEndpoint,
+                defaultValue = DEFAULT_TASK_AGENT_ENDPOINT
+            ) { endpoint ->
+                taskAgentEndpoint = endpoint
+                saveSettings()
+                updateUiValues()
+            }
         }
 
         btnGoHome.setOnClickListenerWithHaptic {
@@ -131,8 +159,14 @@ class SettingsActivity : AppCompatActivity() {
         replyLength = prefs.getString(KEY_REPLY_LENGTH, "Normal") ?: "Normal"
         largeText = prefs.getBoolean(KEY_LARGE_TEXT, false)
         highContrast = prefs.getBoolean(KEY_HIGH_CONTRAST, false)
-        lmStudioEndpoint = prefs.getString(KEY_LM_STUDIO_ENDPOINT, DEFAULT_LM_STUDIO_ENDPOINT)
-            ?: DEFAULT_LM_STUDIO_ENDPOINT
+        conversationAgentEndpoint = loadEndpointPreference(
+            dedicatedKey = KEY_CONVERSATION_AGENT_ENDPOINT,
+            dedicatedDefault = DEFAULT_CONVERSATION_AGENT_ENDPOINT
+        )
+        taskAgentEndpoint = loadEndpointPreference(
+            dedicatedKey = KEY_TASK_AGENT_ENDPOINT,
+            dedicatedDefault = DEFAULT_TASK_AGENT_ENDPOINT
+        )
     }
 
     private fun saveSettings() {
@@ -141,7 +175,8 @@ class SettingsActivity : AppCompatActivity() {
             .putString(KEY_REPLY_LENGTH, replyLength)
             .putBoolean(KEY_LARGE_TEXT, largeText)
             .putBoolean(KEY_HIGH_CONTRAST, highContrast)
-            .putString(KEY_LM_STUDIO_ENDPOINT, lmStudioEndpoint)
+            .putString(KEY_CONVERSATION_AGENT_ENDPOINT, conversationAgentEndpoint)
+            .putString(KEY_TASK_AGENT_ENDPOINT, taskAgentEndpoint)
             .apply()
     }
 
@@ -150,24 +185,42 @@ class SettingsActivity : AppCompatActivity() {
         tvReplyLengthValue.text = replyLength
         tvLargeTextValue.text = if (largeText) "On" else "Off"
         tvHighContrastValue.text = if (highContrast) "On" else "Off"
-        tvLmStudioEndpointValue.text = lmStudioEndpoint
+        tvConversationAgentEndpointValue.text = conversationAgentEndpoint
+        tvTaskAgentEndpointValue.text = taskAgentEndpoint
     }
 
-    private fun showLmStudioEndpointDialog() {
+    private fun loadEndpointPreference(dedicatedKey: String, dedicatedDefault: String): String {
+        val dedicatedValue = if (prefs.contains(dedicatedKey)) {
+            prefs.getString(dedicatedKey, null)
+        } else {
+            null
+        }
+        if (!dedicatedValue.isNullOrBlank()) return dedicatedValue
+
+        val legacyValue = prefs.getString(KEY_LM_STUDIO_ENDPOINT, null)
+        if (!legacyValue.isNullOrBlank()) return legacyValue
+
+        return dedicatedDefault
+    }
+
+    private fun showEndpointDialog(
+        title: String,
+        currentValue: String,
+        defaultValue: String,
+        onEndpointSelected: (String) -> Unit
+    ) {
         val endpointInput = EditText(this).apply {
-            setText(lmStudioEndpoint)
+            setText(currentValue)
             setSelectAllOnFocus(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Developer: LM Studio Endpoint")
+            .setTitle(title)
             .setView(endpointInput)
             .setPositiveButton("Save", null)
             .setNegativeButton("Reset to Default") { _, _ ->
-                lmStudioEndpoint = DEFAULT_LM_STUDIO_ENDPOINT
-                saveSettings()
-                updateUiValues()
+                onEndpointSelected(defaultValue)
             }
             .setNeutralButton("Cancel", null)
             .create()
@@ -180,9 +233,7 @@ class SettingsActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
 
-                lmStudioEndpoint = normalizedEndpoint
-                saveSettings()
-                updateUiValues()
+                onEndpointSelected(normalizedEndpoint)
                 dialog.dismiss()
             }
         }
