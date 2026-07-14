@@ -162,7 +162,16 @@ If no date is given, date must be empty.
 If the user gives a time, extract it.
 Use 24-hour time when possible, such as "21:00".
 For RESCHEDULE_TASK, date may be empty if the user only changes the time.
-For QUERY_TASK, include the date field when the user asks about tasks on a specific date or day.
+For QUERY_TASK, copy the complete date or date-range phrase into date and the complete time or time-range phrase into time.
+For QUERY_TASK, do not calculate real dates from relative phrases; Android performs calendar resolution and task filtering.
+For QUERY_TASK, keep both date and time empty only when no temporal restriction was supplied.
+For QUERY_TASK, never access, request, or filter the task database.
+QUERY_TASK examples:
+User: "What tasks do I have next week?" -> date="next week", time=""
+User: "What tasks do I have next week in the morning?" -> date="next week", time="morning"
+User: "What tasks do I have between 20 July and 25 July?" -> date="between 20 July and 25 July", time=""
+User: "What tasks do I have tomorrow after 6 PM?" -> date="tomorrow", time="after 6 PM"
+User: "What overdue tasks do I have?" -> date="overdue", time=""
 
 Recurrence and priority rules:
 recurrence must be empty unless the user clearly says the task repeats.

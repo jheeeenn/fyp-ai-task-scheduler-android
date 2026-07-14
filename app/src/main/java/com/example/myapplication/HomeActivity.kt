@@ -65,6 +65,10 @@ import com.example.myapplication.ai.TaskResolutionState
 import com.example.myapplication.ai.PendingTaskAction
 
 import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.ai.temporal.TaskTemporalFilter
+import com.example.myapplication.ai.temporal.TemporalQueryResolver
+import com.example.myapplication.ai.temporal.TemporalQueryWindow
+import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
@@ -98,6 +102,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var homeFollowUpContext = HomeFollowUpContext.NONE
     private var lastQueryWasToday = false
     private var lastQueryDate: String? = null
+    private val temporalQueryResolver = TemporalQueryResolver()
+    private var lastQueryWindow: TemporalQueryWindow = TemporalQueryWindow(TemporalResolutionStatus.NONE)
 
     //for delete confirmation when the task intent is 'delete'
     private var pendingDeleteTaskId: Long? = null
@@ -444,7 +450,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
     private fun buildConversationAppContextSummary(): String {
-        return "homeFollowUpContext=$homeFollowUpContext, lastQueryDate=$lastQueryDate, lastQueryWasToday=$lastQueryWasToday"
+        return "homeFollowUpContext=$homeFollowUpContext, lastQueryDate=$lastQueryDate, lastQueryWasToday=$lastQueryWasToday, lastQueryWindow=${lastQueryWindow.spokenLabel}"
     }
 
     private fun handleVoiceCommand(command: String) {
@@ -598,7 +604,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         handleQueryTask(
                             normalized = normalized,
-                            agentDateText = aiResult.dateText
+                            agentDateText = aiResult.dateText,
+                            agentTimeText = aiResult.timeText
                         )
                     }
                     // delete task
@@ -897,7 +904,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun handleQueryTask(
         normalized: String,
-        agentDateText: String?
+        agentDateText: String?,
+        agentTimeText: String?
     ) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
@@ -910,22 +918,34 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             currentSubtasksByParentId = taskData.second
 
             val today = todayDateString()
-            val queryDate = ScheduleTextParser.parseDate(agentDateText)
-                ?: resolveQueryDate(normalized)
-
-            Log.d(
-                "HOME_QUERY_DATE",
-                "agentDateText=$agentDateText original='$normalized' resolvedDate=$queryDate"
+            val queryWindow = temporalQueryResolver.resolve(
+                agentDateText = agentDateText,
+                agentTimeText = agentTimeText,
+                originalText = normalized
             )
 
-            lastQueryDate = queryDate
-            lastQueryWasToday = queryDate == today
+            Log.d(
+                "HOME_QUERY_TEMPORAL",
+                "dateText=$agentDateText timeText=$agentTimeText status=${queryWindow.status} " +
+                        "scope=${queryWindow.dateScope} startDate=${queryWindow.startDateInclusive} " +
+                        "endDate=${queryWindow.endDateInclusive} startMinute=${queryWindow.startMinuteInclusive} " +
+                        "endMinute=${queryWindow.endMinuteInclusive} wrapsMidnight=${queryWindow.wrapsMidnight} " +
+                        "label=${queryWindow.spokenLabel}"
+            )
 
-            val filteredTasks = if (!queryDate.isNullOrBlank()) {
-                allTasks.filter { !it.isDone && it.dueDate == queryDate }
-            } else {
-                allTasks.filter { !it.isDone }
+            if (queryWindow.status == TemporalResolutionStatus.UNRESOLVED) {
+                assistantSession.speak(
+                    "I could not understand that date or time range. Please try something like tomorrow morning, next week, or from Monday to Friday.",
+                    listenAgain = true
+                )
+                return@launch
             }
+
+            lastQueryWindow = queryWindow
+            lastQueryDate = if (queryWindow.isExactDate) queryWindow.startDateInclusive else null
+            lastQueryWasToday = queryWindow.isExactDate && queryWindow.startDateInclusive == today
+
+            val filteredTasks = TaskTemporalFilter.filterAndSort(allTasks, queryWindow)
 
             val replyMode = detectQueryReplyMode(normalized)
             val reply = buildTaskQueryReply(filteredTasks, lastQueryWasToday, replyMode)
@@ -949,7 +969,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             // log
             Log.d(
                 "HOME_QUERY",
-                "queryDate=$queryDate queryToday=$lastQueryWasToday replyMode=$replyMode taskCount=${filteredTasks.size} nextContext=$homeFollowUpContext"
+                "queryWindow=$queryWindow queryToday=$lastQueryWasToday replyMode=$replyMode taskCount=${filteredTasks.size} nextContext=$homeFollowUpContext"
             )
 
             val spokenFollowUp = when {
@@ -1281,14 +1301,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             currentSubtasksByParentId = taskData.second
 
             val today = todayDateString()
-            val queryDate = lastQueryDate
-            val queryToday = queryDate == today
+            val queryToday = lastQueryWindow.isExactDate && lastQueryWindow.startDateInclusive == today
 
-            val filteredTasks = if (!queryDate.isNullOrBlank()) {
-                allTasks.filter { !it.isDone && it.dueDate == queryDate }
-            } else {
-                allTasks.filter { !it.isDone }
-            }
+            val filteredTasks = TaskTemporalFilter.filterAndSort(
+                tasks = allTasks,
+                window = lastQueryWindow
+            )
 
             val reply = buildTaskQueryReply(
                 tasks = filteredTasks,

@@ -17,8 +17,12 @@ data class LocalDateParseResult(
 class LocalDateParser {
 
     fun parse(rawText: String): LocalDateParseResult {
+        return parse(rawText, Calendar.getInstance())
+    }
+
+    internal fun parse(rawText: String, baseCalendar: Calendar): LocalDateParseResult {
         val text = normalize(rawText)
-        val today = Calendar.getInstance()
+        val today = baseCalendar.clone() as Calendar
 
         parseRelativeKeyword(text, today)?.let { return it }
         parseWeekdayExpression(text, today)?.let { return it }
@@ -137,10 +141,13 @@ class LocalDateParser {
         if (diff < 0) diff += 7
 
         if (isNext) {
-            if (diff == 0) diff = 7
-            else diff += 7
-        } else if (!isThis) {
-            if (diff == 0) diff = 7
+            val currentMondayBased = if (currentDay == Calendar.SUNDAY) 7 else currentDay - 1
+            val targetMondayBased = if (targetDay == Calendar.SUNDAY) 7 else targetDay - 1
+            diff = (8 - currentMondayBased) + (targetMondayBased - 1)
+        } else if (isThis) {
+            val currentMondayBased = if (currentDay == Calendar.SUNDAY) 7 else currentDay - 1
+            val targetMondayBased = if (targetDay == Calendar.SUNDAY) 7 else targetDay - 1
+            diff = targetMondayBased - currentMondayBased
         }
 
         calendar.add(Calendar.DAY_OF_MONTH, diff)
