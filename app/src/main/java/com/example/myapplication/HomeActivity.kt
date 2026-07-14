@@ -596,7 +596,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         // log
                         Log.d("HOME_ACTION", "QUERY_TASK -> handleQueryTask")
 
-                        handleQueryTask(normalized)
+                        handleQueryTask(
+                            normalized = normalized,
+                            agentDateText = aiResult.dateText
+                        )
                     }
                     // delete task
                     AiIntent.DELETE_TASK.name -> {
@@ -892,7 +895,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return ScheduleTextParser.parseDateFromSentence(normalized)
     }
 
-    private fun handleQueryTask(normalized: String) {
+    private fun handleQueryTask(
+        normalized: String,
+        agentDateText: String?
+    ) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
             val taskData = withContext(Dispatchers.IO) {
@@ -904,7 +910,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             currentSubtasksByParentId = taskData.second
 
             val today = todayDateString()
-            val queryDate = resolveQueryDate(normalized)
+            val queryDate = ScheduleTextParser.parseDate(agentDateText)
+                ?: resolveQueryDate(normalized)
+
+            Log.d(
+                "HOME_QUERY_DATE",
+                "agentDateText=$agentDateText original='$normalized' resolvedDate=$queryDate"
+            )
 
             lastQueryDate = queryDate
             lastQueryWasToday = queryDate == today
