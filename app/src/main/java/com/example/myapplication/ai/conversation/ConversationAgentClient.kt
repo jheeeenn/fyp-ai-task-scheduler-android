@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation
 import android.content.Context
 import android.util.Log
 import com.example.myapplication.SettingsActivity
+import com.example.myapplication.ai.schema.AgentResponseSchemas
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -13,6 +14,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+
+class ConversationAgentResponseException(
+    message: String,
+    cause: Throwable? = null
+) : IOException(message, cause)
 
 class ConversationAgentClient(
     context: Context? = null,
@@ -40,57 +46,94 @@ User text:
 $userText
 """.trimIndent()
 
-            val payload = JSONObject().apply {
-                put("model", modelId)
-                put("temperature", 0.0)
-                put("max_tokens", 180)
-                put("messages", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", SYSTEM_PROMPT)
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userPrompt)
-                    })
-                })
-            }
-
-            val requestEndpointUrl = getEndpointUrl()
-            Log.d("CONVO_AGENT_CONFIG", "Using Conversation Agent endpoint: $requestEndpointUrl")
-
-            val request = Request.Builder()
-                .url(requestEndpointUrl)
-                .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            try {
-                client.newCall(request).execute().use { response ->
-                    val body = response.body?.string().orEmpty()
-                    Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
-
-                    if (!response.isSuccessful) {
-                        throw IOException("LM Studio HTTP ${response.code}: $body")
-                    }
-
-                    val choices = JSONObject(body).optJSONArray("choices")
-                    if (choices == null || choices.length() == 0) {
-                        throw IOException("LM Studio response missing choices[0].message.content")
-                    }
-
-                    choices
-                        .getJSONObject(0)
-                        .getJSONObject("message")
-                        .getString("content")
-                }
-            } catch (e: java.net.SocketTimeoutException) {
-                Log.e("CONVO_AGENT", "LM Studio request timed out", e)
-                throw IOException("LM Studio request timed out", e)
-            } catch (e: java.io.InterruptedIOException) {
-                Log.e("CONVO_AGENT", "LM Studio request timed out or was interrupted", e)
-                throw IOException("LM Studio request timed out or was interrupted", e)
-            }
+            executeConversationRequest(userPrompt)
         }
+
+    suspend fun processRepair(userText: String, appContextSummary: String): String =
+        withContext(Dispatchers.IO) {
+            val repairPrompt = """
+App context:
+$appContextSummary
+
+User text:
+$userText
+
+Return the routing decision using only the required ConversationDecision schema. Do not output task-agent fields. Do not explain your reasoning.
+""".trimIndent()
+
+            executeConversationRequest(repairPrompt)
+        }
+
+    private fun executeConversationRequest(userPrompt: String): String {
+        val payload = JSONObject().apply {
+            put("model", modelId)
+            put("temperature", 0.0)
+            put("max_tokens", 256)
+            put("stream", false)
+            put("response_format", AgentResponseSchemas.conversationDecisionResponseFormat())
+            put("messages", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", SYSTEM_PROMPT)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", userPrompt)
+                })
+            })
+        }
+        Log.d("CONVO_AGENT_SCHEMA", "Structured ConversationDecision schema enabled")
+
+        val requestEndpointUrl = getEndpointUrl()
+        Log.d("CONVO_AGENT_CONFIG", "Using Conversation Agent endpoint: $requestEndpointUrl")
+
+        val request = Request.Builder()
+            .url(requestEndpointUrl)
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
+
+                if (!response.isSuccessful) {
+                    throw IOException("LM Studio HTTP ${response.code}: $body")
+                }
+
+                val choices = JSONObject(body).optJSONArray("choices")
+                if (choices == null || choices.length() == 0) {
+                    throw IOException("LM Studio response missing choices[0].message.content")
+                }
+
+                val choice = choices.getJSONObject(0)
+                val message = choice.getJSONObject("message")
+                val content = message.optString("content", "")
+                val reasoningChars = message.optString("reasoning_content", "").length
+                val finishReason = choice.optString("finish_reason", "")
+
+                if (content.isBlank()) {
+                    val lengthMessage = if (finishReason == "length") {
+                        " Conversation Agent exhausted its output token budget before producing structured content."
+                    } else {
+                        ""
+                    }
+                    val errorMessage = "Conversation Agent returned blank content. " +
+                            "finishReason=$finishReason, reasoningChars=$reasoningChars.$lengthMessage"
+                    Log.e("CONVO_AGENT", errorMessage)
+                    throw ConversationAgentResponseException(errorMessage)
+                }
+
+                content
+            }
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e("CONVO_AGENT", "LM Studio request timed out", e)
+            throw IOException("LM Studio request timed out", e)
+        } catch (e: java.io.InterruptedIOException) {
+            Log.e("CONVO_AGENT", "LM Studio request timed out or was interrupted", e)
+            throw IOException("LM Studio request timed out or was interrupted", e)
+        }
+    }
 
     private fun getEndpointUrl(): String {
         val prefs = appContext

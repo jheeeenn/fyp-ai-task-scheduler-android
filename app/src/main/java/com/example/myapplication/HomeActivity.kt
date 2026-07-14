@@ -49,6 +49,7 @@ import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
+import com.example.myapplication.ai.conversation.ConversationOrchestratorException
 import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
@@ -509,56 +510,56 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         normalizedText = normalized,
                         appContextSummary = buildConversationAppContextSummary()
                     )
-                } catch (e: Exception) {
-                    Log.e("CONVO_ORCH", "conversation orchestrator failed; falling back to task agent", e)
-                    null
+                } catch (e: ConversationOrchestratorException) {
+                    Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
+                    assistantSession.speak(
+                        "I could not understand that request correctly. Please try again.",
+                        listenAgain = true
+                    )
+                    return@launch
                 }
 
-                var taskAgentInput = normalized
-                if (conversationDecision != null) {
-                    Log.d(
-                        "CONVO_ORCH",
-                        "route=${conversationDecision.route} confidence=${conversationDecision.confidence} " +
-                                "source=${conversationDecision.source}"
-                    )
+                Log.d(
+                    "CONVO_ORCH",
+                    "route=${conversationDecision.route} confidence=${conversationDecision.confidence} " +
+                            "source=${conversationDecision.source}"
+                )
 
-                    when (conversationDecision.route) {
-                        ConversationRoute.DIRECT_REPLY -> {
-                            Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
-                            assistantSession.speak(
-                                conversationDecision.reply,
-                                listenAgain = conversationDecision.listenAgain
-                            )
-                            return@launch
-                        }
-                        ConversationRoute.ASK_CLARIFICATION -> {
-                            Log.d("CONVO_ORCH", "handled directly as ASK_CLARIFICATION")
-                            assistantSession.speak(conversationDecision.reply, listenAgain = true)
-                            return@launch
-                        }
-                        ConversationRoute.END_SESSION -> {
-                            Log.d("CONVO_ORCH", "handled directly as END_SESSION")
-                            homeFollowUpContext = HomeFollowUpContext.NONE
-                            if (conversationDecision.reply.isNotBlank()) {
-                                assistantSession.speak(conversationDecision.reply, listenAgain = false)
-                            }
-                            return@launch
-                        }
-                        ConversationRoute.TASK_COMMAND -> {
-                            taskAgentInput = conversationDecision.taskText.ifBlank { normalized }
-                            Log.d("CONVO_ORCH", "routed to task agent with text='$taskAgentInput'")
-                        }
-                        ConversationRoute.UNKNOWN -> {
-                            if (conversationDecision.reply.isNotBlank()) {
-                                Log.d("CONVO_ORCH", "handled directly as UNKNOWN")
-                                assistantSession.speakThenListenAgain(conversationDecision.reply)
-                                return@launch
-                            }
-                            Log.d("CONVO_ORCH", "UNKNOWN with blank reply; routed to task agent fallback")
-                        }
+                val taskAgentInput: String
+                when (conversationDecision.route) {
+                    ConversationRoute.DIRECT_REPLY -> {
+                        Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
+                        assistantSession.speak(
+                            conversationDecision.reply,
+                            listenAgain = conversationDecision.listenAgain
+                        )
+                        return@launch
                     }
-                } else {
-                    Log.d("CONVO_ORCH", "routed to task agent after conversation fallback")
+                    ConversationRoute.ASK_CLARIFICATION -> {
+                        Log.d("CONVO_ORCH", "handled directly as ASK_CLARIFICATION")
+                        assistantSession.speak(conversationDecision.reply, listenAgain = true)
+                        return@launch
+                    }
+                    ConversationRoute.END_SESSION -> {
+                        Log.d("CONVO_ORCH", "handled directly as END_SESSION")
+                        homeFollowUpContext = HomeFollowUpContext.NONE
+                        if (conversationDecision.reply.isNotBlank()) {
+                            assistantSession.speak(conversationDecision.reply, listenAgain = false)
+                        }
+                        return@launch
+                    }
+                    ConversationRoute.TASK_COMMAND -> {
+                        taskAgentInput = conversationDecision.taskText.ifBlank { normalized }
+                        Log.d("CONVO_ORCH", "routed to task agent with text='$taskAgentInput'")
+                    }
+                    ConversationRoute.UNKNOWN -> {
+                        Log.d("CONVO_ORCH", "handled directly as UNKNOWN")
+                        assistantSession.speak(
+                            conversationDecision.reply.ifBlank { "I cannot help with that request yet." },
+                            listenAgain = true
+                        )
+                        return@launch
+                    }
                 }
 
                 // log

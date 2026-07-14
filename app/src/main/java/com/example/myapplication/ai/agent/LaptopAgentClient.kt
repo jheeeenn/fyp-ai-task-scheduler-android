@@ -3,6 +3,7 @@ package com.example.myapplication.ai.agent
 import android.content.Context
 import android.util.Log
 import com.example.myapplication.SettingsActivity
+import com.example.myapplication.ai.schema.AgentResponseSchemas
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -13,6 +14,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+
+class TaskAgentResponseException(
+    message: String,
+    cause: Throwable? = null
+) : IOException(message, cause)
 
 class LaptopAgentClient(
     context: Context? = null,
@@ -31,7 +37,9 @@ class LaptopAgentClient(
         val payload = JSONObject().apply {
             put("model", modelId)
             put("temperature", 0.0)
-            put("max_tokens", 400)
+            put("max_tokens", 512)
+            put("stream", false)
+            put("response_format", AgentResponseSchemas.taskAgentResponseFormat())
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
@@ -43,6 +51,8 @@ class LaptopAgentClient(
                 })
             })
         }
+
+        Log.d("TASK_AGENT_SCHEMA", "Structured TaskAgentResponse schema enabled")
 
         val requestEndpointUrl = getEndpointUrl()
         Log.d("LAPTOP_AGENT_CONFIG", "Using Task Agent endpoint: $requestEndpointUrl")
@@ -67,10 +77,25 @@ class LaptopAgentClient(
                     throw IOException("LM Studio response missing choices[0].message.content")
                 }
 
-                choices
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .getString("content")
+                val choice = choices.getJSONObject(0)
+                val message = choice.getJSONObject("message")
+                val content = message.optString("content", "")
+                val reasoningChars = message.optString("reasoning_content", "").length
+                val finishReason = choice.optString("finish_reason", "")
+
+                if (content.isBlank()) {
+                    val lengthMessage = if (finishReason == "length") {
+                        " Task Agent exhausted its output token budget before producing structured content."
+                    } else {
+                        ""
+                    }
+                    val errorMessage = "Task Agent returned blank content. " +
+                            "finishReason=$finishReason, reasoningChars=$reasoningChars.$lengthMessage"
+                    Log.e("LAPTOP_AGENT", errorMessage)
+                    throw TaskAgentResponseException(errorMessage)
+                }
+
+                content
             }
         } catch (e: java.net.SocketTimeoutException) {
             Log.e("LAPTOP_AGENT", "LM Studio request timed out", e)

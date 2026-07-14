@@ -2,137 +2,147 @@ package com.example.myapplication.ai.conversation
 
 import org.json.JSONObject
 
+class ConversationSchemaException(
+    message: String,
+    cause: Throwable? = null
+) : Exception(message, cause)
+
 class ConversationDecisionParser {
-    fun parse(rawContent: String, originalUserText: String): ConversationDecision {
-        val jsonText = extractJsonObject(rawContent.trim())
-        val json = JSONObject(jsonText)
-
-        if (json.has("route")) {
-            return parseConversationSchema(json)
+    fun parse(rawContent: String): ConversationDecision {
+        if (rawContent.isBlank()) {
+            throw ConversationSchemaException("Conversation Agent returned blank content")
         }
 
-        if (json.has("action")) {
-            return parseLegacyTaskAgentSchema(json, originalUserText)
+        val jsonText = extractFirstJsonObject(rawContent)
+        val json = try {
+            JSONObject(jsonText)
+        } catch (e: Exception) {
+            throw ConversationSchemaException("Conversation Agent content is not valid JSON", e)
         }
 
-        return unknownDecision(json.optDouble("confidence", 0.0))
-    }
+        rejectTaskAgentFields(json)
+        requireExactFields(json)
 
-    private fun extractJsonObject(trimmedContent: String): String {
-        val firstObjectStart = trimmedContent.indexOf('{')
-        val lastObjectEnd = trimmedContent.lastIndexOf('}')
-        return if (firstObjectStart >= 0 && lastObjectEnd > firstObjectStart) {
-            trimmedContent.substring(firstObjectStart, lastObjectEnd + 1)
-        } else {
-            trimmedContent
+        val routeText = requireString(json, "route")
+        val route = try {
+            ConversationRoute.valueOf(routeText)
+        } catch (e: IllegalArgumentException) {
+            throw ConversationSchemaException("Invalid ConversationDecision route: $routeText", e)
         }
-    }
 
-    private fun parseConversationSchema(json: JSONObject): ConversationDecision {
-        val route = runCatching {
-            ConversationRoute.valueOf(json.optString("route", "UNKNOWN"))
-        }.getOrDefault(ConversationRoute.UNKNOWN)
+        val confidence = requireNumber(json, "confidence")
+        if (confidence < 0.0 || confidence > 1.0) {
+            throw ConversationSchemaException("ConversationDecision confidence out of range: $confidence")
+        }
 
         return ConversationDecision(
             route = route,
-            taskText = json.optString("task_text", ""),
-            reply = json.optString("reply", ""),
-            confidence = json.optDouble("confidence", 0.0),
-            listenAgain = json.optBoolean("listen_again", true)
-        )
-    }
-
-    private fun parseLegacyTaskAgentSchema(
-        json: JSONObject,
-        originalUserText: String
-    ): ConversationDecision {
-        val action = json.optString("action", "").uppercase()
-        val naturalResponse = json.optString("natural_response", "")
-        val confidence = json.optDouble("confidence", 0.0)
-
-        if (naturalResponse.isNotBlank() && originalTextLooksConversational(originalUserText)) {
-            return ConversationDecision(
-                route = ConversationRoute.DIRECT_REPLY,
-                reply = naturalResponse,
-                confidence = confidence,
-                listenAgain = true
-            )
-        }
-
-        if (originalTextLooksTaskRelated(originalUserText) && action.isNotBlank() && action != "UNKNOWN") {
-            return ConversationDecision(
-                route = ConversationRoute.TASK_COMMAND,
-                taskText = originalUserText,
-                confidence = confidence,
-                listenAgain = true
-            )
-        }
-
-        if (naturalResponse.isNotBlank()) {
-            return ConversationDecision(
-                route = ConversationRoute.DIRECT_REPLY,
-                reply = naturalResponse,
-                confidence = confidence,
-                listenAgain = true
-            )
-        }
-
-        return unknownDecision(confidence)
-    }
-
-    private fun unknownDecision(confidence: Double): ConversationDecision {
-        return ConversationDecision(
-            route = ConversationRoute.UNKNOWN,
-            reply = "I can help with task scheduling. Try asking me to create, check, reschedule, delete, complete, or break down a task.",
+            taskText = requireString(json, "task_text"),
+            reply = requireString(json, "reply"),
             confidence = confidence,
-            listenAgain = true
+            listenAgain = requireBoolean(json, "listen_again")
         )
     }
 
-    private fun originalTextLooksConversational(text: String): Boolean {
-        val normalized = text.lowercase()
-        return CONVERSATIONAL_HINTS.any { normalized.contains(it) }
+    private fun extractFirstJsonObject(rawContent: String): String {
+        val start = rawContent.indexOf('{')
+        if (start < 0) {
+            throw ConversationSchemaException("Conversation Agent content does not contain a JSON object")
+        }
+
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (index in start until rawContent.length) {
+            val char = rawContent[index]
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    char == '\\' -> escaped = true
+                    char == '"' -> inString = false
+                }
+            } else {
+                when (char) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) {
+                            return rawContent.substring(start, index + 1)
+                        }
+                    }
+                }
+            }
+        }
+
+        throw ConversationSchemaException("Conversation Agent content contains an incomplete JSON object")
     }
 
-    private fun originalTextLooksTaskRelated(text: String): Boolean {
-        val normalized = text.lowercase()
-        return TASK_RELATED_HINTS.any { normalized.contains(it) }
+    private fun rejectTaskAgentFields(json: JSONObject) {
+        val forbiddenField = TASK_AGENT_FIELDS.firstOrNull { json.has(it) }
+        if (forbiddenField != null) {
+            throw ConversationSchemaException("ConversationDecision contains forbidden task-agent field: $forbiddenField")
+        }
+    }
+
+    private fun requireExactFields(json: JSONObject) {
+        val keys = json.keys().asSequence().toSet()
+        val missing = REQUIRED_FIELDS.filterNot { keys.contains(it) }
+        if (missing.isNotEmpty()) {
+            throw ConversationSchemaException("ConversationDecision missing required fields: ${missing.joinToString()}")
+        }
+
+        val extra = keys.filterNot { REQUIRED_FIELDS.contains(it) }
+        if (extra.isNotEmpty()) {
+            throw ConversationSchemaException("ConversationDecision contains additional fields: ${extra.joinToString()}")
+        }
+    }
+
+    private fun requireString(json: JSONObject, field: String): String {
+        val value = json.get(field)
+        if (value !is String) {
+            throw ConversationSchemaException("ConversationDecision field '$field' must be a string")
+        }
+        return value
+    }
+
+    private fun requireNumber(json: JSONObject, field: String): Double {
+        val value = json.get(field)
+        if (value !is Number) {
+            throw ConversationSchemaException("ConversationDecision field '$field' must be a number")
+        }
+        return value.toDouble()
+    }
+
+    private fun requireBoolean(json: JSONObject, field: String): Boolean {
+        val value = json.get(field)
+        if (value !is Boolean) {
+            throw ConversationSchemaException("ConversationDecision field '$field' must be a boolean")
+        }
+        return value
     }
 
     companion object {
-        private val TASK_RELATED_HINTS = listOf(
-            "remind me",
-            "create task",
-            "add task",
-            "schedule",
-            "what task",
-            "what tasks",
-            "tasks do i have",
-            "do i have anything",
-            "delete",
-            "remove",
-            "reschedule",
-            "move",
-            "change time",
-            "mark",
-            "as done",
-            "complete",
-            "undone",
-            "break down",
-            "split",
-            "edit task",
-            "update task"
+        private val REQUIRED_FIELDS = setOf(
+            "route",
+            "task_text",
+            "reply",
+            "confidence",
+            "listen_again"
         )
 
-        private val CONVERSATIONAL_HINTS = listOf(
-            "hello",
-            "hi",
-            "hey",
-            "how are you",
-            "what can you do",
-            "help",
-            "thanks",
-            "thank you"
+        private val TASK_AGENT_FIELDS = setOf(
+            "action",
+            "natural_response",
+            "task_title",
+            "target_task_title",
+            "date",
+            "time",
+            "recurrence",
+            "priority",
+            "missing_fields",
+            "requires_confirmation",
+            "plan"
         )
     }
 }
