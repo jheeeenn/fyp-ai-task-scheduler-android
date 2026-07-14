@@ -4,8 +4,6 @@ object TextNormalizer {
 
     private val fillerWords = listOf(
         "please",
-        "can you",
-        "could you",
         "uh",
         "um",
         "hey app",
@@ -15,6 +13,7 @@ object TextNormalizer {
     private val replacements = linkedMapOf(
         "tmr" to "tomorrow",
         "tommorow" to "tomorrow",
+        "tommorrow" to "tomorrow",
         "tomoro" to "tomorrow",
         "moning" to "morning",
         "2 o clock" to "2 pm",

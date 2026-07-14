@@ -46,6 +46,11 @@ import com.example.myapplication.ai.agent.AgentOrchestrator
 import com.example.myapplication.ai.agent.LaptopAgentClient
 import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
+import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.ConversationDecisionParser
+import com.example.myapplication.ai.conversation.ConversationOrchestrator
+import com.example.myapplication.ai.conversation.ConversationOrchestratorException
+import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -67,6 +72,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var aiRouter: AiRouter
     private lateinit var agentOrchestrator: AgentOrchestrator
+    private lateinit var conversationOrchestrator: ConversationOrchestrator
 
 
     private lateinit var assistantSession: AssistantVoiceSession
@@ -153,6 +159,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             TaskActionNormalizer(),
             ActionValidator(),
             aiRouter
+        )
+        conversationOrchestrator = ConversationOrchestrator(
+            ConversationAgentClient(this),
+            ConversationDecisionParser()
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
 
@@ -432,6 +442,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
 
+
+    private fun buildConversationAppContextSummary(): String {
+        return "homeFollowUpContext=$homeFollowUpContext, lastQueryDate=$lastQueryDate, lastQueryWasToday=$lastQueryWasToday"
+    }
+
     private fun handleVoiceCommand(command: String) {
         val normalized = TextNormalizer.normalize(command)
 
@@ -489,9 +504,67 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         lifecycleScope.launch {
             try {
+                Log.d("CONVO_ORCH", "normalized='$normalized'")
+                val conversationDecision = try {
+                    conversationOrchestrator.process(
+                        normalizedText = normalized,
+                        appContextSummary = buildConversationAppContextSummary()
+                    )
+                } catch (e: ConversationOrchestratorException) {
+                    Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
+                    assistantSession.speak(
+                        "I could not understand that request correctly. Please try again.",
+                        listenAgain = true
+                    )
+                    return@launch
+                }
+
+                Log.d(
+                    "CONVO_ORCH",
+                    "route=${conversationDecision.route} confidence=${conversationDecision.confidence} " +
+                            "source=${conversationDecision.source}"
+                )
+
+                val taskAgentInput: String
+                when (conversationDecision.route) {
+                    ConversationRoute.DIRECT_REPLY -> {
+                        Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
+                        assistantSession.speak(
+                            conversationDecision.reply,
+                            listenAgain = conversationDecision.listenAgain
+                        )
+                        return@launch
+                    }
+                    ConversationRoute.ASK_CLARIFICATION -> {
+                        Log.d("CONVO_ORCH", "handled directly as ASK_CLARIFICATION")
+                        assistantSession.speak(conversationDecision.reply, listenAgain = true)
+                        return@launch
+                    }
+                    ConversationRoute.END_SESSION -> {
+                        Log.d("CONVO_ORCH", "handled directly as END_SESSION")
+                        homeFollowUpContext = HomeFollowUpContext.NONE
+                        if (conversationDecision.reply.isNotBlank()) {
+                            assistantSession.speak(conversationDecision.reply, listenAgain = false)
+                        }
+                        return@launch
+                    }
+                    ConversationRoute.TASK_COMMAND -> {
+                        taskAgentInput = conversationDecision.taskText.ifBlank { normalized }
+                        Log.d("CONVO_ORCH", "routed to task agent with text='$taskAgentInput'")
+                    }
+                    ConversationRoute.UNKNOWN -> {
+                        Log.d("CONVO_ORCH", "handled directly as UNKNOWN")
+                        assistantSession.speak(
+                            conversationDecision.reply.ifBlank { "I cannot help with that request yet." },
+                            listenAgain = true
+                        )
+                        return@launch
+                    }
+                }
+
                 // log
-                Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$normalized'")
-                val aiResult = agentOrchestrator.process(normalized)
+                Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$taskAgentInput'")
+                val aiResult = agentOrchestrator.process(taskAgentInput)
 
                 Log.d(
                     "AI_ROUTER",
@@ -523,7 +596,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         // log
                         Log.d("HOME_ACTION", "QUERY_TASK -> handleQueryTask")
 
-                        handleQueryTask(normalized)
+                        handleQueryTask(
+                            normalized = normalized,
+                            agentDateText = aiResult.dateText
+                        )
                     }
                     // delete task
                     AiIntent.DELETE_TASK.name -> {
@@ -819,7 +895,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return ScheduleTextParser.parseDateFromSentence(normalized)
     }
 
-    private fun handleQueryTask(normalized: String) {
+    private fun handleQueryTask(
+        normalized: String,
+        agentDateText: String?
+    ) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
             val taskData = withContext(Dispatchers.IO) {
@@ -831,7 +910,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             currentSubtasksByParentId = taskData.second
 
             val today = todayDateString()
-            val queryDate = resolveQueryDate(normalized)
+            val queryDate = ScheduleTextParser.parseDate(agentDateText)
+                ?: resolveQueryDate(normalized)
+
+            Log.d(
+                "HOME_QUERY_DATE",
+                "agentDateText=$agentDateText original='$normalized' resolvedDate=$queryDate"
+            )
 
             lastQueryDate = queryDate
             lastQueryWasToday = queryDate == today
