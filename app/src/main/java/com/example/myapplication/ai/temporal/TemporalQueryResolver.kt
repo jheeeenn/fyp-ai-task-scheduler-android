@@ -17,8 +17,11 @@ class TemporalQueryResolver {
         val timeSource = clean(agentTimeText)
         val original = clean(originalText)
         val supplied = dateSource.isNotBlank() || timeSource.isNotBlank()
-        val dateText = dateSource.ifBlank { extractDatePhrase(original) }
-        val timeText = timeSource.ifBlank { extractTimePhrase(dateSource).ifBlank { extractTimePhrase(original) } }
+        val dateSourceIsTimeOnly = dateSource.isNotBlank() && parseTimeWindow(dateSource) != null
+        val dateText = if (dateSourceIsTimeOnly) "" else dateSource.ifBlank { extractDatePhrase(original) }
+        val timeText = timeSource.ifBlank {
+            if (dateSourceIsTimeOnly) dateSource else extractTimePhrase(dateSource).ifBlank { extractTimePhrase(original) }
+        }
         if (!supplied && dateText.isBlank() && timeText.isBlank()) return TemporalQueryWindow(TemporalResolutionStatus.NONE)
         val preferredDateText = if (dateText.isBlank()) "" else dateText
         val fallbackDateText = if (preferredDateText.isNotBlank()) extractDatePhrase(preferredDateText) else ""
@@ -50,14 +53,52 @@ class TemporalQueryResolver {
         spokenLabel = label
     )
 
-    private fun extractDatePhrase(text: String): String = listOf(
-        Regex("\\b(overdue|upcoming)(?: tasks)?\\b"), Regex("\\bfrom (.+?) onward\\b"), Regex("\\b(?:from|between) .+? (?:to|and) .+?(?= before | after | in the | at |$)"),
-        Regex("\\b(?:this|next) (?:weekend|week|month|year)\\b"), Regex("\\bnext \\d+ (?:days|weeks)\\b"),
-        Regex("\\b(?:before|after) (?:$monthNames|\\d|monday|tuesday|wednesday|thursday|friday|saturday|sunday).+?(?= before | after | at |$)"),
-        Regex("\\bday after tomorrow\\b"), Regex("\\b(?:today|tomorrow|tonight)\\b"), Regex("\\b(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b"),
-        Regex("\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b"), Regex("\\b\\d{4}/\\d{1,2}/\\d{1,2}\\b"),
-        Regex("\\b\\d{1,2} (?:$monthNames)(?: \\d{4})?\\b"), Regex("\\b(?:$monthNames) \\d{1,2}(?: \\d{4})?\\b")
-    ).firstNotNullOfOrNull { it.find(text)?.value?.trim() }.orEmpty()
+    private fun extractDatePhrase(text: String): String {
+        Regex("""\b(overdue|upcoming)(?: tasks)?\b""").find(text)?.let { return it.value.trim() }
+        Regex("""\bfrom (.+?) onward\b""").find(text)?.let { match ->
+            if (!looksLikeClockExpression(match.groupValues[1])) return match.value.trim()
+        }
+        Regex("""\b(?:from|between) (.+?) (?:to|and) (.+?)(?= before | after | in the | at |$)""").findAll(text).forEach { match ->
+            val start = match.groupValues[1].trim()
+            val end = match.groupValues[2].trim()
+            if (!looksLikeClockExpression(start) || !looksLikeClockExpression(end)) {
+                return match.value.trim()
+            }
+        }
+        Regex("""\b(?:this|next) (?:weekend|week|month|year)\b""").find(text)?.let { return it.value.trim() }
+        Regex("""\bnext \d+ (?:days|weeks)\b""").find(text)?.let { return it.value.trim() }
+        Regex("""\b(?:before|after) (.+?)(?= before | after | in the | at |$)""").findAll(text).forEach { match ->
+            val target = match.groupValues[1].trim()
+            if (!looksLikeClockExpression(target) && looksLikeDateExpression(target)) {
+                return match.value.trim()
+            }
+        }
+        return listOf(
+            Regex("""\bday after tomorrow\b"""),
+            Regex("""\b(?:today|tomorrow|tonight)\b"""),
+            Regex("""\b(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"""),
+            Regex("""\b\d{1,2}/\d{1,2}/\d{2,4}\b"""),
+            Regex("""\b\d{4}/\d{1,2}/\d{1,2}\b"""),
+            Regex("""\b\d{1,2} (?:$monthNames)(?: \d{4})?\b"""),
+            Regex("""\b(?:$monthNames) \d{1,2}(?: \d{4})?\b""")
+        ).firstNotNullOfOrNull { it.find(text)?.value?.trim() }.orEmpty()
+    }
+
+    private fun looksLikeDateExpression(text: String): Boolean {
+        val t = text.trim()
+        if (t in setOf("today", "tomorrow", "tonight", "day after tomorrow", "the day after tomorrow")) return true
+        if (Regex("""^(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$""").matches(t)) return true
+        if (Regex("""^\d{1,2}/\d{1,2}/\d{2,4}$""").matches(t) || Regex("""^\d{4}/\d{1,2}/\d{1,2}$""").matches(t)) return true
+        if (Regex("""^\d{1,2} (?:$monthNames)(?: \d{4})?$""").matches(t)) return true
+        if (Regex("""^(?:$monthNames) \d{1,2}(?: \d{4})?$""").matches(t)) return true
+        return false
+    }
+
+    private fun looksLikeClockExpression(text: String): Boolean {
+        val t = text.trim().removePrefix("at ").removePrefix("before ").removePrefix("after ")
+        if (t in setOf("morning", "afternoon", "evening", "night", "tonight", "noon", "midnight")) return true
+        return parseMinute(t) != null
+    }
 
     private fun extractTimePhrase(text: String): String = listOf(
         Regex("\\bbetween .+? and .+?(?:am|pm|noon|midnight)\\b"), Regex("\\bfrom .+? to .+?(?:am|pm|noon|midnight)\\b"),

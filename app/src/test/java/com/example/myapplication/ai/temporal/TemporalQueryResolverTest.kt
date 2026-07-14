@@ -62,6 +62,51 @@ class TemporalQueryResolverTest {
         assertEquals(TemporalResolutionStatus.NONE, r(original = "what tasks do i have").status)
     }
 
+
+    @Test fun timeOnlyOriginalTextDoesNotBecomeDateConstraint() {
+        val cases = listOf(
+            Triple("between 9 AM and noon", 540, 720),
+            Triple("from 2 PM to 5 PM", 840, 1020),
+            Triple("before 10 AM", 0, 599),
+            Triple("after 6 PM", 1081, 1439),
+            Triple("at 9 AM", 540, 540),
+            Triple("morning", 300, 719)
+        )
+
+        cases.forEach { (phrase, start, end) ->
+            val window = resolver.resolve(
+                agentDateText = "",
+                agentTimeText = phrase,
+                originalText = "what tasks do i have $phrase",
+                baseCalendar = base()
+            )
+            assertEquals("phrase=$phrase", TemporalResolutionStatus.RESOLVED, window.status)
+            assertEquals("phrase=$phrase", TemporalDateScope.ALL, window.dateScope)
+            assertEquals("phrase=$phrase", null, window.startDateInclusive)
+            assertEquals("phrase=$phrase", null, window.endDateInclusive)
+            assertEquals("phrase=$phrase", start, window.startMinuteInclusive)
+            assertEquals("phrase=$phrase", end, window.endMinuteInclusive)
+        }
+
+        val defensiveDateFieldWindow = resolver.resolve(
+            agentDateText = "between 9 AM and noon",
+            agentTimeText = "",
+            originalText = "what tasks do i have between 9 AM and noon",
+            baseCalendar = base()
+        )
+        assertEquals(TemporalResolutionStatus.RESOLVED, defensiveDateFieldWindow.status)
+        assertEquals(TemporalDateScope.ALL, defensiveDateFieldWindow.dateScope)
+        assertEquals(540, defensiveDateFieldWindow.startMinuteInclusive)
+        assertEquals(720, defensiveDateFieldWindow.endMinuteInclusive)
+    }
+
+    @Test fun temporalLabelFormatterKeepsReadableRangeLabels() {
+        val nextWeek = r("next week")
+        assertEquals("next week", TemporalQueryLabelFormatter.spokenLabel(nextWeek))
+        val dateRange = r("between 31 July and 20 August")
+        assertEquals("between 31 July and 20 August", TemporalQueryLabelFormatter.spokenLabel(dateRange))
+    }
+
     private fun assertRange(w: TemporalQueryWindow, start: String, end: String) { assertEquals(TemporalResolutionStatus.RESOLVED, w.status); assertEquals(start, w.startDateInclusive); assertEquals(end, w.endDateInclusive) }
     private fun assertTime(w: TemporalQueryWindow, start: Int, end: Int, wraps: Boolean) { assertEquals(TemporalResolutionStatus.RESOLVED, w.status); assertEquals(start, w.startMinuteInclusive); assertEquals(end, w.endMinuteInclusive); assertEquals(wraps, w.wrapsMidnight) }
 }

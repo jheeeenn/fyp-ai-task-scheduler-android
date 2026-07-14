@@ -66,6 +66,7 @@ import com.example.myapplication.ai.PendingTaskAction
 
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.ai.temporal.TaskTemporalFilter
+import com.example.myapplication.ai.temporal.TemporalQueryLabelFormatter
 import com.example.myapplication.ai.temporal.TemporalQueryResolver
 import com.example.myapplication.ai.temporal.TemporalQueryWindow
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
@@ -948,7 +949,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val filteredTasks = TaskTemporalFilter.filterAndSort(allTasks, queryWindow)
 
             val replyMode = detectQueryReplyMode(normalized)
-            val reply = buildTaskQueryReply(filteredTasks, lastQueryWasToday, replyMode)
+            val reply = buildTaskQueryReply(filteredTasks, lastQueryWasToday, replyMode, queryWindow)
 
             val hint = if (filteredTasks.isEmpty()) {
                 responseManager.hintCreateOrRead()
@@ -1011,31 +1012,47 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun buildTaskQueryReply(
         tasks: List<com.example.myapplication.data.TaskEntity>,
         queryToday: Boolean,
-        mode: QueryReplyMode
+        mode: QueryReplyMode,
+        queryWindow: TemporalQueryWindow
     ): String {
         if (tasks.isEmpty()) {
-            return responseManager.queryNoTasks(queryToday)
+            return buildNoTasksQueryReply(queryToday, queryWindow)
         }
 
         return when (mode) {
-            QueryReplyMode.SHORT -> buildShortQueryReply(tasks, queryToday)
-            QueryReplyMode.NORMAL -> buildNormalQueryReply(tasks, queryToday)
-            QueryReplyMode.DETAILED -> buildDetailedQueryReply(tasks, queryToday)
+            QueryReplyMode.SHORT -> buildShortQueryReply(tasks, queryToday, queryWindow)
+            QueryReplyMode.NORMAL -> buildNormalQueryReply(tasks, queryToday, queryWindow)
+            QueryReplyMode.DETAILED -> buildDetailedQueryReply(tasks, queryToday, queryWindow)
         }
+    }
+
+    private fun buildNoTasksQueryReply(
+        queryToday: Boolean,
+        queryWindow: TemporalQueryWindow
+    ): String {
+        val label = spokenTemporalLabel(queryWindow)
+        if (label == null || queryToday) return responseManager.queryNoTasks(queryToday)
+        return "You have no tasks $label."
     }
 
     private fun buildShortQueryReply(
         tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean
+        queryToday: Boolean,
+        queryWindow: TemporalQueryWindow
     ): String {
+        val label = spokenTemporalLabel(queryWindow)
+        if (label != null && !queryToday) {
+            return "Yes, you have ${tasks.size} task${if (tasks.size > 1) "s" else ""} $label."
+        }
         return responseManager.queryShortCount(tasks.size, queryToday)
     }
 
     private fun buildNormalQueryReply(
         tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean
+        queryToday: Boolean,
+        queryWindow: TemporalQueryWindow
     ): String {
-        val intro = responseManager.queryIntro(tasks.size, queryToday)
+        val intro = buildQueryIntro(tasks.size, queryToday, queryWindow)
 
         val maxTasks = responseManager.getMaxTasksForMode(QueryDetailMode.NORMAL)
 
@@ -1054,9 +1071,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun buildDetailedQueryReply(
         tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean
+        queryToday: Boolean,
+        queryWindow: TemporalQueryWindow
     ): String {
-        val intro = responseManager.queryIntro(tasks.size, queryToday)
+        val intro = buildQueryIntro(tasks.size, queryToday, queryWindow)
 
 
         val maxTasks = responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED)
@@ -1072,6 +1090,24 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
 
         return "$intro $taskDetails$moreText".trim()
+    }
+
+
+    private fun buildQueryIntro(
+        count: Int,
+        queryToday: Boolean,
+        queryWindow: TemporalQueryWindow
+    ): String {
+        val label = spokenTemporalLabel(queryWindow)
+        if (label != null && !queryToday) {
+            return "You have $count task${if (count > 1) "s" else ""} $label."
+        }
+        return responseManager.queryIntro(count, queryToday)
+    }
+
+    private fun spokenTemporalLabel(queryWindow: TemporalQueryWindow): String? {
+        if (queryWindow.isExactDate && queryWindow.startDateInclusive == todayDateString()) return null
+        return TemporalQueryLabelFormatter.spokenLabel(queryWindow)
     }
 
     private fun buildCompactTaskSpeech(task: com.example.myapplication.data.TaskEntity): String {
@@ -1311,7 +1347,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val reply = buildTaskQueryReply(
                 tasks = filteredTasks,
                 queryToday = queryToday,
-                mode = QueryReplyMode.DETAILED
+                mode = QueryReplyMode.DETAILED,
+                queryWindow = lastQueryWindow
             )
 
             homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS

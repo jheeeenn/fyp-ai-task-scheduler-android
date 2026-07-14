@@ -163,6 +163,11 @@ If the user gives a time, extract it.
 Use 24-hour time when possible, such as "21:00".
 For RESCHEDULE_TASK, date may be empty if the user only changes the time.
 For QUERY_TASK, copy the complete date or date-range phrase into date and the complete time or time-range phrase into time.
+The Task Agent does not need database access to classify or extract a QUERY_TASK request.
+Never respond that you cannot access the user's task list.
+When a user asks what tasks they have for any date, date range, or time range, return QUERY_TASK.
+Android will access and filter the database after extraction.
+UNKNOWN is only for genuinely non-task requests.
 For QUERY_TASK, do not calculate real dates from relative phrases; Android performs calendar resolution and task filtering.
 For QUERY_TASK, keep both date and time empty only when no temporal restriction was supplied.
 For QUERY_TASK, never access, request, or filter the task database.
@@ -172,6 +177,10 @@ User: "What tasks do I have next week in the morning?" -> date="next week", time
 User: "What tasks do I have between 20 July and 25 July?" -> date="between 20 July and 25 July", time=""
 User: "What tasks do I have tomorrow after 6 PM?" -> date="tomorrow", time="after 6 PM"
 User: "What overdue tasks do I have?" -> date="overdue", time=""
+User: "What tasks do I have this week?" -> action=QUERY_TASK, date="this week", time=""
+User: "Do I have any task this month?" -> action=QUERY_TASK, date="this month", time=""
+User: "What tasks do I have next month?" -> action=QUERY_TASK, date="next month", time=""
+User: "What upcoming tasks do I have?" -> action=QUERY_TASK, date="upcoming", time=""
 
 Recurrence and priority rules:
 recurrence must be empty unless the user clearly says the task repeats.
