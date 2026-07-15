@@ -9,6 +9,7 @@ import java.util.TimeZone
 class TemporalQueryResolverTest {
     private val resolver = TemporalQueryResolver()
     private fun base() = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { set(2026, Calendar.JULY, 14, 9, 0, 0); set(Calendar.MILLISECOND, 0) }
+    private fun base15() = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { set(2026, Calendar.JULY, 15, 9, 0, 0); set(Calendar.MILLISECOND, 0) }
     private fun r(date: String? = null, time: String? = null, original: String = "") = resolver.resolve(date, time, original, base())
 
     @Test fun exactDatesAndWeekdays() {
@@ -49,6 +50,17 @@ class TemporalQueryResolverTest {
         assertTime(r(time = "before 10 AM"), 0, 599, false)
         assertTime(r(time = "after 6 PM"), 1081, 1439, false)
         assertTime(r(time = "between 9 AM and noon"), 540, 720, false)
+        listOf(
+            "between 9 AM and noon",
+            "from 9 AM to noon",
+            "9 AM to noon",
+            "9 AM until noon",
+            "9 AM through noon",
+            "9 AM - noon",
+            "9 AM–noon"
+        ).forEach { phrase ->
+            assertTime(r(time = phrase), 540, 720, false)
+        }
     }
 
     @Test fun combinedAndStatus() {
@@ -100,11 +112,36 @@ class TemporalQueryResolverTest {
         assertEquals(720, defensiveDateFieldWindow.endMinuteInclusive)
     }
 
+
+    @Test fun reversedExplicitCalendarRangesAreUnresolvedButWeekdayRangesCanRollForward() {
+        assertRange(r("Friday to Monday"), "17/07/2026", "20/07/2026")
+        assertRange(r("between Monday and Friday"), "20/07/2026", "24/07/2026")
+        assertEquals(TemporalResolutionStatus.UNRESOLVED, r("between 20 August and 31 July").status)
+        assertEquals(TemporalResolutionStatus.UNRESOLVED, r("from 25/08/2026 to 20/08/2026").status)
+        assertRange(r("from 20 August 2026 to 31 July 2027"), "20/08/2026", "31/07/2027")
+    }
+
+    @Test fun tonightKeepsStrictSameDateWrappingWindow() {
+        val window = resolver.resolve("tonight", "", "what tasks do i have tonight", base15())
+        assertEquals(TemporalResolutionStatus.RESOLVED, window.status)
+        assertEquals(TemporalDateScope.EXACT_DATE, window.dateScope)
+        assertEquals("15/07/2026", window.startDateInclusive)
+        assertEquals("15/07/2026", window.endDateInclusive)
+        assertEquals(1260, window.startMinuteInclusive)
+        assertEquals(299, window.endMinuteInclusive)
+        assertTrue(window.wrapsMidnight)
+    }
+
     @Test fun temporalLabelFormatterKeepsReadableRangeLabels() {
         val nextWeek = r("next week")
         assertEquals("next week", TemporalQueryLabelFormatter.spokenLabel(nextWeek))
         val dateRange = r("between 31 July and 20 August")
         assertEquals("between 31 July and 20 August", TemporalQueryLabelFormatter.spokenLabel(dateRange))
+        assertEquals("this morning", TemporalQueryLabelFormatter.spokenLabel(resolver.resolve("today", "morning", "", base15())))
+        assertEquals("this afternoon", TemporalQueryLabelFormatter.spokenLabel(resolver.resolve("today", "afternoon", "", base15())))
+        assertEquals("this evening", TemporalQueryLabelFormatter.spokenLabel(resolver.resolve("today", "evening", "", base15())))
+        assertEquals("tonight", TemporalQueryLabelFormatter.spokenLabel(resolver.resolve("tonight", "", "", base15())))
+        assertEquals("today after 6 PM", TemporalQueryLabelFormatter.spokenLabel(resolver.resolve("today", "after 6 PM", "", base15())))
     }
 
     private fun assertRange(w: TemporalQueryWindow, start: String, end: String) { assertEquals(TemporalResolutionStatus.RESOLVED, w.status); assertEquals(start, w.startDateInclusive); assertEquals(end, w.endDateInclusive) }

@@ -17,7 +17,7 @@ class TemporalQueryResolver {
         val timeSource = clean(agentTimeText)
         val original = clean(originalText)
         val supplied = dateSource.isNotBlank() || timeSource.isNotBlank()
-        val dateSourceIsTimeOnly = dateSource.isNotBlank() && parseTimeWindow(dateSource) != null
+        val dateSourceIsTimeOnly = dateSource.isNotBlank() && dateSource != "tonight" && parseTimeWindow(dateSource) != null
         val dateText = if (dateSourceIsTimeOnly) "" else dateSource.ifBlank { extractDatePhrase(original) }
         val timeText = timeSource.ifBlank {
             if (dateSourceIsTimeOnly) dateSource else extractTimePhrase(dateSource).ifBlank { extractTimePhrase(original) }
@@ -65,6 +65,7 @@ class TemporalQueryResolver {
                 return match.value.trim()
             }
         }
+        Regex("""\b(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday) (?:to|and) (?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""").find(text)?.let { return it.value.trim() }
         Regex("""\b(?:this|next) (?:weekend|week|month|year)\b""").find(text)?.let { return it.value.trim() }
         Regex("""\bnext \d+ (?:days|weeks)\b""").find(text)?.let { return it.value.trim() }
         Regex("""\b(?:before|after) (.+?)(?= before | after | in the | at |$)""").findAll(text).forEach { match ->
@@ -113,9 +114,20 @@ class TemporalQueryResolver {
         Regex("from (.+) onward").matchEntire(t)?.let { val s = parseSingleDate(it.groupValues[1], base) ?: return null; return range(TemporalDateScope.UPCOMING, s, null) }
         Regex("before (.+)").matchEntire(t)?.let { val e = parseSingleDate(it.groupValues[1], base) ?: return null; e.add(Calendar.DAY_OF_MONTH, -1); return range(TemporalDateScope.DATE_RANGE, null, e) }
         Regex("after (.+)").matchEntire(t)?.let { val s = parseSingleDate(it.groupValues[1], base) ?: return null; s.add(Calendar.DAY_OF_MONTH, 1); return range(TemporalDateScope.DATE_RANGE, s, null) }
-        Regex("(?:from|between) (.+) (?:to|and) (.+)").matchEntire(t)?.let {
-            val s = parseSingleDate(it.groupValues[1], base) ?: return null; val e = parseSingleDate(it.groupValues[2], base) ?: return null
-            while (strip(e).before(strip(s))) e.add(Calendar.DAY_OF_MONTH, 7)
+        Regex("(?:(?:from|between) )?(.+) (?:to|and) (.+)").matchEntire(t)?.let {
+            val startText = it.groupValues[1].trim()
+            val endText = it.groupValues[2].trim()
+            val s = parseSingleDate(startText, base) ?: return null
+            val e = parseSingleDate(endText, base) ?: return null
+            if (strip(e).before(strip(s))) {
+                if (isWeekdayExpression(startText) && isWeekdayExpression(endText)) {
+                    do {
+                        e.add(Calendar.DAY_OF_MONTH, 7)
+                    } while (strip(e).before(strip(s)))
+                } else {
+                    return null
+                }
+            }
             return range(TemporalDateScope.DATE_RANGE, s, e)
         }
         parseCalendarRange(t, base)?.let { return it }
@@ -159,8 +171,25 @@ class TemporalQueryResolver {
         Regex("at (.+)").matchEntire(t)?.let { val m = parseMinute(it.groupValues[1]) ?: return null; return time(m, m) }
         Regex("before (.+)").matchEntire(t)?.let { val m = parseMinute(it.groupValues[1]) ?: return null; return time(0, (m - 1).coerceAtLeast(0)) }
         Regex("after (.+)").matchEntire(t)?.let { val m = parseMinute(it.groupValues[1]) ?: return null; return time((m + 1).coerceAtMost(1439), 1439) }
-        Regex("(?:between|from) (.+) (?:and|to) (.+)").matchEntire(t)?.let { val s = parseMinute(it.groupValues[1]) ?: return null; val e = parseMinute(it.groupValues[2]) ?: return null; return time(s, e, e < s) }
+        val rangeText = t
+            .removePrefix("between ")
+            .removePrefix("from ")
+            .replace('–', '-')
+        Regex("""(.+?)\s*(?:and|to|until|through|-)\s*(.+)""").matchEntire(rangeText)?.let {
+            val s = parseMinute(it.groupValues[1]) ?: return null
+            val e = parseMinute(it.groupValues[2]) ?: return null
+            return time(s, e, e < s)
+        }
+        Regex("""(.+?)-(.*)""").matchEntire(rangeText)?.let {
+            val s = parseMinute(it.groupValues[1]) ?: return null
+            val e = parseMinute(it.groupValues[2]) ?: return null
+            return time(s, e, e < s)
+        }
         return null
+    }
+    private fun isWeekdayExpression(text: String): Boolean {
+        val t = text.trim().removePrefix("on ").removePrefix("this ").removePrefix("next ")
+        return weekdays.containsKey(t)
     }
     private fun parseMinute(s: String): Int? { val t = s.trim(); if (t == "noon") return 720; if (t == "midnight") return 0; val m = Regex("(\\d{1,2})(?::(\\d{2}))? ?(am|pm)?").matchEntire(t) ?: return null; var h = m.groupValues[1].toInt(); val min = m.groupValues[2].ifBlank { "0" }.toInt(); val ap = m.groupValues[3]; if (min !in 0..59 || h !in 0..23) return null; if (ap == "am" && h == 12) h = 0; else if (ap == "pm" && h < 12) h += 12; return h * 60 + min }
     private fun time(s: Int, e: Int, wrap: Boolean = false) = TemporalQueryWindow(TemporalResolutionStatus.RESOLVED, startMinuteInclusive = s, endMinuteInclusive = e, wrapsMidnight = wrap)

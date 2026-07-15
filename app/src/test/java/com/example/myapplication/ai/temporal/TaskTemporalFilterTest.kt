@@ -39,4 +39,24 @@ class TaskTemporalFilterTest {
             TaskTemporalFilter.filterAndSort(tasks, TemporalQueryWindow(TemporalResolutionStatus.NONE)).map { it.title }
         )
     }
+
+    @Test fun tonightMatchesOnlySameDateEarlyMorningAndLateNight() {
+        val tonightTasks = listOf(
+            TaskEntity(10, "same date early", "1:00 AM", false, "15/07/2026"),
+            TaskEntity(11, "same date late", "10:00 PM", false, "15/07/2026"),
+            TaskEntity(12, "same date afternoon", "2:00 PM", false, "15/07/2026"),
+            TaskEntity(13, "next date early", "2:00 AM", false, "16/07/2026")
+        )
+        val fixedBase = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            set(2026, Calendar.JULY, 15, 9, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val window = resolver.resolve("tonight", "", "what tasks do i have tonight", fixedBase)
+
+        assertEquals(
+            listOf("same date early", "same date late"),
+            TaskTemporalFilter.filterAndSort(tonightTasks, window).map { it.title }
+        )
+    }
+
 }

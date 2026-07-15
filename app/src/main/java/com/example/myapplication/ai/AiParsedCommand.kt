@@ -10,6 +10,8 @@ data class AiParsedCommand(
     val priority: String? = null,
     val confidence: Float = 0f,
     val source: String = "local",
+    val needsClarification: Boolean = false,
+    val missingFields: List<String> = emptyList(),
 
     // Used by AI planning actions such as BREAKDOWN_TASK.
     val plan: List<String> = emptyList(),

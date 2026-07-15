@@ -34,6 +34,11 @@ class TaskActionNormalizer {
             }
         }
 
+        val missingFields = response.missing_fields
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
         val command = AiParsedCommand(
             intent = normalizedAction,
             taskTitle = taskTitle.takeIf { it.isNotBlank() },
@@ -44,6 +49,8 @@ class TaskActionNormalizer {
             priority = priority.takeIf { it.isNotBlank() },
             confidence = response.confidence.coerceIn(0f, 1f),
             source = "laptop_agent",
+            needsClarification = response.need_clarification,
+            missingFields = missingFields,
             plan = response.plan
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
@@ -54,7 +61,9 @@ class TaskActionNormalizer {
         Log.d(
             "TASK_AGENT_NORMALIZE",
             "intent=${command.intent}, title=${command.taskTitle}, target=${command.targetTaskTitle}, " +
-                "recurrence=${command.recurrence}, priority=${command.priority}, requiresConfirmation=$requiresConfirmation"
+                "recurrence=${command.recurrence}, priority=${command.priority}, " +
+                "needsClarification=${command.needsClarification}, missingFields=${command.missingFields}, " +
+                "requiresConfirmation=$requiresConfirmation"
         )
         return command
     }

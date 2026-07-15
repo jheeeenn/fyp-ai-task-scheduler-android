@@ -576,7 +576,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 Log.d(
                     "AI_ROUTER",
                     "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
-                            " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}"
+                            " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
+                            "needsClarification=${aiResult.needsClarification}, missingFields=${aiResult.missingFields}"
                 )
 
                 // branches for actions
@@ -602,6 +603,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     AiIntent.QUERY_TASK.name -> {
                         // log
                         Log.d("HOME_ACTION", "QUERY_TASK -> handleQueryTask")
+
+                        if (aiResult.needsClarification) {
+                            assistantSession.speak(
+                                "I could not understand that date or time range. Please try something like tomorrow morning, next week, or from Monday to Friday.",
+                                listenAgain = true
+                            )
+                            return@launch
+                        }
 
                         handleQueryTask(
                             normalized = normalized,
@@ -1106,7 +1115,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun spokenTemporalLabel(queryWindow: TemporalQueryWindow): String? {
-        if (queryWindow.isExactDate && queryWindow.startDateInclusive == todayDateString()) return null
+        if (queryWindow.isExactDate &&
+            queryWindow.startDateInclusive == todayDateString() &&
+            !queryWindow.hasTimeConstraint
+        ) return null
         return TemporalQueryLabelFormatter.spokenLabel(queryWindow)
     }
 
