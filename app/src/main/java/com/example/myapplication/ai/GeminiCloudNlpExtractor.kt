@@ -10,7 +10,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
-class GeminiCloudNlpExtractor(
+@Deprecated("GeminiCloudNlpExtractor is legacy FYP1 cloud extraction. FYP2 production must not call Gemini.")
+class GeminiCloudNlpExtractor
+constructor(
     private val apiKey: String
 ) : CloudNlpExtractor {
 
@@ -22,7 +24,7 @@ class GeminiCloudNlpExtractor(
                 // selecting gemini model here via url
                 val url =
                     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
-                //Log.d("GEMINI_URL", url)
+                //Log.d("LEGACY_CLOUD_URL", url)
 
                 val schema = JSONObject().apply {
                     put("type", "OBJECT")
@@ -146,10 +148,10 @@ User command:
                 val response = client.newCall(request).execute()
                 val body = response.body?.string().orEmpty()
 
-                Log.d("GEMINI_RAW", body)
+                Log.d("LEGACY_CLOUD_RAW", body)
 
                 if (!response.isSuccessful) {
-                    Log.e("GEMINI_HTTP", "HTTP ${response.code}: $body")
+                    Log.e("LEGACY_CLOUD_HTTP", "HTTP ${response.code}: $body")
                     return@withContext AiParsedCommand(
                         intent = AiIntent.UNKNOWN.name,
                         confidence = 0.0f,
@@ -161,7 +163,7 @@ User command:
                 val candidates = root.optJSONArray("candidates")
 
                 if (candidates == null || candidates.length() == 0) {
-                    Log.e("GEMINI_EMPTY", "No candidates returned")
+                    Log.e("LEGACY_CLOUD_EMPTY", "No candidates returned")
                     return@withContext AiParsedCommand(
                         intent = AiIntent.UNKNOWN.name,
                         confidence = 0.0f,
@@ -176,7 +178,7 @@ User command:
                     .getJSONObject(0)
                     .getString("text")
 
-                Log.d("GEMINI_TEXT", text)
+                Log.d("LEGACY_CLOUD_TEXT", text)
 
                 val parsed = JSONObject(text)
 
@@ -194,14 +196,14 @@ User command:
                 val validated = fillImplicitDate(validateCloudResult(result))
 
                 Log.d(
-                    "GEMINI_PARSED",
+                    "LEGACY_CLOUD_PARSED",
                     "intent=${validated.intent}, title=${validated.taskTitle}, date=${validated.dateText}, time=${validated.timeText}, source=${validated.source}, confidence=${validated.confidence}"
                 )
 
                 validated
             }
         } catch (e: Exception) {
-            Log.e("GEMINI_EXCEPTION", "Gemini extractor crashed", e)
+            Log.e("LEGACY_CLOUD_EXCEPTION", "Gemini extractor crashed", e)
             AiParsedCommand(
                 intent = AiIntent.UNKNOWN.name,
                 confidence = 0.0f,

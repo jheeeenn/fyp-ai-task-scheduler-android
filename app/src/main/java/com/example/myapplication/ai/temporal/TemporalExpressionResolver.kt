@@ -196,6 +196,9 @@ class TemporalExpressionResolver {
             val e = parseMinute(it.groupValues[2]) ?: return null
             return time(s, e, e < s)
         }
+        parseMinute(t)?.let { minute ->
+            return time(minute, minute)
+        }
         return null
     }
     private fun isWeekdayExpression(text: String): Boolean {

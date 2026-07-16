@@ -18,11 +18,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
-import com.example.myapplication.ai.AiRouter
-import com.example.myapplication.ai.GeminiCloudNlpExtractor
-import com.example.myapplication.ai.LocalDateParser
-import com.example.myapplication.ai.LocalIntentClassifier
-import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.voice.AssistantPromptHelper
@@ -37,7 +32,6 @@ import java.util.Locale
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
-import com.example.myapplication.voice.SpokenTimeParser
 import com.example.myapplication.ai.temporal.TemporalActionPolicy
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalResolution
@@ -59,10 +53,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private lateinit var voiceHelper: VoiceHelper
 
-    private lateinit var aiRouter: AiRouter
     private lateinit var responseManager: AssistantResponseManager
 
-    private lateinit var localDateParser: LocalDateParser
 
 
 
@@ -110,7 +102,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager = AssistantResponseManager.fromPreferences(this)
-        localDateParser = LocalDateParser()
 
 
         assistantSession = AssistantVoiceSession(
@@ -122,16 +113,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         )
 
         promptHelper = AssistantPromptHelper(assistantSession, responseManager)
-
-        val localIntentClassifier = LocalIntentClassifier(this)
-        val localTaskParser = LocalTaskParser()
-        val cloudExtractor = GeminiCloudNlpExtractor(BuildConfig.GEMINI_API_KEY)
-
-        aiRouter = AiRouter(
-            localIntentClassifier,
-            localTaskParser,
-            cloudExtractor
-        )
 
         taskId = intent.getLongExtra("task_id", -1L)
         val originalTitle = intent.getStringExtra("task_title") ?: ""
@@ -480,16 +461,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
 
-        lifecycleScope.launch {
-            try {
-                val result = aiRouter.process(normalized)
-                runOnUiThread {
-                    processEditCommand(result)
-                }
-            } catch (_: Exception) {
-                speak(responseManager.editParseFailure())
-            }
-        }
+        speak("Please return to the main assistant for a new command, or choose title, date, time, or delete for this task.")
     }
 
     private fun applyProposedTemporalChange(dateText: String?, timeText: String?, askForMissing: Boolean): Boolean {

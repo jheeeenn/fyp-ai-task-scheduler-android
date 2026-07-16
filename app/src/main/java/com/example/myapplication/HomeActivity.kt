@@ -30,17 +30,12 @@ import java.util.Calendar
 import java.util.Locale
 
 
-import com.example.myapplication.ai.AiRouter
-import com.example.myapplication.ai.GeminiCloudNlpExtractor
 
 
 import com.example.myapplication.voice.TextNormalizer
 
-import com.example.myapplication.BuildConfig // for gemini api key
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.LocalConversationIntentClassifier
-import com.example.myapplication.ai.LocalIntentClassifier
-import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.ai.agent.ActionValidator
 import com.example.myapplication.ai.agent.AgentOrchestrator
 import com.example.myapplication.ai.agent.LaptopAgentClient
@@ -76,7 +71,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
     private lateinit var responseManager: AssistantResponseManager
-    private lateinit var aiRouter: AiRouter
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var conversationOrchestrator: ConversationOrchestrator
 
@@ -149,24 +143,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
 
-        val localIntentClassifier = LocalIntentClassifier(this)
-        val localTaskParser = LocalTaskParser()
-        //Log.d("GEMINI_KEY_CHECK", "key='${BuildConfig.GEMINI_API_KEY}'")
-        val cloudExtractor = GeminiCloudNlpExtractor(
-            BuildConfig.GEMINI_API_KEY
-        )
-
-        aiRouter = AiRouter(
-            localIntentClassifier,
-            localTaskParser,
-            cloudExtractor
-        )
         agentOrchestrator = AgentOrchestrator(
             LaptopAgentClient(this),
             TaskAgentResponseParser(),
             TaskActionNormalizer(),
-            ActionValidator(),
-            aiRouter
+            ActionValidator()
         )
         conversationOrchestrator = ConversationOrchestrator(
             ConversationAgentClient(this),
@@ -910,8 +891,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 plan = plan,
                                 originalRequest = normalized,
                                 naturalResponse = aiResult.naturalResponse,
-                                dateText = aiResult.dateText,
-                                timeText = aiResult.timeText
+                                dateText = aiResult.newDateText ?: aiResult.dateText,
+                                timeText = aiResult.newTimeText ?: aiResult.timeText
                             )
                         }
                     }

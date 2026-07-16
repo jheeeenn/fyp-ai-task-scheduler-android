@@ -79,6 +79,39 @@ class TemporalRolesAndPolicyTest {
         assertEquals(listOf("completed"), TaskTemporalFilter.filterAndSort(tasks, window, TaskCompletionFilter.COMPLETED_ONLY).map { it.title })
     }
 
+
+    @Test fun bareExactClockTimesResolveDirectly() {
+        val cases = mapOf(
+            "9 AM" to 540,
+            "9:00 AM" to 540,
+            "11:00 AM" to 660,
+            "11:30 PM" to 1410,
+            "09:00" to 540,
+            "23:15" to 1395,
+            "noon" to 720,
+            "midnight" to 0
+        )
+        cases.forEach { (phrase, minute) ->
+            val r = resolver.resolve(null, phrase, phrase, base())
+            assertEquals("phrase=$phrase", TemporalResolutionType.EXACT_TIME, r.type)
+            assertEquals("phrase=$phrase", minute, r.startMinuteInclusive)
+            assertEquals("phrase=$phrase", minute, r.endMinuteInclusive)
+        }
+    }
+
+    @Test fun invalidBareClockTimesStayUnresolved() {
+        assertEquals(TemporalResolutionStatus.UNRESOLVED, resolver.resolve(null, "13 PM", "13 PM", base()).status)
+        assertEquals(TemporalResolutionStatus.UNRESOLVED, resolver.resolve(null, "25:00", "25:00", base()).status)
+    }
+
+    @Test fun createMorningConstraintAccepts11AmAndRejects1Pm() {
+        val morning = resolver.resolve(null, "morning", "morning", base())
+        val eleven = resolver.resolve(null, "11:00 AM", "11:00 AM", base()).startMinuteInclusive
+        val onePm = resolver.resolve(null, "1:00 PM", "1:00 PM", base()).startMinuteInclusive
+        assertTrue(TemporalActionPolicy.validateClarification(morning, null, eleven))
+        assertFalse(TemporalActionPolicy.validateClarification(morning, null, onePm))
+    }
+
     @Test fun mutationPromptForbidsSuccessClaims() {
         val prompt = LaptopAgentClient.SYSTEM_PROMPT
         assertTrue(prompt.contains("Never claim that an action succeeded"))

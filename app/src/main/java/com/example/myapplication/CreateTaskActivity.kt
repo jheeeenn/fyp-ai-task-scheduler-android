@@ -31,20 +31,12 @@ import com.example.myapplication.voice.AssistantResponseManager
 
 
 import com.example.myapplication.voice.TextNormalizer
-import com.example.myapplication.ai.LocalDateParser
 
-import com.example.myapplication.BuildConfig // for gemini api key
-import com.example.myapplication.ai.AiIntent
-import com.example.myapplication.ai.AiRouter
-import com.example.myapplication.ai.GeminiCloudNlpExtractor
-import com.example.myapplication.ai.LocalIntentClassifier
-import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.voice.AssistantPromptHelper
 
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
-import com.example.myapplication.voice.SpokenTimeParser
 import com.example.myapplication.ai.temporal.TemporalActionPolicy
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalResolution
@@ -55,8 +47,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private lateinit var assistantSession: AssistantVoiceSession
 
-    private lateinit var aiRouter: AiRouter
-    private lateinit var localDateParser: LocalDateParser
     private lateinit var responseManager: AssistantResponseManager
 
     private var suggestedLearnedTime: String? = null
@@ -101,16 +91,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_create_task)
 
-        val localIntentClassifier = LocalIntentClassifier(this)
-        val localTaskParser = LocalTaskParser()
-        val cloudExtractor = GeminiCloudNlpExtractor(BuildConfig.GEMINI_API_KEY)
-
-        aiRouter = AiRouter(
-            localIntentClassifier,
-            localTaskParser,
-            cloudExtractor
-        )
-
         etTaskTitle = findViewById(R.id.etTaskTitle)
 
 
@@ -132,7 +112,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager = AssistantResponseManager.fromPreferences(this)
-        localDateParser = LocalDateParser()
 
         assistantSession = AssistantVoiceSession(
             activity = this,
@@ -266,52 +245,17 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
-        lifecycleScope.launch {
-            try {
-                val aiResult = aiRouter.process(normalized)
+        if (tryApplyInlineCorrection(normalized)) {
+            return
+        }
 
-                when (aiResult.intent) {
-                    AiIntent.CREATE_TASK.name -> {
-                        if (!aiResult.taskTitle.isNullOrBlank()) {
-                            applyTitle(aiResult.taskTitle)
-                        }
-
-                        if (!aiResult.dateText.isNullOrBlank() && applySpokenDate(aiResult.dateText)) {
-                            pendingTaskState.dateText = aiResult.dateText
-                        }
-
-                        if (!aiResult.timeText.isNullOrBlank()) {
-                            if (applySpokenTime(aiResult.timeText)) {
-                                pendingTaskState.timeText = aiResult.timeText
-                                pendingSemanticTimePhrase = null
-                            } else if (timePreferenceLearner.isSemanticPhrase(aiResult.timeText)) {
-                                pendingTaskState.timeText = aiResult.timeText
-                                pendingSemanticTimePhrase = aiResult.timeText
-                            }
-                        }
-
-                        moveToNextMissingStep()
-                    }
-
-                    AiIntent.RESCHEDULE_TASK.name,
-                    AiIntent.UPDATE_TASK.name -> {
-                        tryApplyInlineCorrection(normalized)
-                    }
-
-                    AiIntent.UNKNOWN.name -> {
-                        speakWithPanel(responseManager.unknownCommand())
-                    }
-
-                    else -> {
-                        speakWithPanel(responseManager.unknownCommand())
-                    }
-                }
-            } catch (e: Exception) {
-                speakWithPanel(responseManager.parserCrash())
-            }
+        if (looksLikeReasonableTitle(normalized)) {
+            applyTitle(normalized)
+            moveToNextMissingStep()
+        } else {
+            speakWithPanel("Please provide the task title, date, time, or say cancel.")
         }
     }
-
 
     private fun openDatePicker() {
         val calendar = Calendar.getInstance()
@@ -577,6 +521,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 Log.d("CREATE_FOLLOWUP", "WAITING_FOR_DATE")
 
                 if (applySpokenDate(normalized)) {
+                    logTemporalFollowUp(normalized, true)
                     pendingTaskState.dateText = normalized
 
                     assistantSession.pauseListeningForAssistantSpeech()
@@ -584,6 +529,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     moveToNextMissingStep()
                     true
                 } else {
+                    logTemporalFollowUp(normalized, false)
                     speakAndContinueListening(invalidTemporalDateMessage())
                     true
                 }
@@ -607,6 +553,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 }
 
                 if (applySpokenTime(normalized)) {
+                    logTemporalFollowUp(normalized, true)
                     pendingTaskState.timeText = normalized
                     val resolvedTime = selectedTime
 
@@ -628,33 +575,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     moveToNextMissingStep()
                     true
                 } else {
-                    // let centralized AI try to interpret the follow-up utterance
-                    lifecycleScope.launch {
-                        try {
-                            val aiResult = aiRouter.process(normalized)
-
-                            val candidateTime = aiResult.timeText ?: normalized
-
-                            if (applySpokenTime(candidateTime)) {
-                                pendingTaskState.timeText = candidateTime
-                                pendingSemanticTimePhrase = null
-                                suggestedLearnedTime = null
-
-                                assistantSession.pauseListeningForAssistantSpeech()
-                                voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
-                                moveToNextMissingStep()
-                            } else if (timePreferenceLearner.isSemanticPhrase(candidateTime)) {
-                                pendingTaskState.timeText = candidateTime
-                                pendingSemanticTimePhrase = candidateTime
-                                suggestedLearnedTime = null
-                                moveToNextMissingStep()
-                            } else {
-                                speakAndContinueListening(invalidTemporalTimeMessage())
-                            }
-                        } catch (_: Exception) {
-                            speakAndContinueListening(responseManager.invalidTime())
-                        }
-                    }
+                    logTemporalFollowUp(normalized, false)
+                    speakAndContinueListening(invalidTemporalTimeMessage())
                     true
                 }
             }
@@ -704,69 +626,25 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     return true
                 }
 
-                lifecycleScope.launch {
-                    try {
-                        val aiResult = aiRouter.process(normalized)
-
-                        when (aiResult.intent) {
-                            AiIntent.CREATE_TASK.name,
-                            AiIntent.UPDATE_TASK.name,
-                            AiIntent.RESCHEDULE_TASK.name -> {
-                                if (tryApplyInlineCorrection(normalized)) {
-                                    return@launch
-                                }
-
-                                if (!aiResult.taskTitle.isNullOrBlank()) {
-                                    applyTitle(aiResult.taskTitle)
-                                    dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-                                    speakAndContinueListening(
-                                        responseManager.inlineTitleUpdated(buildTaskSummary())
-                                    )
-                                    return@launch
-                                }
-
-                                if (!aiResult.dateText.isNullOrBlank() && applySpokenDate(aiResult.dateText)) {
-                                    pendingTaskState.dateText = aiResult.dateText
-                                    dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-                                    speakAndContinueListening(
-                                        responseManager.inlineDateUpdated(buildTaskSummary())
-                                    )
-                                    return@launch
-                                }
-
-                                if (!aiResult.timeText.isNullOrBlank()) {
-                                    if (applySpokenTime(aiResult.timeText)) {
-                                        pendingTaskState.timeText = aiResult.timeText
-                                        dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-                                        speakAndContinueListening(
-                                            responseManager.inlineTimeUpdated(buildTaskSummary())
-                                        )
-                                        return@launch
-                                    }
-                                }
-
-                                speakAndContinueListening(responseManager.saveConfirmationHelp())
-                            }
-
-                            else -> {
-                                if (tryApplyInlineCorrection(normalized)) {
-                                    return@launch
-                                }
-                                speakAndContinueListening(responseManager.saveConfirmationHelp())
-                            }
-                        }
-                    } catch (_: Exception) {
-                        if (tryApplyInlineCorrection(normalized)) {
-                            return@launch
-                        }
-                        speakAndContinueListening(responseManager.saveConfirmationHelp())
-                    }
+                if (tryApplyInlineCorrection(normalized)) {
+                    return true
                 }
+
+                dialogState = CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD
+                speakAndContinueListening(responseManager.askWhatToChange())
                 true
             }
 
             else -> false
         }
+    }
+
+    private fun logTemporalFollowUp(raw: String, validationResult: Boolean) {
+        val resolution = temporalResolver.resolve(raw, raw, raw)
+        Log.d(
+            "TEMPORAL_FOLLOWUP",
+            "raw='$raw' dialogState=$dialogState type=${resolution.type} date=${resolution.startDateInclusive} minute=${resolution.startMinuteInclusive} valid=$validationResult"
+        )
     }
 
     private fun applyTitle(title: String) {
