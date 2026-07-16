@@ -915,7 +915,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                             timePreferenceLearner.getLearnedTimeForPhrase(semanticPhrase)
                         }
 
-                        if (learned != null && learned.usageCount >= 2 && isTimeAllowedByPendingConstraint(learned.resolvedTimeMinute())) {
+                        if (learned != null && learned.usageCount >= 2 && isTimeAllowedByPendingConstraint(learned.resolvedTime.resolvedTimeMinute())) {
                             suggestedLearnedTime = learned.resolvedTime
                             runOnUiThread {
                                 speakAndContinueListening(
