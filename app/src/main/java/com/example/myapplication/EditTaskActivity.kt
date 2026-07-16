@@ -38,6 +38,9 @@ import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
 import com.example.myapplication.voice.SpokenTimeParser
+import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.TemporalExpressionResolver
+import com.example.myapplication.ai.temporal.TemporalResolution
 
 private enum class EditFieldTarget {
     NONE, TITLE, DATE, TIME
@@ -51,6 +54,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private var pendingFieldTarget = EditFieldTarget.NONE
     private var waitingForSaveConfirmation = false
     private var assistantMode: String? = null
+    private val temporalResolver = TemporalExpressionResolver()
+    private var pendingTemporalConstraint: TemporalResolution? = null
 
     private lateinit var voiceHelper: VoiceHelper
 
@@ -148,13 +153,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val prefillNewDateText = intent.getStringExtra("prefill_new_date_text")
         val prefillNewTimeText = intent.getStringExtra("prefill_new_time_text")
 
-        if (!prefillNewDateText.isNullOrBlank()) {
-            applySpokenDate(prefillNewDateText)
-        }
-
-        if (!prefillNewTimeText.isNullOrBlank()) {
-            applySpokenTime(prefillNewTimeText)
-        }
+        applyProposedTemporalChange(prefillNewDateText, prefillNewTimeText, askForMissing = true)
 
         btnPickDate.setOnClickListenerWithHaptic { openDatePicker() }
         btnPickTime.setOnClickListenerWithHaptic { openTimePicker() }
@@ -493,6 +492,28 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
     }
 
+    private fun applyProposedTemporalChange(dateText: String?, timeText: String?, askForMissing: Boolean): Boolean {
+        if (dateText.isNullOrBlank() && timeText.isNullOrBlank()) return false
+        val resolution = temporalResolver.resolve(dateText, timeText, listOfNotNull(dateText, timeText).joinToString(" "))
+        pendingTemporalConstraint = resolution
+        var updated = false
+        if (resolution.isExactDate && resolution.startDateInclusive != null) {
+            applySpokenDate(resolution.startDateInclusive)
+            updated = true
+        } else if (!dateText.isNullOrBlank() && askForMissing) {
+            pendingFieldTarget = EditFieldTarget.DATE
+            speak("Which exact date ${resolution.originalDatePhrase.ifBlank { dateText }}?")
+        }
+        if (resolution.isExactTime && resolution.startMinuteInclusive != null) {
+            applySpokenTime(timeText ?: resolution.spokenLabel)
+            updated = true
+        } else if (!timeText.isNullOrBlank() && askForMissing && pendingFieldTarget == EditFieldTarget.NONE) {
+            pendingFieldTarget = EditFieldTarget.TIME
+            speak("What exact time ${resolution.originalTimePhrase.ifBlank { timeText }}?")
+        }
+        return updated
+    }
+
     private fun processEditCommand(cmd: AiParsedCommand) {
         when (cmd.intent) {
             AiIntent.UPDATE_TASK.name,
@@ -504,18 +525,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     updated = true
                 }
 
-                if (!cmd.dateText.isNullOrBlank() && applySpokenDate(cmd.dateText)) {
+                if (applyProposedTemporalChange(cmd.newDateText ?: cmd.dateText, cmd.newTimeText ?: cmd.timeText, askForMissing = true)) {
                     updated = true
                 }
 
-                if (!cmd.timeText.isNullOrBlank() && applySpokenTime(cmd.timeText)) {
-                    updated = true
-                }
-
-                if (updated) {
-                    pendingFieldTarget = EditFieldTarget.NONE
+                if (updated && pendingFieldTarget == EditFieldTarget.NONE) {
                     askToSaveChanges()
-                } else {
+                } else if (!updated && pendingFieldTarget == EditFieldTarget.NONE) {
                     speak(responseManager.editHelp())
                 }
             }
@@ -615,25 +631,25 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun applySpokenDate(dateText: String): Boolean {
-        val result = localDateParser.parse(dateText)
-
-        if (!result.success || result.normalizedDate == null) {
-            return false
-        }
-
-        selectedYear = result.year
-        selectedMonth = result.month
-        selectedDay = result.day
-        selectedDate = result.normalizedDate
+        val resolution = temporalResolver.resolve(dateText, null, dateText)
+        if (!resolution.isExactDate || resolution.startDateInclusive == null) return false
+        if (!TemporalActionPolicy.validateClarification(pendingTemporalConstraint ?: resolution, resolution.startDateInclusive, null)) return false
+        selectedDate = resolution.startDateInclusive
+        val parts = selectedDate!!.split("/")
+        selectedDay = parts.getOrNull(0)?.toIntOrNull()
+        selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
+        selectedYear = parts.getOrNull(2)?.toIntOrNull()
 
         tvSelectedDate.text = "Selected date: $selectedDate"
         return true
     }
 
     private fun applySpokenTime(timeText: String): Boolean {
-        val parsed = SpokenTimeParser.parseToHourMinute(timeText) ?: return false
-
-        selectedTime = formatTime(parsed.first, parsed.second)
+        val resolution = temporalResolver.resolve(null, timeText, timeText)
+        if (!resolution.isExactTime || resolution.startMinuteInclusive == null) return false
+        val minute = resolution.startMinuteInclusive
+        if (!TemporalActionPolicy.validateClarification(pendingTemporalConstraint ?: resolution, null, minute)) return false
+        selectedTime = formatTime(minute / 60, minute % 60)
         tvSelectedTime.text = "Selected time: $selectedTime"
         return true
     }

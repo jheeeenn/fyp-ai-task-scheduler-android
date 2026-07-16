@@ -45,6 +45,10 @@ import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
 import com.example.myapplication.voice.SpokenTimeParser
+import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.TemporalExpressionResolver
+import com.example.myapplication.ai.temporal.TemporalResolution
+import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 
 class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
@@ -58,6 +62,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private var suggestedLearnedTime: String? = null
     private lateinit var timePreferenceLearner: TimePreferenceLearner
     private var pendingSemanticTimePhrase: String? = null
+    private val temporalResolver = TemporalExpressionResolver()
+    private var pendingTemporalConstraint: TemporalResolution? = null
 
     private var hasConsumedPrefill = false
 
@@ -205,20 +211,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             applyTitle(prefillTitle)
         }
 
-        if (!prefillDateText.isNullOrBlank() && applySpokenDate(prefillDateText)) {
-            pendingTaskState.dateText = prefillDateText
-        }
-
-        // improved time
-        if (!prefillTimeText.isNullOrBlank()) {
-            if (applySpokenTime(prefillTimeText)) {
-                pendingTaskState.timeText = prefillTimeText
-                pendingSemanticTimePhrase = null
-            } else if (timePreferenceLearner.isSemanticPhrase(prefillTimeText)) {
-                pendingTaskState.timeText = prefillTimeText
-                pendingSemanticTimePhrase = prefillTimeText
-            }
-        }
+        applyTemporalPrefill(prefillDateText, prefillTimeText)
 
         clearPrefillExtras()
         hasConsumedPrefill = true
@@ -226,6 +219,40 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         moveToNextMissingStep()
     }
 
+
+    private fun applyTemporalPrefill(dateText: String?, timeText: String?) {
+        val resolution = temporalResolver.resolve(dateText, timeText, listOfNotNull(dateText, timeText).joinToString(" "))
+        if (resolution.status == TemporalResolutionStatus.UNRESOLVED) return
+        if (resolution.hasDateConstraint || resolution.hasTimeConstraint) pendingTemporalConstraint = resolution
+        if (resolution.isExactDate && resolution.startDateInclusive != null) {
+            applySpokenDate(resolution.startDateInclusive)
+            pendingTaskState.dateText = dateText ?: resolution.startDateInclusive
+        } else if (!dateText.isNullOrBlank()) {
+            pendingTaskState.dateText = dateText
+        }
+        if (resolution.isExactTime && resolution.startMinuteInclusive != null) {
+            applySpokenTime(timeText ?: resolution.spokenLabel)
+            pendingTaskState.timeText = timeText
+            pendingSemanticTimePhrase = null
+        } else if (!timeText.isNullOrBlank()) {
+            pendingTaskState.timeText = timeText
+            pendingSemanticTimePhrase = timeText
+        }
+    }
+
+    private fun invalidTemporalDateMessage(): String {
+        val c = pendingTemporalConstraint
+        return if (c?.hasDateConstraint == true) {
+            "That date is outside ${c.originalDatePhrase.ifBlank { c.spokenLabel }}. Please choose a date from ${c.startDateInclusive ?: "the allowed range"} through ${c.endDateInclusive ?: c.startDateInclusive}."
+        } else responseManager.invalidDate()
+    }
+
+    private fun invalidTemporalTimeMessage(): String {
+        val c = pendingTemporalConstraint
+        return if (c?.hasTimeConstraint == true) {
+            "That time is outside ${c.originalTimePhrase.ifBlank { c.spokenLabel }}. Please choose an exact time in that window."
+        } else responseManager.invalidTime()
+    }
 
     private fun handleVoiceCommand(rawCommand: String) {
         val normalized = TextNormalizer.normalize(rawCommand)
@@ -499,27 +526,26 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun applySpokenDate(dateText: String): Boolean {
-        val result = localDateParser.parse(dateText)
-
-        if (!result.success || result.normalizedDate == null) {
-            return false
-        }
-
-        selectedYear = result.year
-        selectedMonth = result.month
-        selectedDay = result.day
-        selectedDate = result.normalizedDate
-
+        val resolution = temporalResolver.resolve(dateText, null, dateText)
+        if (!resolution.isExactDate || resolution.startDateInclusive == null) return false
+        if (!TemporalActionPolicy.validateClarification(pendingTemporalConstraint ?: resolution, resolution.startDateInclusive, null)) return false
+        selectedDate = resolution.startDateInclusive
+        val parts = selectedDate!!.split("/")
+        selectedDay = parts.getOrNull(0)?.toIntOrNull()
+        selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
+        selectedYear = parts.getOrNull(2)?.toIntOrNull()
         tvSelectedDate.text = "Selected date: $selectedDate"
         return true
     }
 
     private fun applySpokenTime(timeText: String): Boolean {
-        val parsed = SpokenTimeParser.parseToHourMinute(timeText) ?: return false
-
-        selectedHour24 = parsed.first
-        selectedMinute = parsed.second
-        selectedTime = formatTime(parsed.first, parsed.second)
+        val resolution = temporalResolver.resolve(null, timeText, timeText)
+        if (!resolution.isExactTime || resolution.startMinuteInclusive == null) return false
+        val minute = resolution.startMinuteInclusive
+        if (!TemporalActionPolicy.validateClarification(pendingTemporalConstraint ?: resolution, null, minute)) return false
+        selectedHour24 = minute / 60
+        selectedMinute = minute % 60
+        selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
         tvSelectedTime.text = "Selected time: $selectedTime"
         return true
     }
@@ -558,7 +584,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     moveToNextMissingStep()
                     true
                 } else {
-                    speakAndContinueListening(responseManager.invalidDate())
+                    speakAndContinueListening(invalidTemporalDateMessage())
                     true
                 }
             }
@@ -623,7 +649,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                                 suggestedLearnedTime = null
                                 moveToNextMissingStep()
                             } else {
-                                speakAndContinueListening(responseManager.invalidTime())
+                                speakAndContinueListening(invalidTemporalTimeMessage())
                             }
                         } catch (_: Exception) {
                             speakAndContinueListening(responseManager.invalidTime())
@@ -889,7 +915,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                             timePreferenceLearner.getLearnedTimeForPhrase(semanticPhrase)
                         }
 
-                        if (learned != null && learned.usageCount >= 2) {
+                        if (learned != null && learned.usageCount >= 2 && isTimeAllowedByPendingConstraint(learned.resolvedTimeMinute())) {
                             suggestedLearnedTime = learned.resolvedTime
                             runOnUiThread {
                                 speakAndContinueListening(
@@ -919,6 +945,17 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 promptHelper.askSaveTask(buildTaskSummary())
             }
         }
+    }
+
+    private fun String.resolvedTimeMinute(): Int? {
+        val r = temporalResolver.resolve(null, this, this)
+        return if (r.isExactTime) r.startMinuteInclusive else null
+    }
+
+    private fun isTimeAllowedByPendingConstraint(minute: Int?): Boolean {
+        if (minute == null) return false
+        val constraint = pendingTemporalConstraint ?: return true
+        return TemporalActionPolicy.validateClarification(constraint, null, minute)
     }
 
     private fun shouldContinueConversation(): Boolean {
@@ -977,6 +1014,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedMonth = null
         selectedYear = null
         selectedDay = null
+        pendingTemporalConstraint = null
 
         dialogState = CreateTaskDialogState.IDLE
 

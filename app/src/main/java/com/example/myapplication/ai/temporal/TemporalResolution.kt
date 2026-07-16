@@ -36,6 +36,7 @@ data class TemporalResolution(
             TemporalResolutionStatus.RESOLVED -> when {
                 dateScope == TemporalDateScope.OVERDUE -> TemporalResolutionType.OVERDUE
                 dateScope == TemporalDateScope.UPCOMING -> TemporalResolutionType.UPCOMING
+                dateScope == TemporalDateScope.EXACT_DATE && startDateInclusive == endDateInclusive && startMinuteInclusive != null && startMinuteInclusive == endMinuteInclusive -> TemporalResolutionType.EXACT_DATE_TIME
                 dateScope != TemporalDateScope.ALL && startMinuteInclusive != null -> TemporalResolutionType.DATE_TIME_WINDOW
                 dateScope == TemporalDateScope.EXACT_DATE -> TemporalResolutionType.EXACT_DATE
                 dateScope == TemporalDateScope.DATE_RANGE -> TemporalResolutionType.DATE_RANGE

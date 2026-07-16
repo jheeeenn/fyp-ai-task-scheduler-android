@@ -577,7 +577,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 Log.d(
                     "AI_ROUTER",
                     "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
-                            " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
+                            " time=${aiResult.timeText}, targetDate=${aiResult.targetDateText}, targetTime=${aiResult.targetTimeText}," +
+                            " newDate=${aiResult.newDateText}, newTime=${aiResult.newTimeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
                             "needsClarification=${aiResult.needsClarification}, missingFields=${aiResult.missingFields}"
                 )
 
@@ -593,8 +594,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         assistantSession.speakThenRun(reply) {
                             val openCreateIntent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
                                 putExtra("prefill_title", aiResult.taskTitle)
-                                putExtra("prefill_date_text", aiResult.dateText)
-                                putExtra("prefill_time_text", aiResult.timeText)
+                                putExtra("prefill_date_text", aiResult.newDateText ?: aiResult.dateText)
+                                putExtra("prefill_time_text", aiResult.newTimeText ?: aiResult.timeText)
                             }
                             startActivity(openCreateIntent)
                         }
@@ -615,8 +616,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         handleQueryTask(
                             normalized = normalized,
-                            agentDateText = aiResult.dateText,
-                            agentTimeText = aiResult.timeText
+                            agentDateText = aiResult.targetDateText ?: aiResult.dateText,
+                            agentTimeText = aiResult.targetTimeText ?: aiResult.timeText
                         )
                     }
                     // delete task
@@ -628,7 +629,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                             // to prevent user accidently matching a completed task for deletion
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
-                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
                                 assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
                                 return@launch
@@ -671,7 +672,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
-                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
                                 assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
                                 return@launch
@@ -701,8 +702,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                             putExtra("task_date", matchedTask.dueDate)
                                             putExtra("task_time", matchedTask.dueTime)
                                             putExtra("opened_by_assistant", true)
-                                            putExtra("prefill_new_date_text", aiResult.dateText)
-                                            putExtra("prefill_new_time_text", aiResult.timeText)
+                                            putExtra("prefill_new_date_text", aiResult.newDateText ?: aiResult.dateText)
+                                            putExtra("prefill_new_time_text", aiResult.newTimeText ?: aiResult.timeText)
                                         }
                                         startActivity(openEditIntent)
                                     }
@@ -723,7 +724,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
-                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
                                 assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
                                 return@launch
@@ -740,8 +741,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                         action = PendingTaskAction.RESCHEDULE,
                                         bestTask = matchResult.bestTask,
                                         secondTask = matchResult.secondTask,
-                                        rescheduleDateText = aiResult.dateText,
-                                        rescheduleTimeText = aiResult.timeText
+                                        rescheduleDateText = aiResult.newDateText ?: aiResult.dateText,
+                                        rescheduleTimeText = aiResult.newTimeText ?: aiResult.timeText
                                     )
                                 }
 
@@ -756,8 +757,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                             putExtra("task_time", matchedTask.dueTime)
                                             putExtra("opened_by_assistant", true)
                                             putExtra("assistant_mode", "reschedule")
-                                            putExtra("prefill_new_date_text", aiResult.dateText)
-                                            putExtra("prefill_new_time_text", aiResult.timeText)
+                                            putExtra("prefill_new_date_text", aiResult.newDateText ?: aiResult.dateText)
+                                            putExtra("prefill_new_time_text", aiResult.newTimeText ?: aiResult.timeText)
                                         }
                                         startActivity(openRescheduleIntent)
                                     }
@@ -779,7 +780,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val rawTasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
-                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
                                 assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
                                 return@launch
@@ -837,7 +838,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
                             val rawTasks = withContext(Dispatchers.IO) { dao.getAll() }
-                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.COMPLETED_ONLY)
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.COMPLETED_ONLY)
                             if (tasks == null) {
                                 assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
                                 return@launch
@@ -2072,7 +2073,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     ): String {
         return aiResult.targetTaskTitle
             ?: aiResult.taskTitle
-            ?: if (!aiResult.dateText.isNullOrBlank() || !aiResult.timeText.isNullOrBlank()) "" else normalized
+            ?: if (!aiResult.targetDateText.isNullOrBlank() || !aiResult.targetTimeText.isNullOrBlank() || !aiResult.dateText.isNullOrBlank() || !aiResult.timeText.isNullOrBlank()) "" else normalized
     }
 
 

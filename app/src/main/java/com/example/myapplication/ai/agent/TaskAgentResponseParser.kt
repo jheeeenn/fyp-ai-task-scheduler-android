@@ -20,8 +20,11 @@ class TaskAgentResponseParser {
             throw TaskAgentParseException("Invalid task-agent JSON", e)
         }
 
-        requireField(json, "action")
-        requireField(json, "confidence")
+        listOf(
+            "natural_response", "action", "task_title", "target_task_title", "date", "time",
+            "target_date", "target_time", "new_date", "new_time", "recurrence", "priority",
+            "confidence", "need_clarification", "missing_fields", "requires_confirmation", "plan"
+        ).forEach { requireField(json, it) }
 
         val response = TaskAgentResponse(
             natural_response = json.optString("natural_response", ""),
@@ -30,6 +33,10 @@ class TaskAgentResponseParser {
             target_task_title = json.optString("target_task_title", ""),
             date = json.optString("date", ""),
             time = json.optString("time", ""),
+            target_date = json.optString("target_date", ""),
+            target_time = json.optString("target_time", ""),
+            new_date = json.optString("new_date", ""),
+            new_time = json.optString("new_time", ""),
             recurrence = json.optString("recurrence", ""),
             priority = json.optString("priority", ""),
             confidence = json.optDouble("confidence", 0.0).toFloat(),

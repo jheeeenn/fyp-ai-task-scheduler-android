@@ -38,12 +38,17 @@ class TemporalExpressionResolver {
             return TemporalResolution(TemporalResolutionType.UNRESOLVED, spokenLabel = listOf(dateText, timeText).filter { it.isNotBlank() }.joinToString(" "))
         }
         if (dateWindow == null && timeWindow == null) return if (supplied) TemporalResolution(TemporalResolutionType.UNRESOLVED) else TemporalResolution(TemporalResolutionType.NONE)
-        return merge(dateWindow, timeWindow, listOf(effectiveDateText, timeText).filter { it.isNotBlank() }.distinct().joinToString(" "))
+        return merge(
+            dateWindow?.copy(originalDatePhrase = effectiveDateText),
+            timeWindow?.copy(originalTimePhrase = timeText),
+            listOf(effectiveDateText, timeText).filter { it.isNotBlank() }.distinct().joinToString(" ")
+        )
     }
 
     private fun clean(s: String?) = s.orEmpty().lowercase(Locale.UK).replace(",", " ").replace(Regex("\\s+"), " ").trim()
     private fun merge(d: TemporalResolution?, t: TemporalResolution?, label: String) = TemporalResolution(
-        type = when { d != null && t != null -> TemporalResolutionType.DATE_TIME_WINDOW
+        type = when { d != null && t != null && d.isExactDate && t.isExactTime -> TemporalResolutionType.EXACT_DATE_TIME
+            d != null && t != null -> TemporalResolutionType.DATE_TIME_WINDOW
             d != null -> d.type
             t != null -> t.type
             else -> TemporalResolutionType.NONE
