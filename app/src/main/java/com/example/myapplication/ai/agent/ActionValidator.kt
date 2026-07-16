@@ -49,8 +49,8 @@ class ActionValidator {
             AiIntent.UPDATE_TASK.name,
             AiIntent.MARK_DONE.name,
             AiIntent.MARK_UNDONE.name -> {
-                if (command.targetTaskTitle.isNullOrBlank()) {
-                    fail("${command.intent} requires targetTaskTitle")
+                if (command.targetTaskTitle.isNullOrBlank() && command.dateText.isNullOrBlank() && command.timeText.isNullOrBlank()) {
+                    fail("${command.intent} requires targetTaskTitle or temporal constraint")
                 }
             }
         }

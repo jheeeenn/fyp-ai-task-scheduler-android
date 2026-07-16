@@ -66,6 +66,7 @@ import com.example.myapplication.ai.PendingTaskAction
 
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.ai.temporal.TaskTemporalFilter
+import com.example.myapplication.ai.temporal.TaskCompletionFilter
 import com.example.myapplication.ai.temporal.TemporalQueryLabelFormatter
 import com.example.myapplication.ai.temporal.TemporalQueryResolver
 import com.example.myapplication.ai.temporal.TemporalQueryWindow
@@ -626,7 +627,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
 
                             // to prevent user accidently matching a completed task for deletion
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -664,7 +670,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -690,6 +701,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                             putExtra("task_date", matchedTask.dueDate)
                                             putExtra("task_time", matchedTask.dueTime)
                                             putExtra("opened_by_assistant", true)
+                                            putExtra("prefill_new_date_text", aiResult.dateText)
+                                            putExtra("prefill_new_time_text", aiResult.timeText)
                                         }
                                         startActivity(openEditIntent)
                                     }
@@ -709,7 +722,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -760,7 +778,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -813,7 +836,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getAll() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getAll() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.dateText, aiResult.timeText, TaskCompletionFilter.COMPLETED_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -1394,11 +1422,34 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
 
+    private fun filterMatchCandidates(
+        tasks: List<TaskEntity>,
+        dateText: String?,
+        timeText: String?,
+        completionFilter: TaskCompletionFilter
+    ): List<TaskEntity>? {
+        val hasTemporal = !dateText.isNullOrBlank() || !timeText.isNullOrBlank()
+        if (!hasTemporal) return TaskTemporalFilter.filterAndSort(
+            tasks,
+            TemporalQueryWindow(TemporalResolutionStatus.NONE),
+            completionFilter
+        )
+        val resolution = temporalQueryResolver.resolve(dateText, timeText, "")
+        if (resolution.status == TemporalResolutionStatus.UNRESOLVED) return null
+        return TaskTemporalFilter.filterAndSort(tasks, resolution, completionFilter)
+    }
+
     private fun findTaskMatchResult(
         spokenTitle: String?,
         tasks: List<com.example.myapplication.data.TaskEntity>
     ): com.example.myapplication.ai.TaskMatchResult {
-        val result = TaskMatcher.findBestTaskMatch(spokenTitle, tasks)
+        val result = if (spokenTitle.isNullOrBlank() && tasks.size == 1) {
+            com.example.myapplication.ai.TaskMatchResult(bestTask = tasks.first(), bestScore = 1.0)
+        } else if (spokenTitle.isNullOrBlank() && tasks.size > 1) {
+            com.example.myapplication.ai.TaskMatchResult(bestTask = tasks[0], bestScore = 1.0, secondTask = tasks[1], secondScore = 1.0, isAmbiguous = true)
+        } else {
+            TaskMatcher.findBestTaskMatch(spokenTitle, tasks)
+        }
 
         Log.d(
             "TASK_MATCH",
@@ -2021,7 +2072,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     ): String {
         return aiResult.targetTaskTitle
             ?: aiResult.taskTitle
-            ?: normalized
+            ?: if (!aiResult.dateText.isNullOrBlank() || !aiResult.timeText.isNullOrBlank()) "" else normalized
     }
 
 
