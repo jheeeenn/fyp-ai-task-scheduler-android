@@ -17,6 +17,12 @@ class ConversationResponseConfigurationTest {
     }
     @Test fun responsePromptContainsAuthorityRules() {
         val prompt = ConversationAgentClient.RESPONSE_SYSTEM_PROMPT
+        assertTrue(prompt.contains("response_type must exactly equal expected_response_type"))
+        assertTrue(prompt.contains("Do not infer, replace or reinterpret the expected response type"))
+        assertTrue(prompt.contains("NOT_FOUND is an informational result"))
+        assertTrue(prompt.contains("CANCELLED should acknowledge"))
+        assertTrue(prompt.contains("does not end the assistant session"))
+        assertTrue(prompt.contains("Android owns listen-again behaviour"))
         assertTrue(prompt.contains("Do not add facts"))
         assertTrue(prompt.contains("Do not claim success unless outcome is SUCCESS or PARTIAL_SUCCESS"))
         assertTrue(prompt.contains("concise and suitable for TTS"))

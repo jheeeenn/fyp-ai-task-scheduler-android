@@ -1108,6 +1108,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
 
             val spokenReply = responseManager.combineReplyWithFollowUp(reply, spokenFollowUp)
+            val responseGuidance = when {
+                filteredTasks.isEmpty() -> "Offer to create a new task."
+                replyMode == QueryReplyMode.DETAILED -> "After giving the task details, ask whether the user needs anything else."
+                else -> "After giving the requested summary, offer to read more task details."
+            }
 
             speakObservation(
                 ExecutionObservation(
@@ -1115,7 +1120,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
                     taskCount = filteredTasks.size,
                     dateText = queryWindow.spokenLabel,
-                    facts = listOf(spokenReply),
+                    detail = responseGuidance,
                     tasks = filteredTasks.take(responseManager.getMaxTasksForMode(if (replyMode == QueryReplyMode.DETAILED) QueryDetailMode.DETAILED else QueryDetailMode.NORMAL)).map { observedTask(it) },
                     listenAgain = true,
                     fallbackSpeech = spokenReply,
@@ -1505,7 +1510,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
                     taskCount = filteredTasks.size,
                     dateText = lastQueryWindow.spokenLabel,
-                    facts = listOf(spokenReply),
+                    detail = if (filteredTasks.isEmpty()) {
+                        "Offer to create a new task."
+                    } else {
+                        "After giving the task details, ask whether the user needs anything else."
+                    },
                     tasks = filteredTasks
                         .take(responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED))
                         .map { observedTask(it) },
