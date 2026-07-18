@@ -1,5 +1,6 @@
 package com.example.myapplication.ai
 
+@Deprecated("LocalTaskParser is legacy FYP1 parsing. FYP2 production uses Task Agent roles and Android deterministic interpretation.")
 class LocalTaskParser {
 
     private val localDateParser = LocalDateParser()

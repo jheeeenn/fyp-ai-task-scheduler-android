@@ -5,6 +5,7 @@ import org.json.JSONObject
 import kotlin.collections.iterator
 import kotlin.math.exp
 
+@Deprecated("LocalIntentClassifier is legacy FYP1 semantic routing. FYP2 production uses Conversation Agent -> Task Agent.")
 class LocalIntentClassifier(context: Context) {
 
     private val vocabulary: Map<String, Int>

@@ -11,6 +11,18 @@ class TaskActionNormalizer {
         var targetTaskTitle = response.target_task_title.clean()
         val recurrence = normalizeRecurrence(response.recurrence)
         val priority = normalizePriority(response.priority)
+        val legacyDate = response.date.clean()
+        val legacyTime = response.time.clean()
+        val targetDate = response.target_date.clean()
+        val targetTime = response.target_time.clean()
+        val newDate = response.new_date.clean()
+        val newTime = response.new_time.clean()
+        val effectiveTargetDate = targetDate.ifBlank { if (normalizedAction == AiIntent.QUERY_TASK.name) legacyDate else "" }
+        val effectiveTargetTime = targetTime.ifBlank { if (normalizedAction == AiIntent.QUERY_TASK.name) legacyTime else "" }
+        val effectiveNewDate = newDate.ifBlank { if (normalizedAction in setOf(AiIntent.CREATE_TASK.name, AiIntent.BREAKDOWN_TASK.name, AiIntent.UPDATE_TASK.name, AiIntent.RESCHEDULE_TASK.name)) legacyDate else "" }
+        val effectiveNewTime = newTime.ifBlank { if (normalizedAction in setOf(AiIntent.CREATE_TASK.name, AiIntent.BREAKDOWN_TASK.name, AiIntent.UPDATE_TASK.name, AiIntent.RESCHEDULE_TASK.name)) legacyTime else "" }
+        val legacyMatchDate = if (normalizedAction in setOf(AiIntent.DELETE_TASK.name, AiIntent.MARK_DONE.name, AiIntent.MARK_UNDONE.name)) legacyDate else ""
+        val legacyMatchTime = if (normalizedAction in setOf(AiIntent.DELETE_TASK.name, AiIntent.MARK_DONE.name, AiIntent.MARK_UNDONE.name)) legacyTime else ""
         val requiresConfirmation = response.requires_confirmation || normalizedAction == AiIntent.DELETE_TASK.name
 
         when (normalizedAction) {
@@ -43,8 +55,12 @@ class TaskActionNormalizer {
             intent = normalizedAction,
             taskTitle = taskTitle.takeIf { it.isNotBlank() },
             targetTaskTitle = targetTaskTitle.takeIf { it.isNotBlank() },
-            dateText = response.date.clean().takeIf { it.isNotBlank() },
-            timeText = response.time.clean().takeIf { it.isNotBlank() },
+            dateText = legacyDate.takeIf { it.isNotBlank() },
+            timeText = legacyTime.takeIf { it.isNotBlank() },
+            targetDateText = effectiveTargetDate.ifBlank { legacyMatchDate }.takeIf { it.isNotBlank() },
+            targetTimeText = effectiveTargetTime.ifBlank { legacyMatchTime }.takeIf { it.isNotBlank() },
+            newDateText = effectiveNewDate.takeIf { it.isNotBlank() },
+            newTimeText = effectiveNewTime.takeIf { it.isNotBlank() },
             recurrence = recurrence.takeIf { it.isNotBlank() },
             priority = priority.takeIf { it.isNotBlank() },
             confidence = response.confidence.coerceIn(0f, 1f),

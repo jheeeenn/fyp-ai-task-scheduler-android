@@ -1,25 +1,12 @@
-import java.io.FileInputStream
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
 }
 
-val localProperties = Properties().apply {
-    load(FileInputStream(rootProject.file("local.properties")))
-}
-
-val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "")
-
 android {
     namespace = "com.example.myapplication"
     compileSdk = 35
-
-    buildFeatures {
-        buildConfig = true
-    }
 
     defaultConfig {
         applicationId = "com.example.myapplication"
@@ -30,11 +17,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField(
-            "String",
-            "GEMINI_API_KEY",
-            "\"$geminiApiKey\""
-        )
     }
 
     buildTypes {
@@ -76,6 +58,6 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Gemini
+    // OkHttp is used by LM Studio clients.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

@@ -30,22 +30,18 @@ import java.util.Calendar
 import java.util.Locale
 
 
-import com.example.myapplication.ai.AiRouter
-import com.example.myapplication.ai.GeminiCloudNlpExtractor
 
 
 import com.example.myapplication.voice.TextNormalizer
 
-import com.example.myapplication.BuildConfig // for gemini api key
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.LocalConversationIntentClassifier
-import com.example.myapplication.ai.LocalIntentClassifier
-import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.ai.agent.ActionValidator
 import com.example.myapplication.ai.agent.AgentOrchestrator
 import com.example.myapplication.ai.agent.LaptopAgentClient
 import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
+import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
@@ -66,16 +62,20 @@ import com.example.myapplication.ai.PendingTaskAction
 
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.ai.temporal.TaskTemporalFilter
+import com.example.myapplication.ai.temporal.TaskCompletionFilter
 import com.example.myapplication.ai.temporal.TemporalQueryLabelFormatter
 import com.example.myapplication.ai.temporal.TemporalQueryResolver
 import com.example.myapplication.ai.temporal.TemporalQueryWindow
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
+import com.example.myapplication.ai.temporal.PendingTemporalClarification
+import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.TemporalPolicyResult
+import com.example.myapplication.ai.temporal.TemporalUseCase
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
     private lateinit var responseManager: AssistantResponseManager
-    private lateinit var aiRouter: AiRouter
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var conversationOrchestrator: ConversationOrchestrator
 
@@ -116,6 +116,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var pendingBreakdownOriginalRequest: String? = null
     private var pendingBreakdownDateText: String? = null
     private var pendingBreakdownTimeText: String? = null
+    private var pendingBreakdownTemporalClarification: PendingTemporalClarification? = null
     private var currentSubtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
 
     private val audioPermissionLauncher =
@@ -148,24 +149,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
 
-        val localIntentClassifier = LocalIntentClassifier(this)
-        val localTaskParser = LocalTaskParser()
-        //Log.d("GEMINI_KEY_CHECK", "key='${BuildConfig.GEMINI_API_KEY}'")
-        val cloudExtractor = GeminiCloudNlpExtractor(
-            BuildConfig.GEMINI_API_KEY
-        )
-
-        aiRouter = AiRouter(
-            localIntentClassifier,
-            localTaskParser,
-            cloudExtractor
-        )
         agentOrchestrator = AgentOrchestrator(
             LaptopAgentClient(this),
             TaskAgentResponseParser(),
             TaskActionNormalizer(),
-            ActionValidator(),
-            aiRouter
+            ActionValidator()
         )
         conversationOrchestrator = ConversationOrchestrator(
             ConversationAgentClient(this),
@@ -574,9 +562,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val aiResult = agentOrchestrator.process(taskAgentInput)
 
                 Log.d(
-                    "AI_ROUTER",
+                    "TASK_PIPELINE",
                     "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
-                            " time=${aiResult.timeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
+                            " time=${aiResult.timeText}, targetDate=${aiResult.targetDateText}, targetTime=${aiResult.targetTimeText}," +
+                            " newDate=${aiResult.newDateText}, newTime=${aiResult.newTimeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
                             "needsClarification=${aiResult.needsClarification}, missingFields=${aiResult.missingFields}"
                 )
 
@@ -592,8 +581,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         assistantSession.speakThenRun(reply) {
                             val openCreateIntent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
                                 putExtra("prefill_title", aiResult.taskTitle)
-                                putExtra("prefill_date_text", aiResult.dateText)
-                                putExtra("prefill_time_text", aiResult.timeText)
+                                putExtra("prefill_date_text", aiResult.newDateText ?: aiResult.dateText)
+                                putExtra("prefill_time_text", aiResult.newTimeText ?: aiResult.timeText)
                             }
                             startActivity(openCreateIntent)
                         }
@@ -614,8 +603,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         handleQueryTask(
                             normalized = normalized,
-                            agentDateText = aiResult.dateText,
-                            agentTimeText = aiResult.timeText
+                            agentDateText = aiResult.targetDateText ?: aiResult.dateText,
+                            agentTimeText = aiResult.targetTimeText ?: aiResult.timeText
                         )
                     }
                     // delete task
@@ -626,7 +615,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
 
                             // to prevent user accidently matching a completed task for deletion
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -664,7 +658,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -676,7 +675,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     askTaskMatchClarification(
                                         action = PendingTaskAction.EDIT,
                                         bestTask = matchResult.bestTask,
-                                        secondTask = matchResult.secondTask
+                                        secondTask = matchResult.secondTask,
+                                        proposedTitle = aiResult.taskTitle,
+                                        proposedDateText = aiResult.newDateText ?: aiResult.dateText,
+                                        proposedTimeText = aiResult.newTimeText ?: aiResult.timeText
                                     )
                                 }
 
@@ -690,6 +692,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                             putExtra("task_date", matchedTask.dueDate)
                                             putExtra("task_time", matchedTask.dueTime)
                                             putExtra("opened_by_assistant", true)
+                                            putExtra("prefill_title", aiResult.taskTitle)
+                                            putExtra("prefill_new_date_text", aiResult.newDateText ?: aiResult.dateText)
+                                            putExtra("prefill_new_time_text", aiResult.newTimeText ?: aiResult.timeText)
                                         }
                                         startActivity(openEditIntent)
                                     }
@@ -709,7 +714,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -722,8 +732,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                         action = PendingTaskAction.RESCHEDULE,
                                         bestTask = matchResult.bestTask,
                                         secondTask = matchResult.secondTask,
-                                        rescheduleDateText = aiResult.dateText,
-                                        rescheduleTimeText = aiResult.timeText
+                                        proposedDateText = aiResult.newDateText ?: aiResult.dateText,
+                                        proposedTimeText = aiResult.newTimeText ?: aiResult.timeText
                                     )
                                 }
 
@@ -738,8 +748,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                             putExtra("task_time", matchedTask.dueTime)
                                             putExtra("opened_by_assistant", true)
                                             putExtra("assistant_mode", "reschedule")
-                                            putExtra("prefill_new_date_text", aiResult.dateText)
-                                            putExtra("prefill_new_time_text", aiResult.timeText)
+                                            putExtra("prefill_new_date_text", aiResult.newDateText ?: aiResult.dateText)
+                                            putExtra("prefill_new_time_text", aiResult.newTimeText ?: aiResult.timeText)
                                         }
                                         startActivity(openRescheduleIntent)
                                     }
@@ -760,7 +770,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -813,7 +828,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         lifecycleScope.launch {
                             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-                            val tasks = withContext(Dispatchers.IO) { dao.getAll() }
+                            val rawTasks = withContext(Dispatchers.IO) { dao.getAll() }
+                            val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.COMPLETED_ONLY)
+                            if (tasks == null) {
+                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                return@launch
+                            }
 
                             val spokenPhrase = extractSpokenTaskPhrase(aiResult, normalized)
                             val matchResult = findTaskMatchResult(spokenPhrase, tasks)
@@ -881,8 +901,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 plan = plan,
                                 originalRequest = normalized,
                                 naturalResponse = aiResult.naturalResponse,
-                                dateText = aiResult.dateText,
-                                timeText = aiResult.timeText
+                                dateText = aiResult.newDateText ?: aiResult.dateText,
+                                timeText = aiResult.newTimeText ?: aiResult.timeText
                             )
                         }
                     }
@@ -895,8 +915,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         assistantSession.speak(reply, listenAgain = false)
                     }
                 }
+            } catch (e: TaskAgentProcessingException) {
+                Log.e("TASK_PIPELINE", "Task agent failed closed", e)
+                assistantSession.speak("I could not process that task command safely. Please try again.", listenAgain = true)
             } catch (e: Exception) {
-                Log.e("AI_ROUTER", "Crash in handleVoiceCommand", e)
+                Log.e("TASK_PIPELINE", "Crash in handleVoiceCommand", e)
                 val reply = responseManager.parserCrash()
                 assistantSession.speak(reply, listenAgain = false)
             }
@@ -1394,11 +1417,34 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
 
+    private fun filterMatchCandidates(
+        tasks: List<TaskEntity>,
+        dateText: String?,
+        timeText: String?,
+        completionFilter: TaskCompletionFilter
+    ): List<TaskEntity>? {
+        val hasTemporal = !dateText.isNullOrBlank() || !timeText.isNullOrBlank()
+        if (!hasTemporal) return TaskTemporalFilter.filterAndSort(
+            tasks,
+            TemporalQueryWindow(TemporalResolutionStatus.NONE),
+            completionFilter
+        )
+        val resolution = temporalQueryResolver.resolve(dateText, timeText, "")
+        if (resolution.status == TemporalResolutionStatus.UNRESOLVED) return null
+        return TaskTemporalFilter.filterAndSort(tasks, resolution, completionFilter)
+    }
+
     private fun findTaskMatchResult(
         spokenTitle: String?,
         tasks: List<com.example.myapplication.data.TaskEntity>
     ): com.example.myapplication.ai.TaskMatchResult {
-        val result = TaskMatcher.findBestTaskMatch(spokenTitle, tasks)
+        val result = if (spokenTitle.isNullOrBlank() && tasks.size == 1) {
+            com.example.myapplication.ai.TaskMatchResult(bestTask = tasks.first(), bestScore = 1.0)
+        } else if (spokenTitle.isNullOrBlank() && tasks.size > 1) {
+            com.example.myapplication.ai.TaskMatchResult(bestTask = tasks[0], bestScore = 1.0, secondTask = tasks[1], secondScore = 1.0, isAmbiguous = true)
+        } else {
+            TaskMatcher.findBestTaskMatch(spokenTitle, tasks)
+        }
 
         Log.d(
             "TASK_MATCH",
@@ -1503,6 +1549,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         pendingBreakdownOriginalRequest = null
         pendingBreakdownDateText = null
         pendingBreakdownTimeText = null
+        pendingBreakdownTemporalClarification = null
     }
 
     private fun handleBreakdownFollowUp(normalized: String): Boolean {
@@ -1543,23 +1590,40 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun proceedAfterBreakdownApproval() {
-        val parsedSchedule = ScheduleTextParser.parse(pendingBreakdownDateText, pendingBreakdownTimeText)
-        pendingBreakdownDateText = parsedSchedule.dueDate ?: pendingBreakdownDateText
-        pendingBreakdownTimeText = parsedSchedule.dueTime ?: pendingBreakdownTimeText
-
-        if (parsedSchedule.isComplete) {
-            createPendingBreakdown(parsedSchedule.dueDate!!, parsedSchedule.dueTime!!)
-            return
+        val resolution = temporalQueryResolver.resolve(pendingBreakdownDateText, pendingBreakdownTimeText, "")
+        val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.BREAKDOWN)
+        when (policy) {
+            is TemporalPolicyResult.Ready -> createPendingBreakdownIfFuture(resolution.startDateInclusive!!, ScheduleTextParser.formatTime(resolution.startMinuteInclusive!! / 60, resolution.startMinuteInclusive!! % 60))
+            is TemporalPolicyResult.InvalidPastSchedule -> enterBreakdownFutureCorrection(resolution)
+            is TemporalPolicyResult.Unresolved -> assistantSession.speakThenListenAgain("I could not understand that schedule. Please say an exact date and time.")
+            else -> {
+                val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
+                val needsTime = policy is TemporalPolicyResult.NeedsExactTime || policy is TemporalPolicyResult.NeedsExactDateAndTime
+                pendingBreakdownTemporalClarification = PendingTemporalClarification(resolution, needsExactDate = needsDate, needsExactTime = needsTime)
+                homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+                promptNextBreakdownTemporalClarification()
+            }
         }
+    }
 
-        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+    private fun promptNextBreakdownTemporalClarification() {
+        val pending = pendingBreakdownTemporalClarification ?: return
         val prompt = when {
-            !parsedSchedule.hasDate && !parsedSchedule.hasTime -> "When should I schedule this task?"
-            !parsedSchedule.hasDate -> "What date should I schedule this task for?"
-            else -> "What time should I schedule this task for?"
+            pending.needsExactDate && pending.exactDate == null -> "Which exact date ${pending.original.originalDatePhrase.ifBlank { pending.original.spokenLabel }}?"
+            pending.needsExactTime && pending.exactMinute == null -> "What exact time ${pending.original.originalTimePhrase.ifBlank { pending.original.spokenLabel }}?"
+            else -> null
         }
-        assistantSession.getBottomSheet()?.showAssistantHint(prompt)
-        assistantSession.speakThenListenAgain(prompt)
+        if (prompt != null) {
+            assistantSession.getBottomSheet()?.showAssistantHint(prompt)
+            assistantSession.speakThenListenAgain(prompt)
+        } else {
+            val date = pending.exactDate ?: pending.original.startDateInclusive
+            val minute = pending.exactMinute ?: pending.original.startMinuteInclusive
+            if (date != null && minute != null) {
+                pendingBreakdownTemporalClarification = null
+                createPendingBreakdownIfFuture(date, ScheduleTextParser.formatTime(minute / 60, minute % 60))
+            }
+        }
     }
 
     private fun handleBreakdownScheduleFollowUp(normalized: String): Boolean {
@@ -1573,25 +1637,118 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return true
         }
 
-        val parsedSchedule = ScheduleTextParser.merge(
-            existingDateText = pendingBreakdownDateText,
-            existingTimeText = pendingBreakdownTimeText,
-            newText = normalized
-        )
-        pendingBreakdownDateText = parsedSchedule.dueDate ?: pendingBreakdownDateText
-        pendingBreakdownTimeText = parsedSchedule.dueTime ?: pendingBreakdownTimeText
-
-        if (parsedSchedule.isComplete) {
-            createPendingBreakdown(parsedSchedule.dueDate!!, parsedSchedule.dueTime!!)
-        } else {
-            val prompt = when {
-                !parsedSchedule.hasDate && !parsedSchedule.hasTime -> "When should I schedule this task?"
-                !parsedSchedule.hasDate -> "What date should I schedule this task for?"
-                else -> "What time should I schedule this task for?"
+        val pending = pendingBreakdownTemporalClarification
+        if (pending != null) {
+            if (pending.needsExactDate && pending.exactDate == null) {
+                val r = temporalQueryResolver.resolve(normalized, null, normalized)
+                if (!r.isExactDate || r.startDateInclusive == null || !TemporalActionPolicy.validateClarification(pending.original, r.startDateInclusive, null)) {
+                    assistantSession.speakThenListenAgain("That date is outside the requested range. Please choose a valid date.")
+                    return true
+                }
+                pendingBreakdownTemporalClarification = pending.copy(exactDate = r.startDateInclusive)
+                promptNextBreakdownTemporalClarification()
+                return true
             }
-            assistantSession.speakThenListenAgain(prompt)
+            if (pending.needsExactTime && pending.exactMinute == null) {
+                val r = temporalQueryResolver.resolve(null, normalized, normalized)
+                val minute = r.startMinuteInclusive
+                if (!r.isExactTime || minute == null || !TemporalActionPolicy.validateClarification(pending.original, null, minute)) {
+                    assistantSession.speakThenListenAgain("That time is outside the requested range. Please choose a valid time.")
+                    return true
+                }
+                pendingBreakdownTemporalClarification = pending.copy(exactMinute = minute)
+                promptNextBreakdownTemporalClarification()
+                return true
+            }
         }
+
+        val incoming = temporalQueryResolver.resolve(null, null, normalized)
+        pendingBreakdownDateText = incoming.takeIf { it.isExactDate }?.startDateInclusive ?: pendingBreakdownDateText
+        pendingBreakdownTimeText = incoming.takeIf { it.isExactTime }?.startMinuteInclusive?.let { ScheduleTextParser.formatTime(it / 60, it % 60) } ?: pendingBreakdownTimeText
+        proceedAfterBreakdownApproval()
         return true
+    }
+
+    private fun createPendingBreakdownIfFuture(dueDate: String, dueTime: String) {
+        val finalResolution = temporalQueryResolver.resolve(dueDate, dueTime, listOf(dueDate, dueTime).joinToString(" "))
+        if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.BREAKDOWN) is TemporalPolicyResult.InvalidPastSchedule) {
+            enterBreakdownFutureCorrection(finalResolution)
+            return
+        }
+        createPendingBreakdown(dueDate, dueTime)
+    }
+
+    private fun enterBreakdownFutureCorrection(rejectedResolution: TemporalQueryWindow) {
+        val rejectedDate = rejectedResolution.startDateInclusive
+        val rejectedMinute = rejectedResolution.startMinuteInclusive
+        val replacementOriginal = TemporalQueryWindow(
+            TemporalResolutionStatus.NONE,
+            spokenLabel = "a future schedule"
+        )
+        val calendar = Calendar.getInstance()
+        val currentMinute = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        val dateIsPast = isDateBeforeToday(rejectedDate)
+        val timeIsPastToday = isToday(rejectedDate) && rejectedMinute != null && rejectedMinute <= currentMinute
+
+        pendingBreakdownTemporalClarification = when {
+            dateIsPast -> PendingTemporalClarification(
+                original = replacementOriginal,
+                exactMinute = rejectedMinute,
+                needsExactDate = true,
+                needsExactTime = false,
+                replacingOriginalConstraint = true
+            )
+            timeIsPastToday -> PendingTemporalClarification(
+                original = replacementOriginal,
+                exactDate = rejectedDate,
+                needsExactDate = false,
+                needsExactTime = true,
+                replacingOriginalConstraint = true
+            )
+            else -> PendingTemporalClarification(
+                original = replacementOriginal,
+                needsExactDate = true,
+                needsExactTime = true,
+                replacingOriginalConstraint = true
+            )
+        }
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+        val pending = pendingBreakdownTemporalClarification
+        val prompt = when {
+            pending?.needsExactDate == true && pending.exactDate == null -> "Please provide a future exact date."
+            pending?.needsExactTime == true && pending.exactMinute == null -> "Please provide a later exact time."
+            else -> "Please provide a future date and time."
+        }
+        assistantSession.getBottomSheet()?.showAssistantHint(prompt)
+        assistantSession.speakThenListenAgain("${responseManager.pastDateTime()} $prompt")
+    }
+
+    private fun isDateBeforeToday(date: String?): Boolean {
+        val parsed = parseDateMillis(date) ?: return false
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return parsed < today
+    }
+
+    private fun isToday(date: String?): Boolean {
+        val parsed = parseDateMillis(date) ?: return false
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return parsed == today
+    }
+
+    private fun parseDateMillis(date: String?): Long? = try {
+        if (date.isNullOrBlank()) null else SimpleDateFormat("dd/MM/yyyy", Locale.UK).parse(date)?.time
+    } catch (_: Exception) {
+        null
     }
 
     private fun createPendingBreakdown(dueDate: String, dueTime: String) {
@@ -1747,16 +1904,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         action: PendingTaskAction,
         bestTask: com.example.myapplication.data.TaskEntity,
         secondTask: com.example.myapplication.data.TaskEntity,
-        rescheduleDateText: String? = null,
-        rescheduleTimeText: String? = null
+        proposedTitle: String? = null,
+        proposedDateText: String? = null,
+        proposedTimeText: String? = null
     ) {
 
         taskResolutionState = TaskResolutionState(
             action = action,
             candidate1Id = bestTask.id,
             candidate2Id = secondTask.id,
-            rescheduleDateText = rescheduleDateText,
-            rescheduleTimeText = rescheduleTimeText
+            proposedTitle = proposedTitle,
+            proposedDateText = proposedDateText,
+            proposedTimeText = proposedTimeText
         )
         ambiguityRetryCount = 0
         homeFollowUpContext = HomeFollowUpContext.TASK_MATCH_AMBIGUITY
@@ -1799,8 +1958,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
 
             val action = taskResolutionState.action
-            val rescheduleDate = taskResolutionState.rescheduleDateText
-            val rescheduleTime = taskResolutionState.rescheduleTimeText
+            val proposedTitle = taskResolutionState.proposedTitle
+            val proposedDate = taskResolutionState.proposedDateText
+            val proposedTime = taskResolutionState.proposedTimeText
 
             clearPendingTaskMatchState()
             homeFollowUpContext = HomeFollowUpContext.NONE
@@ -1814,6 +1974,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             putExtra("task_date", chosenTask.dueDate)
                             putExtra("task_time", chosenTask.dueTime)
                             putExtra("opened_by_assistant", true)
+                            putExtra("prefill_title", proposedTitle)
+                            putExtra("prefill_new_date_text", proposedDate)
+                            putExtra("prefill_new_time_text", proposedTime)
                         }
                         startActivity(openEditIntent)
                     }
@@ -1828,8 +1991,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             putExtra("task_time", chosenTask.dueTime)
                             putExtra("opened_by_assistant", true)
                             putExtra("assistant_mode", "reschedule")
-                            putExtra("prefill_new_date_text", rescheduleDate)
-                            putExtra("prefill_new_time_text", rescheduleTime)
+                            putExtra("prefill_new_date_text", proposedDate)
+                            putExtra("prefill_new_time_text", proposedTime)
                         }
                         startActivity(openRescheduleIntent)
                     }
@@ -2021,7 +2184,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     ): String {
         return aiResult.targetTaskTitle
             ?: aiResult.taskTitle
-            ?: normalized
+            ?: if (!aiResult.targetDateText.isNullOrBlank() || !aiResult.targetTimeText.isNullOrBlank() || !aiResult.dateText.isNullOrBlank() || !aiResult.timeText.isNullOrBlank()) "" else normalized
     }
 
 

@@ -6,6 +6,10 @@ data class AiParsedCommand(
     val targetTaskTitle: String? = null,    // task user wants to edit/delete/reschedule
     val dateText: String? = null,
     val timeText: String? = null,
+    val targetDateText: String? = null,
+    val targetTimeText: String? = null,
+    val newDateText: String? = null,
+    val newTimeText: String? = null,
     val recurrence: String? = null,
     val priority: String? = null,
     val confidence: Float = 0f,

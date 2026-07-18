@@ -1,5 +1,6 @@
 package com.example.myapplication.ai
 
+@Deprecated("AiRouter is legacy FYP1 routing. FYP2 production uses Conversation Agent -> Task Agent -> Android deterministic execution.")
 class AiRouter(
     private val localIntentClassifier: LocalIntentClassifier,
     private val localTaskParser: LocalTaskParser,

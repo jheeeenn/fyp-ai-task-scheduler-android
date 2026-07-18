@@ -4,8 +4,9 @@ data class TaskResolutionState(
     val action: PendingTaskAction = PendingTaskAction.NONE,
     val candidate1Id: Long? = null,
     val candidate2Id: Long? = null,
-    val rescheduleDateText: String? = null,
-    val rescheduleTimeText: String? = null
+    val proposedTitle: String? = null,
+    val proposedDateText: String? = null,
+    val proposedTimeText: String? = null
 ) {
     fun isActive(): Boolean {
         return action != PendingTaskAction.NONE &&

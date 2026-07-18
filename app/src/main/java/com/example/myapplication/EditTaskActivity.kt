@@ -18,11 +18,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
-import com.example.myapplication.ai.AiRouter
-import com.example.myapplication.ai.GeminiCloudNlpExtractor
-import com.example.myapplication.ai.LocalDateParser
-import com.example.myapplication.ai.LocalIntentClassifier
-import com.example.myapplication.ai.LocalTaskParser
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.voice.AssistantPromptHelper
@@ -37,7 +32,12 @@ import java.util.Locale
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
-import com.example.myapplication.voice.SpokenTimeParser
+import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.TemporalExpressionResolver
+import com.example.myapplication.ai.temporal.TemporalResolution
+import com.example.myapplication.ai.temporal.PendingTemporalClarification
+import com.example.myapplication.ai.temporal.TemporalPolicyResult
+import com.example.myapplication.ai.temporal.TemporalUseCase
 
 private enum class EditFieldTarget {
     NONE, TITLE, DATE, TIME
@@ -51,13 +51,14 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private var pendingFieldTarget = EditFieldTarget.NONE
     private var waitingForSaveConfirmation = false
     private var assistantMode: String? = null
+    private val temporalResolver = TemporalExpressionResolver()
+    private var pendingTemporalConstraint: TemporalResolution? = null
+    private var pendingTemporalClarification: PendingTemporalClarification? = null
 
     private lateinit var voiceHelper: VoiceHelper
 
-    private lateinit var aiRouter: AiRouter
     private lateinit var responseManager: AssistantResponseManager
 
-    private lateinit var localDateParser: LocalDateParser
 
 
 
@@ -105,7 +106,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager = AssistantResponseManager.fromPreferences(this)
-        localDateParser = LocalDateParser()
 
 
         assistantSession = AssistantVoiceSession(
@@ -117,16 +117,6 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         )
 
         promptHelper = AssistantPromptHelper(assistantSession, responseManager)
-
-        val localIntentClassifier = LocalIntentClassifier(this)
-        val localTaskParser = LocalTaskParser()
-        val cloudExtractor = GeminiCloudNlpExtractor(BuildConfig.GEMINI_API_KEY)
-
-        aiRouter = AiRouter(
-            localIntentClassifier,
-            localTaskParser,
-            cloudExtractor
-        )
 
         taskId = intent.getLongExtra("task_id", -1L)
         val originalTitle = intent.getStringExtra("task_title") ?: ""
@@ -145,16 +135,14 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         assistantMode = intent.getStringExtra("assistant_mode")
 
+        val prefillTitle = intent.getStringExtra("prefill_title")
         val prefillNewDateText = intent.getStringExtra("prefill_new_date_text")
         val prefillNewTimeText = intent.getStringExtra("prefill_new_time_text")
 
-        if (!prefillNewDateText.isNullOrBlank()) {
-            applySpokenDate(prefillNewDateText)
+        if (!prefillTitle.isNullOrBlank()) {
+            etTaskTitle.setText(prefillTitle)
         }
 
-        if (!prefillNewTimeText.isNullOrBlank()) {
-            applySpokenTime(prefillNewTimeText)
-        }
 
         btnPickDate.setOnClickListenerWithHaptic { openDatePicker() }
         btnPickTime.setOnClickListenerWithHaptic { openTimePicker() }
@@ -207,22 +195,23 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             } else {
                 "You are editing ${etTaskTitle.text}. What would you like to change?"
             }*/
-            val introReply = if (assistantMode == "reschedule") {
-                waitingForSaveConfirmation = true
-                responseManager.rescheduleIntro(
-                    title = etTaskTitle.text.toString(),
-                    changedDate = !prefillNewDateText.isNullOrBlank(),
-                    changedTime = !prefillNewTimeText.isNullOrBlank()
-                )
-            } else {
-                responseManager.editIntro(etTaskTitle.text.toString())
-            }
-
+            val changed = applyProposedTemporalChange(prefillNewDateText, prefillNewTimeText, askForMissing = false)
             window.decorView.postDelayed({
-                assistantSession.speak(
-                    text = introReply,
-                    listenAgain = true
-                )
+                when {
+                    pendingTemporalClarification != null -> advanceTemporalClarification()
+                    changed -> askToSaveChanges()
+                    assistantMode == "reschedule" -> {
+                        waitingForSaveConfirmation = false
+                        assistantSession.speak(
+                            text = responseManager.editIntro(etTaskTitle.text.toString()),
+                            listenAgain = true
+                        )
+                    }
+                    else -> assistantSession.speak(
+                        text = responseManager.editIntro(etTaskTitle.text.toString()),
+                        listenAgain = true
+                    )
+                }
             }, 350)
         }
     }
@@ -236,11 +225,16 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val dialog = DatePickerDialog(
             this,
             { _, pickedYear, pickedMonth, pickedDay ->
-                selectedYear = pickedYear
-                selectedMonth = pickedMonth
-                selectedDay = pickedDay
-                selectedDate = formatDate(pickedYear, pickedMonth, pickedDay)
-                tvSelectedDate.text = "Selected date: $selectedDate"
+                val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
+                val wasTemporalClarification = pendingTemporalClarification != null
+                if (acceptExactDate(pickedDate, replacingConstraint = false)) {
+                    if (!wasTemporalClarification) {
+                        pendingFieldTarget = EditFieldTarget.NONE
+                        askToSaveChanges()
+                    }
+                } else {
+                    speak("That date is outside the requested date range. Please choose a valid date.")
+                }
             },
             year,
             month,
@@ -258,10 +252,16 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val dialog = TimePickerDialog(
             this,
             { _, pickedHour, pickedMinute ->
-                selectedHour24 = pickedHour
-                selectedMinute = pickedMinute
-                selectedTime = formatTime(pickedHour, pickedMinute)
-                tvSelectedTime.text = "Selected time: $selectedTime"
+                val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
+                val wasTemporalClarification = pendingTemporalClarification != null
+                if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
+                    if (!wasTemporalClarification) {
+                        pendingFieldTarget = EditFieldTarget.NONE
+                        askToSaveChanges()
+                    }
+                } else {
+                    speak("That time is outside the requested time range. Please choose a valid time.")
+                }
             },
             hour,
             minute,
@@ -284,6 +284,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         lifecycleScope.launch {
             val existingTask = withContext(Dispatchers.IO) {
                 dao.getById(taskId)
+            }
+
+            val finalResolution = temporalResolver.resolve(selectedDate, selectedTime, listOfNotNull(selectedDate, selectedTime).joinToString(" "))
+            if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.UPDATE) is TemporalPolicyResult.InvalidPastSchedule) {
+                speak(responseManager.pastDateTime())
+                return@launch
             }
 
             ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
@@ -375,8 +381,16 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun handleVoiceInput(text: String) {
         val normalized = TextNormalizer.normalize(text)
+        Log.d(
+            "EDIT_VOICE",
+            "raw='$text' normalized='$normalized' pendingFieldTarget=$pendingFieldTarget waitingForSaveConfirmation=$waitingForSaveConfirmation hasPendingTemporal=${pendingTemporalClarification != null} selectedDate='$selectedDate' selectedTime='$selectedTime'"
+        )
 
         if (isSaveCommand(normalized)) {
+            if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
+                repeatPendingTemporalPrompt()
+                return
+            }
             waitingForSaveConfirmation = false
             assistantSession.dismissPanel()
             saveTask()
@@ -391,6 +405,10 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         if (waitingForSaveConfirmation) {
             when {
                 isYes(normalized) -> {
+                    if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
+                        repeatPendingTemporalPrompt()
+                        return
+                    }
                     waitingForSaveConfirmation = false
                     assistantSession.dismissPanel()
                     saveTask()
@@ -424,13 +442,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     return
                 }
 
-                applySpokenDate(normalized) -> {
+                applySpokenDate(normalized, replacingConstraint = true) -> {
                     waitingForSaveConfirmation = false
                     askToSaveChanges()
                     return
                 }
 
-                applySpokenTime(normalized) -> {
+                applySpokenTime(normalized, replacingConstraint = true) -> {
                     waitingForSaveConfirmation = false
                     askToSaveChanges()
                     return
@@ -481,16 +499,52 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
 
-        lifecycleScope.launch {
-            try {
-                val result = aiRouter.process(normalized)
-                runOnUiThread {
-                    processEditCommand(result)
-                }
-            } catch (_: Exception) {
-                speak(responseManager.editParseFailure())
-            }
+        speak("Please return to the main assistant for a new command, or choose title, date, time, or delete for this task.")
+    }
+
+    private fun repeatPendingTemporalPrompt() {
+        pendingTemporalClarification?.let {
+            advanceTemporalClarification()
+            return
         }
+        when (pendingFieldTarget) {
+            EditFieldTarget.DATE -> speak("Please provide the exact date first.")
+            EditFieldTarget.TIME -> speak("Please provide the exact time first.")
+            EditFieldTarget.TITLE -> speak(responseManager.askChangeTitle())
+            EditFieldTarget.NONE -> Unit
+        }
+    }
+
+    private fun applyProposedTemporalChange(dateText: String?, timeText: String?, askForMissing: Boolean): Boolean {
+        if (dateText.isNullOrBlank() && timeText.isNullOrBlank()) return false
+        val resolution = temporalResolver.resolve(dateText, timeText, listOfNotNull(dateText, timeText).joinToString(" "))
+        val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.RESCHEDULE)
+        if (policy is TemporalPolicyResult.Unresolved || policy is TemporalPolicyResult.InvalidPastSchedule) return false
+        val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
+        val needsTime = policy is TemporalPolicyResult.NeedsExactTime || policy is TemporalPolicyResult.NeedsExactDateAndTime
+        var updated = false
+        if (resolution.isExactDate && resolution.startDateInclusive != null) {
+            setExactDate(resolution.startDateInclusive)
+            updated = true
+        }
+        if (resolution.isExactTime && resolution.startMinuteInclusive != null) {
+            setExactMinute(resolution.startMinuteInclusive)
+            updated = true
+        }
+        pendingTemporalConstraint = if (needsDate || needsTime) resolution else null
+        pendingTemporalClarification = if (needsDate || needsTime) {
+            PendingTemporalClarification(
+                original = resolution,
+                exactDate = if (resolution.isExactDate) resolution.startDateInclusive else null,
+                exactMinute = if (resolution.isExactTime) resolution.startMinuteInclusive else null,
+                needsExactDate = needsDate,
+                needsExactTime = needsTime
+            )
+        } else null
+        if (askForMissing && pendingTemporalClarification != null) {
+            advanceTemporalClarification()
+        }
+        return updated || needsDate || needsTime
     }
 
     private fun processEditCommand(cmd: AiParsedCommand) {
@@ -504,18 +558,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     updated = true
                 }
 
-                if (!cmd.dateText.isNullOrBlank() && applySpokenDate(cmd.dateText)) {
+                if (applyProposedTemporalChange(cmd.newDateText ?: cmd.dateText, cmd.newTimeText ?: cmd.timeText, askForMissing = true)) {
                     updated = true
                 }
 
-                if (!cmd.timeText.isNullOrBlank() && applySpokenTime(cmd.timeText)) {
-                    updated = true
-                }
-
-                if (updated) {
-                    pendingFieldTarget = EditFieldTarget.NONE
+                if (updated && pendingFieldTarget == EditFieldTarget.NONE && pendingTemporalClarification == null) {
                     askToSaveChanges()
-                } else {
+                } else if (!updated && pendingFieldTarget == EditFieldTarget.NONE && pendingTemporalClarification == null) {
                     speak(responseManager.editHelp())
                 }
             }
@@ -614,28 +663,70 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         return normalized in exactExitCommands
     }
 
-    private fun applySpokenDate(dateText: String): Boolean {
-        val result = localDateParser.parse(dateText)
+    private fun applySpokenDate(dateText: String, replacingConstraint: Boolean = false): Boolean {
+        val resolution = temporalResolver.resolve(dateText, null, dateText)
+        if (!resolution.isExactDate || resolution.startDateInclusive == null) return false
+        return acceptExactDate(resolution.startDateInclusive, replacingConstraint)
+    }
 
-        if (!result.success || result.normalizedDate == null) {
-            return false
-        }
-
-        selectedYear = result.year
-        selectedMonth = result.month
-        selectedDay = result.day
-        selectedDate = result.normalizedDate
-
-        tvSelectedDate.text = "Selected date: $selectedDate"
+    private fun acceptExactDate(date: String, replacingConstraint: Boolean): Boolean {
+        val constraint = if (replacingConstraint) null else pendingTemporalClarification?.original ?: pendingTemporalConstraint
+        if (constraint != null && !TemporalActionPolicy.validateClarification(constraint, date, null)) return false
+        setExactDate(date)
+        pendingTemporalClarification = pendingTemporalClarification?.copy(exactDate = date)
+        advanceTemporalClarification()
         return true
     }
 
-    private fun applySpokenTime(timeText: String): Boolean {
-        val parsed = SpokenTimeParser.parseToHourMinute(timeText) ?: return false
+    private fun setExactDate(date: String) {
+        selectedDate = date
+        val parts = selectedDate!!.split("/")
+        selectedDay = parts.getOrNull(0)?.toIntOrNull()
+        selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
+        selectedYear = parts.getOrNull(2)?.toIntOrNull()
+        tvSelectedDate.text = "Selected date: $selectedDate"
+    }
 
-        selectedTime = formatTime(parsed.first, parsed.second)
-        tvSelectedTime.text = "Selected time: $selectedTime"
+    private fun applySpokenTime(timeText: String, replacingConstraint: Boolean = false): Boolean {
+        val resolution = temporalResolver.resolve(null, timeText, timeText)
+        if (!resolution.isExactTime || resolution.startMinuteInclusive == null) return false
+        return acceptExactMinute(resolution.startMinuteInclusive, replacingConstraint)
+    }
+
+    private fun acceptExactMinute(minute: Int, replacingConstraint: Boolean): Boolean {
+        val constraint = if (replacingConstraint) null else pendingTemporalClarification?.original ?: pendingTemporalConstraint
+        if (constraint != null && !TemporalActionPolicy.validateClarification(constraint, null, minute)) return false
+        setExactMinute(minute)
+        pendingTemporalClarification = pendingTemporalClarification?.copy(exactMinute = minute)
+        advanceTemporalClarification()
         return true
+    }
+
+    private fun setExactMinute(minute: Int) {
+        selectedHour24 = minute / 60
+        selectedMinute = minute % 60
+        selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
+        tvSelectedTime.text = "Selected time: $selectedTime"
+    }
+
+    private fun advanceTemporalClarification() {
+        val pending = pendingTemporalClarification ?: return
+        if (pending.needsExactDate && pending.exactDate == null) {
+            pendingFieldTarget = EditFieldTarget.DATE
+            waitingForSaveConfirmation = false
+            speak("Which exact date ${pending.original.originalDatePhrase.ifBlank { pending.original.spokenLabel }}?")
+            return
+        }
+        if (pending.needsExactTime && pending.exactMinute == null) {
+            pendingFieldTarget = EditFieldTarget.TIME
+            waitingForSaveConfirmation = false
+            speak("What exact time ${pending.original.originalTimePhrase.ifBlank { pending.original.spokenLabel }}?")
+            return
+        }
+        pendingFieldTarget = EditFieldTarget.NONE
+        pendingTemporalClarification = null
+        pendingTemporalConstraint = null
+        askToSaveChanges()
     }
 
     private fun parseExistingDate(date: String?) {
@@ -698,9 +789,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             }
 
             EditFieldTarget.DATE -> {
+                val wasTemporalClarification = pendingTemporalClarification != null
                 if (applySpokenDate(normalized)) {
-                    pendingFieldTarget = EditFieldTarget.NONE
-                    askToSaveChanges()
+                    if (!wasTemporalClarification) {
+                        pendingFieldTarget = EditFieldTarget.NONE
+                        askToSaveChanges()
+                    }
                 } else {
                     speak(responseManager.invalidEditDate())
                 }
@@ -708,11 +802,14 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             }
 
             EditFieldTarget.TIME -> {
+                val wasTemporalClarification = pendingTemporalClarification != null
                 val parsed = applySpokenTime(normalized)
                 Log.d("EDIT_TIME", "raw='$normalized' parsed=$parsed")
                 if (parsed) {
-                    pendingFieldTarget = EditFieldTarget.NONE
-                    askToSaveChanges()
+                    if (!wasTemporalClarification) {
+                        pendingFieldTarget = EditFieldTarget.NONE
+                        askToSaveChanges()
+                    }
                 } else {
                     speak(responseManager.invalidEditTime())
                 }
@@ -775,6 +872,10 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun askToSaveChanges() {
+        if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
+            repeatPendingTemporalPrompt()
+            return
+        }
         waitingForSaveConfirmation = true
         promptHelper.askSaveChanges(buildEditSummary())
     }

@@ -2,14 +2,14 @@ package com.example.myapplication.ai.agent
 
 import android.util.Log
 import com.example.myapplication.ai.AiParsedCommand
-import com.example.myapplication.ai.AiRouter
+
+class TaskAgentProcessingException(message: String, cause: Throwable) : Exception(message, cause)
 
 class AgentOrchestrator(
     private val laptopAgentClient: LaptopAgentClient,
     private val taskAgentResponseParser: TaskAgentResponseParser,
     private val taskActionNormalizer: TaskActionNormalizer,
-    private val actionValidator: ActionValidator,
-    private val fallbackAiRouter: AiRouter
+    private val actionValidator: ActionValidator
 ) {
     suspend fun process(normalizedText: String): AiParsedCommand {
         return try {
@@ -21,9 +21,8 @@ class AgentOrchestrator(
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
         } catch (e: Exception) {
-            Log.e("AGENT_ORCHESTRATOR", "LM Studio task agent failed; falling back to AiRouter", e)
-            Log.d("AGENT_FALLBACK", "Fallback AiRouter processing text='$normalizedText'")
-            fallbackAiRouter.process(normalizedText)
+            Log.e("AGENT_ORCHESTRATOR", "Task agent failed closed for text='$normalizedText'", e)
+            throw TaskAgentProcessingException("Task agent failed to process command", e)
         }
     }
 }

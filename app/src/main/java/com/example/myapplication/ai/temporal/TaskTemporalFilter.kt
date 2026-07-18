@@ -5,14 +5,16 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
+enum class TaskCompletionFilter { ANY, ACTIVE_ONLY, COMPLETED_ONLY }
+
 object TaskTemporalFilter {
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }
     private val timeFormats = listOf("h:mm a", "h a", "HH:mm").map { SimpleDateFormat(it, Locale.UK).apply { isLenient = false } }
 
-    fun filterAndSort(tasks: List<TaskEntity>, window: TemporalQueryWindow): List<TaskEntity> {
+    fun filterAndSort(tasks: List<TaskEntity>, window: TemporalQueryWindow, completionFilter: TaskCompletionFilter = TaskCompletionFilter.ACTIVE_ONLY): List<TaskEntity> {
         if (window.status == TemporalResolutionStatus.UNRESOLVED) return emptyList()
         return tasks.asSequence()
-            .filter { !it.isDone }
+            .filter { when (completionFilter) { TaskCompletionFilter.ANY -> true; TaskCompletionFilter.ACTIVE_ONLY -> !it.isDone; TaskCompletionFilter.COMPLETED_ONLY -> it.isDone } }
             .filter { matchesDate(it, window) }
             .filter { matchesTime(it, window) }
             .sortedWith(compareBy<TaskEntity> { parseDateMillis(it.dueDate) ?: Long.MAX_VALUE }.thenBy { parseTimeMinute(it.dueTime) ?: Int.MAX_VALUE }.thenBy { it.title.lowercase(Locale.UK) })
