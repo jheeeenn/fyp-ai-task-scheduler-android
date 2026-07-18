@@ -36,7 +36,7 @@ class ConversationResponseParser {
         for (i in start until text.length) {
             val c = text[i]
             if (escaped) { escaped = false; continue }
-            if (c == '\'') { escaped = inString; continue }
+            if (c == '\\') { escaped = inString; continue }
             if (c == '"') inString = !inString
             if (!inString) {
                 if (c == '{') depth++
