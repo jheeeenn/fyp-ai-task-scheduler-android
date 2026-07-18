@@ -52,7 +52,7 @@ class ConversationOrchestratorObservationTest {
             ConversationDecisionParser()
         ).respondToObservation(notFound, "ctx")
         assertEquals("deterministic_fallback", notFoundResponse.source)
-        assertEquals(ConversationResponseType.ERROR, notFoundResponse.responseType)
+        assertEquals(ConversationResponseType.INFORMATION, notFoundResponse.responseType)
 
         val confirmationResponse = ConversationOrchestrator(
             FakeClient(Result.success("{\"speech\":\"Done.\",\"hint\":\"\",\"response_type\":\"SUCCESS\"}")),
@@ -60,6 +60,49 @@ class ConversationOrchestratorObservationTest {
         ).respondToObservation(observation, "ctx")
         assertEquals("deterministic_fallback", confirmationResponse.source)
         assertEquals(ConversationResponseType.REQUEST_CONFIRMATION, confirmationResponse.responseType)
+    }
+
+    @Test fun notFoundInformationIsAcceptedAndSuccessFallsBack() = kotlinx.coroutines.runBlocking {
+        val notFound = observation.copy(
+            outcome = ExecutionOutcome.NOT_FOUND,
+            listenAgain = true,
+            fallbackSpeech = "No matching task was found."
+        )
+        val accepted = ConversationOrchestrator(
+            FakeClient(Result.success("{\"speech\":\"I could not find purple moon.\",\"hint\":\"\",\"response_type\":\"INFORMATION\"}")),
+            ConversationDecisionParser()
+        ).respondToObservation(notFound, "ctx")
+        val rejected = ConversationOrchestrator(
+            FakeClient(Result.success("{\"speech\":\"Deleted.\",\"hint\":\"\",\"response_type\":\"SUCCESS\"}")),
+            ConversationDecisionParser()
+        ).respondToObservation(notFound, "ctx")
+
+        assertEquals("conversation_agent", accepted.source)
+        assertEquals(ConversationResponseType.INFORMATION, accepted.responseType)
+        assertEquals("deterministic_fallback", rejected.source)
+        assertEquals(ConversationResponseType.INFORMATION, rejected.responseType)
+        assertTrue(notFound.listenAgain)
+    }
+
+    @Test fun cancelledAcknowledgementIsAcceptedAndSessionEndFallsBack() = kotlinx.coroutines.runBlocking {
+        val cancelled = observation.copy(
+            outcome = ExecutionOutcome.CANCELLED,
+            fallbackSpeech = "Okay, I will not delete it."
+        )
+        val accepted = ConversationOrchestrator(
+            FakeClient(Result.success("{\"speech\":\"Okay, the deletion was cancelled.\",\"hint\":\"\",\"response_type\":\"ACKNOWLEDGEMENT\"}")),
+            ConversationDecisionParser()
+        ).respondToObservation(cancelled, "ctx")
+        val rejected = ConversationOrchestrator(
+            FakeClient(Result.success("{\"speech\":\"Goodbye.\",\"hint\":\"\",\"response_type\":\"SESSION_END\"}")),
+            ConversationDecisionParser()
+        ).respondToObservation(cancelled, "ctx")
+
+        assertEquals("conversation_agent", accepted.source)
+        assertEquals(ConversationResponseType.ACKNOWLEDGEMENT, accepted.responseType)
+        assertEquals("deterministic_fallback", rejected.source)
+        assertEquals(ConversationResponseType.ACKNOWLEDGEMENT, rejected.responseType)
+        assertTrue(cancelled.listenAgain)
     }
 
     @Test fun coroutineCancellationIsRethrown() {

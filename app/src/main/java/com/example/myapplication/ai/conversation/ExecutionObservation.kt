@@ -49,6 +49,7 @@ data class ExecutionObservation(
     fun toAgentJson(): String = JSONObject().apply {
         put("operation", operation.name)
         put("outcome", outcome.name)
+        put("expected_response_type", outcome.toConversationResponseType().name)
         put("task_title", taskTitle)
         put("task_count", taskCount)
         put("date_text", dateText)
@@ -67,9 +68,9 @@ data class ExecutionObservation(
 fun ExecutionOutcome.toConversationResponseType(): ConversationResponseType = when (this) {
     ExecutionOutcome.SUCCESS -> ConversationResponseType.SUCCESS
     ExecutionOutcome.PARTIAL_SUCCESS -> ConversationResponseType.PARTIAL_SUCCESS
-    ExecutionOutcome.INFORMATION, ExecutionOutcome.NO_RESULTS -> ConversationResponseType.INFORMATION
+    ExecutionOutcome.INFORMATION, ExecutionOutcome.NO_RESULTS, ExecutionOutcome.NOT_FOUND -> ConversationResponseType.INFORMATION
     ExecutionOutcome.NEEDS_CONFIRMATION -> ConversationResponseType.REQUEST_CONFIRMATION
     ExecutionOutcome.NEEDS_CLARIFICATION, ExecutionOutcome.AMBIGUOUS -> ConversationResponseType.REQUEST_CLARIFICATION
-    ExecutionOutcome.CANCELLED, ExecutionOutcome.REJECTED -> ConversationResponseType.SESSION_END
-    ExecutionOutcome.NOT_FOUND, ExecutionOutcome.FAILURE -> ConversationResponseType.ERROR
+    ExecutionOutcome.CANCELLED -> ConversationResponseType.ACKNOWLEDGEMENT
+    ExecutionOutcome.REJECTED, ExecutionOutcome.FAILURE -> ConversationResponseType.ERROR
 }
