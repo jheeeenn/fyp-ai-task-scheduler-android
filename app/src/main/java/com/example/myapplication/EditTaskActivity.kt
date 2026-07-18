@@ -226,7 +226,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             this,
             { _, pickedYear, pickedMonth, pickedDay ->
                 val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
-                if (!acceptExactDate(pickedDate, replacingConstraint = false)) {
+                val wasTemporalClarification = pendingTemporalClarification != null
+                if (acceptExactDate(pickedDate, replacingConstraint = false)) {
+                    if (!wasTemporalClarification) {
+                        pendingFieldTarget = EditFieldTarget.NONE
+                        askToSaveChanges()
+                    }
+                } else {
                     speak("That date is outside the requested date range. Please choose a valid date.")
                 }
             },
@@ -247,7 +253,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             this,
             { _, pickedHour, pickedMinute ->
                 val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
-                if (!acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
+                val wasTemporalClarification = pendingTemporalClarification != null
+                if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
+                    if (!wasTemporalClarification) {
+                        pendingFieldTarget = EditFieldTarget.NONE
+                        askToSaveChanges()
+                    }
+                } else {
                     speak("That time is outside the requested time range. Please choose a valid time.")
                 }
             },
@@ -369,6 +381,10 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun handleVoiceInput(text: String) {
         val normalized = TextNormalizer.normalize(text)
+        Log.d(
+            "EDIT_VOICE",
+            "raw='$text' normalized='$normalized' pendingFieldTarget=$pendingFieldTarget waitingForSaveConfirmation=$waitingForSaveConfirmation hasPendingTemporal=${pendingTemporalClarification != null} selectedDate='$selectedDate' selectedTime='$selectedTime'"
+        )
 
         if (isSaveCommand(normalized)) {
             if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
@@ -773,8 +789,9 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             }
 
             EditFieldTarget.DATE -> {
+                val wasTemporalClarification = pendingTemporalClarification != null
                 if (applySpokenDate(normalized)) {
-                    if (pendingTemporalClarification == null) {
+                    if (!wasTemporalClarification) {
                         pendingFieldTarget = EditFieldTarget.NONE
                         askToSaveChanges()
                     }
@@ -785,10 +802,11 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             }
 
             EditFieldTarget.TIME -> {
+                val wasTemporalClarification = pendingTemporalClarification != null
                 val parsed = applySpokenTime(normalized)
                 Log.d("EDIT_TIME", "raw='$normalized' parsed=$parsed")
                 if (parsed) {
-                    if (pendingTemporalClarification == null) {
+                    if (!wasTemporalClarification) {
                         pendingFieldTarget = EditFieldTarget.NONE
                         askToSaveChanges()
                     }

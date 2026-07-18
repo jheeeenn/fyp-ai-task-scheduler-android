@@ -135,6 +135,30 @@ class TemporalRolesAndPolicyTest {
         assertTrue(TemporalActionPolicy.evaluate(past, TemporalUseCase.CREATE, base()) is TemporalPolicyResult.InvalidPastSchedule)
     }
 
+    @Test fun replacementClarificationDoesNotLockToRejectedPastExactDate() {
+        val rejectedPast = resolver.resolve("15/07/2026", "10 AM", "", base())
+        val replacement = PendingTemporalClarification(
+            original = TemporalResolution(TemporalResolutionStatus.NONE, spokenLabel = "a future schedule"),
+            exactMinute = rejectedPast.startMinuteInclusive,
+            needsExactDate = true,
+            needsExactTime = false,
+            replacingOriginalConstraint = true
+        )
+        assertTrue(TemporalActionPolicy.validateClarification(replacement.original, "20/07/2026", null))
+    }
+
+    @Test fun todayPastBreakdownTimeReplacementCanPreserveDateAndAcceptLaterTime() {
+        val replacement = PendingTemporalClarification(
+            original = TemporalResolution(TemporalResolutionStatus.NONE, spokenLabel = "a future schedule"),
+            exactDate = "16/07/2026",
+            needsExactDate = false,
+            needsExactTime = true,
+            replacingOriginalConstraint = true
+        )
+        assertTrue(TemporalActionPolicy.validateClarification(replacement.original, null, 13 * 60))
+        assertEquals("16/07/2026", replacement.exactDate)
+    }
+
     @Test fun mutationPromptForbidsSuccessClaims() {
         val prompt = LaptopAgentClient.SYSTEM_PROMPT
         assertTrue(prompt.contains("Never claim that an action succeeded"))

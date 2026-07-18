@@ -1594,7 +1594,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.BREAKDOWN)
         when (policy) {
             is TemporalPolicyResult.Ready -> createPendingBreakdownIfFuture(resolution.startDateInclusive!!, ScheduleTextParser.formatTime(resolution.startMinuteInclusive!! / 60, resolution.startMinuteInclusive!! % 60))
-            is TemporalPolicyResult.InvalidPastSchedule -> assistantSession.speakThenListenAgain(responseManager.pastDateTime())
+            is TemporalPolicyResult.InvalidPastSchedule -> enterBreakdownFutureCorrection(resolution)
             is TemporalPolicyResult.Unresolved -> assistantSession.speakThenListenAgain("I could not understand that schedule. Please say an exact date and time.")
             else -> {
                 val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
@@ -1672,16 +1672,83 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun createPendingBreakdownIfFuture(dueDate: String, dueTime: String) {
         val finalResolution = temporalQueryResolver.resolve(dueDate, dueTime, listOf(dueDate, dueTime).joinToString(" "))
         if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.BREAKDOWN) is TemporalPolicyResult.InvalidPastSchedule) {
-            homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
-            pendingBreakdownTemporalClarification = PendingTemporalClarification(
-                original = finalResolution,
-                needsExactDate = true,
-                needsExactTime = true
-            )
-            assistantSession.speakThenListenAgain("That schedule is in the past. Please provide a future date and time.")
+            enterBreakdownFutureCorrection(finalResolution)
             return
         }
         createPendingBreakdown(dueDate, dueTime)
+    }
+
+    private fun enterBreakdownFutureCorrection(rejectedResolution: TemporalQueryWindow) {
+        val rejectedDate = rejectedResolution.startDateInclusive
+        val rejectedMinute = rejectedResolution.startMinuteInclusive
+        val replacementOriginal = TemporalQueryWindow(
+            TemporalResolutionStatus.NONE,
+            spokenLabel = "a future schedule"
+        )
+        val calendar = Calendar.getInstance()
+        val currentMinute = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        val dateIsPast = isDateBeforeToday(rejectedDate)
+        val timeIsPastToday = isToday(rejectedDate) && rejectedMinute != null && rejectedMinute <= currentMinute
+
+        pendingBreakdownTemporalClarification = when {
+            dateIsPast -> PendingTemporalClarification(
+                original = replacementOriginal,
+                exactMinute = rejectedMinute,
+                needsExactDate = true,
+                needsExactTime = false,
+                replacingOriginalConstraint = true
+            )
+            timeIsPastToday -> PendingTemporalClarification(
+                original = replacementOriginal,
+                exactDate = rejectedDate,
+                needsExactDate = false,
+                needsExactTime = true,
+                replacingOriginalConstraint = true
+            )
+            else -> PendingTemporalClarification(
+                original = replacementOriginal,
+                needsExactDate = true,
+                needsExactTime = true,
+                replacingOriginalConstraint = true
+            )
+        }
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+        val pending = pendingBreakdownTemporalClarification
+        val prompt = when {
+            pending?.needsExactDate == true && pending.exactDate == null -> "Please provide a future exact date."
+            pending?.needsExactTime == true && pending.exactMinute == null -> "Please provide a later exact time."
+            else -> "Please provide a future date and time."
+        }
+        assistantSession.getBottomSheet()?.showAssistantHint(prompt)
+        assistantSession.speakThenListenAgain("${responseManager.pastDateTime()} $prompt")
+    }
+
+    private fun isDateBeforeToday(date: String?): Boolean {
+        val parsed = parseDateMillis(date) ?: return false
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return parsed < today
+    }
+
+    private fun isToday(date: String?): Boolean {
+        val parsed = parseDateMillis(date) ?: return false
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return parsed == today
+    }
+
+    private fun parseDateMillis(date: String?): Long? = try {
+        if (date.isNullOrBlank()) null else SimpleDateFormat("dd/MM/yyyy", Locale.UK).parse(date)?.time
+    } catch (_: Exception) {
+        null
     }
 
     private fun createPendingBreakdown(dueDate: String, dueTime: String) {
