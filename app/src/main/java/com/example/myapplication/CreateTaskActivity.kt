@@ -283,7 +283,9 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
                 assistantSession.pauseListeningForAssistantSpeech()
                 if (acceptExactDate(pickedDate, replacingConstraint = false)) {
+                    pendingTaskState.dateText = selectedDate
                     voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
+                    moveToNextMissingStep()
                 } else {
                     voiceHelper.speak(invalidTemporalDateMessage())
                 }
@@ -309,7 +311,11 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
                 assistantSession.pauseListeningForAssistantSpeech()
                 if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
+                    pendingTaskState.timeText = selectedTime
+                    pendingSemanticTimePhrase = null
+                    suggestedLearnedTime = null
                     voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
+                    moveToNextMissingStep()
                 } else {
                     voiceHelper.speak(invalidTemporalTimeMessage())
                 }
@@ -680,7 +686,11 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun logTemporalFollowUp(raw: String, validationResult: Boolean) {
-        val resolution = temporalResolver.resolve(raw, raw, raw)
+        val resolution = when (dialogState) {
+            CreateTaskDialogState.WAITING_FOR_DATE -> temporalResolver.resolve(raw, null, raw)
+            CreateTaskDialogState.WAITING_FOR_TIME -> temporalResolver.resolve(null, raw, raw)
+            else -> temporalResolver.resolve(null, null, raw)
+        }
         Log.d(
             "TEMPORAL_FOLLOWUP",
             "raw='$raw' dialogState=$dialogState type=${resolution.type} date=${resolution.startDateInclusive} minute=${resolution.startMinuteInclusive} valid=$validationResult"

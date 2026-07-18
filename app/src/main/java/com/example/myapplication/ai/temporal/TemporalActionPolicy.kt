@@ -29,15 +29,30 @@ object TemporalActionPolicy {
         val hasExactTime = resolution.isExactTime
         val hasDate = resolution.hasDateConstraint
         val hasTime = resolution.hasTimeConstraint
-        val needsDate = !hasExactDate && (hasDate || !hasTime)
-        val needsTime = !hasExactTime && (hasTime || !hasDate)
         if (isWhollyPast(resolution, baseCalendar)) return TemporalPolicyResult.InvalidPastSchedule(resolution)
-        return when {
-            hasExactDate && hasExactTime -> TemporalPolicyResult.Ready(resolution)
-            needsDate && needsTime -> TemporalPolicyResult.NeedsExactDateAndTime(resolution)
-            needsDate -> TemporalPolicyResult.NeedsExactDate(resolution)
-            needsTime -> TemporalPolicyResult.NeedsExactTime(resolution)
-            else -> TemporalPolicyResult.NeedsExactDateAndTime(resolution)
+        return when (useCase) {
+            TemporalUseCase.CREATE, TemporalUseCase.BREAKDOWN -> when {
+                hasExactDate && hasExactTime -> TemporalPolicyResult.Ready(resolution)
+                hasExactDate && !hasTime -> TemporalPolicyResult.NeedsExactTime(resolution)
+                hasExactTime && !hasDate -> TemporalPolicyResult.NeedsExactDate(resolution)
+                hasDate && hasExactTime -> TemporalPolicyResult.NeedsExactDate(resolution)
+                hasExactDate && hasTime -> TemporalPolicyResult.NeedsExactTime(resolution)
+                hasDate && hasTime -> TemporalPolicyResult.NeedsExactDateAndTime(resolution)
+                hasDate || hasTime -> TemporalPolicyResult.NeedsExactDateAndTime(resolution)
+                else -> TemporalPolicyResult.NeedsExactDateAndTime(resolution)
+            }
+            TemporalUseCase.UPDATE, TemporalUseCase.RESCHEDULE -> when {
+                hasExactDate && hasExactTime -> TemporalPolicyResult.Ready(resolution)
+                hasExactDate && !hasTime -> TemporalPolicyResult.Ready(resolution)
+                hasExactTime && !hasDate -> TemporalPolicyResult.Ready(resolution)
+                hasDate && hasExactTime -> TemporalPolicyResult.NeedsExactDate(resolution)
+                hasExactDate && hasTime -> TemporalPolicyResult.NeedsExactTime(resolution)
+                hasDate && hasTime -> TemporalPolicyResult.NeedsExactDateAndTime(resolution)
+                hasDate -> TemporalPolicyResult.NeedsExactDate(resolution)
+                hasTime -> TemporalPolicyResult.NeedsExactTime(resolution)
+                else -> TemporalPolicyResult.Ready(resolution)
+            }
+            else -> TemporalPolicyResult.Ready(resolution)
         }
     }
 

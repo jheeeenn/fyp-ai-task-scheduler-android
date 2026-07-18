@@ -692,6 +692,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                             putExtra("task_date", matchedTask.dueDate)
                                             putExtra("task_time", matchedTask.dueTime)
                                             putExtra("opened_by_assistant", true)
+                                            putExtra("prefill_title", aiResult.taskTitle)
                                             putExtra("prefill_new_date_text", aiResult.newDateText ?: aiResult.dateText)
                                             putExtra("prefill_new_time_text", aiResult.newTimeText ?: aiResult.timeText)
                                         }
@@ -1592,7 +1593,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val resolution = temporalQueryResolver.resolve(pendingBreakdownDateText, pendingBreakdownTimeText, "")
         val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.BREAKDOWN)
         when (policy) {
-            is TemporalPolicyResult.Ready -> createPendingBreakdown(resolution.startDateInclusive!!, ScheduleTextParser.formatTime(resolution.startMinuteInclusive!! / 60, resolution.startMinuteInclusive!! % 60))
+            is TemporalPolicyResult.Ready -> createPendingBreakdownIfFuture(resolution.startDateInclusive!!, ScheduleTextParser.formatTime(resolution.startMinuteInclusive!! / 60, resolution.startMinuteInclusive!! % 60))
             is TemporalPolicyResult.InvalidPastSchedule -> assistantSession.speakThenListenAgain(responseManager.pastDateTime())
             is TemporalPolicyResult.Unresolved -> assistantSession.speakThenListenAgain("I could not understand that schedule. Please say an exact date and time.")
             else -> {
@@ -1620,7 +1621,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val minute = pending.exactMinute ?: pending.original.startMinuteInclusive
             if (date != null && minute != null) {
                 pendingBreakdownTemporalClarification = null
-                createPendingBreakdown(date, ScheduleTextParser.formatTime(minute / 60, minute % 60))
+                createPendingBreakdownIfFuture(date, ScheduleTextParser.formatTime(minute / 60, minute % 60))
             }
         }
     }
@@ -1666,6 +1667,21 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         pendingBreakdownTimeText = incoming.takeIf { it.isExactTime }?.startMinuteInclusive?.let { ScheduleTextParser.formatTime(it / 60, it % 60) } ?: pendingBreakdownTimeText
         proceedAfterBreakdownApproval()
         return true
+    }
+
+    private fun createPendingBreakdownIfFuture(dueDate: String, dueTime: String) {
+        val finalResolution = temporalQueryResolver.resolve(dueDate, dueTime, listOf(dueDate, dueTime).joinToString(" "))
+        if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.BREAKDOWN) is TemporalPolicyResult.InvalidPastSchedule) {
+            homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+            pendingBreakdownTemporalClarification = PendingTemporalClarification(
+                original = finalResolution,
+                needsExactDate = true,
+                needsExactTime = true
+            )
+            assistantSession.speakThenListenAgain("That schedule is in the past. Please provide a future date and time.")
+            return
+        }
+        createPendingBreakdown(dueDate, dueTime)
     }
 
     private fun createPendingBreakdown(dueDate: String, dueTime: String) {

@@ -16,5 +16,21 @@ class TemporalActionPolicyTest {
     @Test fun clarificationValidatedAgainstWindow() { val w = r("next week", "morning"); assertFalse(TemporalActionPolicy.validateClarification(w, "16/07/2026", 9*60)); assertTrue(TemporalActionPolicy.validateClarification(w, "20/07/2026", 9*60)) }
     @Test fun rescheduleExactNextMondayReady() { assertTrue(TemporalActionPolicy.evaluate(r("next monday", "10 am"), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.Ready) }
     @Test fun rescheduleNextWeekNeedsDate() { assertTrue(TemporalActionPolicy.evaluate(r("next week", "10 am"), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.NeedsExactDate) }
+    @Test fun createPartialExactSchedulesNeedMissingCounterpart() {
+        assertTrue(TemporalActionPolicy.evaluate(r("tomorrow", null), TemporalUseCase.CREATE, base()) is TemporalPolicyResult.NeedsExactTime)
+        assertTrue(TemporalActionPolicy.evaluate(r(null, "9 am"), TemporalUseCase.CREATE, base()) is TemporalPolicyResult.NeedsExactDate)
+    }
+
+    @Test fun reschedulePartialExactSchedulesAreReadyWithExistingCounterpart() {
+        assertTrue(TemporalActionPolicy.evaluate(r("tomorrow", null), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.Ready)
+        assertTrue(TemporalActionPolicy.evaluate(r(null, "9 am"), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.Ready)
+    }
+
+    @Test fun rescheduleRangesPreserveExistingCounterpartsWhenOnlyOneSideFlexible() {
+        assertTrue(TemporalActionPolicy.evaluate(r("next week", "9 am"), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.NeedsExactDate)
+        assertTrue(TemporalActionPolicy.evaluate(r("tomorrow", "morning"), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.NeedsExactTime)
+        assertTrue(TemporalActionPolicy.evaluate(r("next week", "morning"), TemporalUseCase.RESCHEDULE, base()) is TemporalPolicyResult.NeedsExactDateAndTime)
+    }
+
     @Test fun tonightStrictSameDateWindow() { val w = r("tonight", null); assertEquals("16/07/2026", w.startDateInclusive); assertEquals("16/07/2026", w.endDateInclusive); assertEquals(1260, w.startMinuteInclusive); assertEquals(299, w.endMinuteInclusive); assertTrue(w.wrapsMidnight) }
 }
