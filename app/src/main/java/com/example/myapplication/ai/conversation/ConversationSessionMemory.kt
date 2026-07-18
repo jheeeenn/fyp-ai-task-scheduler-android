@@ -9,6 +9,14 @@ class ConversationSessionMemory {
         private set
     var pendingAction: String? = null
         private set
+    var latestExecutionOperation: ExecutionOperation? = null
+        private set
+    var latestExecutionOutcome: ExecutionOutcome? = null
+        private set
+    var latestRequiredInput: RequiredInput? = null
+        private set
+    var finalSpokenResponse: String? = null
+        private set
 
     fun recordUser(text: String) {
         addTurn("User: $text")
@@ -18,6 +26,19 @@ class ConversationSessionMemory {
         if (text.isNotBlank()) {
             addTurn("Assistant: $text")
         }
+    }
+
+    fun recordObservation(observation: ExecutionObservation) {
+        latestExecutionOperation = observation.operation
+        latestExecutionOutcome = observation.outcome
+        latestRequiredInput = observation.requiredInput
+        if (observation.taskTitle.isNotBlank()) lastReferencedTask = observation.taskTitle
+        addTurn("Observation: operation=${observation.operation.name} outcome=${observation.outcome.name} task=${observation.taskTitle} requiredInput=${observation.requiredInput.name}")
+    }
+
+    fun recordFinalSpokenResponse(text: String) {
+        finalSpokenResponse = text.takeIf { it.isNotBlank() }
+        recordAssistant(text)
     }
 
     fun updateFromDecision(decision: ConversationDecision) {
@@ -45,6 +66,9 @@ class ConversationSessionMemory {
             appendLine("lastReferencedTask=${lastReferencedTask.orEmpty()}")
             appendLine("lastQueryDate=${lastQueryDate.orEmpty()}")
             appendLine("pendingAction=${pendingAction.orEmpty()}")
+            appendLine("latestExecutionOperation=${latestExecutionOperation?.name.orEmpty()}")
+            appendLine("latestExecutionOutcome=${latestExecutionOutcome?.name.orEmpty()}")
+            appendLine("latestRequiredInput=${latestRequiredInput?.name.orEmpty()}")
         }.trim()
     }
 
@@ -53,6 +77,10 @@ class ConversationSessionMemory {
         lastReferencedTask = null
         lastQueryDate = null
         pendingAction = null
+        latestExecutionOperation = null
+        latestExecutionOutcome = null
+        latestRequiredInput = null
+        finalSpokenResponse = null
     }
 
     private fun addTurn(turn: String) {

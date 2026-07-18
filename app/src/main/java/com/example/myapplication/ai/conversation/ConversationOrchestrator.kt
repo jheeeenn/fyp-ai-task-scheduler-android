@@ -10,8 +10,36 @@ class ConversationOrchestratorException(
 class ConversationOrchestrator(
     private val conversationAgentClient: ConversationAgentClient,
     private val parser: ConversationDecisionParser,
+    private val responseParser: ConversationResponseParser = ConversationResponseParser(),
     private val memory: ConversationSessionMemory = ConversationSessionMemory()
 ) {
+    suspend fun respondToObservation(
+        observation: ExecutionObservation,
+        appContextSummary: String
+    ): ConversationResponse {
+        memory.recordObservation(observation)
+        return try {
+            val rawContent = conversationAgentClient.respondToObservation(
+                observationJson = observation.toAgentJson(),
+                memorySnapshot = memory.snapshotForPrompt(),
+                appContextSummary = appContextSummary
+            )
+            val response = responseParser.parse(rawContent)
+            memory.recordFinalSpokenResponse(response.speech)
+            response
+        } catch (e: Exception) {
+            Log.e("CONVO_OBSERVATION", "response verbalization failed; using deterministic fallback", e)
+            val fallback = ConversationResponse(
+                speech = observation.fallbackSpeech,
+                hint = observation.fallbackHint,
+                responseType = observation.outcome.toConversationResponseType(),
+                source = "deterministic_fallback"
+            )
+            memory.recordFinalSpokenResponse(fallback.speech)
+            fallback
+        }
+    }
+
     suspend fun process(normalizedText: String, appContextSummary: String): ConversationDecision {
         memory.recordUser(normalizedText)
 

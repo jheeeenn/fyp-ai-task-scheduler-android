@@ -47,6 +47,13 @@ import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
 import com.example.myapplication.ai.conversation.ConversationRoute
+import com.example.myapplication.ai.conversation.AllowedUserMove
+import com.example.myapplication.ai.conversation.ConversationResponse
+import com.example.myapplication.ai.conversation.ExecutionObservation
+import com.example.myapplication.ai.conversation.ExecutionOperation
+import com.example.myapplication.ai.conversation.ExecutionOutcome
+import com.example.myapplication.ai.conversation.ObservedTask
+import com.example.myapplication.ai.conversation.RequiredInput
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -578,7 +585,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         val reply = responseManager.openCreateTaskReply(aiResult.source)
 
-                        assistantSession.speakThenRun(reply) {
+                        speakObservationThenRun(
+                            ExecutionObservation(
+                                operation = ExecutionOperation.CREATE_TASK,
+                                outcome = ExecutionOutcome.INFORMATION,
+                                taskTitle = aiResult.taskTitle.orEmpty(),
+                                dateText = aiResult.newDateText ?: aiResult.dateText.orEmpty(),
+                                timeText = aiResult.newTimeText ?: aiResult.timeText.orEmpty(),
+                                listenAgain = false,
+                                fallbackSpeech = reply
+                            )
+                        ) {
                             val openCreateIntent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
                                 putExtra("prefill_title", aiResult.taskTitle)
                                 putExtra("prefill_date_text", aiResult.newDateText ?: aiResult.dateText)
@@ -618,7 +635,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -642,9 +659,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 }
 
                                 else -> {
-                                    assistantSession.speakThenListenAgain(
-                                        responseManager.taskMatchNotFound()
-                                    )
+                                    speakObservation(ExecutionObservation(ExecutionOperation.DELETE_TASK, ExecutionOutcome.NOT_FOUND, listenAgain = true, fallbackSpeech = responseManager.taskMatchNotFound()))
                                 }
                             }
                         }
@@ -661,7 +676,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -685,7 +700,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
                                     val reply = responseManager.openEditTask()
-                                    assistantSession.speakThenRun(reply) {
+                                    speakObservationThenRun(ExecutionObservation(ExecutionOperation.UPDATE_TASK, ExecutionOutcome.INFORMATION, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask)), listenAgain = false, fallbackSpeech = reply)) {
                                         val openEditIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                                             putExtra("task_id", matchedTask.id)
                                             putExtra("task_title", matchedTask.title)
@@ -702,7 +717,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                 else -> {
                                     val reply = responseManager.taskMatchNotFound()
-                                    assistantSession.speakThenListenAgain(reply)
+                                    speakObservation(ExecutionObservation(ExecutionOperation.UPDATE_TASK, ExecutionOutcome.NOT_FOUND, listenAgain = true, fallbackSpeech = reply))
                                 }
                             }
                         }
@@ -717,7 +732,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -740,7 +755,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
 
-                                    assistantSession.speakThenRun(responseManager.openReschedule()) {
+                                    val reply = responseManager.openReschedule()
+                                    speakObservationThenRun(ExecutionObservation(ExecutionOperation.RESCHEDULE_TASK, ExecutionOutcome.INFORMATION, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask)), dateText = aiResult.newDateText ?: aiResult.dateText.orEmpty(), timeText = aiResult.newTimeText ?: aiResult.timeText.orEmpty(), listenAgain = false, fallbackSpeech = reply)) {
                                         val openRescheduleIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                                             putExtra("task_id", matchedTask.id)
                                             putExtra("task_title", matchedTask.title)
@@ -756,9 +772,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 }
 
                                 else -> {
-                                    assistantSession.speakThenListenAgain(
-                                        responseManager.taskMatchNotFound()
-                                    )
+                                    speakObservation(ExecutionObservation(ExecutionOperation.RESCHEDULE_TASK, ExecutionOutcome.NOT_FOUND, listenAgain = true, fallbackSpeech = responseManager.taskMatchNotFound()))
                                 }
                             }
                         }
@@ -773,7 +787,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -808,15 +822,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                     refreshOverview()
 
-                                    assistantSession.speak(responseManager.markDoneSuccess(matchedTask.title), listenAgain = false)
+                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask)), listenAgain = false, fallbackSpeech = responseManager.markDoneSuccess(matchedTask.title)))
                                 }
 
                                 else -> {
-                                    assistantSession.speakThenListenAgain(
-                                       // "I couldn't find a matching task. Please say the task title again."
-                                        responseManager.taskMatchNotFound()
-
-                                    )
+                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.NOT_FOUND, listenAgain = true, fallbackSpeech = responseManager.taskMatchNotFound()))
                                 }
                             }
                         }
@@ -831,7 +841,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getAll() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.COMPLETED_ONLY)
                             if (tasks == null) {
-                                assistantSession.speakThenListenAgain("I could not understand that date or time. Please say it another way.")
+                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -867,15 +877,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                     refreshOverview()
 
-                                    assistantSession.speak(responseManager.markUndoneSuccess(matchedTask.title), listenAgain = false)
+                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask)), listenAgain = false, fallbackSpeech = responseManager.markUndoneSuccess(matchedTask.title)))
                                 }
 
                                 else -> {
-                                    assistantSession.speakThenListenAgain(
-                                      //  "I couldn't find a matching task. Please say the task title again."
-                                        responseManager.taskMatchNotFound()
-
-                                    )
+                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.NOT_FOUND, listenAgain = true, fallbackSpeech = responseManager.taskMatchNotFound()))
                                 }
                             }
                         }
@@ -900,7 +906,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 title = title,
                                 plan = plan,
                                 originalRequest = normalized,
-                                naturalResponse = aiResult.naturalResponse,
                                 dateText = aiResult.newDateText ?: aiResult.dateText,
                                 timeText = aiResult.newTimeText ?: aiResult.timeText
                             )
@@ -925,6 +930,59 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
     }
+
+
+    private suspend fun verbalizeObservation(observation: ExecutionObservation): ConversationResponse {
+        val startedAt = System.currentTimeMillis()
+        Log.d(
+            "CMAS_OBSERVATION",
+            "operation=${observation.operation} outcome=${observation.outcome} " +
+                    "requiredInput=${observation.requiredInput} taskCount=${observation.taskCount} " +
+                    "listenAgain=${observation.listenAgain}"
+        )
+        val response = conversationOrchestrator.respondToObservation(
+            observation = observation,
+            appContextSummary = buildConversationAppContextSummary()
+        )
+        val latencyMs = System.currentTimeMillis() - startedAt
+        Log.d(
+            "CMAS_RESPONSE",
+            "responseType=${response.responseType} source=${response.source} " +
+                    "speechLength=${response.speech.length} latencyMs=$latencyMs"
+        )
+        return response
+    }
+
+    private fun deliverObservationResponse(
+        observation: ExecutionObservation,
+        response: ConversationResponse,
+        afterSpeech: (() -> Unit)? = null
+    ) {
+        val hint = response.hint.ifBlank { observation.fallbackHint }
+        if (hint.isNotBlank()) assistantSession.getBottomSheet()?.showAssistantHint(hint)
+        if (afterSpeech != null) {
+            assistantSession.speakThenRun(response.speech) { afterSpeech() }
+        } else if (observation.listenAgain) {
+            assistantSession.speakThenListenAgain(response.speech)
+        } else {
+            assistantSession.speak(response.speech, listenAgain = false)
+        }
+    }
+
+    private suspend fun speakObservation(observation: ExecutionObservation) {
+        deliverObservationResponse(observation, verbalizeObservation(observation))
+    }
+
+    private suspend fun speakObservationThenRun(observation: ExecutionObservation, action: () -> Unit) {
+        deliverObservationResponse(observation, verbalizeObservation(observation), action)
+    }
+
+    private fun observedTask(task: TaskEntity): ObservedTask = ObservedTask(
+        title = task.title,
+        dueDate = task.dueDate,
+        dueTime = task.dueTime,
+        isDone = task.isDone
+    )
 
     private fun todayDateString(): String {
         return SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
@@ -992,8 +1050,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
             }
 
-            assistantSession.getBottomSheet()?.showAssistantHint(hint)
-
             homeFollowUpContext = when {
                 filteredTasks.isEmpty() -> HomeFollowUpContext.AFTER_NO_TASKS
                 replyMode == QueryReplyMode.DETAILED -> HomeFollowUpContext.AFTER_TASK_DETAILS
@@ -1013,9 +1069,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             val spokenReply = responseManager.combineReplyWithFollowUp(reply, spokenFollowUp)
 
-            assistantSession.speak(
-                text = spokenReply,
-                listenAgain = true
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.QUERY_TASK,
+                    outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
+                    taskCount = filteredTasks.size,
+                    dateText = queryWindow.spokenLabel,
+                    facts = listOf(spokenReply),
+                    tasks = filteredTasks.take(responseManager.getMaxTasksForMode(if (replyMode == QueryReplyMode.DETAILED) QueryDetailMode.DETAILED else QueryDetailMode.NORMAL)).map { observedTask(it) },
+                    listenAgain = true,
+                    fallbackSpeech = spokenReply,
+                    fallbackHint = hint
+                )
             )
         }
     }
@@ -1401,9 +1466,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 responseManager.followUpAnythingElse()
             )
 
-            assistantSession.speak(
-                text = spokenReply,
-                listenAgain = true
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.QUERY_TASK,
+                    outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
+                    taskCount = filteredTasks.size,
+                    dateText = queryWindow.spokenLabel,
+                    facts = listOf(spokenReply),
+                    tasks = filteredTasks.take(responseManager.getMaxTasksForMode(if (replyMode == QueryReplyMode.DETAILED) QueryDetailMode.DETAILED else QueryDetailMode.NORMAL)).map { observedTask(it) },
+                    listenAgain = true,
+                    fallbackSpeech = spokenReply,
+                    fallbackHint = hint
+                )
             )
         }
     }
@@ -1462,9 +1536,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         pendingDeleteTaskTitle = task.title
         homeFollowUpContext = HomeFollowUpContext.DELETE_CONFIRMATION
 
-        assistantSession.speakThenListenAgain(
-            "Are you sure you want to delete ${task.title}?"
-        )
+        lifecycleScope.launch {
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.DELETE_TASK,
+                    outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
+                    taskTitle = task.title,
+                    tasks = listOf(observedTask(task)),
+                    requiredInput = RequiredInput.CONFIRMATION,
+                    allowedUserMoves = listOf(AllowedUserMove.CONFIRM, AllowedUserMove.REJECT, AllowedUserMove.CANCEL),
+                    listenAgain = true,
+                    fallbackSpeech = "Are you sure you want to delete ${task.title}?"
+                )
+            )
+        }
     }
 
     private fun clearPendingDeleteState() {
@@ -1496,14 +1581,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             clearPendingDeleteState()
             homeFollowUpContext = HomeFollowUpContext.NONE
 
-            assistantSession.speakThenStop(responseManager.deleteSuccess(title))
+            speakObservation(ExecutionObservation(ExecutionOperation.DELETE_TASK, ExecutionOutcome.SUCCESS, taskTitle = title, listenAgain = false, fallbackSpeech = responseManager.deleteSuccess(title)))
         }
     }
     private fun startBreakdownConfirmation(
         title: String,
         plan: List<String>,
         originalRequest: String,
-        naturalResponse: String?,
         dateText: String? = null,
         timeText: String? = null
     ) {
@@ -1514,27 +1598,34 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         pendingBreakdownTimeText = timeText
         homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
 
-        assistantSession.getBottomSheet()?.showAssistantHint(
-            "Say yes to create these subtasks, no to cancel, or describe how to change the plan."
+        val fallback = buildBreakdownProposalSpeech(
+            title = title,
+            plan = pendingBreakdownPlan
         )
-
-        assistantSession.speakThenListenAgain(
-            buildBreakdownProposalSpeech(
-                title = title,
-                plan = pendingBreakdownPlan,
-                naturalResponse = naturalResponse
+        lifecycleScope.launch {
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.BREAKDOWN_TASK,
+                    outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
+                    taskTitle = title,
+                    planItems = pendingBreakdownPlan,
+                    requiredInput = RequiredInput.CONFIRMATION,
+                    allowedUserMoves = listOf(AllowedUserMove.CONFIRM, AllowedUserMove.REJECT, AllowedUserMove.CANCEL, AllowedUserMove.CHANGE_FIELD),
+                    listenAgain = true,
+                    fallbackSpeech = fallback,
+                    fallbackHint = "Say yes to create these subtasks, no to cancel, or describe how to change the plan."
+                )
             )
-        )
+        }
     }
 
     private fun buildBreakdownProposalSpeech(
         title: String,
-        plan: List<String>,
-        naturalResponse: String?
+        plan: List<String>
     ): String {
-        val intro = naturalResponse
-            ?.takeIf { it.isNotBlank() }
-            ?: "I prepared a breakdown for $title."
+        // Task Agent natural_response is intentionally not used for final task speech;
+        // user-facing task responses now belong to the Conversation Agent observation-return loop.
+        val intro = "I prepared a breakdown for $title."
 
         val planSpeech = plan.mapIndexed { index, item ->
             "${index + 1}. $item."
@@ -1799,8 +1890,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             clearPendingBreakdownState()
             homeFollowUpContext = HomeFollowUpContext.NONE
 
-            assistantSession.speakThenStop(
-                "I created $title with $count subtasks for $dueDate at $dueTime."
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.BREAKDOWN_TASK,
+                    outcome = ExecutionOutcome.SUCCESS,
+                    taskTitle = title,
+                    taskCount = 1,
+                    dateText = dueDate,
+                    timeText = dueTime,
+                    planItems = plan,
+                    listenAgain = false,
+                    fallbackSpeech = "I created $title with $count subtasks for $dueDate at $dueTime."
+                )
             )
         }
     }
@@ -1860,7 +1961,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         title = result.taskTitle ?: title,
                         plan = result.plan.take(4),
                         originalRequest = pendingBreakdownOriginalRequest ?: refinementRequest,
-                        naturalResponse = result.naturalResponse,
                         dateText = pendingBreakdownDateText,
                         timeText = pendingBreakdownTimeText
                     )
@@ -1920,10 +2020,28 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         ambiguityRetryCount = 0
         homeFollowUpContext = HomeFollowUpContext.TASK_MATCH_AMBIGUITY
 
-        assistantSession.getBottomSheet()?.showAssistantHint(responseManager.hintAmbiguityChoice())
-        assistantSession.speakThenListenAgain(
-            responseManager.taskMatchAmbiguous(bestTask.title, secondTask.title)
-        )
+        lifecycleScope.launch {
+            speakObservation(
+                ExecutionObservation(
+                    operation = when (action) {
+                        PendingTaskAction.DELETE -> ExecutionOperation.DELETE_TASK
+                        PendingTaskAction.EDIT -> ExecutionOperation.UPDATE_TASK
+                        PendingTaskAction.RESCHEDULE -> ExecutionOperation.RESCHEDULE_TASK
+                        PendingTaskAction.MARK_DONE -> ExecutionOperation.MARK_DONE
+                        PendingTaskAction.MARK_UNDONE -> ExecutionOperation.MARK_UNDONE
+                        else -> ExecutionOperation.SYSTEM
+                    },
+                    outcome = ExecutionOutcome.AMBIGUOUS,
+                    taskCount = 2,
+                    choices = listOf(bestTask.title, secondTask.title),
+                    requiredInput = RequiredInput.TASK_CHOICE,
+                    allowedUserMoves = listOf(AllowedUserMove.SELECT_OPTION, AllowedUserMove.CANCEL, AllowedUserMove.REQUEST_HELP),
+                    listenAgain = true,
+                    fallbackSpeech = responseManager.taskMatchAmbiguous(bestTask.title, secondTask.title),
+                    fallbackHint = responseManager.hintAmbiguityChoice()
+                )
+            )
+        }
     }
 
     private fun handleTaskMatchAmbiguity(normalized: String) {

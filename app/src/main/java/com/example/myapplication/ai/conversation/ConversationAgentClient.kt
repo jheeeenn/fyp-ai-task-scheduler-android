@@ -20,7 +20,7 @@ class ConversationAgentResponseException(
     cause: Throwable? = null
 ) : IOException(message, cause)
 
-class ConversationAgentClient(
+open class ConversationAgentClient(
     context: Context? = null,
     private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
@@ -33,7 +33,7 @@ class ConversationAgentClient(
         .callTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    suspend fun process(userText: String, memorySnapshot: String, appContextSummary: String): String =
+    open suspend fun process(userText: String, memorySnapshot: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
             val userPrompt = """
 Memory snapshot:
@@ -46,10 +46,10 @@ User text:
 $userText
 """.trimIndent()
 
-            executeConversationRequest(userPrompt)
+            executeConversationRequest(userPrompt, RequestKind.ROUTING)
         }
 
-    suspend fun processRepair(userText: String, appContextSummary: String): String =
+    open suspend fun processRepair(userText: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
             val repairPrompt = """
 App context:
@@ -61,23 +61,38 @@ $userText
 Return the routing decision using only the required ConversationDecision schema. Do not output task-agent fields. Do not explain your reasoning.
 """.trimIndent()
 
-            executeConversationRequest(repairPrompt)
+            executeConversationRequest(repairPrompt, RequestKind.ROUTING)
         }
 
-    private fun executeConversationRequest(userPrompt: String): String {
+    open suspend fun respondToObservation(observationJson: String, memorySnapshot: String, appContextSummary: String): String =
+        withContext(Dispatchers.IO) {
+            val userPrompt = """
+Memory snapshot:
+$memorySnapshot
+
+App context:
+$appContextSummary
+
+Authoritative ExecutionObservation JSON:
+$observationJson
+""".trimIndent()
+            executeConversationRequest(userPrompt, RequestKind.RESPONSE)
+        }
+
+    private fun executeConversationRequest(userPrompt: String, kind: RequestKind): String {
         val payload = JSONObject().apply {
             put("model", modelId)
-            put("temperature", 0.0)
-            put("max_tokens", 256)
+            put("temperature", if (kind == RequestKind.ROUTING) ROUTING_TEMPERATURE else RESPONSE_TEMPERATURE)
+            put("max_tokens", if (kind == RequestKind.ROUTING) 256 else RESPONSE_MAX_TOKENS)
             put("stream", false)
             put(
                 "response_format",
-                AgentResponseSchemas.conversationDecisionResponseFormat()
+                if (kind == RequestKind.ROUTING) AgentResponseSchemas.conversationDecisionResponseFormat() else AgentResponseSchemas.conversationResponseResponseFormat()
             )
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", SYSTEM_PROMPT)
+                    put("content", if (kind == RequestKind.ROUTING) SYSTEM_PROMPT else RESPONSE_SYSTEM_PROMPT)
                 })
                 put(JSONObject().apply {
                     put("role", "user")
@@ -88,7 +103,7 @@ Return the routing decision using only the required ConversationDecision schema.
 
         Log.d(
             "CONVO_AGENT_SCHEMA",
-            "Structured ConversationDecision schema enabled"
+            if (kind == RequestKind.ROUTING) "Structured ConversationDecision schema enabled" else "Structured ConversationResponse schema enabled"
         )
 
         val requestEndpointUrl = getEndpointUrl()
@@ -185,7 +200,34 @@ Return the routing decision using only the required ConversationDecision schema.
         return endpointUrl
     }
 
+    private enum class RequestKind { ROUTING, RESPONSE }
+
     companion object {
+        const val ROUTING_TEMPERATURE = 0.0
+        const val RESPONSE_TEMPERATURE = 0.35
+        const val RESPONSE_MAX_TOKENS = 128
+        val RESPONSE_SYSTEM_PROMPT = """
+You are the response-writing part of the Conversation Agent.
+Android has already interpreted and executed the task operation.
+The ExecutionObservation is trusted and authoritative.
+Do not reinterpret the user's command.
+Do not add facts that are absent from the observation.
+Do not change titles, dates, times, counts, options or outcomes.
+Do not claim success unless outcome is SUCCESS or PARTIAL_SUCCESS.
+For NOT_FOUND, say that the requested task could not be found.
+For AMBIGUOUS, mention only the supplied choices.
+For NEEDS_CONFIRMATION, ask one clear confirmation question.
+For NEEDS_CLARIFICATION, clearly tell the user what value is required.
+When requiredInput is present, tell the user what they may say next.
+Keep speech concise and suitable for TTS.
+Prefer one or two short sentences.
+Avoid long introductions.
+Avoid visual phrases such as “as shown on screen”.
+Do not mention JSON, schemas, agents, Android internals or databases.
+Do not output markdown.
+Return only the required ConversationResponse JSON.
+""".trimIndent()
+
         private val SYSTEM_PROMPT = """
 You are the Conversation Orchestrator Agent in a centralized multi-agent task scheduling app for visually impaired users.
 

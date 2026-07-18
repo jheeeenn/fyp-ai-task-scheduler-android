@@ -24,6 +24,22 @@ object AgentResponseSchemas {
         )
     }
 
+    fun conversationResponseResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "conversation_response",
+            properties = JSONObject().apply {
+                put("speech", stringType())
+                put("hint", stringType())
+                put("response_type", stringEnum("ACKNOWLEDGEMENT", "INFORMATION", "REQUEST_CONFIRMATION", "REQUEST_CLARIFICATION", "SUCCESS", "PARTIAL_SUCCESS", "ERROR", "SESSION_END"))
+            },
+            required = JSONArray().apply {
+                put("speech")
+                put("hint")
+                put("response_type")
+            }
+        )
+    }
+
     fun taskAgentResponseFormat(): JSONObject {
         return responseFormat(
             name = "task_agent_response",
