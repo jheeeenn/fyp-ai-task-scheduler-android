@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 class ConversationOrchestratorObservationTest {
     private class FakeClient(private val result: Result<String>) : ConversationAgentClient(null) {
@@ -44,6 +45,32 @@ class ConversationOrchestratorObservationTest {
         val blank = FakeClient(Result.success(""))
         assertEquals("deterministic_fallback", ConversationOrchestrator(blank, ConversationDecisionParser()).respondToObservation(observation, "ctx").source)
     }
+    @Test fun incompatibleResponseTypesReturnFallback() = kotlinx.coroutines.runBlocking {
+        val notFound = observation.copy(outcome = ExecutionOutcome.NOT_FOUND, fallbackSpeech = "Not found.")
+        val notFoundResponse = ConversationOrchestrator(
+            FakeClient(Result.success("{\"speech\":\"Deleted.\",\"hint\":\"\",\"response_type\":\"SUCCESS\"}")),
+            ConversationDecisionParser()
+        ).respondToObservation(notFound, "ctx")
+        assertEquals("deterministic_fallback", notFoundResponse.source)
+        assertEquals(ConversationResponseType.ERROR, notFoundResponse.responseType)
+
+        val confirmationResponse = ConversationOrchestrator(
+            FakeClient(Result.success("{\"speech\":\"Done.\",\"hint\":\"\",\"response_type\":\"SUCCESS\"}")),
+            ConversationDecisionParser()
+        ).respondToObservation(observation, "ctx")
+        assertEquals("deterministic_fallback", confirmationResponse.source)
+        assertEquals(ConversationResponseType.REQUEST_CONFIRMATION, confirmationResponse.responseType)
+    }
+
+    @Test fun coroutineCancellationIsRethrown() {
+        val client = FakeClient(Result.failure(CancellationException("cancelled")))
+        assertThrows(CancellationException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                ConversationOrchestrator(client, ConversationDecisionParser()).respondToObservation(observation, "ctx")
+            }
+        }
+    }
+
     @Test fun authorityStateStaysAndroidOwned() {
         assertTrue(observation.listenAgain)
         assertEquals(RequiredInput.CONFIRMATION, observation.requiredInput)

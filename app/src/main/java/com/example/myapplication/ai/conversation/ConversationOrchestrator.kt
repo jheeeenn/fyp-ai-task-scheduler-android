@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 
 class ConversationOrchestratorException(
     message: String,
@@ -25,8 +26,18 @@ class ConversationOrchestrator(
                 appContextSummary = appContextSummary
             )
             val response = responseParser.parse(rawContent)
+            val expectedType = observation.outcome.toConversationResponseType()
+            if (response.responseType != expectedType) {
+                Log.e(
+                    "CONVO_OBSERVATION",
+                    "response type ${response.responseType} incompatible with authoritative outcome ${observation.outcome}; expected $expectedType"
+                )
+                throw ConversationSchemaException("ConversationResponse response_type does not match ExecutionObservation outcome")
+            }
             memory.recordFinalSpokenResponse(response.speech)
             response
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("CONVO_OBSERVATION", "response verbalization failed; using deterministic fallback", e)
             val fallback = ConversationResponse(

@@ -16,4 +16,8 @@ class ConversationResponseParserTest {
     @Test fun rejectsMissingFields() { assertThrows(ConversationSchemaException::class.java) { parser.parse("{\"speech\":\"Hi\",\"response_type\":\"SUCCESS\"}") } }
     @Test fun rejectsAdditionalFields() { assertThrows(ConversationSchemaException::class.java) { parser.parse("{\"speech\":\"Hi\",\"hint\":\"\",\"response_type\":\"SUCCESS\",\"listen_again\":false}") } }
     @Test fun rejectsInvalidResponseType() { assertThrows(ConversationSchemaException::class.java) { parser.parse("{\"speech\":\"Hi\",\"hint\":\"\",\"response_type\":\"MADE_UP\"}") } }
+    @Test fun wrapsMalformedJsonAndWrongTypes() {
+        assertThrows(ConversationSchemaException::class.java) { parser.parse("{not json}") }
+        assertThrows(ConversationSchemaException::class.java) { parser.parse("{\"speech\":5,\"hint\":\"\",\"response_type\":\"SUCCESS\"}") }
+    }
 }

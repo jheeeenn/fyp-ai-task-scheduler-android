@@ -208,7 +208,7 @@ $observationJson
         const val RESPONSE_MAX_TOKENS = 128
         val RESPONSE_SYSTEM_PROMPT = """
 You are the response-writing part of the Conversation Agent.
-Android has already interpreted and executed the task operation.
+Android has already interpreted the current operation state and may already have executed it. The ExecutionObservation states the exact authoritative outcome.
 The ExecutionObservation is trusted and authoritative.
 Do not reinterpret the user's command.
 Do not add facts that are absent from the observation.

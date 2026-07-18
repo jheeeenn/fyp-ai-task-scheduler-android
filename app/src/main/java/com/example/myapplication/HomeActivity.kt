@@ -54,6 +54,8 @@ import com.example.myapplication.ai.conversation.ExecutionOperation
 import com.example.myapplication.ai.conversation.ExecutionOutcome
 import com.example.myapplication.ai.conversation.ObservedTask
 import com.example.myapplication.ai.conversation.RequiredInput
+import com.example.myapplication.ai.conversation.TaskObservationMapper
+import com.example.myapplication.ai.conversation.TemporalObservationInputs
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -611,9 +613,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         Log.d("HOME_ACTION", "QUERY_TASK -> handleQueryTask")
 
                         if (aiResult.needsClarification) {
-                            assistantSession.speak(
-                                "I could not understand that date or time range. Please try something like tomorrow morning, next week, or from Monday to Friday.",
-                                listenAgain = true
+                            speakObservation(
+                                unresolvedTemporalObservation(
+                                    ExecutionOperation.QUERY_TASK,
+                                    aiResult.targetDateText ?: aiResult.dateText,
+                                    aiResult.targetTimeText ?: aiResult.timeText,
+                                    "I could not understand that date or time range. Please try something like tomorrow morning, next week, or from Monday to Friday."
+                                )
                             )
                             return@launch
                         }
@@ -635,7 +641,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
+                                speakObservation(unresolvedTemporalObservation(ExecutionOperation.DELETE_TASK, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -676,7 +682,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
+                                speakObservation(unresolvedTemporalObservation(ExecutionOperation.UPDATE_TASK, aiResult.targetDateText, aiResult.targetTimeText, "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -732,7 +738,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText, aiResult.targetTimeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
+                                speakObservation(unresolvedTemporalObservation(ExecutionOperation.RESCHEDULE_TASK, aiResult.targetDateText, aiResult.targetTimeText, "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -787,7 +793,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getActiveTasks() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.ACTIVE_ONLY)
                             if (tasks == null) {
-                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
+                                speakObservation(unresolvedTemporalObservation(ExecutionOperation.MARK_DONE, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -822,7 +828,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                     refreshOverview()
 
-                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask)), listenAgain = false, fallbackSpeech = responseManager.markDoneSuccess(matchedTask.title)))
+                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask.copy(isDone = true))), listenAgain = false, fallbackSpeech = responseManager.markDoneSuccess(matchedTask.title)))
                                 }
 
                                 else -> {
@@ -841,7 +847,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             val rawTasks = withContext(Dispatchers.IO) { dao.getAll() }
                             val tasks = filterMatchCandidates(rawTasks, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, TaskCompletionFilter.COMPLETED_ONLY)
                             if (tasks == null) {
-                                speakObservation(ExecutionObservation(ExecutionOperation.SYSTEM, ExecutionOutcome.NEEDS_CLARIFICATION, requiredInput = RequiredInput.EXACT_DATE, allowedUserMoves = listOf(AllowedUserMove.PROVIDE_DATE, AllowedUserMove.PROVIDE_TIME, AllowedUserMove.CANCEL), listenAgain = true, fallbackSpeech = "I could not understand that date or time. Please say it another way."))
+                                speakObservation(unresolvedTemporalObservation(ExecutionOperation.MARK_UNDONE, aiResult.targetDateText ?: aiResult.dateText, aiResult.targetTimeText ?: aiResult.timeText, "I could not understand that date or time. Please say it another way."))
                                 return@launch
                             }
 
@@ -877,7 +883,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                                     refreshOverview()
 
-                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask)), listenAgain = false, fallbackSpeech = responseManager.markUndoneSuccess(matchedTask.title)))
+                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask.copy(isDone = false))), listenAgain = false, fallbackSpeech = responseManager.markUndoneSuccess(matchedTask.title)))
                                 }
 
                                 else -> {
@@ -898,8 +904,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             .take(4)
 
                         if (plan.size < 2) {
-                            assistantSession.speakThenListenAgain(
-                                "I could not create a clear breakdown yet. Please describe the large task again."
+                            speakObservation(
+                                ExecutionObservation(
+                                    operation = ExecutionOperation.BREAKDOWN_TASK,
+                                    outcome = ExecutionOutcome.FAILURE,
+                                    requiredInput = RequiredInput.RETRY,
+                                    allowedUserMoves = listOf(AllowedUserMove.RETRY, AllowedUserMove.CANCEL, AllowedUserMove.REQUEST_HELP),
+                                    listenAgain = true,
+                                    fallbackSpeech = "I could not create a clear breakdown yet. Please describe the large task again."
+                                )
                             )
                         } else {
                             startBreakdownConfirmation(
@@ -931,6 +944,31 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
     }
 
+
+
+    private fun unresolvedTemporalObservation(
+        operation: ExecutionOperation,
+        dateText: String?,
+        timeText: String?,
+        fallbackSpeech: String
+    ): ExecutionObservation {
+        val datePhraseUnresolved = !dateText.isNullOrBlank() &&
+                temporalQueryResolver.resolve(dateText, null, dateText).status == TemporalResolutionStatus.UNRESOLVED
+        val timePhraseUnresolved = !timeText.isNullOrBlank() &&
+                temporalQueryResolver.resolve(null, timeText, timeText).status == TemporalResolutionStatus.UNRESOLVED
+        val input = TemporalObservationInputs.fromUnresolvedComponents(
+            datePhraseUnresolved = datePhraseUnresolved,
+            timePhraseUnresolved = timePhraseUnresolved
+        )
+        return ExecutionObservation(
+            operation = operation,
+            outcome = ExecutionOutcome.NEEDS_CLARIFICATION,
+            requiredInput = input.requiredInput,
+            allowedUserMoves = input.allowedUserMoves,
+            listenAgain = true,
+            fallbackSpeech = fallbackSpeech
+        )
+    }
 
     private suspend fun verbalizeObservation(observation: ExecutionObservation): ConversationResponse {
         val startedAt = System.currentTimeMillis()
@@ -977,11 +1015,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         deliverObservationResponse(observation, verbalizeObservation(observation), action)
     }
 
-    private fun observedTask(task: TaskEntity): ObservedTask = ObservedTask(
-        title = task.title,
-        dueDate = task.dueDate,
-        dueTime = task.dueTime,
-        isDone = task.isDone
+    private fun observedTask(task: TaskEntity): ObservedTask = TaskObservationMapper.observedTask(
+        task = task,
+        subtasks = currentSubtasksByParentId[task.id].orEmpty()
     )
 
     private fun todayDateString(): String {
@@ -1025,9 +1061,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             )
 
             if (queryWindow.status == TemporalResolutionStatus.UNRESOLVED) {
-                assistantSession.speak(
-                    "I could not understand that date or time range. Please try something like tomorrow morning, next week, or from Monday to Friday.",
-                    listenAgain = true
+                speakObservation(
+                    unresolvedTemporalObservation(
+                        ExecutionOperation.QUERY_TASK,
+                        agentDateText,
+                        agentTimeText,
+                        "I could not understand that date or time range. Please try something like tomorrow morning, next week, or from Monday to Friday."
+                    )
                 )
                 return@launch
             }
@@ -1453,14 +1493,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
 
-            assistantSession.getBottomSheet()?.showAssistantReply(reply)
-
-            assistantSession.getBottomSheet()?.showAssistantHint(
-                responseManager.hintCreateOrRead()
-            )
-
-            assistantSession.getBottomSheet()?.setIdleState()
-
+            val hint = responseManager.hintCreateOrRead()
             val spokenReply = responseManager.combineReplyWithFollowUp(
                 reply,
                 responseManager.followUpAnythingElse()
@@ -1471,9 +1504,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     operation = ExecutionOperation.QUERY_TASK,
                     outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
                     taskCount = filteredTasks.size,
-                    dateText = queryWindow.spokenLabel,
+                    dateText = lastQueryWindow.spokenLabel,
                     facts = listOf(spokenReply),
-                    tasks = filteredTasks.take(responseManager.getMaxTasksForMode(if (replyMode == QueryReplyMode.DETAILED) QueryDetailMode.DETAILED else QueryDetailMode.NORMAL)).map { observedTask(it) },
+                    tasks = filteredTasks
+                        .take(responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED))
+                        .map { observedTask(it) },
                     listenAgain = true,
                     fallbackSpeech = spokenReply,
                     fallbackHint = hint
@@ -2085,7 +2120,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             when (action) {
                 PendingTaskAction.EDIT -> {
-                    assistantSession.speakThenRun(responseManager.openEditTask()) {
+                    val reply = responseManager.openEditTask()
+                    speakObservationThenRun(ExecutionObservation(ExecutionOperation.UPDATE_TASK, ExecutionOutcome.INFORMATION, taskTitle = chosenTask.title, tasks = listOf(observedTask(chosenTask)), listenAgain = false, fallbackSpeech = reply)) {
                         val openEditIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                             putExtra("task_id", chosenTask.id)
                             putExtra("task_title", chosenTask.title)
@@ -2101,7 +2137,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
 
                 PendingTaskAction.RESCHEDULE -> {
-                    assistantSession.speakThenRun(responseManager.openReschedule()) {
+                    val reply = responseManager.openReschedule()
+                    speakObservationThenRun(ExecutionObservation(ExecutionOperation.RESCHEDULE_TASK, ExecutionOutcome.INFORMATION, taskTitle = chosenTask.title, tasks = listOf(observedTask(chosenTask)), dateText = proposedDate.orEmpty(), timeText = proposedTime.orEmpty(), listenAgain = false, fallbackSpeech = reply)) {
                         val openRescheduleIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                             putExtra("task_id", chosenTask.id)
                             putExtra("task_title", chosenTask.title)
@@ -2134,7 +2171,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
 
                     refreshOverview()
-                    assistantSession.speak(responseManager.markDoneSuccess(chosenTask.title), listenAgain = false)
+                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.SUCCESS, taskTitle = chosenTask.title, tasks = listOf(observedTask(chosenTask.copy(isDone = true))), listenAgain = false, fallbackSpeech = responseManager.markDoneSuccess(chosenTask.title)))
                 }
 
                 PendingTaskAction.MARK_UNDONE -> {
@@ -2154,7 +2191,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
 
                     refreshOverview()
-                    assistantSession.speak(responseManager.markUndoneSuccess(chosenTask.title), listenAgain = false)
+                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.SUCCESS, taskTitle = chosenTask.title, tasks = listOf(observedTask(chosenTask.copy(isDone = false))), listenAgain = false, fallbackSpeech = responseManager.markUndoneSuccess(chosenTask.title)))
                 }
 
                 PendingTaskAction.NONE -> {
@@ -2262,13 +2299,21 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         clearPendingDeleteState()
                         homeFollowUpContext = HomeFollowUpContext.NONE
 
-                        assistantSession.speakThenStop(
-                            if (title != null) {
-                                "Okay, I will not delete $title."
-                            } else {
-                                "Okay, I will not delete it."
-                            }
-                        )
+                        lifecycleScope.launch {
+                            speakObservation(
+                                ExecutionObservation(
+                                    operation = ExecutionOperation.DELETE_TASK,
+                                    outcome = ExecutionOutcome.CANCELLED,
+                                    taskTitle = title.orEmpty(),
+                                    listenAgain = false,
+                                    fallbackSpeech = if (title != null) {
+                                        "Okay, I will not delete $title."
+                                    } else {
+                                        "Okay, I will not delete it."
+                                    }
+                                )
+                            )
+                        }
                         true
                     }
 
