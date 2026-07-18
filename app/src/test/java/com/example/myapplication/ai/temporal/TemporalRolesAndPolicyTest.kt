@@ -112,6 +112,29 @@ class TemporalRolesAndPolicyTest {
         assertFalse(TemporalActionPolicy.validateClarification(morning, null, onePm))
     }
 
+
+    @Test fun pendingClarificationCollectsDateThenTimeSequentially() {
+        val original = resolver.resolve("next week", "morning", "", base())
+        val pending = PendingTemporalClarification(original, needsExactDate = true, needsExactTime = true)
+        val withDate = pending.copy(exactDate = "20/07/2026")
+        assertFalse(withDate.isComplete)
+        val complete = withDate.copy(exactMinute = 11 * 60)
+        assertTrue(complete.isComplete)
+    }
+
+    @Test fun explicitReplacementCanUseNewConstraint() {
+        val original = resolver.resolve("tomorrow", "9 AM", "", base())
+        val replacement = resolver.resolve("friday", null, "friday", base())
+        assertTrue(original.isExactDate)
+        assertTrue(replacement.isExactDate)
+        assertNotEquals(original.startDateInclusive, replacement.startDateInclusive)
+    }
+
+    @Test fun pastExactScheduleIsRejectedByPolicyBeforePersistence() {
+        val past = resolver.resolve("today", "9 AM", "", base())
+        assertTrue(TemporalActionPolicy.evaluate(past, TemporalUseCase.CREATE, base()) is TemporalPolicyResult.InvalidPastSchedule)
+    }
+
     @Test fun mutationPromptForbidsSuccessClaims() {
         val prompt = LaptopAgentClient.SYSTEM_PROMPT
         assertTrue(prompt.contains("Never claim that an action succeeded"))

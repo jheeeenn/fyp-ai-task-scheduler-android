@@ -41,6 +41,7 @@ import com.example.myapplication.ai.agent.AgentOrchestrator
 import com.example.myapplication.ai.agent.LaptopAgentClient
 import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
+import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
@@ -66,6 +67,10 @@ import com.example.myapplication.ai.temporal.TemporalQueryLabelFormatter
 import com.example.myapplication.ai.temporal.TemporalQueryResolver
 import com.example.myapplication.ai.temporal.TemporalQueryWindow
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
+import com.example.myapplication.ai.temporal.PendingTemporalClarification
+import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.TemporalPolicyResult
+import com.example.myapplication.ai.temporal.TemporalUseCase
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
@@ -111,6 +116,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var pendingBreakdownOriginalRequest: String? = null
     private var pendingBreakdownDateText: String? = null
     private var pendingBreakdownTimeText: String? = null
+    private var pendingBreakdownTemporalClarification: PendingTemporalClarification? = null
     private var currentSubtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
 
     private val audioPermissionLauncher =
@@ -556,7 +562,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val aiResult = agentOrchestrator.process(taskAgentInput)
 
                 Log.d(
-                    "AI_ROUTER",
+                    "TASK_PIPELINE",
                     "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
                             " time=${aiResult.timeText}, targetDate=${aiResult.targetDateText}, targetTime=${aiResult.targetTimeText}," +
                             " newDate=${aiResult.newDateText}, newTime=${aiResult.newTimeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
@@ -669,7 +675,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     askTaskMatchClarification(
                                         action = PendingTaskAction.EDIT,
                                         bestTask = matchResult.bestTask,
-                                        secondTask = matchResult.secondTask
+                                        secondTask = matchResult.secondTask,
+                                        proposedTitle = aiResult.taskTitle,
+                                        proposedDateText = aiResult.newDateText ?: aiResult.dateText,
+                                        proposedTimeText = aiResult.newTimeText ?: aiResult.timeText
                                     )
                                 }
 
@@ -722,8 +731,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                         action = PendingTaskAction.RESCHEDULE,
                                         bestTask = matchResult.bestTask,
                                         secondTask = matchResult.secondTask,
-                                        rescheduleDateText = aiResult.newDateText ?: aiResult.dateText,
-                                        rescheduleTimeText = aiResult.newTimeText ?: aiResult.timeText
+                                        proposedDateText = aiResult.newDateText ?: aiResult.dateText,
+                                        proposedTimeText = aiResult.newTimeText ?: aiResult.timeText
                                     )
                                 }
 
@@ -905,8 +914,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         assistantSession.speak(reply, listenAgain = false)
                     }
                 }
+            } catch (e: TaskAgentProcessingException) {
+                Log.e("TASK_PIPELINE", "Task agent failed closed", e)
+                assistantSession.speak("I could not process that task command safely. Please try again.", listenAgain = true)
             } catch (e: Exception) {
-                Log.e("AI_ROUTER", "Crash in handleVoiceCommand", e)
+                Log.e("TASK_PIPELINE", "Crash in handleVoiceCommand", e)
                 val reply = responseManager.parserCrash()
                 assistantSession.speak(reply, listenAgain = false)
             }
@@ -1536,6 +1548,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         pendingBreakdownOriginalRequest = null
         pendingBreakdownDateText = null
         pendingBreakdownTimeText = null
+        pendingBreakdownTemporalClarification = null
     }
 
     private fun handleBreakdownFollowUp(normalized: String): Boolean {
@@ -1576,23 +1589,40 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun proceedAfterBreakdownApproval() {
-        val parsedSchedule = ScheduleTextParser.parse(pendingBreakdownDateText, pendingBreakdownTimeText)
-        pendingBreakdownDateText = parsedSchedule.dueDate ?: pendingBreakdownDateText
-        pendingBreakdownTimeText = parsedSchedule.dueTime ?: pendingBreakdownTimeText
-
-        if (parsedSchedule.isComplete) {
-            createPendingBreakdown(parsedSchedule.dueDate!!, parsedSchedule.dueTime!!)
-            return
+        val resolution = temporalQueryResolver.resolve(pendingBreakdownDateText, pendingBreakdownTimeText, "")
+        val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.BREAKDOWN)
+        when (policy) {
+            is TemporalPolicyResult.Ready -> createPendingBreakdown(resolution.startDateInclusive!!, ScheduleTextParser.formatTime(resolution.startMinuteInclusive!! / 60, resolution.startMinuteInclusive!! % 60))
+            is TemporalPolicyResult.InvalidPastSchedule -> assistantSession.speakThenListenAgain(responseManager.pastDateTime())
+            is TemporalPolicyResult.Unresolved -> assistantSession.speakThenListenAgain("I could not understand that schedule. Please say an exact date and time.")
+            else -> {
+                val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
+                val needsTime = policy is TemporalPolicyResult.NeedsExactTime || policy is TemporalPolicyResult.NeedsExactDateAndTime
+                pendingBreakdownTemporalClarification = PendingTemporalClarification(resolution, needsExactDate = needsDate, needsExactTime = needsTime)
+                homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+                promptNextBreakdownTemporalClarification()
+            }
         }
+    }
 
-        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+    private fun promptNextBreakdownTemporalClarification() {
+        val pending = pendingBreakdownTemporalClarification ?: return
         val prompt = when {
-            !parsedSchedule.hasDate && !parsedSchedule.hasTime -> "When should I schedule this task?"
-            !parsedSchedule.hasDate -> "What date should I schedule this task for?"
-            else -> "What time should I schedule this task for?"
+            pending.needsExactDate && pending.exactDate == null -> "Which exact date ${pending.original.originalDatePhrase.ifBlank { pending.original.spokenLabel }}?"
+            pending.needsExactTime && pending.exactMinute == null -> "What exact time ${pending.original.originalTimePhrase.ifBlank { pending.original.spokenLabel }}?"
+            else -> null
         }
-        assistantSession.getBottomSheet()?.showAssistantHint(prompt)
-        assistantSession.speakThenListenAgain(prompt)
+        if (prompt != null) {
+            assistantSession.getBottomSheet()?.showAssistantHint(prompt)
+            assistantSession.speakThenListenAgain(prompt)
+        } else {
+            val date = pending.exactDate ?: pending.original.startDateInclusive
+            val minute = pending.exactMinute ?: pending.original.startMinuteInclusive
+            if (date != null && minute != null) {
+                pendingBreakdownTemporalClarification = null
+                createPendingBreakdown(date, ScheduleTextParser.formatTime(minute / 60, minute % 60))
+            }
+        }
     }
 
     private fun handleBreakdownScheduleFollowUp(normalized: String): Boolean {
@@ -1606,24 +1636,35 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return true
         }
 
-        val parsedSchedule = ScheduleTextParser.merge(
-            existingDateText = pendingBreakdownDateText,
-            existingTimeText = pendingBreakdownTimeText,
-            newText = normalized
-        )
-        pendingBreakdownDateText = parsedSchedule.dueDate ?: pendingBreakdownDateText
-        pendingBreakdownTimeText = parsedSchedule.dueTime ?: pendingBreakdownTimeText
-
-        if (parsedSchedule.isComplete) {
-            createPendingBreakdown(parsedSchedule.dueDate!!, parsedSchedule.dueTime!!)
-        } else {
-            val prompt = when {
-                !parsedSchedule.hasDate && !parsedSchedule.hasTime -> "When should I schedule this task?"
-                !parsedSchedule.hasDate -> "What date should I schedule this task for?"
-                else -> "What time should I schedule this task for?"
+        val pending = pendingBreakdownTemporalClarification
+        if (pending != null) {
+            if (pending.needsExactDate && pending.exactDate == null) {
+                val r = temporalQueryResolver.resolve(normalized, null, normalized)
+                if (!r.isExactDate || r.startDateInclusive == null || !TemporalActionPolicy.validateClarification(pending.original, r.startDateInclusive, null)) {
+                    assistantSession.speakThenListenAgain("That date is outside the requested range. Please choose a valid date.")
+                    return true
+                }
+                pendingBreakdownTemporalClarification = pending.copy(exactDate = r.startDateInclusive)
+                promptNextBreakdownTemporalClarification()
+                return true
             }
-            assistantSession.speakThenListenAgain(prompt)
+            if (pending.needsExactTime && pending.exactMinute == null) {
+                val r = temporalQueryResolver.resolve(null, normalized, normalized)
+                val minute = r.startMinuteInclusive
+                if (!r.isExactTime || minute == null || !TemporalActionPolicy.validateClarification(pending.original, null, minute)) {
+                    assistantSession.speakThenListenAgain("That time is outside the requested range. Please choose a valid time.")
+                    return true
+                }
+                pendingBreakdownTemporalClarification = pending.copy(exactMinute = minute)
+                promptNextBreakdownTemporalClarification()
+                return true
+            }
         }
+
+        val incoming = temporalQueryResolver.resolve(null, null, normalized)
+        pendingBreakdownDateText = incoming.takeIf { it.isExactDate }?.startDateInclusive ?: pendingBreakdownDateText
+        pendingBreakdownTimeText = incoming.takeIf { it.isExactTime }?.startMinuteInclusive?.let { ScheduleTextParser.formatTime(it / 60, it % 60) } ?: pendingBreakdownTimeText
+        proceedAfterBreakdownApproval()
         return true
     }
 
@@ -1780,16 +1821,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         action: PendingTaskAction,
         bestTask: com.example.myapplication.data.TaskEntity,
         secondTask: com.example.myapplication.data.TaskEntity,
-        rescheduleDateText: String? = null,
-        rescheduleTimeText: String? = null
+        proposedTitle: String? = null,
+        proposedDateText: String? = null,
+        proposedTimeText: String? = null
     ) {
 
         taskResolutionState = TaskResolutionState(
             action = action,
             candidate1Id = bestTask.id,
             candidate2Id = secondTask.id,
-            rescheduleDateText = rescheduleDateText,
-            rescheduleTimeText = rescheduleTimeText
+            proposedTitle = proposedTitle,
+            proposedDateText = proposedDateText,
+            proposedTimeText = proposedTimeText
         )
         ambiguityRetryCount = 0
         homeFollowUpContext = HomeFollowUpContext.TASK_MATCH_AMBIGUITY
@@ -1832,8 +1875,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
 
             val action = taskResolutionState.action
-            val rescheduleDate = taskResolutionState.rescheduleDateText
-            val rescheduleTime = taskResolutionState.rescheduleTimeText
+            val proposedTitle = taskResolutionState.proposedTitle
+            val proposedDate = taskResolutionState.proposedDateText
+            val proposedTime = taskResolutionState.proposedTimeText
 
             clearPendingTaskMatchState()
             homeFollowUpContext = HomeFollowUpContext.NONE
@@ -1847,6 +1891,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             putExtra("task_date", chosenTask.dueDate)
                             putExtra("task_time", chosenTask.dueTime)
                             putExtra("opened_by_assistant", true)
+                            putExtra("prefill_title", proposedTitle)
+                            putExtra("prefill_new_date_text", proposedDate)
+                            putExtra("prefill_new_time_text", proposedTime)
                         }
                         startActivity(openEditIntent)
                     }
@@ -1861,8 +1908,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             putExtra("task_time", chosenTask.dueTime)
                             putExtra("opened_by_assistant", true)
                             putExtra("assistant_mode", "reschedule")
-                            putExtra("prefill_new_date_text", rescheduleDate)
-                            putExtra("prefill_new_time_text", rescheduleTime)
+                            putExtra("prefill_new_date_text", proposedDate)
+                            putExtra("prefill_new_time_text", proposedTime)
                         }
                         startActivity(openRescheduleIntent)
                     }

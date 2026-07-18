@@ -41,6 +41,9 @@ import com.example.myapplication.ai.temporal.TemporalActionPolicy
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalResolution
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
+import com.example.myapplication.ai.temporal.PendingTemporalClarification
+import com.example.myapplication.ai.temporal.TemporalPolicyResult
+import com.example.myapplication.ai.temporal.TemporalUseCase
 
 class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
@@ -54,6 +57,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private var pendingSemanticTimePhrase: String? = null
     private val temporalResolver = TemporalExpressionResolver()
     private var pendingTemporalConstraint: TemporalResolution? = null
+    private var pendingTemporalClarification: PendingTemporalClarification? = null
 
     private var hasConsumedPrefill = false
 
@@ -156,6 +160,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         btnTalkAssistant.setOnClickListenerWithHaptic {
+            if (dialogState == CreateTaskDialogState.IDLE) {
+                dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
+                promptHelper.askTitle()
+            }
             assistantSession.startSession()
         }
 
@@ -201,16 +209,22 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun applyTemporalPrefill(dateText: String?, timeText: String?) {
         val resolution = temporalResolver.resolve(dateText, timeText, listOfNotNull(dateText, timeText).joinToString(" "))
-        if (resolution.status == TemporalResolutionStatus.UNRESOLVED) return
-        if (resolution.hasDateConstraint || resolution.hasTimeConstraint) pendingTemporalConstraint = resolution
+        val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.CREATE)
+        if (policy is TemporalPolicyResult.Unresolved || policy is TemporalPolicyResult.InvalidPastSchedule) return
+        val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
+        val needsTime = policy is TemporalPolicyResult.NeedsExactTime || policy is TemporalPolicyResult.NeedsExactDateAndTime
+        if (needsDate || needsTime) {
+            pendingTemporalConstraint = resolution
+            pendingTemporalClarification = PendingTemporalClarification(resolution, needsExactDate = needsDate, needsExactTime = needsTime)
+        }
         if (resolution.isExactDate && resolution.startDateInclusive != null) {
-            applySpokenDate(resolution.startDateInclusive)
+            applySpokenDate(resolution.startDateInclusive, replacingConstraint = true)
             pendingTaskState.dateText = dateText ?: resolution.startDateInclusive
         } else if (!dateText.isNullOrBlank()) {
             pendingTaskState.dateText = dateText
         }
         if (resolution.isExactTime && resolution.startMinuteInclusive != null) {
-            applySpokenTime(timeText ?: resolution.spokenLabel)
+            applySpokenTime(timeText ?: resolution.spokenLabel, replacingConstraint = true)
             pendingTaskState.timeText = timeText
             pendingSemanticTimePhrase = null
         } else if (!timeText.isNullOrBlank()) {
@@ -241,11 +255,11 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             "raw='$rawCommand' normalized='$normalized' dialogState=$dialogState title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}' selectedDate='$selectedDate' selectedTime='$selectedTime'"
         )
 
-        if (handleFollowUpInput(normalized)) {
-            return
+        if (dialogState == CreateTaskDialogState.IDLE) {
+            dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
         }
 
-        if (tryApplyInlineCorrection(normalized)) {
+        if (handleFollowUpInput(normalized)) {
             return
         }
 
@@ -266,14 +280,13 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val datePickerDialog = DatePickerDialog(
             this,
             { _, pickedYear, pickedMonth, pickedDay ->
-                selectedYear = pickedYear
-                selectedMonth = pickedMonth
-                selectedDay = pickedDay
-                selectedDate = formatDate(pickedYear, pickedMonth, pickedDay)
-                tvSelectedDate.text = "Selected date: $selectedDate"
-
+                val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
                 assistantSession.pauseListeningForAssistantSpeech()
-                voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
+                if (acceptExactDate(pickedDate, replacingConstraint = false)) {
+                    voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
+                } else {
+                    voiceHelper.speak(invalidTemporalDateMessage())
+                }
                 //voiceHelper.speak("Date selected: $selectedDate")
             },
             year,
@@ -293,13 +306,13 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val timePickerDialog = TimePickerDialog(
             this,
             { _, pickedHour, pickedMinute ->
-                selectedHour24 = pickedHour
-                selectedMinute = pickedMinute
-                selectedTime = formatTime(pickedHour, pickedMinute)
-                tvSelectedTime.text = "Selected time: $selectedTime"
-
+                val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
                 assistantSession.pauseListeningForAssistantSpeech()
-                voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
+                if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
+                    voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
+                } else {
+                    voiceHelper.speak(invalidTemporalTimeMessage())
+                }
                     //voiceHelper.speak("Time selected: $selectedTime")
             },
             hour,
@@ -334,6 +347,12 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             //speakWithPanel("Please select both date and time before saving.")
             speakWithPanel(responseManager.missingDateTime())
             Toast.makeText(this, "Please select both date and time", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val finalResolution = temporalResolver.resolve(selectedDate, selectedTime, listOfNotNull(selectedDate, selectedTime).joinToString(" "))
+        if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.CREATE) is TemporalPolicyResult.InvalidPastSchedule) {
+            speakWithPanel(responseManager.pastDateTime())
             return
         }
 
@@ -469,29 +488,50 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         return true
     }
 
-    private fun applySpokenDate(dateText: String): Boolean {
+    private fun applySpokenDate(dateText: String, replacingConstraint: Boolean = false): Boolean {
         val resolution = temporalResolver.resolve(dateText, null, dateText)
         if (!resolution.isExactDate || resolution.startDateInclusive == null) return false
-        if (!TemporalActionPolicy.validateClarification(pendingTemporalConstraint ?: resolution, resolution.startDateInclusive, null)) return false
-        selectedDate = resolution.startDateInclusive
+        return acceptExactDate(resolution.startDateInclusive, replacingConstraint)
+    }
+
+    private fun acceptExactDate(date: String, replacingConstraint: Boolean): Boolean {
+        val constraint = if (replacingConstraint) null else pendingTemporalClarification?.original ?: pendingTemporalConstraint
+        if (constraint != null && !TemporalActionPolicy.validateClarification(constraint, date, null)) return false
+        selectedDate = date
         val parts = selectedDate!!.split("/")
         selectedDay = parts.getOrNull(0)?.toIntOrNull()
         selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
         selectedYear = parts.getOrNull(2)?.toIntOrNull()
         tvSelectedDate.text = "Selected date: $selectedDate"
+        pendingTemporalClarification = pendingTemporalClarification?.copy(exactDate = date)
+        advanceTemporalClarification()
         return true
     }
 
-    private fun applySpokenTime(timeText: String): Boolean {
+    private fun applySpokenTime(timeText: String, replacingConstraint: Boolean = false): Boolean {
         val resolution = temporalResolver.resolve(null, timeText, timeText)
         if (!resolution.isExactTime || resolution.startMinuteInclusive == null) return false
-        val minute = resolution.startMinuteInclusive
-        if (!TemporalActionPolicy.validateClarification(pendingTemporalConstraint ?: resolution, null, minute)) return false
+        return acceptExactMinute(resolution.startMinuteInclusive, replacingConstraint)
+    }
+
+    private fun acceptExactMinute(minute: Int, replacingConstraint: Boolean): Boolean {
+        val constraint = if (replacingConstraint) null else pendingTemporalClarification?.original ?: pendingTemporalConstraint
+        if (constraint != null && !TemporalActionPolicy.validateClarification(constraint, null, minute)) return false
         selectedHour24 = minute / 60
         selectedMinute = minute % 60
         selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
         tvSelectedTime.text = "Selected time: $selectedTime"
+        pendingTemporalClarification = pendingTemporalClarification?.copy(exactMinute = minute)
+        advanceTemporalClarification()
         return true
+    }
+
+    private fun advanceTemporalClarification() {
+        val pending = pendingTemporalClarification ?: return
+        if (pending.isComplete) {
+            pendingTemporalClarification = null
+            pendingTemporalConstraint = null
+        }
     }
 
     private fun handleFollowUpInput(normalized: String): Boolean {
@@ -726,7 +766,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         if (value.isBlank()) return false
 
         // 1. try date first
-        if (applySpokenDate(value)) {
+        if (applySpokenDate(value, replacingConstraint = true)) {
             pendingTaskState.dateText = value
             dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
             //speakAndContinueListening("Okay. I updated the date. I now have ${buildTaskSummary()}. Should I save it?")
@@ -735,7 +775,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         // 2. then try time
-        if (applySpokenTime(value)) {
+        if (applySpokenTime(value, replacingConstraint = true)) {
             pendingTaskState.timeText = value
             dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
             //speakAndContinueListening("Okay. I updated the time. I now have ${buildTaskSummary()}. Should I save it?")
@@ -893,6 +933,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedYear = null
         selectedDay = null
         pendingTemporalConstraint = null
+        pendingTemporalClarification = null
 
         dialogState = CreateTaskDialogState.IDLE
 
