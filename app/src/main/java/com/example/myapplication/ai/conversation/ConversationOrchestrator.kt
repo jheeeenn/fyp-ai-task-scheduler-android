@@ -14,6 +14,11 @@ class ConversationOrchestrator(
     private val responseParser: ConversationResponseParser = ConversationResponseParser(),
     private val memory: ConversationSessionMemory = ConversationSessionMemory()
 ) {
+    /**
+     * Retained for controlled future experiments with model-based observation verbalization.
+     * HomeActivity renders authoritative production task responses deterministically for factual
+     * completeness and accessibility.
+     */
     suspend fun respondToObservation(
         observation: ExecutionObservation,
         appContextSummary: String
@@ -49,6 +54,14 @@ class ConversationOrchestrator(
             memory.recordFinalSpokenResponse(fallback.speech)
             fallback
         }
+    }
+
+    fun recordDeterministicObservation(
+        observation: ExecutionObservation,
+        response: ConversationResponse
+    ) {
+        memory.recordObservation(observation)
+        memory.recordFinalSpokenResponse(response.speech)
     }
 
     suspend fun process(normalizedText: String, appContextSummary: String): ConversationDecision {

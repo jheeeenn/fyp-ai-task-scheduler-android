@@ -48,6 +48,7 @@ import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
 import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.ai.conversation.AllowedUserMove
+import com.example.myapplication.ai.conversation.AndroidObservationResponseRenderer
 import com.example.myapplication.ai.conversation.ConversationResponse
 import com.example.myapplication.ai.conversation.ExecutionObservation
 import com.example.myapplication.ai.conversation.ExecutionOperation
@@ -970,7 +971,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         )
     }
 
-    private suspend fun verbalizeObservation(observation: ExecutionObservation): ConversationResponse {
+    private fun renderObservationResponse(observation: ExecutionObservation): ConversationResponse {
         val startedAt = System.currentTimeMillis()
         Log.d(
             "CMAS_OBSERVATION",
@@ -978,11 +979,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     "requiredInput=${observation.requiredInput} taskCount=${observation.taskCount} " +
                     "listenAgain=${observation.listenAgain}"
         )
-        val response = conversationOrchestrator.respondToObservation(
-            observation = observation,
-            appContextSummary = buildConversationAppContextSummary()
-        )
+        val response = AndroidObservationResponseRenderer.render(observation)
         val latencyMs = System.currentTimeMillis() - startedAt
+        conversationOrchestrator.recordDeterministicObservation(observation, response)
         Log.d(
             "CMAS_RESPONSE",
             "responseType=${response.responseType} source=${response.source} " +
@@ -1008,11 +1007,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private suspend fun speakObservation(observation: ExecutionObservation) {
-        deliverObservationResponse(observation, verbalizeObservation(observation))
+        deliverObservationResponse(observation, renderObservationResponse(observation))
     }
 
     private suspend fun speakObservationThenRun(observation: ExecutionObservation, action: () -> Unit) {
-        deliverObservationResponse(observation, verbalizeObservation(observation), action)
+        deliverObservationResponse(observation, renderObservationResponse(observation), action)
     }
 
     private fun observedTask(task: TaskEntity): ObservedTask = TaskObservationMapper.observedTask(
@@ -1668,7 +1667,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         plan: List<String>
     ): String {
         // Task Agent natural_response is intentionally not used for final task speech;
-        // user-facing task responses now belong to the Conversation Agent observation-return loop.
+        // Android's deterministic observation renderer speaks this authoritative response.
         val intro = "I prepared a breakdown for $title."
 
         val planSpeech = plan.mapIndexed { index, item ->

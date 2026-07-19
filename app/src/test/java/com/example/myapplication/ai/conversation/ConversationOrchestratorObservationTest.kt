@@ -120,4 +120,37 @@ class ConversationOrchestratorObservationTest {
         assertEquals(listOf("purple moon"), observation.choices)
         assertNotEquals(ConversationResponseType.SUCCESS, observation.outcome.toConversationResponseType())
     }
+
+    @Test fun deterministicObservationRecordsObservationAndActualSpeechWithoutAgentRequest() {
+        val client = FakeClient(Result.failure(AssertionError("response agent must not be called")))
+        val memory = ConversationSessionMemory()
+        val orchestrator = ConversationOrchestrator(
+            client,
+            ConversationDecisionParser(),
+            memory = memory
+        )
+        val deterministicResponse = ConversationResponse(
+            speech = "Android completed the operation.",
+            hint = "",
+            responseType = ConversationResponseType.REQUEST_CONFIRMATION,
+            source = "android_deterministic"
+        )
+
+        orchestrator.recordDeterministicObservation(observation, deterministicResponse)
+
+        assertEquals(0, client.calls)
+        assertEquals(observation.operation, memory.latestExecutionOperation)
+        assertEquals(observation.outcome, memory.latestExecutionOutcome)
+        assertEquals(observation.requiredInput, memory.latestRequiredInput)
+        assertEquals(deterministicResponse.speech, memory.finalSpokenResponse)
+    }
+
+    @Test fun modelObservationVerbalizationRemainsSeparateForFutureExperiments() = kotlinx.coroutines.runBlocking {
+        val client = FakeClient(Result.success("{\"speech\":\"Should I delete purple moon?\",\"hint\":\"Say yes or no.\",\"response_type\":\"REQUEST_CONFIRMATION\"}"))
+
+        ConversationOrchestrator(client, ConversationDecisionParser())
+            .respondToObservation(observation, "ctx")
+
+        assertEquals(1, client.calls)
+    }
 }

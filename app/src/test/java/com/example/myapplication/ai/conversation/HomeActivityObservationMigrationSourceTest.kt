@@ -54,4 +54,42 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(body.contains("ExecutionOperation.DELETE_TASK"))
         assertTrue(body.contains("ExecutionOutcome.CANCELLED"))
     }
+
+    @Test fun operationalResponsesUseAndroidRendererWithoutResponseAgent() {
+        val body = source
+            .substringAfter("private fun renderObservationResponse")
+            .substringBefore("private fun deliverObservationResponse")
+
+        assertTrue(body.contains("AndroidObservationResponseRenderer.render(observation)"))
+        assertTrue(body.contains("conversationOrchestrator.recordDeterministicObservation(observation, response)"))
+        assertTrue(body.contains("source=${'$'}{response.source}"))
+        assertFalse(source.contains("conversationOrchestrator.respondToObservation("))
+    }
+
+    @Test fun observationDeliveryPreservesHintListenAgainAndNavigationCallback() {
+        val deliveryBody = source
+            .substringAfter("private fun deliverObservationResponse")
+            .substringBefore("private suspend fun speakObservation")
+        val speakBody = source
+            .substringAfter("private suspend fun speakObservation")
+            .substringBefore("private fun observedTask")
+
+        assertTrue(deliveryBody.contains("response.hint.ifBlank { observation.fallbackHint }"))
+        assertTrue(deliveryBody.contains("observation.listenAgain"))
+        assertTrue(deliveryBody.contains("assistantSession.speakThenRun(response.speech) { afterSpeech() }"))
+        assertTrue(speakBody.contains("deliverObservationResponse(observation, renderObservationResponse(observation))"))
+        assertTrue(speakBody.contains("deliverObservationResponse(observation, renderObservationResponse(observation), action)"))
+    }
+
+    @Test fun naturalConversationAndLocalFollowUpInfrastructureRemainPresent() {
+        val directReplyBody = source
+            .substringAfter("ConversationRoute.DIRECT_REPLY ->")
+            .substringBefore("ConversationRoute.ASK_CLARIFICATION ->")
+
+        assertTrue(directReplyBody.contains("conversationDecision.reply"))
+        assertTrue(source.contains("conversationIntentClassifier = LocalConversationIntentClassifier(this)"))
+        assertTrue(source.contains("private enum class HomeFollowUpContext"))
+        assertTrue(source.contains("private fun handleHomeFollowUp("))
+        assertTrue(source.contains("private fun handleConversationIntent("))
+    }
 }
