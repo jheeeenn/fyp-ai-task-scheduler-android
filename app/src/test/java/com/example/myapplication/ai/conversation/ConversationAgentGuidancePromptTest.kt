@@ -1,10 +1,18 @@
 package com.example.myapplication.ai.conversation
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationAgentGuidancePromptTest {
     private val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
+
+    @Test
+    fun acknowledgesHybridLocalInteractionBoundary() {
+        assertTrue(prompt.contains("bounded local interaction handlers did not already resolve"))
+        assertTrue(prompt.contains("open natural conversation, app guidance, routing and open-ended clarification"))
+        assertFalse(prompt.contains("Every user utterance is sent to you first"))
+    }
 
     @Test
     fun distinguishesGuidanceFromExecution() {
@@ -37,5 +45,6 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("Do not use TASK_COMMAND merely because"))
         assertTrue(prompt.contains("\"task\", \"schedule\", \"class\", or a date"))
         assertTrue(prompt.contains("Operational success must never be claimed by routing"))
+        assertTrue(prompt.contains("Never claim that an operation succeeded, completed, or changed task data"))
     }
 }

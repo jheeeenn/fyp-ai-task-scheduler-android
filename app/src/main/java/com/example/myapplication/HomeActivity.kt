@@ -554,11 +554,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             limitations = listOf(
                 "A voice create request opens the create-task screen with recognised fields prefilled for review.",
                 "Update and reschedule requests open the edit screen for the matched task.",
-                "Delete requires confirmation before Android performs it.",
-                "Android performs complete and incomplete changes after matching a task.",
-                "Android-generated speech reads authoritative query results.",
+                "Delete requires confirmation before the app deletes the task.",
+                "The app marks a matched task complete or incomplete.",
+                "The app reads verified task-query results.",
                 "Task breakdown requires plan approval and any missing scheduling information.",
-                "App guidance must not claim that an operation occurred unless Android performed it."
+                "App guidance must not claim that an operation occurred unless the app successfully completed it."
             )
         )
 

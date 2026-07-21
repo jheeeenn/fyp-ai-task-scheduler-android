@@ -19,6 +19,13 @@ class HomeActivityAppGuidanceSourceTest {
         assertTrue(contextBuilder.contains("Long-press the Talk Assistant button to type"))
         assertTrue(contextBuilder.contains("Voice and typed inputs use the same assistant pipeline."))
         assertTrue(contextBuilder.contains("return guidanceContext.toPromptText()"))
+        assertFalse(contextBuilder.contains("Android-generated speech"))
+        assertTrue(contextBuilder.contains("The app reads verified task-query results."))
+        assertTrue(
+            contextBuilder.contains(
+                "App guidance must not claim that an operation occurred unless the app successfully completed it."
+            )
+        )
     }
 
     @Test
