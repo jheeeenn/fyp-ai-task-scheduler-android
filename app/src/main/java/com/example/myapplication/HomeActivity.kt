@@ -43,6 +43,7 @@ import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.AppGuidanceContext
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
@@ -449,7 +450,125 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
     private fun buildConversationAppContextSummary(): String {
-        return "homeFollowUpContext=$homeFollowUpContext, lastQueryDate=$lastQueryDate, lastQueryWasToday=$lastQueryWasToday, lastQueryWindow=${lastQueryWindow.spokenLabel}"
+        val interaction = when (homeFollowUpContext) {
+            HomeFollowUpContext.NONE -> Pair(
+                "No task follow-up is currently pending.",
+                listOf(
+                    "Ask for any supported task action.",
+                    "Ask for app guidance or a capability explanation."
+                )
+            )
+
+            HomeFollowUpContext.AFTER_NO_TASKS -> Pair(
+                "The previous query found no matching tasks, and the assistant offered to open task creation.",
+                listOf(
+                    "Accept or decline the offer.",
+                    "Ask what to say next.",
+                    "Give another task command."
+                )
+            )
+
+            HomeFollowUpContext.AFTER_TASK_SUMMARY -> Pair(
+                "A task summary was read, and the assistant offered to read more details.",
+                listOf(
+                    "Accept or ask to read all task details.",
+                    "Decline the offer or create a task.",
+                    "Ask for guidance or give another task command."
+                )
+            )
+
+            HomeFollowUpContext.AFTER_TASK_DETAILS -> Pair(
+                "Detailed task results were already read.",
+                listOf(
+                    "Give another task command.",
+                    "Ask for guidance.",
+                    "End the assistant session."
+                )
+            )
+
+            HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> Pair(
+                "More than one task matched the request.",
+                listOf(
+                    "Choose one of the task names that was already read.",
+                    "Cancel the task operation."
+                )
+            )
+
+            HomeFollowUpContext.DELETE_CONFIRMATION -> Pair(
+                "A deletion is waiting for confirmation and has not happened yet.",
+                listOf(
+                    "Confirm or decline the deletion.",
+                    "Ask what the confirmation means."
+                )
+            )
+
+            HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> Pair(
+                "A generated subtask plan is waiting for approval.",
+                listOf(
+                    "Approve or reject the plan.",
+                    "Describe how the plan should change."
+                )
+            )
+
+            HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION -> Pair(
+                "The assistant is collecting missing schedule information for an approved task breakdown.",
+                listOf(
+                    "Provide the requested date or time.",
+                    "Cancel the task breakdown."
+                )
+            )
+        }
+
+        val guidanceContext = AppGuidanceContext(
+            currentScreen = "Home",
+            assistantPurpose = "Help a visually impaired user manage scheduled tasks through voice or typed assistant input.",
+            supportedCapabilities = listOf(
+                "Create a task.",
+                "Query tasks by date, time, or date range.",
+                "Update a task.",
+                "Reschedule a task.",
+                "Delete a task after confirmation.",
+                "Mark a task complete.",
+                "Mark a completed task incomplete.",
+                "Break a large task into subtasks."
+            ),
+            screenActions = listOf(
+                "Open today's tasks.",
+                "Open the create-task screen.",
+                "Open scheduled tasks.",
+                "Open settings.",
+                "Start the voice assistant."
+            ),
+            inputMethods = listOf(
+                "Activate the Talk Assistant button to speak.",
+                "Long-press the Talk Assistant button to type an assistant request.",
+                "Voice and typed inputs use the same assistant pipeline."
+            ),
+            currentInteraction = interaction.first,
+            currentInteractionGuidance = interaction.second,
+            usageExamples = listOf(
+                "Say, 'Show my tasks tomorrow.'",
+                "Say, 'Create a task called revision tomorrow at 4 PM.'",
+                "Say, 'How do I reschedule a task?' for app guidance."
+            ),
+            limitations = listOf(
+                "A voice create request opens the create-task screen with recognised fields prefilled for review.",
+                "Update and reschedule requests open the edit screen for the matched task.",
+                "Delete requires confirmation before Android performs it.",
+                "Android performs complete and incomplete changes after matching a task.",
+                "Android-generated speech reads authoritative query results.",
+                "Task breakdown requires plan approval and any missing scheduling information.",
+                "App guidance must not claim that an operation occurred unless Android performed it."
+            )
+        )
+
+        Log.d(
+            "CONVO_APP_CONTEXT",
+            "screen=${guidanceContext.currentScreen} interaction=${guidanceContext.currentInteraction} " +
+                    "capabilityCount=${guidanceContext.supportedCapabilities.size} " +
+                    "inputMethodCount=${guidanceContext.inputMethods.size}"
+        )
+        return guidanceContext.toPromptText()
     }
 
     private fun handleVoiceCommand(command: String) {
