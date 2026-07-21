@@ -23,7 +23,7 @@ class ConversationAgentResponseException(
 open class ConversationAgentClient(
     context: Context? = null,
     private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
-    private val modelId: String = "google/gemma-4-e4b"
+    private val modelId: String = "google/gemma-4-e2b"
 ) {
     private val appContext = context?.applicationContext
     private val client = OkHttpClient.Builder()
