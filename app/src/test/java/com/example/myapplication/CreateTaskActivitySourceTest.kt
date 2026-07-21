@@ -1,5 +1,7 @@
 package com.example.myapplication
 
+import com.example.myapplication.voice.CreateDraftField
+import com.example.myapplication.voice.CreateTaskDialogState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -69,6 +71,87 @@ class CreateTaskActivitySourceTest {
         assertTrue(fieldChangeBody.contains("handleProvidedField(field, value)"))
         assertTrue(titleBody.contains("applyTitle(value)"))
         assertFalse(titleBody.contains("rawCommand"))
+    }
+
+    @Test
+    fun initialExplicitTitleCommandContinuesToTheNextMissingStep() {
+        assertFalse(
+            isCreateDraftFieldReplacement(
+                field = CreateDraftField.TITLE,
+                state = CreateTaskDialogState.WAITING_FOR_TITLE,
+                pendingReplacementField = null,
+                hasTitle = false,
+                hasSelectedDate = false,
+                hasSelectedTime = false
+            )
+        )
+
+        val fieldChangeBody = source
+            .substringAfter("private fun handleFieldChange")
+            .substringBefore("private fun handleProvidedField")
+        val titleBody = source
+            .substringAfter("private fun applyProvidedTitle")
+            .substringBefore("private fun applyProvidedDate")
+        val confirmationBody = source
+            .substringAfter("private fun returnToSaveConfirmation")
+            .substringBefore("private fun isDraftCompleteForSaveConfirmation")
+
+        assertTrue(fieldChangeBody.contains("pendingReplacementField = if (replacingField) field else null"))
+        assertTrue(titleBody.contains("moveToNextMissingStep()"))
+        assertTrue(confirmationBody.contains("if (!isDraftCompleteForSaveConfirmation())"))
+        assertTrue(confirmationBody.indexOf("moveToNextMissingStep()") < confirmationBody.indexOf("WAITING_FOR_SAVE_CONFIRMATION"))
+    }
+
+    @Test
+    fun explicitTitleCommandAtSaveConfirmationRemainsAReplacement() {
+        assertTrue(
+            isCreateDraftFieldReplacement(
+                field = CreateDraftField.TITLE,
+                state = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION,
+                pendingReplacementField = null,
+                hasTitle = true,
+                hasSelectedDate = true,
+                hasSelectedTime = true
+            )
+        )
+
+        val titleBody = source
+            .substringAfter("private fun applyProvidedTitle")
+            .substringBefore("private fun applyProvidedDate")
+        assertTrue(titleBody.contains("returnToSaveConfirmation(CreateDraftField.TITLE)"))
+    }
+
+    @Test
+    fun pendingMarkerPreservesTwoTurnTitleReplacement() {
+        val firstTurnIsReplacement = isCreateDraftFieldReplacement(
+            field = CreateDraftField.TITLE,
+            state = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION,
+            pendingReplacementField = null,
+            hasTitle = true,
+            hasSelectedDate = true,
+            hasSelectedTime = true
+        )
+        assertTrue(firstTurnIsReplacement)
+
+        assertTrue(
+            isCreateDraftFieldReplacement(
+                field = CreateDraftField.TITLE,
+                state = CreateTaskDialogState.WAITING_FOR_TITLE,
+                pendingReplacementField = CreateDraftField.TITLE,
+                hasTitle = true,
+                hasSelectedDate = true,
+                hasSelectedTime = true
+            )
+        )
+
+        val fieldChangeBody = source
+            .substringAfter("private fun handleFieldChange")
+            .substringBefore("private fun handleProvidedField")
+        val providedFieldBody = source
+            .substringAfter("private fun handleProvidedField")
+            .substringBefore("private fun applyProvidedTitle")
+        assertTrue(fieldChangeBody.contains("CreateTaskDialogState.WAITING_FOR_TITLE"))
+        assertTrue(providedFieldBody.contains("pendingReplacementField == field"))
     }
 
     @Test

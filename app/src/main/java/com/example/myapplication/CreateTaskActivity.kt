@@ -48,6 +48,28 @@ import com.example.myapplication.ai.temporal.PendingTemporalClarification
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
 
+internal fun isCreateDraftFieldReplacement(
+    field: CreateDraftField,
+    state: CreateTaskDialogState,
+    pendingReplacementField: CreateDraftField?,
+    hasTitle: Boolean,
+    hasSelectedDate: Boolean,
+    hasSelectedTime: Boolean
+): Boolean {
+    if (pendingReplacementField == field) return true
+    if (
+        state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ||
+        state == CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD
+    ) {
+        return true
+    }
+    return when (field) {
+        CreateDraftField.TITLE -> hasTitle
+        CreateDraftField.DATE -> hasSelectedDate
+        CreateDraftField.TIME -> hasSelectedTime
+    }
+}
+
 class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
 
@@ -579,8 +601,17 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun handleFieldChange(field: CreateDraftField, value: String?) {
+        val replacingField = isCreateDraftFieldReplacement(
+            field = field,
+            state = dialogState,
+            pendingReplacementField = pendingReplacementField,
+            hasTitle = !pendingTaskState.title.isNullOrBlank() || etTaskTitle.text.toString().isNotBlank(),
+            hasSelectedDate = !selectedDate.isNullOrBlank(),
+            hasSelectedTime = !selectedTime.isNullOrBlank()
+        )
+        pendingReplacementField = if (replacingField) field else null
+
         if (value.isNullOrBlank()) {
-            pendingReplacementField = field
             when (field) {
                 CreateDraftField.TITLE -> {
                     dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
@@ -600,7 +631,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
-        pendingReplacementField = field
         handleProvidedField(field, value)
     }
 
@@ -715,6 +745,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun returnToSaveConfirmation(field: CreateDraftField) {
         pendingReplacementField = null
+        if (!isDraftCompleteForSaveConfirmation()) {
+            moveToNextMissingStep()
+            return
+        }
         dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
         val summary = buildTaskSummary()
         val response = when (field) {
@@ -723,6 +757,11 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             CreateDraftField.TIME -> responseManager.inlineTimeUpdated(summary)
         }
         speakAndContinueListening(response)
+    }
+
+    private fun isDraftCompleteForSaveConfirmation(): Boolean {
+        val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
+        return title.isNotBlank() && !selectedDate.isNullOrBlank() && !selectedTime.isNullOrBlank()
     }
 
     private fun cancelCreateDraft() {
