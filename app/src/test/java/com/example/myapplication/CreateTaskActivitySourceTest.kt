@@ -204,9 +204,60 @@ class CreateTaskActivitySourceTest {
             .substringBefore("private fun logCreateMoveResolution")
         assertTrue(source.contains("private var isResolvingCreateDraftMove = false"))
         assertTrue(source.contains("private var createDraftResolutionGeneration = 0L"))
+        assertTrue(source.contains("private var createDraftRevision = 0L"))
         assertTrue(voiceHandler.contains("if (isResolvingCreateDraftMove)"))
-        assertTrue(primaryBody.contains("requestGeneration != createDraftResolutionGeneration || dialogState != capturedState"))
-        assertTrue(primaryBody.contains("STALE_RESULT_DISCARDED"))
+        assertTrue(primaryBody.contains("val requestDraftRevision = createDraftRevision"))
+        assertTrue(primaryBody.contains("requestGeneration != createDraftResolutionGeneration"))
+        assertTrue(primaryBody.contains("dialogState != capturedState"))
+        assertTrue(primaryBody.contains("requestDraftRevision != createDraftRevision"))
+        assertTrue(primaryBody.contains("category=STALE_DRAFT_RESULT_DISCARDED"))
+        assertTrue(
+            primaryBody.indexOf("requestDraftRevision != createDraftRevision") <
+                    primaryBody.indexOf("handleCreateDraftMove(result.move)")
+        )
+    }
+
+    @Test
+    fun authoritativeDraftMutationsAdvanceTheRevisionOnceThroughSharedHelpers() {
+        val titleBody = source
+            .substringAfter("private fun applyTitle")
+            .substringBefore("private fun buildTaskSummary")
+        val dateBody = source
+            .substringAfter("private fun acceptExactDate")
+            .substringBefore("private fun applySpokenTime")
+        val timeBody = source
+            .substringAfter("private fun acceptExactMinute")
+            .substringBefore("private fun advanceTemporalClarification")
+        val resetBody = source
+            .substringAfter("private fun resetTaskDraftState")
+            .substringBefore("private fun markCreateDraftChanged")
+        val prefillBody = source
+            .substringAfter("private fun applyIncomingPrefill")
+            .substringBefore("private fun applyTemporalPrefill")
+        val datePickerBody = source
+            .substringAfter("private fun openDatePicker")
+            .substringBefore("private fun openTimePicker")
+        val timePickerBody = source
+            .substringAfter("private fun openTimePicker")
+            .substringBefore("private fun saveTask")
+        val sessionCancellationBody = source
+            .substringAfter("override fun onAssistantCancelled")
+            .substringBefore("override fun onAssistantSessionStopped")
+
+        assertEquals(1, Regex("markCreateDraftChanged\\(\\)").findAll(titleBody).count())
+        assertEquals(1, Regex("markCreateDraftChanged\\(\\)").findAll(dateBody).count())
+        assertEquals(1, Regex("markCreateDraftChanged\\(\\)").findAll(timeBody).count())
+        assertEquals(1, Regex("markCreateDraftChanged\\(\\)").findAll(resetBody).count())
+        assertTrue(source.contains("private fun markCreateDraftChanged()"))
+        assertTrue(source.contains("createDraftRevision += 1"))
+        assertTrue(prefillBody.contains("resetTaskDraftState()"))
+        assertTrue(prefillBody.contains("applyTitle(prefillTitle)"))
+        assertTrue(datePickerBody.contains("acceptExactDate("))
+        assertFalse(datePickerBody.contains("markCreateDraftChanged()"))
+        assertTrue(timePickerBody.contains("acceptExactMinute("))
+        assertFalse(timePickerBody.contains("markCreateDraftChanged()"))
+        assertTrue(sessionCancellationBody.contains("dialogState != CreateTaskDialogState.IDLE"))
+        assertTrue(sessionCancellationBody.contains("markCreateDraftChanged()"))
     }
 
     @Test

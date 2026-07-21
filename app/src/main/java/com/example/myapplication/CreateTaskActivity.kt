@@ -93,6 +93,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private var pendingReplacementField: CreateDraftField? = null
     private var isResolvingCreateDraftMove = false
     private var createDraftResolutionGeneration = 0L
+    private var createDraftRevision = 0L
 
     private var hasConsumedPrefill = false
 
@@ -316,6 +317,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         isResolvingCreateDraftMove = true
         createDraftResolutionGeneration += 1
         val requestGeneration = createDraftResolutionGeneration
+        val requestDraftRevision = createDraftRevision
         val context = CreateDraftAgentContext.capture(
             state = capturedState,
             pendingReplacementField = pendingReplacementField,
@@ -336,10 +338,13 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     context = context,
                     localCandidate = localCandidate
                 )
-                if (requestGeneration != createDraftResolutionGeneration || dialogState != capturedState) {
+                if (requestGeneration != createDraftResolutionGeneration ||
+                    dialogState != capturedState ||
+                    requestDraftRevision != createDraftRevision
+                ) {
                     Log.d(
                         "CREATE_MOVE_PRIMARY",
-                        "state=$capturedState category=STALE_RESULT_DISCARDED"
+                        "state=$capturedState category=STALE_DRAFT_RESULT_DISCARDED"
                     )
                     return@launch
                 }
@@ -611,6 +616,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         tvSelectedDate.text = "Selected date: $selectedDate"
         pendingTemporalClarification = pendingTemporalClarification?.copy(exactDate = date)
         advanceTemporalClarification()
+        markCreateDraftChanged()
         return true
     }
 
@@ -629,6 +635,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         tvSelectedTime.text = "Selected time: $selectedTime"
         pendingTemporalClarification = pendingTemporalClarification?.copy(exactMinute = minute)
         advanceTemporalClarification()
+        markCreateDraftChanged()
         return true
     }
 
@@ -940,6 +947,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         pendingTaskState.title = cleanedTitle
         etTaskTitle.setText(cleanedTitle)
+        markCreateDraftChanged()
     }
 
     private fun buildTaskSummary(): String {
@@ -1072,6 +1080,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun resetTaskDraftState() {
         invalidateCreateDraftResolution()
+        markCreateDraftChanged()
         pendingTaskState.clear()
 
         selectedTime = null
@@ -1092,6 +1101,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         tvSelectedTime.text = "Selected time: No time selected"
     }
 
+    private fun markCreateDraftChanged() {
+        createDraftRevision += 1
+    }
+
     private fun invalidateCreateDraftResolution() {
         createDraftResolutionGeneration += 1
         isResolvingCreateDraftMove = false
@@ -1109,6 +1122,9 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     override fun onAssistantCancelled() {
         invalidateCreateDraftResolution()
+        if (dialogState != CreateTaskDialogState.IDLE) {
+            markCreateDraftChanged()
+        }
         dialogState = CreateTaskDialogState.IDLE
         suggestedLearnedTime = null
         pendingSemanticTimePhrase = null

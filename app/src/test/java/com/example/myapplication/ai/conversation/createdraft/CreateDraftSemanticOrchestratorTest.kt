@@ -66,6 +66,62 @@ class CreateDraftSemanticOrchestratorTest {
     }
 
     @Test
+    fun agentUnknownFallsBackToLocalConfirmSave() = runBlocking {
+        val client = FakeClient(validUnknown())
+        val result = resolve(client, "yes", saveState)
+
+        assertEquals(CreateDraftMove.ConfirmSave, result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+        assertFalse(result.source == CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY)
+    }
+
+    @Test
+    fun agentUnknownFallsBackToLocalChangeField() = runBlocking {
+        val client = FakeClient(validUnknown())
+        val result = resolve(client, "change the title to revision", saveState)
+
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+    }
+
+    @Test
+    fun agentUnknownWithLocalUnknownIsDeterministicUnknown() = runBlocking {
+        val client = FakeClient(validUnknown())
+        val result = resolve(client, "unclear words", saveState)
+
+        assertEquals(CreateDraftMove.Unknown, result.move)
+        assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
+        assertFalse(result.source == CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY)
+    }
+
+    @Test
+    fun agentConfirmCannotContradictLocalRejection() = runBlocking {
+        val client = FakeClient(validConfirm())
+        val result = resolve(client, "no", saveState)
+
+        assertEquals(CreateDraftMove.RejectSave, result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+    }
+
+    @Test
+    fun agentConfirmCannotContradictLocalFieldChange() = runBlocking {
+        val client = FakeClient(validConfirm())
+        val result = resolve(client, "change the time to 10 am", saveState)
+
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TIME, "10 am"), result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+    }
+
+    @Test
+    fun agentConfirmMayResolveLocalUnknown() = runBlocking {
+        val client = FakeClient(validConfirm())
+        val result = resolve(client, "that looks right save it", saveState)
+
+        assertEquals(CreateDraftMove.ConfirmSave, result.move)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+    }
+
+    @Test
     fun malformedAgentOutputUsesValidLocalFallback() = runBlocking {
         val client = FakeClient("not json")
         val result = resolve(client, "change the title to revision", saveState)
@@ -164,6 +220,12 @@ class CreateDraftSemanticOrchestratorTest {
         hasSelectedTime = state == saveState,
         localCandidate = candidate
     )
+
+    private fun validUnknown() =
+        """{"move":"UNKNOWN","field":"","value":"","confidence":0.95}"""
+
+    private fun validConfirm() =
+        """{"move":"CONFIRM_SAVE","field":"","value":"","confidence":0.95}"""
 
     private val saveState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
 }

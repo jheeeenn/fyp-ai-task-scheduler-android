@@ -62,6 +62,16 @@ class CreateDraftSemanticOrchestrator(
         return try {
             val rawContent = semanticClient.interpretCreateDraftMove(userText, context.toPromptText())
             val decision = parser.parse(rawContent)
+            if (decision.move == CreateDraftAgentMoveType.UNKNOWN) {
+                Log.d("CREATE_MOVE_PRIMARY", "state=$state category=AGENT_ABSTAINED")
+                return localFailureFallback(localCandidate, state)
+            }
+            if (decision.move == CreateDraftAgentMoveType.CONFIRM_SAVE &&
+                !isCompatibleWithAgentConfirmation(localCandidate)
+            ) {
+                Log.d("CREATE_MOVE_PRIMARY", "state=$state category=CONFIRM_CONTRADICTION_REJECTED")
+                return localFailureFallback(localCandidate, state)
+            }
             val validation = validator.validate(decision, state)
             if (validation.accepted) {
                 Log.d("CREATE_MOVE_PRIMARY", "state=$state category=ACCEPTED")
@@ -99,6 +109,9 @@ class CreateDraftSemanticOrchestrator(
             deterministicUnknown(agentAttempted = true)
         }
     }
+
+    private fun isCompatibleWithAgentConfirmation(localCandidate: CreateDraftMove): Boolean =
+        localCandidate == CreateDraftMove.ConfirmSave || localCandidate == CreateDraftMove.Unknown
 
     private fun deterministicUnknown(agentAttempted: Boolean) = CreateDraftMoveResolution(
         move = CreateDraftMove.Unknown,
