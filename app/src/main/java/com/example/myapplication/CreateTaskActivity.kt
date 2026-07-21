@@ -18,6 +18,9 @@ import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.voice.PendingTaskState
+import com.example.myapplication.voice.CreateDraftField
+import com.example.myapplication.voice.CreateDraftMove
+import com.example.myapplication.voice.CreateDraftMoveInterpreter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,8 +59,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var timePreferenceLearner: TimePreferenceLearner
     private var pendingSemanticTimePhrase: String? = null
     private val temporalResolver = TemporalExpressionResolver()
+    private val createDraftMoveInterpreter = CreateDraftMoveInterpreter()
     private var pendingTemporalConstraint: TemporalResolution? = null
     private var pendingTemporalClarification: PendingTemporalClarification? = null
+    private var pendingReplacementField: CreateDraftField? = null
 
     private var hasConsumedPrefill = false
 
@@ -146,10 +151,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         btnCancelTask.setOnClickListenerWithHaptic {
-            hasConsumedPrefill = false
-            assistantSession.speakThenRun(responseManager.cancelCreate()) {
-                finish()
-            }
+            handleCreateDraftMove(CreateDraftMove.Cancel)
         }
 
         btnGoHome.setOnClickListenerWithHaptic {
@@ -255,20 +257,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             "raw='$rawCommand' normalized='$normalized' dialogState=$dialogState title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}' selectedDate='$selectedDate' selectedTime='$selectedTime'"
         )
 
-        if (dialogState == CreateTaskDialogState.IDLE) {
-            dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-        }
-
-        if (handleFollowUpInput(normalized)) {
-            return
-        }
-
-        if (looksLikeReasonableTitle(normalized)) {
-            applyTitle(normalized)
-            moveToNextMissingStep()
-        } else {
-            speakWithPanel("Please provide the task title, date, time, or say cancel.")
-        }
+        val move = createDraftMoveInterpreter.interpret(normalized, dialogState)
+        handleCreateDraftMove(move)
     }
 
     private fun openDatePicker() {
@@ -540,149 +530,272 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
     }
 
-    private fun handleFollowUpInput(normalized: String): Boolean {
-        // log
-        Log.d(
-            "CREATE_FOLLOWUP",
-            "dialogState=$dialogState normalized='$normalized' title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}'"
-        )
-
-        return when (dialogState) {
-                CreateTaskDialogState.WAITING_FOR_TITLE -> {
-
-                    Log.d("CREATE_FOLLOWUP", "WAITING_FOR_TITLE")
-
-                if (looksLikeReasonableTitle(normalized)) {
-                    applyTitle(normalized)
-                    moveToNextMissingStep()
-                    true
-                } else {
-                    speakAndContinueListening(responseManager.askTaskTitle())
-                    true
-                }
+    private fun handleCreateDraftMove(move: CreateDraftMove): Boolean {
+        logCreateDraftMove(move)
+        return when (move) {
+            CreateDraftMove.ConfirmSave -> {
+                dialogState = CreateTaskDialogState.READY_TO_SAVE
+                saveTask()
+                true
             }
 
-            CreateTaskDialogState.WAITING_FOR_DATE -> {
-
-                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_DATE")
-
-                if (applySpokenDate(normalized)) {
-                    logTemporalFollowUp(normalized, true)
-                    pendingTaskState.dateText = normalized
-
-                    assistantSession.pauseListeningForAssistantSpeech()
-                    voiceHelper.speak(responseManager.dateSet(selectedDate ?: ""))
-                    moveToNextMissingStep()
-                    true
-                } else {
-                    logTemporalFollowUp(normalized, false)
-                    speakAndContinueListening(invalidTemporalDateMessage())
-                    true
-                }
-            }
-
-            CreateTaskDialogState.WAITING_FOR_TIME -> {
-
-                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_TIME")
-
-                if (suggestedLearnedTime != null && isYes(normalized)) {
-                    if (applySpokenTime(suggestedLearnedTime!!)) {
-                        pendingTaskState.timeText = suggestedLearnedTime
-                        pendingSemanticTimePhrase = null
-                        suggestedLearnedTime = null
-
-                        assistantSession.pauseListeningForAssistantSpeech()
-                        voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
-                        moveToNextMissingStep()
-                        return true
-                    }
-                }
-
-                if (applySpokenTime(normalized)) {
-                    logTemporalFollowUp(normalized, true)
-                    pendingTaskState.timeText = normalized
-                    val resolvedTime = selectedTime
-
-                    val semanticPhraseToLearn = pendingSemanticTimePhrase
-                    if (!semanticPhraseToLearn.isNullOrBlank() && !resolvedTime.isNullOrBlank()) {
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            timePreferenceLearner.learnPreference(
-                                semanticPhraseToLearn,
-                                resolvedTime
-                            )
-                        }
-                    }
-
-                    pendingSemanticTimePhrase = null
-                    suggestedLearnedTime = null
-
-                    assistantSession.pauseListeningForAssistantSpeech()
-                    voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
-                    moveToNextMissingStep()
-                    true
-                } else {
-                    logTemporalFollowUp(normalized, false)
-                    speakAndContinueListening(invalidTemporalTimeMessage())
-                    true
-                }
-            }
-
-            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> {
-                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_CHANGE_FIELD")
-
-                when {
-                    normalized == "title" || normalized.contains("change title") || normalized.contains("edit title") -> {
-                        dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-                        promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
-                        true
-                    }
-
-                    normalized == "date" || normalized.contains("change date") || normalized.contains("edit date") -> {
-                        dialogState = CreateTaskDialogState.WAITING_FOR_DATE
-                        promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
-                        true
-                    }
-
-                    normalized == "time" || normalized.contains("change time") || normalized.contains("edit time") -> {
-                        dialogState = CreateTaskDialogState.WAITING_FOR_TIME
-                        promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
-                        true
-                    }
-
-                    else -> {
-                        speakAndContinueListening(responseManager.askWhatToChange())
-                        true
-                    }
-                }
-            }
-
-            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> {
-
-                Log.d("CREATE_FOLLOWUP", "WAITING_FOR_SAVE_CONFIRMATION")
-
-                if (isYes(normalized)) {
-                    dialogState = CreateTaskDialogState.READY_TO_SAVE
-                    saveTask()
-                    return true
-                }
-
-                if (isNo(normalized)) {
-                    dialogState = CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD
-                    speakAndContinueListening(responseManager.askWhatToChange())
-                    return true
-                }
-
-                if (tryApplyInlineCorrection(normalized)) {
-                    return true
-                }
-
+            CreateDraftMove.RejectSave -> {
+                pendingReplacementField = null
                 dialogState = CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD
                 speakAndContinueListening(responseManager.askWhatToChange())
                 true
             }
 
+            is CreateDraftMove.ChangeField -> {
+                handleFieldChange(move.field, move.value)
+                true
+            }
+
+            is CreateDraftMove.ProvideField -> {
+                handleProvidedField(move.field, move.value)
+                true
+            }
+
+            is CreateDraftMove.ApplyUnspecifiedCorrection -> {
+                applyUnspecifiedCorrection(move.value)
+                true
+            }
+
+            CreateDraftMove.Cancel -> {
+                cancelCreateDraft()
+                true
+            }
+
+            CreateDraftMove.RequestHelp -> {
+                provideCreateDraftHelp()
+                true
+            }
+
+            CreateDraftMove.Unknown -> {
+                recoverFromUnknownMove()
+                true
+            }
+        }
+    }
+
+    private fun handleFieldChange(field: CreateDraftField, value: String?) {
+        if (value.isNullOrBlank()) {
+            pendingReplacementField = field
+            when (field) {
+                CreateDraftField.TITLE -> {
+                    dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
+                    promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
+                }
+
+                CreateDraftField.DATE -> {
+                    dialogState = CreateTaskDialogState.WAITING_FOR_DATE
+                    promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
+                }
+
+                CreateDraftField.TIME -> {
+                    dialogState = CreateTaskDialogState.WAITING_FOR_TIME
+                    promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
+                }
+            }
+            return
+        }
+
+        pendingReplacementField = field
+        handleProvidedField(field, value)
+    }
+
+    private fun handleProvidedField(field: CreateDraftField, value: String) {
+        val replacingField = pendingReplacementField == field
+        when (field) {
+            CreateDraftField.TITLE -> applyProvidedTitle(value, replacingField)
+            CreateDraftField.DATE -> applyProvidedDate(value, replacingField)
+            CreateDraftField.TIME -> applyProvidedTime(value, replacingField)
+        }
+    }
+
+    private fun applyProvidedTitle(value: String, replacingField: Boolean) {
+        if (!createDraftMoveInterpreter.isReasonableTitleCandidate(value)) {
+            dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
+            val response = if (replacingField) responseManager.askChangeTitle() else responseManager.askTaskTitle()
+            speakAndContinueListening(response)
+            return
+        }
+
+        applyTitle(value)
+        if (replacingField) {
+            returnToSaveConfirmation(CreateDraftField.TITLE)
+        } else {
+            moveToNextMissingStep()
+        }
+    }
+
+    private fun applyProvidedDate(value: String, replacingField: Boolean) {
+        dialogState = CreateTaskDialogState.WAITING_FOR_DATE
+        val applied = applySpokenDate(value, replacingConstraint = replacingField)
+        logTemporalFollowUp(value, applied)
+        if (!applied) {
+            speakAndContinueListening(invalidTemporalDateMessage())
+            return
+        }
+
+        pendingTaskState.dateText = value
+        if (replacingField) {
+            returnToSaveConfirmation(CreateDraftField.DATE)
+        } else {
+            assistantSession.pauseListeningForAssistantSpeech()
+            voiceHelper.speak(responseManager.dateSet(selectedDate ?: ""))
+            moveToNextMissingStep()
+        }
+    }
+
+    private fun applyProvidedTime(value: String, replacingField: Boolean) {
+        dialogState = CreateTaskDialogState.WAITING_FOR_TIME
+        val acceptedLearnedSuggestion =
+            !replacingField &&
+                    !suggestedLearnedTime.isNullOrBlank() &&
+                    createDraftMoveInterpreter.isConfirmationUtterance(value)
+        val timeCandidate = if (acceptedLearnedSuggestion) suggestedLearnedTime!! else value
+        val applied = applySpokenTime(timeCandidate, replacingConstraint = replacingField)
+        logTemporalFollowUp(value, applied)
+        if (!applied) {
+            speakAndContinueListening(invalidTemporalTimeMessage())
+            return
+        }
+
+        pendingTaskState.timeText = timeCandidate
+        if (replacingField) {
+            pendingSemanticTimePhrase = null
+            suggestedLearnedTime = null
+            returnToSaveConfirmation(CreateDraftField.TIME)
+            return
+        }
+
+        val resolvedTime = selectedTime
+        val semanticPhraseToLearn = pendingSemanticTimePhrase
+        if (!acceptedLearnedSuggestion && !semanticPhraseToLearn.isNullOrBlank() && !resolvedTime.isNullOrBlank()) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                timePreferenceLearner.learnPreference(semanticPhraseToLearn, resolvedTime)
+            }
+        }
+
+        pendingSemanticTimePhrase = null
+        suggestedLearnedTime = null
+        assistantSession.pauseListeningForAssistantSpeech()
+        voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
+        moveToNextMissingStep()
+    }
+
+    private fun applyUnspecifiedCorrection(value: String) {
+        if (value.isBlank()) {
+            speakAndContinueListening(responseManager.correctionNotUnderstood())
+            return
+        }
+
+        if (applySpokenDate(value, replacingConstraint = true)) {
+            pendingTaskState.dateText = value
+            returnToSaveConfirmation(CreateDraftField.DATE)
+            return
+        }
+
+        if (applySpokenTime(value, replacingConstraint = true)) {
+            pendingTaskState.timeText = value
+            returnToSaveConfirmation(CreateDraftField.TIME)
+            return
+        }
+
+        if (createDraftMoveInterpreter.isReasonableTitleCandidate(value)) {
+            applyTitle(value)
+            returnToSaveConfirmation(CreateDraftField.TITLE)
+            return
+        }
+
+        dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+        speakAndContinueListening(responseManager.correctionNotUnderstood())
+    }
+
+    private fun returnToSaveConfirmation(field: CreateDraftField) {
+        pendingReplacementField = null
+        dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+        val summary = buildTaskSummary()
+        val response = when (field) {
+            CreateDraftField.TITLE -> responseManager.inlineTitleUpdated(summary)
+            CreateDraftField.DATE -> responseManager.inlineDateUpdated(summary)
+            CreateDraftField.TIME -> responseManager.inlineTimeUpdated(summary)
+        }
+        speakAndContinueListening(response)
+    }
+
+    private fun cancelCreateDraft() {
+        resetTaskDraftState()
+        hasConsumedPrefill = false
+        assistantSession.speakThenRun(responseManager.cancelCreate()) {
+            finish()
+        }
+    }
+
+    private fun provideCreateDraftHelp() {
+        val response = when (dialogState) {
+            CreateTaskDialogState.IDLE -> responseManager.askTaskTitle()
+            CreateTaskDialogState.WAITING_FOR_TITLE -> if (pendingReplacementField == CreateDraftField.TITLE) {
+                responseManager.askChangeTitle()
+            } else {
+                responseManager.askTaskTitle()
+            }
+            CreateTaskDialogState.WAITING_FOR_DATE -> if (pendingReplacementField == CreateDraftField.DATE) {
+                responseManager.askChangeDate()
+            } else {
+                responseManager.askTaskDate()
+            }
+            CreateTaskDialogState.WAITING_FOR_TIME -> if (pendingReplacementField == CreateDraftField.TIME) {
+                responseManager.askChangeTime()
+            } else {
+                responseManager.askTaskTime()
+            }
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> responseManager.askWhatToChange()
+            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> responseManager.saveConfirmationHelp()
+            CreateTaskDialogState.READY_TO_SAVE -> responseManager.correctionNotUnderstood()
+        }
+        speakAndContinueListening(response)
+    }
+
+    private fun recoverFromUnknownMove() {
+        val response = when (dialogState) {
+            CreateTaskDialogState.IDLE -> responseManager.askTaskTitle()
+            CreateTaskDialogState.WAITING_FOR_TITLE -> if (pendingReplacementField == CreateDraftField.TITLE) {
+                responseManager.askChangeTitle()
+            } else {
+                responseManager.askTaskTitle()
+            }
+            CreateTaskDialogState.WAITING_FOR_DATE -> responseManager.invalidDate()
+            CreateTaskDialogState.WAITING_FOR_TIME -> responseManager.invalidTime()
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> responseManager.askWhatToChange()
+            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> responseManager.saveConfirmationHelp()
+            CreateTaskDialogState.READY_TO_SAVE -> responseManager.correctionNotUnderstood()
+        }
+        if (shouldContinueConversation()) {
+            speakAndContinueListening(response)
+        } else {
+            speakWithPanel(response)
+        }
+    }
+
+    private fun logCreateDraftMove(move: CreateDraftMove) {
+        val field = when (move) {
+            is CreateDraftMove.ChangeField -> move.field.name
+            is CreateDraftMove.ProvideField -> move.field.name
+            else -> "none"
+        }
+        val valueSupplied = when (move) {
+            is CreateDraftMove.ChangeField -> !move.value.isNullOrBlank()
+            is CreateDraftMove.ProvideField -> move.value.isNotBlank()
+            is CreateDraftMove.ApplyUnspecifiedCorrection -> move.value.isNotBlank()
             else -> false
         }
+        val moveType = move::class.java.simpleName
+        Log.d(
+            "CREATE_MOVE",
+            "dialogState=$dialogState move=$moveType field=$field valueSupplied=$valueSupplied"
+        )
     }
 
     private fun logTemporalFollowUp(raw: String, validationResult: Boolean) {
@@ -714,102 +827,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val time = selectedTime ?: pendingTaskState.timeText ?: "no time"
         return "$title, $date, $time"
     }
-
-    private fun extractInlineCorrectionValue(normalized: String): String {
-        val prefixes = listOf(
-            "change it to",
-            "change to",
-            "make it",
-            "rename it to"
-        )
-
-        for (prefix in prefixes.sortedByDescending { it.length }) {
-            if (normalized.startsWith(prefix)) {
-                return normalized.removePrefix(prefix).trim()
-            }
-        }
-
-        return normalized.trim()
-    }
-
-    private fun looksLikeReasonableTitle(value: String): Boolean {
-        if (value.isBlank()) return false
-
-        val cleaned = value.trim().lowercase()
-
-        if (cleaned.length < 3) return false
-
-        val blocked = listOf(
-            "title",
-            "date",
-            "time",
-            "change title",
-            "change date",
-            "change time",
-            "edit title",
-            "edit date",
-            "edit time",
-            "yes",
-            "yeah",
-            "yep",
-            "sure",
-            "no",
-            "nope",
-            "okay",
-            "ok",
-            "alright",
-            "save",
-            "confirm",
-            "cancel",
-            "stop",
-            "help"
-        )
-
-        if (cleaned in blocked) return false
-
-        return true
-    }
-
-    private fun tryApplyInlineCorrection(normalized: String): Boolean {
-        val value = extractInlineCorrectionValue(normalized)
-
-        if (value.isBlank()) return false
-
-        // 1. try date first
-        if (applySpokenDate(value, replacingConstraint = true)) {
-            pendingTaskState.dateText = value
-            dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-            //speakAndContinueListening("Okay. I updated the date. I now have ${buildTaskSummary()}. Should I save it?")
-            speakAndContinueListening(responseManager.inlineDateUpdated(buildTaskSummary()))
-            return true
-        }
-
-        // 2. then try time
-        if (applySpokenTime(value, replacingConstraint = true)) {
-            pendingTaskState.timeText = value
-            dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-            //speakAndContinueListening("Okay. I updated the time. I now have ${buildTaskSummary()}. Should I save it?")
-            speakAndContinueListening(responseManager.inlineTimeUpdated(buildTaskSummary()))
-            return true
-        }
-
-        // 3. then try title
-        if (looksLikeReasonableTitle(value)) {
-            applyTitle(value)
-            dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-            //speakAndContinueListening("Okay. I updated the title. I now have ${buildTaskSummary()}. Should I save it?")
-            speakAndContinueListening(responseManager.inlineTitleUpdated(buildTaskSummary()))
-            return true
-        }
-
-        // 4. otherwise fail safely
-        //speakAndContinueListening("I could not understand that change. Please try again.")
-        speakAndContinueListening(responseManager.correctionNotUnderstood())
-        return true
-    }
-
-
-
 
     private fun moveToNextMissingStep() {
         // log
@@ -944,6 +961,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedDay = null
         pendingTemporalConstraint = null
         pendingTemporalClarification = null
+        pendingReplacementField = null
 
         dialogState = CreateTaskDialogState.IDLE
 
@@ -957,35 +975,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         intent.removeExtra("prefill_date_text")
         intent.removeExtra("prefill_time_text")
     }
-
-    private fun isYes(normalized: String): Boolean {
-        val value = normalized.trim().lowercase()
-        return value == "yes" ||
-                value == "yes yes" ||
-                value == "yeah" ||
-                value == "yep" ||
-                value == "sure" ||
-                value == "okay" ||
-                value == "ok" ||
-                value == "alright" ||
-                value == "save" ||
-                value == "okay yes" ||
-                value == "ok yes"
-    }
-
-    private fun isNo(normalized: String): Boolean {
-        val value = normalized.trim().lowercase()
-        return value == "no" ||
-                value == "no no" ||
-                value == "nope" ||
-                value == "no thanks" ||
-                value == "no need" ||
-                value == "don't save" ||
-                value == "do not save" ||
-                value == "not now"
-    }
-
-
 
     override fun onAssistantFinalText(text: String) {
         handleVoiceCommand(text)
