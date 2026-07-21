@@ -262,11 +262,17 @@ Do not infer an AM/PM value that the user did not provide.
 You do not modify the draft or produce operational success speech.
 You identify only the intended bounded move, the referenced field, and the candidate value spoken by the user.
 Use the supplied state context as authoritative.
+The advisory local candidate is a proposal, not an authoritative decision.
+Independently decide the bounded semantic move; you may agree with or correct the advisory candidate.
+Android will validate and execute your structured decision.
 Remove harmless conversational filler only when meaning remains unambiguous.
 
 Return exactly these fields: move, field, value, confidence.
 Allowed move values: CONFIRM_SAVE, REJECT_SAVE, CHANGE_FIELD, PROVIDE_FIELD, APPLY_UNSPECIFIED_CORRECTION, CANCEL, REQUEST_HELP, UNKNOWN.
 Allowed field values: empty string, TITLE, DATE, TIME.
+CONFIRM_SAVE, REJECT_SAVE, CANCEL, REQUEST_HELP, and UNKNOWN require both field and value to be empty strings.
+CHANGE_FIELD requires a field and may use an empty value when no replacement was supplied.
+PROVIDE_FIELD and APPLY_UNSPECIFIED_CORRECTION require a non-empty value.
 
 Examples:
 State: WAITING_FOR_TIME

@@ -47,10 +47,8 @@ import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 import com.example.myapplication.ai.temporal.PendingTemporalClarification
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
-import com.example.myapplication.ai.temporal.TemporalResolutionType
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftAgentContext
-import com.example.myapplication.ai.conversation.createdraft.CreateDraftFallbackReason
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftMoveResolution
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticOrchestrator
 import kotlinx.coroutines.CancellationException
@@ -75,12 +73,6 @@ internal fun isCreateDraftFieldReplacement(
         CreateDraftField.DATE -> hasSelectedDate
         CreateDraftField.TIME -> hasSelectedTime
     }
-}
-
-internal enum class CreateDraftCandidateStatus {
-    APPLIED,
-    UNRESOLVED,
-    REJECTED_BY_POLICY
 }
 
 class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
@@ -304,80 +296,21 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         )
 
         val capturedState = dialogState
-        val localResult = createDraftSemanticOrchestrator.resolveLocal(normalized, capturedState)
-        val fallbackReason = fallbackReasonFor(localResult.move, capturedState)
-        if (fallbackReason == null) {
-            logCreateMoveResolution(capturedState, localResult)
-            handleCreateDraftMove(localResult.move)
+        val localCandidate = createDraftSemanticOrchestrator.proposeLocal(normalized, capturedState)
+        val immediateResult = createDraftSemanticOrchestrator.resolveImmediate(localCandidate, capturedState)
+        if (immediateResult != null) {
+            logCreateMoveResolution(capturedState, immediateResult)
+            handleCreateDraftMove(immediateResult.move)
             return
         }
 
-        requestCreateDraftFallback(normalized, capturedState, fallbackReason)
+        requestCreateDraftPrimary(rawCommand.trim(), capturedState, localCandidate)
     }
 
-    private fun fallbackReasonFor(
-        move: CreateDraftMove,
-        capturedState: CreateTaskDialogState
-    ): CreateDraftFallbackReason? {
-        if (capturedState == CreateTaskDialogState.READY_TO_SAVE) return null
-        if (move == CreateDraftMove.Unknown) return CreateDraftFallbackReason.LOCAL_UNKNOWN
-        if (move is CreateDraftMove.ProvideField &&
-            (move.field == CreateDraftField.DATE || move.field == CreateDraftField.TIME)
-        ) {
-            val replacingField = pendingReplacementField == move.field
-            if (classifyTemporalCandidate(move.field, move.value, replacingField) == CreateDraftCandidateStatus.UNRESOLVED) {
-                return CreateDraftFallbackReason.TEMPORAL_UNRESOLVED
-            }
-        }
-        if (move is CreateDraftMove.ApplyUnspecifiedCorrection &&
-            isUnresolvedUnspecifiedCorrection(move.value)
-        ) {
-            return CreateDraftFallbackReason.UNSPECIFIED_CORRECTION_UNRESOLVED
-        }
-        return null
-    }
-
-    private fun classifyTemporalCandidate(
-        field: CreateDraftField,
-        value: String,
-        replacingConstraint: Boolean
-    ): CreateDraftCandidateStatus {
-        val resolution = when (field) {
-            CreateDraftField.DATE -> temporalResolver.resolve(value, null, value)
-            CreateDraftField.TIME -> temporalResolver.resolve(null, value, value)
-            CreateDraftField.TITLE -> return CreateDraftCandidateStatus.REJECTED_BY_POLICY
-        }
-        if (resolution.type == TemporalResolutionType.UNRESOLVED || resolution.type == TemporalResolutionType.NONE) {
-            return CreateDraftCandidateStatus.UNRESOLVED
-        }
-
-        val exactDate = resolution.startDateInclusive.takeIf { resolution.isExactDate }
-        val exactMinute = resolution.startMinuteInclusive.takeIf { resolution.isExactTime }
-        if (exactDate == null && exactMinute == null) return CreateDraftCandidateStatus.REJECTED_BY_POLICY
-
-        val constraint = if (replacingConstraint) {
-            null
-        } else {
-            pendingTemporalClarification?.original ?: pendingTemporalConstraint
-        }
-        if (constraint != null && !TemporalActionPolicy.validateClarification(constraint, exactDate, exactMinute)) {
-            return CreateDraftCandidateStatus.REJECTED_BY_POLICY
-        }
-        return CreateDraftCandidateStatus.APPLIED
-    }
-
-    private fun isUnresolvedUnspecifiedCorrection(value: String): Boolean {
-        val dateStatus = classifyTemporalCandidate(CreateDraftField.DATE, value, replacingConstraint = true)
-        val timeStatus = classifyTemporalCandidate(CreateDraftField.TIME, value, replacingConstraint = true)
-        return dateStatus == CreateDraftCandidateStatus.UNRESOLVED &&
-                timeStatus == CreateDraftCandidateStatus.UNRESOLVED &&
-                !createDraftMoveInterpreter.isReasonableTitleCandidate(value)
-    }
-
-    private fun requestCreateDraftFallback(
-        normalized: String,
+    private fun requestCreateDraftPrimary(
+        userText: String,
         capturedState: CreateTaskDialogState,
-        reason: CreateDraftFallbackReason
+        localCandidate: CreateDraftMove
     ) {
         if (isResolvingCreateDraftMove) return
         isResolvingCreateDraftMove = true
@@ -388,7 +321,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             pendingReplacementField = pendingReplacementField,
             hasTitle = !pendingTaskState.title.isNullOrBlank() || etTaskTitle.text.toString().isNotBlank(),
             hasSelectedDate = !selectedDate.isNullOrBlank(),
-            hasSelectedTime = !selectedTime.isNullOrBlank()
+            hasSelectedTime = !selectedTime.isNullOrBlank(),
+            localCandidate = localCandidate
         )
 
         assistantSession.pauseListeningForAssistantSpeech()
@@ -397,15 +331,15 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         lifecycleScope.launch {
             try {
                 val result = createDraftSemanticOrchestrator.resolve(
-                    userText = normalized,
+                    userText = userText,
                     state = capturedState,
                     context = context,
-                    fallbackReason = reason
+                    localCandidate = localCandidate
                 )
                 if (requestGeneration != createDraftResolutionGeneration || dialogState != capturedState) {
                     Log.d(
-                        "CREATE_MOVE_FALLBACK",
-                        "reason=$reason state=$capturedState category=STALE_RESULT_DISCARDED"
+                        "CREATE_MOVE_PRIMARY",
+                        "state=$capturedState category=STALE_RESULT_DISCARDED"
                     )
                     return@launch
                 }
@@ -433,7 +367,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         Log.d(
             "CREATE_MOVE_RESOLUTION",
             "state=$capturedState source=${result.source.logValue} move=${result.move::class.java.simpleName} " +
-                    "field=$field confidence=${result.confidence} fallbackAttempted=${result.fallbackAttempted}"
+                    "field=$field confidence=${result.confidence} agentAttempted=${result.agentAttempted}"
         )
     }
 
@@ -884,12 +818,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         if (applySpokenTime(value, replacingConstraint = true)) {
             pendingTaskState.timeText = value
             returnToSaveConfirmation(CreateDraftField.TIME)
-            return
-        }
-
-        if (createDraftMoveInterpreter.isReasonableTitleCandidate(value)) {
-            applyTitle(value)
-            returnToSaveConfirmation(CreateDraftField.TITLE)
             return
         }
 

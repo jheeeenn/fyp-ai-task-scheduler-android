@@ -4,96 +4,129 @@ import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateDraftMoveInterpreter
 import com.example.myapplication.voice.CreateTaskDialogState
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CreateDraftSemanticOrchestratorTest {
     private class FakeClient(private val response: String) : CreateDraftSemanticClient {
         var calls = 0
+        var lastContext = ""
+
         override suspend fun interpretCreateDraftMove(userText: String, contextSummary: String): String {
             calls++
+            lastContext = contextSummary
             return response
         }
     }
 
     @Test
-    fun recognisedLocalMoveDoesNotCallFallback() = runBlocking {
-        val client = FakeClient("unused")
-        val result = orchestrator(client).resolve("yes", saveState, context(saveState))
-        assertEquals(CreateDraftMove.ConfirmSave, result.move)
-        assertEquals(CreateDraftMoveSource.LOCAL, result.source)
-        assertFalse(result.fallbackAttempted)
-        assertEquals(0, client.calls)
+    fun recognisedLocalTitleChangeStillCallsAgentAndCandidateIsAdvisoryOnly() = runBlocking {
+        val client = FakeClient(
+            """{"move":"CHANGE_FIELD","field":"TITLE","value":"revision","confidence":0.97}"""
+        )
+        val result = resolve(client, "change the title to revision", saveState)
+
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+        assertTrue(result.agentAttempted)
+        assertEquals(1, client.calls)
+        assertTrue(client.lastContext.contains("Advisory local candidate move: CHANGE_FIELD"))
+        assertTrue(client.lastContext.contains("Advisory local candidate field: TITLE"))
+        assertTrue(client.lastContext.contains("Advisory local candidate has a value: true"))
+        assertFalse(client.lastContext.contains("revision"))
     }
 
     @Test
-    fun localUnknownCallsFallbackOnceAndMapsValidMove() = runBlocking {
+    fun validAgentDecisionIsPrimaryAndMayCorrectRecognisedCandidate() = runBlocking {
+        val client = FakeClient(
+            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.96}"""
+        )
+        val result = resolve(client, "change the title to revision", saveState)
+
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TIME, "10 AM"), result.move)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+        assertEquals(1, client.calls)
+    }
+
+    @Test
+    fun agentMayCorrectLocalUnknown() = runBlocking {
         val client = FakeClient(
             """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.97}"""
         )
-        val result = orchestrator(client).resolve("move the time to 10 AM", saveState, context(saveState))
+        val result = resolve(client, "move the time to 10 am", saveState)
+
         assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TIME, "10 AM"), result.move)
-        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_FALLBACK, result.source)
-        assertTrue(result.fallbackAttempted)
-        assertEquals(1, client.calls)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+        assertTrue(client.lastContext.contains("Advisory local candidate recognised: false"))
     }
 
     @Test
-    fun malformedFallbackReturnsDeterministicUnknown() = runBlocking {
+    fun malformedAgentOutputUsesValidLocalFallback() = runBlocking {
         val client = FakeClient("not json")
-        val result = orchestrator(client).resolve("unclear words", saveState, context(saveState))
-        assertEquals(CreateDraftMove.Unknown, result.move)
-        assertEquals(CreateDraftMoveSource.DETERMINISTIC_FALLBACK, result.source)
-        assertEquals(1, client.calls)
+        val result = resolve(client, "change the title to revision", saveState)
+
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+        assertTrue(result.agentAttempted)
     }
 
     @Test
-    fun lowConfidenceFallbackReturnsUnknown() = runBlocking {
+    fun lowConfidenceAgentOutputUsesValidLocalFallback() = runBlocking {
         val client = FakeClient(
-            """{"move":"CHANGE_FIELD","field":"TITLE","value":"revision","confidence":0.5}"""
+            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.50}"""
         )
-        val result = orchestrator(client).resolve("unclear title words", saveState, context(saveState))
-        assertEquals(CreateDraftMove.Unknown, result.move)
-        assertEquals(CreateDraftMoveSource.DETERMINISTIC_FALLBACK, result.source)
+        val result = resolve(client, "change the title to revision", saveState)
+
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
     }
 
     @Test
-    fun stateValidationFailureReturnsUnknown() = runBlocking {
+    fun malformedAgentOutputWithoutValidLocalCandidateBecomesUnknown() = runBlocking {
+        val client = FakeClient("not json")
+        val result = resolve(client, "unclear words", saveState)
+
+        assertEquals(CreateDraftMove.Unknown, result.move)
+        assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
+    }
+
+    @Test
+    fun stateValidationRejectsAgentDecisionWhenLocalCandidateIsAlsoInvalid() = runBlocking {
         val state = CreateTaskDialogState.WAITING_FOR_TIME
         val client = FakeClient(
             """{"move":"PROVIDE_FIELD","field":"TITLE","value":"revision","confidence":0.96}"""
         )
-        val result = orchestrator(client).resolve(
-            "unclear words",
-            state,
-            context(state),
-            CreateDraftFallbackReason.TEMPORAL_UNRESOLVED
-        )
+        val result = resolve(client, "", state)
+
         assertEquals(CreateDraftMove.Unknown, result.move)
-        assertEquals(CreateDraftMoveSource.DETERMINISTIC_FALLBACK, result.source)
+        assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
         assertEquals(1, client.calls)
     }
 
     @Test
-    fun unresolvedLocalTemporalCandidateCanUseValidatedFallback() = runBlocking {
-        val state = CreateTaskDialogState.WAITING_FOR_TIME
-        val client = FakeClient(
-            """{"move":"PROVIDE_FIELD","field":"TIME","value":"9 AM","confidence":0.98}"""
-        )
-        val result = orchestrator(client).resolve(
-            "just 9 am",
-            state,
-            context(state),
-            CreateDraftFallbackReason.TEMPORAL_UNRESOLVED
-        )
-        assertEquals(CreateDraftMove.ProvideField(CreateDraftField.TIME, "9 AM"), result.move)
-        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_FALLBACK, result.source)
-        assertEquals(1, client.calls)
+    fun exactCancelUsesImmediateSafetyReflexWithoutAgent() = runBlocking {
+        val client = FakeClient("unused")
+        val result = resolve(client, "cancel", saveState)
+
+        assertEquals(CreateDraftMove.Cancel, result.move)
+        assertEquals(CreateDraftMoveSource.LOCAL_SAFETY_REFLEX, result.source)
+        assertFalse(result.agentAttempted)
+        assertEquals(0, client.calls)
+    }
+
+    @Test
+    fun readyToSaveDoesNotCallAgent() = runBlocking {
+        val client = FakeClient("unused")
+        val result = resolve(client, "yes", CreateTaskDialogState.READY_TO_SAVE)
+
+        assertEquals(CreateDraftMove.Unknown, result.move)
+        assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
+        assertEquals(0, client.calls)
     }
 
     @Test
@@ -101,22 +134,35 @@ class CreateDraftSemanticOrchestratorTest {
         val client = CreateDraftSemanticClient { _, _ -> throw CancellationException("cancelled") }
         assertThrows(CancellationException::class.java) {
             runBlocking {
-                orchestrator(client).resolve("unclear words", saveState, context(saveState))
+                resolve(client, "unclear words", saveState)
             }
         }
     }
 
-    private fun orchestrator(client: CreateDraftSemanticClient) = CreateDraftSemanticOrchestrator(
-        localInterpreter = CreateDraftMoveInterpreter(),
-        semanticClient = client
-    )
+    private suspend fun resolve(
+        client: CreateDraftSemanticClient,
+        text: String,
+        state: CreateTaskDialogState
+    ): CreateDraftMoveResolution {
+        val orchestrator = CreateDraftSemanticOrchestrator(
+            localInterpreter = CreateDraftMoveInterpreter(),
+            semanticClient = client
+        )
+        val candidate = orchestrator.proposeLocal(text, state)
+        val context = context(state, candidate)
+        return orchestrator.resolve(text, state, context, candidate)
+    }
 
-    private fun context(state: CreateTaskDialogState) = CreateDraftAgentContext.capture(
+    private fun context(
+        state: CreateTaskDialogState,
+        candidate: CreateDraftMove
+    ) = CreateDraftAgentContext.capture(
         state = state,
         pendingReplacementField = null,
         hasTitle = true,
         hasSelectedDate = true,
-        hasSelectedTime = state == saveState
+        hasSelectedTime = state == saveState,
+        localCandidate = candidate
     )
 
     private val saveState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION

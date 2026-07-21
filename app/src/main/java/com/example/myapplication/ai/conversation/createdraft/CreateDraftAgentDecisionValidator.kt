@@ -50,6 +50,29 @@ class CreateDraftAgentDecisionValidator {
         return CreateDraftDecisionValidation(move, accepted = true)
     }
 
+    fun validateLocalCandidate(
+        candidate: CreateDraftMove,
+        state: CreateTaskDialogState
+    ): CreateDraftDecisionValidation {
+        val allowed = when (candidate) {
+            CreateDraftMove.ConfirmSave -> state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+            CreateDraftMove.RejectSave -> state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+            is CreateDraftMove.ChangeField -> isChangeAllowed(candidate.field, state)
+            is CreateDraftMove.ProvideField ->
+                candidate.value.isNotBlank() && candidate.field == expectedField(state)
+            is CreateDraftMove.ApplyUnspecifiedCorrection ->
+                candidate.value.isNotBlank() && state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+            CreateDraftMove.Cancel -> state != CreateTaskDialogState.READY_TO_SAVE
+            CreateDraftMove.RequestHelp -> state in ACTIVE_STATES
+            CreateDraftMove.Unknown -> false
+        }
+        return if (allowed) {
+            CreateDraftDecisionValidation(candidate, accepted = true)
+        } else {
+            rejected()
+        }
+    }
+
     private fun isChangeAllowed(field: CreateDraftField?, state: CreateTaskDialogState): Boolean {
         if (field == null) return false
         return state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ||

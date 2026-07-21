@@ -60,6 +60,20 @@ class CreateDraftAgentDecisionParserTest {
         assertRejected("""{"move":"CONFIRM_SAVE","field":"TIME","value":"","confidence":0.95}""")
     }
 
+    @Test
+    fun controlMovesRejectEveryNonEmptyValue() {
+        listOf(
+            "CONFIRM_SAVE",
+            "REJECT_SAVE",
+            "CANCEL",
+            "REQUEST_HELP",
+            "UNKNOWN"
+        ).forEach { move ->
+            assertRejected("""{"move":"$move","field":"","value":"unexpected","confidence":0.95}""")
+            assertRejected("""{"move":"$move","field":"","value":" ","confidence":0.95}""")
+        }
+    }
+
     private fun validUnknown() =
         """{"move":"UNKNOWN","field":"","value":"","confidence":0.9}"""
 

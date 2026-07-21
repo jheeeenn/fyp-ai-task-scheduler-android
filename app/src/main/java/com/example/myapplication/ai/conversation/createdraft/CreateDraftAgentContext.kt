@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.createdraft
 
 import com.example.myapplication.voice.CreateDraftField
+import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateTaskDialogState
 
 data class CreateDraftAgentContext(
@@ -10,6 +11,10 @@ data class CreateDraftAgentContext(
     val hasTitle: Boolean,
     val hasSelectedDate: Boolean,
     val hasSelectedTime: Boolean,
+    val localCandidateMove: String,
+    val localCandidateField: String,
+    val localCandidateValuePresent: Boolean,
+    val localCandidateRecognised: Boolean,
     val allowedMoves: List<String>,
     val authorityLimitations: List<String>
 ) {
@@ -20,6 +25,10 @@ data class CreateDraftAgentContext(
         appendLine("Title exists: $hasTitle")
         appendLine("Selected date exists: $hasSelectedDate")
         appendLine("Selected time exists: $hasSelectedTime")
+        appendLine("Advisory local candidate move: $localCandidateMove")
+        appendLine("Advisory local candidate field: $localCandidateField")
+        appendLine("Advisory local candidate has a value: $localCandidateValuePresent")
+        appendLine("Advisory local candidate recognised: $localCandidateRecognised")
         appendLine("Allowed moves: ${allowedMoves.joinToString()}")
         append("Authority limitations: ${authorityLimitations.joinToString("; ")}")
     }
@@ -30,7 +39,8 @@ data class CreateDraftAgentContext(
             pendingReplacementField: CreateDraftField?,
             hasTitle: Boolean,
             hasSelectedDate: Boolean,
-            hasSelectedTime: Boolean
+            hasSelectedTime: Boolean,
+            localCandidate: CreateDraftMove
         ): CreateDraftAgentContext {
             return CreateDraftAgentContext(
                 currentState = "${state.name}: ${stateDescription(state)}",
@@ -39,14 +49,45 @@ data class CreateDraftAgentContext(
                 hasTitle = hasTitle,
                 hasSelectedDate = hasSelectedDate,
                 hasSelectedTime = hasSelectedTime,
+                localCandidateMove = moveName(localCandidate),
+                localCandidateField = moveField(localCandidate)?.name.orEmpty(),
+                localCandidateValuePresent = moveHasValue(localCandidate),
+                localCandidateRecognised = localCandidate != CreateDraftMove.Unknown,
                 allowedMoves = allowedMoves(state),
                 authorityLimitations = listOf(
                     "Interpret one bounded move only",
+                    "The local candidate is advisory and not authoritative",
+                    "Independently decide whether to agree with or correct the local candidate",
+                    "Do not invent a value missing from the user utterance",
                     "Do not validate date or time values",
                     "Do not save or modify the draft",
                     "Do not generate operational responses"
                 )
             )
+        }
+
+        private fun moveName(move: CreateDraftMove): String = when (move) {
+            CreateDraftMove.ConfirmSave -> "CONFIRM_SAVE"
+            CreateDraftMove.RejectSave -> "REJECT_SAVE"
+            is CreateDraftMove.ChangeField -> "CHANGE_FIELD"
+            is CreateDraftMove.ProvideField -> "PROVIDE_FIELD"
+            is CreateDraftMove.ApplyUnspecifiedCorrection -> "APPLY_UNSPECIFIED_CORRECTION"
+            CreateDraftMove.Cancel -> "CANCEL"
+            CreateDraftMove.RequestHelp -> "REQUEST_HELP"
+            CreateDraftMove.Unknown -> "UNKNOWN"
+        }
+
+        private fun moveField(move: CreateDraftMove): CreateDraftField? = when (move) {
+            is CreateDraftMove.ChangeField -> move.field
+            is CreateDraftMove.ProvideField -> move.field
+            else -> null
+        }
+
+        private fun moveHasValue(move: CreateDraftMove): Boolean = when (move) {
+            is CreateDraftMove.ChangeField -> !move.value.isNullOrBlank()
+            is CreateDraftMove.ProvideField -> move.value.isNotBlank()
+            is CreateDraftMove.ApplyUnspecifiedCorrection -> move.value.isNotBlank()
+            else -> false
         }
 
         private fun expectedField(state: CreateTaskDialogState): CreateDraftField? = when (state) {
@@ -79,7 +120,7 @@ data class CreateDraftAgentContext(
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ->
                 "The complete draft is waiting for save confirmation or a correction."
             CreateTaskDialogState.READY_TO_SAVE ->
-                "Android is already processing a confirmed save. No semantic fallback is allowed."
+                "Android is already processing a confirmed save. No create-draft semantic request is allowed."
         }
     }
 }

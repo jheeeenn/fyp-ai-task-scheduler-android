@@ -21,19 +21,21 @@ class CreateTaskActivitySourceTest {
         .substringBefore("private fun formatDateForSpeech")
 
     @Test
-    fun voiceInputUsesLocalFirstResolverAndCentralMoveHandler() {
+    fun voiceInputUsesAgentPrimaryResolutionAndCentralMoveHandler() {
         assertTrue(source.contains("private val createDraftMoveInterpreter = CreateDraftMoveInterpreter()"))
         assertTrue(source.contains("private lateinit var createDraftSemanticOrchestrator: CreateDraftSemanticOrchestrator"))
-        assertTrue(voiceHandler.contains("createDraftSemanticOrchestrator.resolveLocal(normalized, capturedState)"))
-        assertTrue(voiceHandler.contains("handleCreateDraftMove(localResult.move)"))
-        assertTrue(voiceHandler.contains("requestCreateDraftFallback(normalized, capturedState, fallbackReason)"))
+        assertTrue(voiceHandler.contains("createDraftSemanticOrchestrator.proposeLocal(normalized, capturedState)"))
+        assertTrue(voiceHandler.contains("createDraftSemanticOrchestrator.resolveImmediate(localCandidate, capturedState)"))
+        assertTrue(voiceHandler.contains("requestCreateDraftPrimary(rawCommand.trim(), capturedState, localCandidate)"))
+        assertTrue(voiceHandler.contains("createDraftSemanticOrchestrator.resolve("))
+        assertTrue(voiceHandler.contains("handleCreateDraftMove(result.move)"))
         assertTrue(moveHandler.contains("CreateDraftMove.ConfirmSave ->"))
         assertTrue(moveHandler.contains("is CreateDraftMove.ChangeField ->"))
         assertTrue(moveHandler.contains("CreateDraftMove.Unknown ->"))
     }
 
     @Test
-    fun createWorkflowUsesBoundedConversationFallbackWithoutTaskAgent() {
+    fun createWorkflowUsesBoundedPrimaryConversationAgentWithoutTaskAgent() {
         assertTrue(source.contains("ConversationAgentClient(this)"))
         assertTrue(source.contains("CreateDraftSemanticOrchestrator("))
         listOf(
@@ -167,59 +169,75 @@ class CreateTaskActivitySourceTest {
     }
 
     @Test
-    fun fallbackResultsUseTheSameAndroidMoveHandler() {
-        val fallbackBody = source
-            .substringAfter("private fun requestCreateDraftFallback")
+    fun primaryAgentResultsUseTheSameAndroidMoveHandler() {
+        val primaryBody = source
+            .substringAfter("private fun requestCreateDraftPrimary")
             .substringBefore("private fun logCreateMoveResolution")
-        assertTrue(fallbackBody.contains("createDraftSemanticOrchestrator.resolve("))
-        assertTrue(fallbackBody.contains("handleCreateDraftMove(result.move)"))
-        assertFalse(fallbackBody.contains("applyTitle("))
-        assertFalse(fallbackBody.contains("applySpokenDate("))
-        assertFalse(fallbackBody.contains("applySpokenTime("))
-        assertFalse(fallbackBody.contains("saveTask()"))
+        assertTrue(primaryBody.contains("createDraftSemanticOrchestrator.resolve("))
+        assertTrue(primaryBody.contains("handleCreateDraftMove(result.move)"))
+        assertFalse(primaryBody.contains("applyTitle("))
+        assertFalse(primaryBody.contains("applySpokenDate("))
+        assertFalse(primaryBody.contains("applySpokenTime("))
+        assertFalse(primaryBody.contains("saveTask()"))
     }
 
     @Test
-    fun onlyUnresolvedTemporalCandidatesRequestFallback() {
-        val triggerBody = source
-            .substringAfter("private fun fallbackReasonFor")
-            .substringBefore("private fun classifyTemporalCandidate")
-        val classifierBody = source
-            .substringAfter("private fun classifyTemporalCandidate")
-            .substringBefore("private fun isUnresolvedUnspecifiedCorrection")
+    fun agentCannotOverrideAndroidTemporalPolicyRejection() {
+        val primaryBody = source
+            .substringAfter("private fun requestCreateDraftPrimary")
+            .substringBefore("private fun logCreateMoveResolution")
+        val timeBody = source
+            .substringAfter("private fun applyProvidedTime")
+            .substringBefore("private fun applyUnspecifiedCorrection")
 
-        assertTrue(triggerBody.contains("== CreateDraftCandidateStatus.UNRESOLVED"))
-        assertTrue(triggerBody.contains("CreateDraftFallbackReason.TEMPORAL_UNRESOLVED"))
-        assertTrue(classifierBody.contains("TemporalActionPolicy.validateClarification"))
-        assertTrue(classifierBody.contains("CreateDraftCandidateStatus.REJECTED_BY_POLICY"))
-        assertFalse(triggerBody.contains("REJECTED_BY_POLICY)"))
+        assertTrue(primaryBody.contains("handleCreateDraftMove(result.move)"))
+        assertFalse(primaryBody.contains("TemporalActionPolicy"))
+        assertTrue(timeBody.contains("applySpokenTime(timeCandidate, replacingConstraint = replacingField)"))
+        assertTrue(timeBody.contains("invalidTemporalTimeMessage()"))
+        assertTrue(source.contains("TemporalActionPolicy.validateClarification"))
     }
 
     @Test
-    fun staleFallbackResultsAreDiscardedAndConcurrentInputIsIgnored() {
-        val fallbackBody = source
-            .substringAfter("private fun requestCreateDraftFallback")
+    fun stalePrimaryResultsAreDiscardedAndConcurrentInputIsIgnored() {
+        val primaryBody = source
+            .substringAfter("private fun requestCreateDraftPrimary")
             .substringBefore("private fun logCreateMoveResolution")
         assertTrue(source.contains("private var isResolvingCreateDraftMove = false"))
         assertTrue(source.contains("private var createDraftResolutionGeneration = 0L"))
         assertTrue(voiceHandler.contains("if (isResolvingCreateDraftMove)"))
-        assertTrue(fallbackBody.contains("requestGeneration != createDraftResolutionGeneration || dialogState != capturedState"))
-        assertTrue(fallbackBody.contains("STALE_RESULT_DISCARDED"))
+        assertTrue(primaryBody.contains("requestGeneration != createDraftResolutionGeneration || dialogState != capturedState"))
+        assertTrue(primaryBody.contains("STALE_RESULT_DISCARDED"))
     }
 
     @Test
-    fun fallbackFailureRecoversWithoutDirectDraftMutation() {
-        val fallbackBody = source
-            .substringAfter("private fun requestCreateDraftFallback")
+    fun agentFailureRecoveryDoesNotDirectlyMutateDraft() {
+        val primaryBody = source
+            .substringAfter("private fun requestCreateDraftPrimary")
             .substringBefore("private fun logCreateMoveResolution")
         val unknownBranch = moveHandler
             .substringAfter("CreateDraftMove.Unknown ->")
             .substringBefore("}")
-        assertTrue(fallbackBody.contains("handleCreateDraftMove(result.move)"))
+        assertTrue(primaryBody.contains("handleCreateDraftMove(result.move)"))
         assertTrue(unknownBranch.contains("recoverFromUnknownMove()"))
-        assertFalse(fallbackBody.contains("pendingTaskState.title ="))
-        assertFalse(fallbackBody.contains("selectedDate ="))
-        assertFalse(fallbackBody.contains("selectedTime ="))
+        assertFalse(primaryBody.contains("pendingTaskState.title ="))
+        assertFalse(primaryBody.contains("selectedDate ="))
+        assertFalse(primaryBody.contains("selectedTime ="))
+    }
+
+    @Test
+    fun unspecifiedCorrectionNeverFallsBackToTitle() {
+        val correctionBody = source
+            .substringAfter("private fun applyUnspecifiedCorrection")
+            .substringBefore("private fun returnToSaveConfirmation")
+        val move = com.example.myapplication.voice.CreateDraftMoveInterpreter().interpret(
+            "make it just 9 am",
+            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+        )
+
+        assertTrue(move is com.example.myapplication.voice.CreateDraftMove.ApplyUnspecifiedCorrection)
+        assertFalse(correctionBody.contains("applyTitle("))
+        assertFalse(correctionBody.contains("CreateDraftField.TITLE"))
+        assertTrue(correctionBody.contains("correctionNotUnderstood()"))
     }
 
     @Test

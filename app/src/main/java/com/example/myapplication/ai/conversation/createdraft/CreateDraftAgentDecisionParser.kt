@@ -70,6 +70,7 @@ class CreateDraftAgentDecisionParser {
             CreateDraftAgentMoveType.REQUEST_HELP,
             CreateDraftAgentMoveType.UNKNOWN -> {
                 if (field != null) throw ConversationSchemaException("$move requires an empty field")
+                if (value.isNotEmpty()) throw ConversationSchemaException("$move requires an empty value")
             }
         }
     }
