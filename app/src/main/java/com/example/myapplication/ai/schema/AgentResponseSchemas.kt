@@ -4,6 +4,36 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object AgentResponseSchemas {
+    fun createDraftMoveResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "create_draft_move",
+            properties = JSONObject().apply {
+                put(
+                    "move",
+                    stringEnum(
+                        "CONFIRM_SAVE",
+                        "REJECT_SAVE",
+                        "CHANGE_FIELD",
+                        "PROVIDE_FIELD",
+                        "APPLY_UNSPECIFIED_CORRECTION",
+                        "CANCEL",
+                        "REQUEST_HELP",
+                        "UNKNOWN"
+                    )
+                )
+                put("field", stringEnum("", "TITLE", "DATE", "TIME"))
+                put("value", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("move")
+                put("field")
+                put("value")
+                put("confidence")
+            }
+        )
+    }
+
     fun conversationDecisionResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_decision",

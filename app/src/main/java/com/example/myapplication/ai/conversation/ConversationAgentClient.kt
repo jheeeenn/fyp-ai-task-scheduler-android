@@ -3,8 +3,10 @@ package com.example.myapplication.ai.conversation
 import android.content.Context
 import android.util.Log
 import com.example.myapplication.SettingsActivity
+import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticClient
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -24,7 +26,7 @@ open class ConversationAgentClient(
     context: Context? = null,
     private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
-) {
+) : CreateDraftSemanticClient {
     private val appContext = context?.applicationContext
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -79,20 +81,49 @@ $observationJson
             executeConversationRequest(userPrompt, RequestKind.RESPONSE)
         }
 
+    override suspend fun interpretCreateDraftMove(userText: String, contextSummary: String): String =
+        withContext(Dispatchers.IO) {
+            val userPrompt = """
+Create-draft state context:
+$contextSummary
+
+User text:
+$userText
+""".trimIndent()
+            executeConversationRequest(userPrompt, RequestKind.CREATE_DRAFT_MOVE)
+        }
+
     private fun executeConversationRequest(userPrompt: String, kind: RequestKind): String {
+        val temperature = when (kind) {
+            RequestKind.ROUTING -> ROUTING_TEMPERATURE
+            RequestKind.RESPONSE -> RESPONSE_TEMPERATURE
+            RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_TEMPERATURE
+        }
+        val maxTokens = when (kind) {
+            RequestKind.ROUTING -> 256
+            RequestKind.RESPONSE -> RESPONSE_MAX_TOKENS
+            RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_MAX_TOKENS
+        }
+        val responseFormat = when (kind) {
+            RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
+            RequestKind.RESPONSE -> AgentResponseSchemas.conversationResponseResponseFormat()
+            RequestKind.CREATE_DRAFT_MOVE -> AgentResponseSchemas.createDraftMoveResponseFormat()
+        }
+        val systemPrompt = when (kind) {
+            RequestKind.ROUTING -> ROUTING_SYSTEM_PROMPT
+            RequestKind.RESPONSE -> RESPONSE_SYSTEM_PROMPT
+            RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_SYSTEM_PROMPT
+        }
         val payload = JSONObject().apply {
             put("model", modelId)
-            put("temperature", if (kind == RequestKind.ROUTING) ROUTING_TEMPERATURE else RESPONSE_TEMPERATURE)
-            put("max_tokens", if (kind == RequestKind.ROUTING) 256 else RESPONSE_MAX_TOKENS)
+            put("temperature", temperature)
+            put("max_tokens", maxTokens)
             put("stream", false)
-            put(
-                "response_format",
-                if (kind == RequestKind.ROUTING) AgentResponseSchemas.conversationDecisionResponseFormat() else AgentResponseSchemas.conversationResponseResponseFormat()
-            )
+            put("response_format", responseFormat)
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", if (kind == RequestKind.ROUTING) ROUTING_SYSTEM_PROMPT else RESPONSE_SYSTEM_PROMPT)
+                    put("content", systemPrompt)
                 })
                 put(JSONObject().apply {
                     put("role", "user")
@@ -101,10 +132,14 @@ $observationJson
             })
         }
 
-        Log.d(
-            "CONVO_AGENT_SCHEMA",
-            if (kind == RequestKind.ROUTING) "Structured ConversationDecision schema enabled" else "Structured ConversationResponse schema enabled"
-        )
+        if (kind == RequestKind.CREATE_DRAFT_MOVE) {
+            Log.d("CONVO_CREATE_DRAFT_SCHEMA", "Strict create-draft move schema enabled")
+        } else {
+            Log.d(
+                "CONVO_AGENT_SCHEMA",
+                if (kind == RequestKind.ROUTING) "Structured ConversationDecision schema enabled" else "Structured ConversationResponse schema enabled"
+            )
+        }
 
         val requestEndpointUrl = getEndpointUrl()
         Log.d(
@@ -123,12 +158,19 @@ $observationJson
         return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
+                if (kind == RequestKind.CREATE_DRAFT_MOVE) {
+                    Log.d("CONVO_AGENT", "Create-draft HTTP ${response.code}; responseChars=${body.length}")
+                } else {
+                    Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
+                }
 
                 if (!response.isSuccessful) {
-                    throw IOException(
+                    val message = if (kind == RequestKind.CREATE_DRAFT_MOVE) {
+                        "LM Studio create-draft HTTP ${response.code}"
+                    } else {
                         "LM Studio HTTP ${response.code}: $body"
-                    )
+                    }
+                    throw IOException(message)
                 }
 
                 val choices = JSONObject(body).optJSONArray("choices")
@@ -167,6 +209,8 @@ $observationJson
 
                 content
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: java.net.SocketTimeoutException) {
             Log.e("CONVO_AGENT", "LM Studio request timed out", e)
             throw IOException("LM Studio request timed out", e)
@@ -200,12 +244,67 @@ $observationJson
         return endpointUrl
     }
 
-    private enum class RequestKind { ROUTING, RESPONSE }
+    private enum class RequestKind { ROUTING, RESPONSE, CREATE_DRAFT_MOVE }
 
     companion object {
         const val ROUTING_TEMPERATURE = 0.0
         const val RESPONSE_TEMPERATURE = 0.35
         const val RESPONSE_MAX_TOKENS = 128
+        const val CREATE_DRAFT_TEMPERATURE = 0.0
+        const val CREATE_DRAFT_MAX_TOKENS = 112
+        internal val CREATE_DRAFT_SYSTEM_PROMPT = """
+You interpret one utterance inside an existing create-task draft workflow.
+
+You do not create or save tasks.
+You do not validate dates or times.
+You do not calculate calendar dates.
+Do not infer an AM/PM value that the user did not provide.
+You do not modify the draft or produce operational success speech.
+You identify only the intended bounded move, the referenced field, and the candidate value spoken by the user.
+Use the supplied state context as authoritative.
+Remove harmless conversational filler only when meaning remains unambiguous.
+
+Return exactly these fields: move, field, value, confidence.
+Allowed move values: CONFIRM_SAVE, REJECT_SAVE, CHANGE_FIELD, PROVIDE_FIELD, APPLY_UNSPECIFIED_CORRECTION, CANCEL, REQUEST_HELP, UNKNOWN.
+Allowed field values: empty string, TITLE, DATE, TIME.
+
+Examples:
+State: WAITING_FOR_TIME
+User: "just 9 AM"
+{"move":"PROVIDE_FIELD","field":"TIME","value":"9 AM","confidence":0.98}
+
+State: WAITING_FOR_SAVE_CONFIRMATION
+User: "move the time to 10 AM"
+{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.98}
+
+State: WAITING_FOR_SAVE_CONFIRMATION
+User: "could you use revision as the name"
+{"move":"CHANGE_FIELD","field":"TITLE","value":"revision","confidence":0.97}
+
+State: WAITING_FOR_SAVE_CONFIRMATION
+User: "what's the time to 10 AM"
+This may be distorted speech recognition. When the intent and supplied field value remain clear:
+{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.90}
+
+State: WAITING_FOR_SAVE_CONFIRMATION
+User: "that looks right, save it"
+{"move":"CONFIRM_SAVE","field":"","value":"","confidence":0.95}
+
+State: WAITING_FOR_CHANGE_FIELD
+User: "use next Friday"
+{"move":"UNKNOWN","field":"","value":"","confidence":0.90}
+
+State: WAITING_FOR_TIME
+User: "later"
+{"move":"PROVIDE_FIELD","field":"TIME","value":"later","confidence":0.95}
+
+Preserve literal date and time meaning.
+Do not convert "tomorrow" to a calendar date.
+Do not convert "morning" to a clock time.
+Do not invent missing values.
+Android will validate every candidate and will decide whether "later" is unresolved.
+Do not output explanations, markdown, task-agent fields, or text outside the required JSON.
+""".trimIndent()
         val RESPONSE_SYSTEM_PROMPT = """
 You are the response-writing part of the Conversation Agent.
 Android has already interpreted the current operation state and may already have executed it. The ExecutionObservation states the exact authoritative outcome.
