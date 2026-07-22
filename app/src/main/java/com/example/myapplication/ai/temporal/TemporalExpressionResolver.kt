@@ -45,14 +45,27 @@ class TemporalExpressionResolver {
         )
     }
 
-    private fun clean(s: String?): String = s.orEmpty()
-        .lowercase(Locale.UK)
-        .replace(",", " ")
-        .replace(Regex("""(?<![a-z])([ap])\s*\.?\s*m\s*\.?(?![a-z])""")) { match ->
-            "${match.groupValues[1]}m"
-        }
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    private fun clean(s: String?): String {
+        val canonical = s.orEmpty()
+            .lowercase(Locale.UK)
+            .replace(",", " ")
+            .replace(Regex("""(?<![a-z])([ap])\s*\.?\s*m\s*\.?(?![a-z])""")) { match ->
+                "${match.groupValues[1]}m"
+            }
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return stripApproximateClockModifier(canonical)
+    }
+
+    private fun stripApproximateClockModifier(text: String): String {
+        val candidate = Regex("""^(?:around|about|roughly|approximately)\s+(.+)$""")
+            .matchEntire(text)
+            ?.groupValues
+            ?.get(1)
+            ?.trim()
+            ?: return text
+        return candidate.takeIf { parseMinute(it) != null } ?: text
+    }
     private fun merge(d: TemporalResolution?, t: TemporalResolution?, label: String) = TemporalResolution(
         type = when { d != null && t != null && d.isExactDate && t.isExactTime -> TemporalResolutionType.EXACT_DATE_TIME
             d != null && t != null -> TemporalResolutionType.DATE_TIME_WINDOW
