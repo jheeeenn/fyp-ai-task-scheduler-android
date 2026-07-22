@@ -182,6 +182,78 @@ class CreateTaskActivitySourceTest {
     }
 
     @Test
+    fun semanticRequestDisablesAndReliablyRestoresMutableControls() {
+        val primaryBody = source
+            .substringAfter("private fun requestCreateDraftPrimary")
+            .substringBefore("private fun logCreateMoveResolution")
+        val controlsBody = source
+            .substringAfter("private fun setCreateDraftControlsEnabled")
+            .substringBefore("private fun invalidateCreateDraftResolution")
+        val finallyBody = primaryBody.substringAfter("finally {")
+
+        listOf("btnSaveTask", "btnPickDate", "btnPickTime", "btnTalkAssistant").forEach { control ->
+            assertTrue(source.contains("private lateinit var $control: Button"))
+            assertTrue(controlsBody.contains("$control.isEnabled"))
+        }
+        assertTrue(controlsBody.contains("etTaskTitle.isEnabled"))
+        assertTrue(controlsBody.contains("!isFinishing"))
+        assertTrue(controlsBody.contains("!isDestroyed"))
+        assertTrue(controlsBody.contains("!isCreateTaskExitPending"))
+        assertFalse(controlsBody.contains("btnCancelTask"))
+        assertFalse(controlsBody.contains("btnGoHome"))
+        assertTrue(
+            primaryBody.indexOf("setCreateDraftControlsEnabled(false)") <
+                    primaryBody.indexOf("lifecycleScope.launch")
+        )
+        assertTrue(finallyBody.contains("setCreateDraftControlsEnabled(true)"))
+        assertTrue(primaryBody.contains("category=STALE_DRAFT_RESULT_DISCARDED"))
+        assertTrue(
+            primaryBody.substringAfter("category=STALE_DRAFT_RESULT_DISCARDED")
+                .contains("setCreateDraftControlsEnabled(true)")
+        )
+    }
+
+    @Test
+    fun cancelAndReturnHomeInvalidateSemanticRequestBeforeExistingActions() {
+        val onCreateBody = source
+            .substringAfter("override fun onCreate")
+            .substringBefore("//function definitions")
+        val cancelClickBody = onCreateBody
+            .substringAfter("btnCancelTask.setOnClickListenerWithHaptic")
+            .substringBefore("btnGoHome.setOnClickListenerWithHaptic")
+        val homeClickBody = onCreateBody
+            .substringAfter("btnGoHome.setOnClickListenerWithHaptic")
+            .substringBefore("btnTalkAssistant.setOnClickListenerWithHaptic")
+
+        assertTrue(cancelClickBody.contains("invalidateCreateDraftResolution()"))
+        assertTrue(
+            cancelClickBody.indexOf("invalidateCreateDraftResolution()") <
+                    cancelClickBody.indexOf("handleCreateDraftMove(CreateDraftMove.Cancel)")
+        )
+        assertTrue(homeClickBody.contains("invalidateCreateDraftResolution()"))
+        assertTrue(
+            homeClickBody.indexOf("invalidateCreateDraftResolution()") <
+                    homeClickBody.indexOf("assistantSession.speakThenRun")
+        )
+    }
+
+    @Test
+    fun saveIsBlockedDuringResolutionAndDuplicateInsertionIsGuarded() {
+        assertTrue(source.contains("private var isSavingTask = false"))
+        assertTrue(saveBody.contains("if (isSavingTask || isResolvingCreateDraftMove) return"))
+        assertTrue(saveBody.contains("isSavingTask = true"))
+        assertTrue(
+            saveBody.indexOf("InvalidPastSchedule") < saveBody.indexOf("isSavingTask = true")
+        )
+        assertTrue(
+            saveBody.indexOf("isSavingTask = true") < saveBody.indexOf("lifecycleScope.launch")
+        )
+        assertTrue(saveBody.contains("category=INSERT_FAILED"))
+        assertTrue(saveBody.contains("isSavingTask = false"))
+        assertEquals(1, Regex("dao\\.insert\\(").findAll(source).count())
+    }
+
+    @Test
     fun agentCannotOverrideAndroidTemporalPolicyRejection() {
         val primaryBody = source
             .substringAfter("private fun requestCreateDraftPrimary")

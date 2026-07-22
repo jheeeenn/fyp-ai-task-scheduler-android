@@ -94,6 +94,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private var isResolvingCreateDraftMove = false
     private var createDraftResolutionGeneration = 0L
     private var createDraftRevision = 0L
+    private var isSavingTask = false
+    private var isCreateTaskExitPending = false
 
     private var hasConsumedPrefill = false
 
@@ -107,6 +109,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var etTaskTitle: EditText
     private lateinit var tvSelectedDate: TextView
     private lateinit var tvSelectedTime: TextView
+    private lateinit var btnSaveTask: Button
+    private lateinit var btnPickDate: Button
+    private lateinit var btnPickTime: Button
+    private lateinit var btnTalkAssistant: Button
 
     private lateinit var dao: com.example.myapplication.data.TaskDao
 
@@ -134,17 +140,17 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         etTaskTitle = findViewById(R.id.etTaskTitle)
 
 
-        val btnSaveTask = findViewById<Button>(R.id.btnSaveTask)
+        btnSaveTask = findViewById(R.id.btnSaveTask)
         val btnCancelTask = findViewById<Button>(R.id.btnCancelTask)
 
-        val btnPickTime = findViewById<Button>(R.id.btnPickTime)
+        btnPickTime = findViewById(R.id.btnPickTime)
         tvSelectedTime = findViewById(R.id.tvSelectedTime)
 
-        val btnPickDate = findViewById<Button>(R.id.btnPickDate)
+        btnPickDate = findViewById(R.id.btnPickDate)
         tvSelectedDate = findViewById(R.id.tvSelectedDate)
 
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
-        val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
+        btnTalkAssistant = findViewById(R.id.btnTalkAssistant)
 
         dao = AppDatabase.getInstance(this).taskDao()
 
@@ -186,10 +192,14 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         btnCancelTask.setOnClickListenerWithHaptic {
+            invalidateCreateDraftResolution()
             handleCreateDraftMove(CreateDraftMove.Cancel)
         }
 
         btnGoHome.setOnClickListenerWithHaptic {
+            invalidateCreateDraftResolution()
+            isCreateTaskExitPending = true
+            setCreateDraftControlsEnabled(false)
             hasConsumedPrefill = false
             assistantSession.speakThenRun(responseManager.returnHome()) {
                 finish()
@@ -329,6 +339,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         assistantSession.pauseListeningForAssistantSpeech()
         assistantSession.getBottomSheet()?.setProcessingState()
+        setCreateDraftControlsEnabled(false)
 
         lifecycleScope.launch {
             try {
@@ -346,8 +357,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                         "CREATE_MOVE_PRIMARY",
                         "state=$capturedState category=STALE_DRAFT_RESULT_DISCARDED"
                     )
+                    setCreateDraftControlsEnabled(true)
                     return@launch
                 }
+                isResolvingCreateDraftMove = false
                 logCreateMoveResolution(capturedState, result)
                 handleCreateDraftMove(result.move)
             } catch (e: CancellationException) {
@@ -355,6 +368,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             } finally {
                 if (requestGeneration == createDraftResolutionGeneration) {
                     isResolvingCreateDraftMove = false
+                    setCreateDraftControlsEnabled(true)
                 }
             }
         }
@@ -434,6 +448,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun saveTask() {
+        if (isSavingTask || isResolvingCreateDraftMove) return
+
         val title = etTaskTitle.text.toString().trim()
 
         pendingTaskState.title = title
@@ -467,15 +483,34 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
+        isSavingTask = true
+        setCreateDraftControlsEnabled(true)
         lifecycleScope.launch {
-            val insertedId = withContext(Dispatchers.IO) {
-                dao.insert(
-                    TaskEntity(
-                        title = title,
-                        dueDate = selectedDate,
-                        dueTime = selectedTime
+            val insertedId = try {
+                withContext(Dispatchers.IO) {
+                    dao.insert(
+                        TaskEntity(
+                            title = title,
+                            dueDate = selectedDate,
+                            dueTime = selectedTime
+                        )
                     )
-                )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("CREATE_SAVE", "category=INSERT_FAILED", e)
+                if (!isFinishing && !isDestroyed) {
+                    isSavingTask = false
+                    setCreateDraftControlsEnabled(true)
+                    Toast.makeText(
+                        this@CreateTaskActivity,
+                        "Task could not be saved. Please try again.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    speakWithPanel("The task could not be saved. Please try again.")
+                }
+                return@launch
             }
 
             val scheduled = scheduleReminder(
@@ -854,7 +889,9 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun cancelCreateDraft() {
+        isCreateTaskExitPending = true
         resetTaskDraftState()
+        setCreateDraftControlsEnabled(false)
         hasConsumedPrefill = false
         assistantSession.speakThenRun(responseManager.cancelCreate()) {
             finish()
@@ -1072,6 +1109,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
 
     private fun speakThenFinish(text: String) {
+        isCreateTaskExitPending = true
+        setCreateDraftControlsEnabled(false)
         assistantSession.getBottomSheet()?.showAssistantHint(responseManager.followUpAnythingElse())
         assistantSession.speakThenRun(text) {
             finish()
@@ -1105,9 +1144,19 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         createDraftRevision += 1
     }
 
+    private fun setCreateDraftControlsEnabled(enabled: Boolean) {
+        val canEnable = enabled && !isCreateTaskExitPending && !isFinishing && !isDestroyed
+        etTaskTitle.isEnabled = canEnable
+        btnSaveTask.isEnabled = canEnable && !isSavingTask
+        btnPickDate.isEnabled = canEnable
+        btnPickTime.isEnabled = canEnable
+        btnTalkAssistant.isEnabled = canEnable
+    }
+
     private fun invalidateCreateDraftResolution() {
         createDraftResolutionGeneration += 1
         isResolvingCreateDraftMove = false
+        setCreateDraftControlsEnabled(true)
     }
 
     private fun clearPrefillExtras() {
