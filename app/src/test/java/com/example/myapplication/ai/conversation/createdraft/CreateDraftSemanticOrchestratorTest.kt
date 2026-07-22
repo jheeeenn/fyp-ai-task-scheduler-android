@@ -1,5 +1,7 @@
 package com.example.myapplication.ai.conversation.createdraft
 
+import com.example.myapplication.ai.temporal.TemporalExpressionResolver
+import com.example.myapplication.ai.temporal.TemporalResolutionType
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateDraftMoveInterpreter
@@ -63,6 +65,25 @@ class CreateDraftSemanticOrchestratorTest {
         assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TIME, "10 AM"), result.move)
         assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
         assertTrue(client.lastContext.contains("Advisory local candidate recognised: false"))
+    }
+
+    @Test
+    fun punctuatedAgentTimeRemainsAcceptedAndResolvesExactlyInAndroid() = runBlocking {
+        val client = FakeClient(
+            """{"move":"PROVIDE_FIELD","field":"TIME","value":"9:00 a.m.","confidence":0.95}"""
+        )
+        val result = resolve(client, "9:00 am", CreateTaskDialogState.WAITING_FOR_TIME)
+
+        assertEquals(
+            CreateDraftMove.ProvideField(CreateDraftField.TIME, "9:00 a.m."),
+            result.move
+        )
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+
+        val candidate = (result.move as CreateDraftMove.ProvideField).value
+        val temporal = TemporalExpressionResolver().resolve(null, candidate, candidate)
+        assertEquals(TemporalResolutionType.EXACT_TIME, temporal.type)
+        assertEquals(540, temporal.startMinuteInclusive)
     }
 
     @Test

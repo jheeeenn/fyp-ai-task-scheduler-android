@@ -317,7 +317,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
-        requestCreateDraftPrimary(rawCommand.trim(), capturedState, localCandidate)
+        requestCreateDraftPrimary(normalized, capturedState, localCandidate)
     }
 
     private fun requestCreateDraftPrimary(
