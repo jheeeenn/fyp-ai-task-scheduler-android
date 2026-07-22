@@ -29,8 +29,20 @@ class HomeActivityTaskContextSourceTest {
     }
 
     @Test
-    fun homePassesOnlyPromptSnapshotToConversationOrchestrator() {
-        assertTrue(source.contains("readOnlyTaskContextSnapshot = readOnlyTaskContextStore.snapshotForPrompt()"))
+    fun homeCapturesOneSnapshotForPromptAndContextReadValidation() {
+        val requestFlow = source
+            .substringAfter("Log.d(\"CONVO_ORCH\", \"normalized='")
+            .substringBefore("// branches for actions")
+        val capture = requestFlow.indexOf("val taskContextCapture = readOnlyTaskContextStore.capture()")
+        val request = requestFlow.indexOf("conversationOrchestrator.process(")
+        val validation = requestFlow.indexOf("capturedSnapshot = taskContextCapture.snapshot")
+
+        assertTrue(capture >= 0)
+        assertTrue(capture < request)
+        assertTrue(request < validation)
+        assertTrue(requestFlow.contains("readOnlyTaskContextSnapshot = taskContextCapture.promptText"))
+        assertTrue(requestFlow.contains("currentGeneration = readOnlyTaskContextStore.currentGeneration()"))
+        assertTrue(requestFlow.contains("snapshotForPrompt()").not())
         assertTrue(source.contains("private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()"))
     }
 
@@ -65,5 +77,44 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(guardCall in (branchStart + 1) until taskAgentCall)
         assertTrue(taskCommandBranch.contains("AppDatabase").not())
         assertTrue(taskCommandBranch.contains("taskDao()").not())
+    }
+
+    @Test
+    fun contextReadIsValidatedAndRenderedBeforeTaskAgentWithoutRoomAccess() {
+        val contextReadBranch = source
+            .substringAfter("ConversationRoute.CONTEXT_READ ->")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val contextBranchStart = source.indexOf("ConversationRoute.CONTEXT_READ ->")
+        val taskAgentCall = source.indexOf("agentOrchestrator.process(taskAgentInput)")
+
+        assertTrue(contextReadBranch.contains("ReadOnlyTaskContextReadValidator.validate("))
+        assertTrue(contextReadBranch.contains("capturedSnapshot = taskContextCapture.snapshot"))
+        assertTrue(contextReadBranch.contains("ReadOnlyTaskContextResponseRenderer.render("))
+        assertTrue(contextReadBranch.contains("recordContextReadResponse(speech)"))
+        assertTrue(contextReadBranch.contains("return@launch"))
+        assertTrue(contextBranchStart < taskAgentCall)
+        assertTrue(contextReadBranch.contains("agentOrchestrator").not())
+        assertTrue(contextReadBranch.contains("AppDatabase").not())
+        assertTrue(contextReadBranch.contains("taskDao()").not())
+        assertTrue(contextReadBranch.contains("resolveRef(").not())
+        assertTrue(contextReadBranch.contains(".id").not())
+    }
+
+    @Test
+    fun contextReadLogContainsOnlyNonSensitiveValidationMetadata() {
+        val contextReadBranch = source
+            .substringAfter("ConversationRoute.CONTEXT_READ ->")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val log = contextReadBranch
+            .substringAfter("Log.d(")
+            .substringBefore(")\n")
+
+        assertTrue(log.contains("route="))
+        assertTrue(log.contains("ref="))
+        assertTrue(log.contains("detail="))
+        assertTrue(log.contains("capturedGeneration="))
+        assertTrue(log.contains("validation="))
+        assertTrue(log.contains("title=").not())
+        assertTrue(log.contains("Room").not())
     }
 }

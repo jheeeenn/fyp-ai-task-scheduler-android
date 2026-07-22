@@ -162,6 +162,20 @@ class ReadOnlyTaskContextStoreTest {
         assertEquals(120, itemJson.getString("title").length)
     }
 
+    @Test
+    fun captureUsesOneSnapshotForItemsGenerationAndPromptText() {
+        val store = ReadOnlyTaskContextStore()
+        store.replaceRecentQueryResults(listOf(task(42, "Captured task")))
+
+        val capture = store.capture()
+
+        assertEquals(store.snapshot(), capture.snapshot)
+        assertEquals(store.snapshotForPrompt(), capture.promptText)
+        assertTrue(capture.promptText.contains("Generation: ${capture.snapshot.generation}"))
+        assertTrue(capture.promptText.contains("\"title\":\"Captured task\""))
+        assertFalse(capture.promptText.contains("\"id\""))
+    }
+
     private fun task(id: Long, title: String, isDone: Boolean = false) = TaskEntity(
         id = id,
         title = title,

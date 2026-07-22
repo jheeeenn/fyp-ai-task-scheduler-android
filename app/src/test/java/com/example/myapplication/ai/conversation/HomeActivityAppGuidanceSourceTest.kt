@@ -69,4 +69,22 @@ class HomeActivityAppGuidanceSourceTest {
         assertTrue(observationBody.contains("AndroidObservationResponseRenderer.render(observation)"))
         assertFalse(source.contains("conversationOrchestrator.respondToObservation("))
     }
+
+    @Test
+    fun resultFollowUpGuidanceSupportsReadsButNotRelativeMutation() {
+        val summary = contextBuilder
+            .substringAfter("HomeFollowUpContext.AFTER_TASK_SUMMARY -> Pair(")
+            .substringBefore("HomeFollowUpContext.AFTER_TASK_DETAILS -> Pair(")
+        val details = contextBuilder
+            .substringAfter("HomeFollowUpContext.AFTER_TASK_DETAILS -> Pair(")
+            .substringBefore("HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> Pair(")
+
+        listOf(summary, details).forEach { guidance ->
+            assertTrue(guidance.contains("Ask what the first, second, or another supplied result was."))
+            assertTrue(guidance.contains("date, time, status, or subtask summary"))
+            assertTrue(guidance.contains("using the task name"))
+            assertFalse(guidance.contains("Delete the second"))
+            assertFalse(guidance.contains("mutate the supplied result"))
+        }
+    }
 }

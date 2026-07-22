@@ -59,7 +59,10 @@ import com.example.myapplication.ai.conversation.RequiredInput
 import com.example.myapplication.ai.conversation.TaskObservationMapper
 import com.example.myapplication.ai.conversation.TemporalObservationInputs
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
+import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -476,18 +479,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.AFTER_TASK_SUMMARY -> Pair(
                 "A task summary was read, and the assistant offered to read more details.",
                 listOf(
-                    "Accept or ask to read all task details.",
-                    "Decline the offer or create a task.",
-                    "Ask for guidance or give another task command."
+                    "Ask what the first, second, or another supplied result was.",
+                    "Ask for a supplied task's date, time, status, or subtask summary.",
+                    "Give another task command using the task name, or end the assistant session."
                 )
             )
 
             HomeFollowUpContext.AFTER_TASK_DETAILS -> Pair(
                 "Detailed task results were already read.",
                 listOf(
-                    "Give another task command.",
-                    "Ask for guidance.",
-                    "End the assistant session."
+                    "Ask what the first, second, or another supplied result was.",
+                    "Ask for a supplied task's date, time, status, or subtask summary.",
+                    "Give another task command using the task name, or end the assistant session."
                 )
             )
 
@@ -634,11 +637,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         lifecycleScope.launch {
             try {
                 Log.d("CONVO_ORCH", "normalized='$normalized'")
+                val taskContextCapture = readOnlyTaskContextStore.capture()
                 val conversationDecision = try {
                     conversationOrchestrator.process(
                         normalizedText = normalized,
                         appContextSummary = buildConversationAppContextSummary(),
-                        readOnlyTaskContextSnapshot = readOnlyTaskContextStore.snapshotForPrompt()
+                        readOnlyTaskContextSnapshot = taskContextCapture.promptText
                     )
                 } catch (e: ConversationOrchestratorException) {
                     Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
@@ -649,14 +653,53 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     return@launch
                 }
 
-                Log.d(
-                    "CONVO_ORCH",
-                    "route=${conversationDecision.route} confidence=${conversationDecision.confidence} " +
-                            "source=${conversationDecision.source}"
-                )
+                if (conversationDecision.route != ConversationRoute.CONTEXT_READ) {
+                    Log.d(
+                        "CONVO_ORCH",
+                        "route=${conversationDecision.route} confidence=${conversationDecision.confidence} " +
+                                "source=${conversationDecision.source}"
+                    )
+                }
 
                 val taskAgentInput: String
                 when (conversationDecision.route) {
+                    ConversationRoute.CONTEXT_READ -> {
+                        val validation = ReadOnlyTaskContextReadValidator.validate(
+                            decision = conversationDecision,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                        )
+                        Log.d(
+                            "HOME_CONTEXT_READ",
+                            "route=${conversationDecision.route} " +
+                                "ref=${conversationDecision.contextRef} " +
+                                "detail=${conversationDecision.contextDetail} " +
+                                "capturedGeneration=${taskContextCapture.snapshot.generation} " +
+                                "validation=${validation.result}"
+                        )
+                        if (!validation.isValid) {
+                            val clarification = if (
+                                validation.result == ContextReadValidationResult.STALE_GENERATION
+                            ) {
+                                "Those task results changed. Please repeat your task query."
+                            } else {
+                                "Please ask again using one of the supplied task results."
+                            }
+                            assistantSession.speak(clarification, listenAgain = true)
+                            return@launch
+                        }
+
+                        val speech = ReadOnlyTaskContextResponseRenderer.render(
+                            item = requireNotNull(validation.item),
+                            detail = validation.detail
+                        )
+                        conversationOrchestrator.recordContextReadResponse(speech)
+                        assistantSession.speak(
+                            speech,
+                            listenAgain = conversationDecision.listenAgain
+                        )
+                        return@launch
+                    }
                     ConversationRoute.DIRECT_REPLY -> {
                         Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
                         assistantSession.speak(

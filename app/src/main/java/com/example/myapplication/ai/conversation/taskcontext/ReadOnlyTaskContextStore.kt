@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.taskcontext
 
 import com.example.myapplication.data.TaskEntity
+import java.util.Collections
 import java.util.Locale
 
 /**
@@ -47,6 +48,20 @@ class ReadOnlyTaskContextStore {
 
     @Synchronized
     fun snapshotForPrompt(): String = currentSnapshot.toPromptText()
+
+    @Synchronized
+    fun capture(): ReadOnlyTaskContextCapture {
+        val capturedSnapshot = currentSnapshot.copy(
+            items = Collections.unmodifiableList(currentSnapshot.items.toList())
+        )
+        return ReadOnlyTaskContextCapture(
+            snapshot = capturedSnapshot,
+            promptText = capturedSnapshot.toPromptText()
+        )
+    }
+
+    @Synchronized
+    fun currentGeneration(): Long = generation
 
     /** Android-only infrastructure for future authoritative reference handling. */
     @Synchronized

@@ -11,7 +11,11 @@ class ConversationResponseConfigurationTest {
         assertEquals(128, ConversationAgentClient.RESPONSE_MAX_TOKENS)
     }
     @Test fun schemasRemainSeparate() {
-        assertTrue(AgentResponseSchemas.conversationDecisionResponseFormat().toString().contains("conversation_decision"))
+        val decisionSchema = AgentResponseSchemas.conversationDecisionResponseFormat().toString()
+        assertTrue(decisionSchema.contains("conversation_decision"))
+        assertTrue(decisionSchema.contains("CONTEXT_READ"))
+        assertTrue(decisionSchema.contains("context_ref"))
+        assertTrue(decisionSchema.contains("context_detail"))
         assertTrue(AgentResponseSchemas.conversationResponseResponseFormat().toString().contains("conversation_response"))
         assertTrue(AgentResponseSchemas.conversationResponseResponseFormat().toString().contains("response_type"))
     }

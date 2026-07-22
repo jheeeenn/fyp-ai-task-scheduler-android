@@ -47,4 +47,17 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("Operational success must never be claimed by routing"))
         assertTrue(prompt.contains("Never claim that an operation succeeded, completed, or changed task data"))
     }
+
+    @Test
+    fun contextualFactsUseStructuredAndroidRenderedRoute() {
+        assertTrue(prompt.contains("CONTEXT_READ"))
+        assertTrue(prompt.contains("select exactly one supplied temporary ref"))
+        assertTrue(prompt.contains("Keep task_text and reply empty"))
+        assertTrue(prompt.contains("Android will verify the ref"))
+        assertTrue(prompt.contains("Contextual examples are illustrative, not an exhaustive phrase dictionary"))
+        assertTrue(prompt.contains("User: What was the second one?"))
+        assertTrue(prompt.contains("\"context_ref\":\"T2\",\"context_detail\":\"SUMMARY\""))
+        assertTrue(prompt.contains("User: Delete the second one."))
+        assertTrue(prompt.contains("\"route\":\"ASK_CLARIFICATION\""))
+    }
 }

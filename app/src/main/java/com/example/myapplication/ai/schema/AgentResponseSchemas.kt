@@ -38,9 +38,11 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "CONTEXT_READ", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
+                put("context_ref", stringType())
+                put("context_detail", stringEnum("NONE", "SUMMARY", "TITLE", "DATE", "TIME", "STATUS", "SUBTASKS"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
                 put("listen_again", booleanType())
             },
@@ -48,6 +50,8 @@ object AgentResponseSchemas {
                 put("route")
                 put("task_text")
                 put("reply")
+                put("context_ref")
+                put("context_detail")
                 put("confidence")
                 put("listen_again")
             }

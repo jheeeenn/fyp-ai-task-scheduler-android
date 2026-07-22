@@ -35,13 +35,62 @@ class ConversationDecisionParser {
             throw ConversationSchemaException("ConversationDecision confidence out of range: $confidence")
         }
 
+        val taskText = requireString(json, "task_text")
+        val reply = requireString(json, "reply")
+        val contextRef = requireString(json, "context_ref")
+        val contextDetailText = requireString(json, "context_detail")
+        val contextDetail = try {
+            ConversationContextDetail.valueOf(contextDetailText)
+        } catch (e: IllegalArgumentException) {
+            throw ConversationSchemaException(
+                "Invalid ConversationDecision context_detail: $contextDetailText",
+                e
+            )
+        }
+        validateRouteFields(route, taskText, reply, contextRef, contextDetail)
+
         return ConversationDecision(
             route = route,
-            taskText = requireString(json, "task_text"),
-            reply = requireString(json, "reply"),
+            taskText = taskText,
+            reply = reply,
+            contextRef = contextRef,
+            contextDetail = contextDetail,
             confidence = confidence,
             listenAgain = requireBoolean(json, "listen_again")
         )
+    }
+
+    private fun validateRouteFields(
+        route: ConversationRoute,
+        taskText: String,
+        reply: String,
+        contextRef: String,
+        contextDetail: ConversationContextDetail
+    ) {
+        if (route == ConversationRoute.CONTEXT_READ) {
+            if (taskText.isNotEmpty() || reply.isNotEmpty()) {
+                throw ConversationSchemaException(
+                    "CONTEXT_READ requires empty task_text and reply"
+                )
+            }
+            if (!TEMPORARY_REF.matches(contextRef)) {
+                throw ConversationSchemaException(
+                    "CONTEXT_READ requires a temporary context_ref"
+                )
+            }
+            if (contextDetail == ConversationContextDetail.NONE) {
+                throw ConversationSchemaException(
+                    "CONTEXT_READ requires a non-NONE context_detail"
+                )
+            }
+            return
+        }
+
+        if (contextRef.isNotEmpty() || contextDetail != ConversationContextDetail.NONE) {
+            throw ConversationSchemaException(
+                "Non-context routes require empty context_ref and NONE context_detail"
+            )
+        }
     }
 
     private fun extractFirstJsonObject(rawContent: String): String {
@@ -127,9 +176,13 @@ class ConversationDecisionParser {
             "route",
             "task_text",
             "reply",
+            "context_ref",
+            "context_detail",
             "confidence",
             "listen_again"
         )
+
+        private val TEMPORARY_REF = Regex("T[1-9][0-9]*", RegexOption.IGNORE_CASE)
 
         private val TASK_AGENT_FIELDS = setOf(
             "action",

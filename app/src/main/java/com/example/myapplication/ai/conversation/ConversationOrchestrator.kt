@@ -129,6 +129,7 @@ class ConversationOrchestrator(
             ConversationRoute.TASK_COMMAND -> decision.copy(
                 taskText = decision.taskText.ifBlank { normalizedText }
             )
+            ConversationRoute.CONTEXT_READ -> decision
             ConversationRoute.DIRECT_REPLY -> decision.copy(
                 reply = decision.reply.ifBlank { "Hi. I can help you create, check, reschedule, delete, complete, or break down tasks." }
             )
@@ -147,6 +148,10 @@ class ConversationOrchestrator(
 
     fun clearSessionMemory() {
         memory.clear()
+    }
+
+    fun recordContextReadResponse(response: String) {
+        memory.recordFinalSpokenResponse(response)
     }
 
     private fun appendTaskContext(

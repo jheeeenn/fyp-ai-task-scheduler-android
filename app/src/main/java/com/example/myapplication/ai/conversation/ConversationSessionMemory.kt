@@ -59,6 +59,7 @@ class ConversationSessionMemory {
             }
             ConversationRoute.ASK_CLARIFICATION -> pendingAction = "ASK_CLARIFICATION"
             ConversationRoute.END_SESSION -> pendingAction = null
+            ConversationRoute.CONTEXT_READ,
             ConversationRoute.DIRECT_REPLY,
             ConversationRoute.UNKNOWN -> Unit
         }

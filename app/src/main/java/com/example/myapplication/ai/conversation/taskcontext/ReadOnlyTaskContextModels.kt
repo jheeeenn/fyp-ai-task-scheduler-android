@@ -22,3 +22,8 @@ data class ReadOnlyTaskContextSnapshot(
     val items: List<ReadOnlyTaskContextItem>,
     val truncated: Boolean
 )
+
+data class ReadOnlyTaskContextCapture(
+    val snapshot: ReadOnlyTaskContextSnapshot,
+    val promptText: String
+)
