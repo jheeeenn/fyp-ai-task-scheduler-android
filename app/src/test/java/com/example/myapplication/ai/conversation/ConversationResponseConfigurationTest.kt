@@ -16,6 +16,7 @@ class ConversationResponseConfigurationTest {
         assertTrue(decisionSchema.contains("CONTEXT_READ"))
         assertTrue(decisionSchema.contains("context_ref"))
         assertTrue(decisionSchema.contains("context_detail"))
+        assertTrue(AgentResponseSchemas.contextReadRepairResponseFormat().toString().contains("context_read_repair"))
         assertTrue(AgentResponseSchemas.conversationResponseResponseFormat().toString().contains("conversation_response"))
         assertTrue(AgentResponseSchemas.conversationResponseResponseFormat().toString().contains("response_type"))
     }

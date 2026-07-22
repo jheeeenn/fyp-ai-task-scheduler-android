@@ -1,11 +1,20 @@
 package com.example.myapplication.ai.conversation
 
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
+import java.util.Locale
+
 class ConversationSessionMemory {
     private val turns = ArrayDeque<String>()
 
     var lastReferencedTask: String? = null
         private set
     var lastQueryDate: String? = null
+        private set
+    var lastContextRef: String? = null
+        private set
+    var lastContextGeneration: Long? = null
+        private set
+    var lastContextDetail: ConversationContextDetail = ConversationContextDetail.NONE
         private set
     var pendingAction: String? = null
         private set
@@ -33,6 +42,7 @@ class ConversationSessionMemory {
         latestExecutionOutcome = observation.outcome
         latestRequiredInput = observation.requiredInput
         if (observation.taskTitle.isNotBlank()) {
+            clearStructuredContextSelection()
             lastReferencedTask = sanitizeUntrustedValue(observation.taskTitle)
         }
         if (observation.operation == ExecutionOperation.QUERY_TASK && observation.dateText.isNotBlank()) {
@@ -50,6 +60,32 @@ class ConversationSessionMemory {
     fun recordFinalSpokenResponse(text: String) {
         finalSpokenResponse = text.takeIf { it.isNotBlank() }
         recordAssistant(text)
+    }
+
+    fun recordAuthoritativeContextRead(
+        item: ReadOnlyTaskContextItem,
+        selectedRef: String,
+        selectedDetail: ConversationContextDetail,
+        capturedGeneration: Long,
+        finalSpeech: String
+    ) {
+        if (turns.lastOrNull()?.startsWith("Assistant: ") == true) {
+            turns.removeLast()
+        }
+        pendingAction = null
+        lastContextRef = selectedRef.trim().uppercase(Locale.ROOT)
+        lastContextGeneration = capturedGeneration
+        lastContextDetail = selectedDetail
+        lastReferencedTask = sanitizeUntrustedValue(item.title)
+        recordFinalSpokenResponse(finalSpeech)
+    }
+
+    fun invalidateContextSelectionUnlessGeneration(currentGeneration: Long) {
+        val selectedGeneration = lastContextGeneration ?: return
+        if (selectedGeneration != currentGeneration) {
+            clearStructuredContextSelection()
+            lastReferencedTask = null
+        }
     }
 
     fun updateFromDecision(decision: ConversationDecision) {
@@ -76,6 +112,9 @@ class ConversationSessionMemory {
             }
             appendLine("lastReferencedTask=${jsonString(lastReferencedTask.orEmpty())}")
             appendLine("lastQueryDate=${jsonString(lastQueryDate.orEmpty())}")
+            appendLine("lastContextRef=${jsonString(lastContextRef.orEmpty())}")
+            appendLine("lastContextGeneration=${lastContextGeneration?.toString().orEmpty()}")
+            appendLine("lastContextDetail=${lastContextDetail.name}")
             appendLine("pendingAction=${pendingAction.orEmpty()}")
             appendLine("latestExecutionOperation=${latestExecutionOperation?.name.orEmpty()}")
             appendLine("latestExecutionOutcome=${latestExecutionOutcome?.name.orEmpty()}")
@@ -87,11 +126,20 @@ class ConversationSessionMemory {
         turns.clear()
         lastReferencedTask = null
         lastQueryDate = null
+        lastContextRef = null
+        lastContextGeneration = null
+        lastContextDetail = ConversationContextDetail.NONE
         pendingAction = null
         latestExecutionOperation = null
         latestExecutionOutcome = null
         latestRequiredInput = null
         finalSpokenResponse = null
+    }
+
+    private fun clearStructuredContextSelection() {
+        lastContextRef = null
+        lastContextGeneration = null
+        lastContextDetail = ConversationContextDetail.NONE
     }
 
     private fun addTurn(turn: String) {

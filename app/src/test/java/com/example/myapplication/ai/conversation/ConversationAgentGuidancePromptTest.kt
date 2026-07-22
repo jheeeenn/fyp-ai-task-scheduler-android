@@ -60,4 +60,27 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("User: Delete the second one."))
         assertTrue(prompt.contains("\"route\":\"ASK_CLARIFICATION\""))
     }
+
+    @Test
+    fun contextualGuidanceSupportsFlexibleOrdinalsAndUniqueTitles() {
+        assertTrue(prompt.contains("identified by an ordinal, a supplied temporary ref, or one unique supplied title"))
+        assertTrue(prompt.contains("The noun may be omitted"))
+        assertTrue(prompt.contains("what time is the first"))
+        assertTrue(prompt.contains("what time it is for the second"))
+        assertTrue(prompt.contains("Use ASK_CLARIFICATION only for genuine ambiguity"))
+        assertTrue(prompt.contains("Example supplied snapshot: T3 has the unique title Podcast"))
+        assertTrue(prompt.contains("two supplied titles both contain Podcast"))
+    }
+
+    @Test
+    fun repairPromptIsReadOnlyAndGenerationBounded() {
+        val repairPrompt = ConversationAgentClient.CONTEXT_READ_REPAIR_SYSTEM_PROMPT
+
+        assertTrue(repairPrompt.contains("Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only"))
+        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, DIRECT_REPLY, END_SESSION or UNKNOWN"))
+        assertTrue(repairPrompt.contains("Match titles case-insensitively using only supplied items"))
+        assertTrue(repairPrompt.contains("more than one supplied title plausibly matches"))
+        assertTrue(repairPrompt.contains("Mutation requests must remain ASK_CLARIFICATION"))
+        assertTrue(repairPrompt.contains("generation equals the captured snapshot generation"))
+    }
 }

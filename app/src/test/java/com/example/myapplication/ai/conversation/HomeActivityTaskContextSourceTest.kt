@@ -90,7 +90,7 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(contextReadBranch.contains("ReadOnlyTaskContextReadValidator.validate("))
         assertTrue(contextReadBranch.contains("capturedSnapshot = taskContextCapture.snapshot"))
         assertTrue(contextReadBranch.contains("ReadOnlyTaskContextResponseRenderer.render("))
-        assertTrue(contextReadBranch.contains("recordContextReadResponse(speech)"))
+        assertTrue(contextReadBranch.contains("recordAuthoritativeContextRead("))
         assertTrue(contextReadBranch.contains("return@launch"))
         assertTrue(contextBranchStart < taskAgentCall)
         assertTrue(contextReadBranch.contains("agentOrchestrator").not())
@@ -116,5 +116,84 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(log.contains("validation="))
         assertTrue(log.contains("title=").not())
         assertTrue(log.contains("Room").not())
+    }
+
+    @Test
+    fun resultStatesDoNotLocallyOpenCreationFromClassifierCreateOne() {
+        val handler = source
+            .substringAfter("private fun handleConversationIntent(")
+            .substringBefore("private fun extractSpokenTaskPhrase")
+        val summary = handler
+            .substringAfter("HomeFollowUpContext.AFTER_TASK_SUMMARY ->")
+            .substringBefore("HomeFollowUpContext.AFTER_TASK_DETAILS ->")
+        val details = handler
+            .substringAfter("HomeFollowUpContext.AFTER_TASK_DETAILS ->")
+            .substringBefore("HomeFollowUpContext.DELETE_CONFIRMATION ->")
+
+        assertTrue(summary.contains("ConversationIntent.CREATE_ONE").not())
+        assertTrue(details.contains("ConversationIntent.CREATE_ONE").not())
+        assertTrue(summary.contains("openCreateTaskFromFollowUp()").not())
+        assertTrue(details.contains("openCreateTaskFromFollowUp()").not())
+    }
+
+    @Test
+    fun contextualCommandsBypassClassifierAndReachCentralPathWithoutScreenTransition() {
+        val voiceFlow = source
+            .substringAfter("private fun handleVoiceCommand(command: String)")
+            .substringBefore("// branches for actions")
+
+        assertTrue(voiceFlow.contains("ContextReferenceMutationGuard.containsContextReference("))
+        assertTrue(voiceFlow.contains("contextual reference deferred to Conversation Agent"))
+        assertTrue(voiceFlow.contains("conversationOrchestrator.process("))
+        assertTrue(voiceFlow.contains("CreateTaskActivity").not())
+        assertTrue(voiceFlow.contains("taskDao()").not())
+        assertTrue(voiceFlow.contains("updateDoneStatus").not())
+    }
+
+    @Test
+    fun afterDetailsReadAllRerunsDetailedQueryWithoutTaskAgent() {
+        val handler = source
+            .substringAfter("private fun handleConversationIntent(")
+            .substringBefore("private fun extractSpokenTaskPhrase")
+        val details = handler
+            .substringAfter("HomeFollowUpContext.AFTER_TASK_DETAILS ->")
+            .substringBefore("HomeFollowUpContext.DELETE_CONFIRMATION ->")
+
+        assertTrue(details.contains("ConversationIntent.READ_ALL"))
+        assertTrue(details.contains("handleDetailedFollowUpQuery()"))
+        assertTrue(details.contains("agentOrchestrator").not())
+    }
+
+    @Test
+    fun repairUsesSameCaptureAndIsLimitedToPrimaryAgentAbstention() {
+        val requestFlow = source
+            .substringAfter("val taskContextCapture = readOnlyTaskContextStore.capture()")
+            .substringBefore("// branches for actions")
+
+        assertTrue(requestFlow.contains("ContextReadRepairPolicy.shouldAttempt("))
+        assertTrue(requestFlow.contains("readOnlyTaskContextSnapshot = taskContextCapture.promptText"))
+        assertTrue(requestFlow.contains("capturedSnapshot = taskContextCapture.snapshot"))
+        assertTrue(requestFlow.contains("processContextReadRepair("))
+        assertTrue(requestFlow.contains("CONTEXT_REPAIR_ATTEMPTED"))
+        assertTrue(requestFlow.contains("CONTEXT_REPAIR_ACCEPTED"))
+        assertTrue(requestFlow.contains("CONTEXT_REPAIR_ABSTAINED"))
+        assertTrue(requestFlow.contains("CONTEXT_REPAIR_REJECTED"))
+        assertTrue(requestFlow.contains("CONTEXT_REPAIR_FAILED"))
+    }
+
+    @Test
+    fun captureLoggingContainsOnlySnapshotMetadata() {
+        val captureLog = source
+            .substringAfter("\"HOME_CONTEXT_CAPTURE\"")
+            .substringBefore(")\n")
+
+        assertTrue(captureLog.contains("scope="))
+        assertTrue(captureLog.contains("generation="))
+        assertTrue(captureLog.contains("itemCount="))
+        assertTrue(captureLog.contains("truncated="))
+        assertTrue(captureLog.contains("title").not())
+        assertTrue(captureLog.contains("dueDate").not())
+        assertTrue(captureLog.contains("dueTime").not())
+        assertTrue(captureLog.contains("Room").not())
     }
 }

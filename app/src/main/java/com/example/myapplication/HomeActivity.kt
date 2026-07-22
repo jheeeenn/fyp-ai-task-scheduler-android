@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.data.AppDatabase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -60,6 +61,8 @@ import com.example.myapplication.ai.conversation.TaskObservationMapper
 import com.example.myapplication.ai.conversation.TemporalObservationInputs
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
+import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDisposition
+import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
@@ -606,25 +609,37 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
 
         if (homeFollowUpContext != HomeFollowUpContext.NONE) {
-            val convoResult = conversationIntentClassifier.classify(normalized)
+            val shouldDeferContextReference =
+                (homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
+                    homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS) &&
+                    ContextReferenceMutationGuard.containsContextReference(
+                        normalized,
+                        readOnlyTaskContextStore.snapshot()
+                    )
 
-            // log
-            Log.d(
-                "HOME_CONVO",
-                "text='$normalized' predicted=${convoResult.intent} confidence=${convoResult.confidence} context=$homeFollowUpContext"
-            )
+            if (!shouldDeferContextReference) {
+                val convoResult = conversationIntentClassifier.classify(normalized)
 
-            if (convoResult.intent != ConversationIntent.UNKNOWN &&
-                convoResult.confidence >= 0.30f) {
                 // log
-                Log.d("HOME_CONVO", "conversation intent accepted locally")
+                Log.d(
+                    "HOME_CONVO",
+                    "text='$normalized' predicted=${convoResult.intent} confidence=${convoResult.confidence} context=$homeFollowUpContext"
+                )
 
-                if (handleConversationIntent(convoResult.intent)) {
-                    return
+                if (convoResult.intent != ConversationIntent.UNKNOWN &&
+                    convoResult.confidence >= 0.30f) {
+                    // log
+                    Log.d("HOME_CONVO", "conversation intent accepted locally")
+
+                    if (handleConversationIntent(convoResult.intent, normalized)) {
+                        return
+                    }
+                } else {
+                    //log
+                    Log.d("HOME_CONVO", "conversation intent not accepted, falling through")
                 }
             } else {
-                //log
-                Log.d("HOME_CONVO", "conversation intent not accepted, falling through")
+                Log.d("HOME_CONVO", "contextual reference deferred to Conversation Agent")
             }
         }
 
@@ -638,7 +653,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             try {
                 Log.d("CONVO_ORCH", "normalized='$normalized'")
                 val taskContextCapture = readOnlyTaskContextStore.capture()
-                val conversationDecision = try {
+                conversationOrchestrator.invalidateStaleContextMemory(
+                    taskContextCapture.snapshot.generation
+                )
+                Log.d(
+                    "HOME_CONTEXT_CAPTURE",
+                    "scope=${taskContextCapture.snapshot.scope} " +
+                        "generation=${taskContextCapture.snapshot.generation} " +
+                        "itemCount=${taskContextCapture.snapshot.items.size} " +
+                        "truncated=${taskContextCapture.snapshot.truncated}"
+                )
+                var conversationDecision = try {
                     conversationOrchestrator.process(
                         normalizedText = normalized,
                         appContextSummary = buildConversationAppContextSummary(),
@@ -651,6 +676,46 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         listenAgain = true
                     )
                     return@launch
+                }
+
+                val contextRepairEligible = ContextReadRepairPolicy.shouldAttempt(
+                    primaryDecision = conversationDecision,
+                    capturedSnapshot = taskContextCapture.snapshot,
+                    isResultInteraction =
+                        homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
+                            homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS
+                )
+
+                if (contextRepairEligible) {
+                    Log.d("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_ATTEMPTED")
+                    try {
+                        val repairedDecision = conversationOrchestrator.processContextReadRepair(
+                            normalizedText = normalized,
+                            readOnlyTaskContextSnapshot = taskContextCapture.promptText,
+                            primaryRoute = conversationDecision.route,
+                            currentInteraction = homeFollowUpContext.name
+                        )
+                        val repairEvaluation = ContextReadRepairPolicy.evaluate(
+                            normalizedText = normalized,
+                            repairedDecision = repairedDecision,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                        )
+                        when (repairEvaluation.disposition) {
+                            ContextReadRepairDisposition.ACCEPTED -> {
+                                conversationDecision = repairedDecision
+                                Log.d("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_ACCEPTED")
+                            }
+                            ContextReadRepairDisposition.ABSTAINED ->
+                                Log.d("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_ABSTAINED")
+                            ContextReadRepairDisposition.REJECTED ->
+                                Log.d("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_REJECTED")
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        Log.e("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_FAILED")
+                    }
                 }
 
                 if (conversationDecision.route != ConversationRoute.CONTEXT_READ) {
@@ -693,7 +758,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             item = requireNotNull(validation.item),
                             detail = validation.detail
                         )
-                        conversationOrchestrator.recordContextReadResponse(speech)
+                        conversationOrchestrator.recordAuthoritativeContextRead(
+                            item = requireNotNull(validation.item),
+                            selectedRef = conversationDecision.contextRef,
+                            selectedDetail = validation.detail,
+                            capturedGeneration = taskContextCapture.snapshot.generation,
+                            finalSpeech = speech
+                        )
                         assistantSession.speak(
                             speech,
                             listenAgain = conversationDecision.listenAgain
@@ -1581,6 +1652,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 normalized == "thats it"
     }
 
+    private fun isSimpleFollowUpAgreement(normalized: String): Boolean = normalized in setOf(
+        "yes",
+        "yeah",
+        "sure",
+        "okay",
+        "ok",
+        "please do",
+        "read them"
+    )
+
     private fun endAssistantConversation() {
         clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
@@ -1624,13 +1705,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 when {
                     normalized.contains("read all") ||
                             normalized.contains("show all") ||
-                            normalized == "yes" -> {
+                            isSimpleFollowUpAgreement(normalized) -> {
                         handleDetailedFollowUpQuery()
-                        true
-                    }
-
-                    normalized.contains("create one") -> {
-                        openCreateTaskFromFollowUp()
                         true
                     }
 
@@ -1645,8 +1721,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_DETAILS -> {
                 when {
-                    normalized.contains("create one") -> {
-                        openCreateTaskFromFollowUp()
+                    normalized.contains("read all") ||
+                            normalized.contains("show all") -> {
+                        handleDetailedFollowUpQuery()
                         true
                     }
 
@@ -2419,7 +2496,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
     }
 
-    private fun handleConversationIntent(intent: ConversationIntent): Boolean {
+    private fun handleConversationIntent(
+        intent: ConversationIntent,
+        normalized: String
+    ): Boolean {
         // log
         Log.d("HOME_CONVO_ACTION", "intent=$intent context=$homeFollowUpContext")
 
@@ -2448,7 +2528,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_SUMMARY -> {
                 when (intent) {
-                    ConversationIntent.CONFIRM_YES,
                     ConversationIntent.READ_ALL -> {
                         // log
                         Log.d("HOME_CONVO_ACTION", "reading all from follow-up")
@@ -2456,19 +2535,23 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         true
                     }
 
-                    ConversationIntent.CREATE_ONE -> {
-                        // log
-                        Log.d("HOME_CONVO_ACTION", "opening create from follow-up")
-                        openCreateTaskFromFollowUp()
-                        true
+                    ConversationIntent.CONFIRM_YES -> {
+                        if (isSimpleFollowUpAgreement(normalized)) {
+                            handleDetailedFollowUpQuery()
+                            true
+                        } else {
+                            false
+                        }
                     }
 
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
-                        //log
-                        Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
-                        endAssistantConversation()
-                        true
+                        if (isSimpleFollowUpEndCommand(normalized)) {
+                            endAssistantConversation()
+                            true
+                        } else {
+                            false
+                        }
                     }
 
                     else -> false
@@ -2477,20 +2560,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_DETAILS -> {
                 when (intent) {
-                    ConversationIntent.CREATE_ONE -> {
-                        // log
-                        Log.d("HOME_CONVO_ACTION", "opening create from follow-up")
-                        openCreateTaskFromFollowUp()
+                    ConversationIntent.READ_ALL -> {
+                        Log.d("HOME_CONVO_ACTION", "re-reading detailed query results")
+                        handleDetailedFollowUpQuery()
                         true
                     }
 
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
-                        // log
-                        Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
-
-                        endAssistantConversation()
-                        true
+                        if (isSimpleFollowUpEndCommand(normalized)) {
+                            endAssistantConversation()
+                            true
+                        } else {
+                            false
+                        }
                     }
 
                     else -> false

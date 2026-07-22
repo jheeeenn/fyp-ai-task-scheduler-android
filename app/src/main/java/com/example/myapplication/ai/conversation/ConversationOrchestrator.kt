@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation
 
 import android.util.Log
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import kotlinx.coroutines.CancellationException
 
 class ConversationOrchestratorException(
@@ -109,7 +110,9 @@ class ConversationOrchestrator(
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
                 )
             )
-            val repairedDecision = parser.parse(repairContent)
+            val repairedDecision = parser.parse(repairContent).copy(
+                source = SOURCE_SCHEMA_REPAIR
+            )
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
             repairedDecision
         } catch (repairFailure: Exception) {
@@ -150,8 +153,40 @@ class ConversationOrchestrator(
         memory.clear()
     }
 
-    fun recordContextReadResponse(response: String) {
-        memory.recordFinalSpokenResponse(response)
+    fun invalidateStaleContextMemory(currentGeneration: Long) {
+        memory.invalidateContextSelectionUnlessGeneration(currentGeneration)
+    }
+
+    suspend fun processContextReadRepair(
+        normalizedText: String,
+        readOnlyTaskContextSnapshot: String,
+        primaryRoute: ConversationRoute,
+        currentInteraction: String
+    ): ConversationDecision {
+        val rawContent = conversationAgentClient.processContextReadRepair(
+            userText = normalizedText,
+            memorySnapshot = memory.snapshotForPrompt(),
+            taskContextSnapshot = readOnlyTaskContextSnapshot,
+            primaryRoute = primaryRoute,
+            currentInteraction = currentInteraction
+        )
+        return parser.parse(rawContent).copy(source = SOURCE_CONTEXT_REPAIR)
+    }
+
+    fun recordAuthoritativeContextRead(
+        item: ReadOnlyTaskContextItem,
+        selectedRef: String,
+        selectedDetail: ConversationContextDetail,
+        capturedGeneration: Long,
+        finalSpeech: String
+    ) {
+        memory.recordAuthoritativeContextRead(
+            item = item,
+            selectedRef = selectedRef,
+            selectedDetail = selectedDetail,
+            capturedGeneration = capturedGeneration,
+            finalSpeech = finalSpeech
+        )
     }
 
     private fun appendTaskContext(
@@ -169,6 +204,8 @@ class ConversationOrchestrator(
     }
 
     private companion object {
+        const val SOURCE_SCHEMA_REPAIR = "conversation_agent_schema_repair"
+        const val SOURCE_CONTEXT_REPAIR = "conversation_agent_context_repair"
         val NO_TASK_CONTEXT = """
             Scope: NONE
             Generation: 0

@@ -23,13 +23,14 @@ object ContextReferenceMutationGuard {
         return listOf(currentUtterance, decision.taskText)
             .asSequence()
             .filter { it.isNotBlank() }
-            .any { containsSuppliedContextReference(it, snapshot) }
+            .any { containsContextReference(it, snapshot) }
     }
 
-    private fun containsSuppliedContextReference(
+    fun containsContextReference(
         text: String,
         snapshot: ReadOnlyTaskContextSnapshot
     ): Boolean {
+        if (snapshot.items.isEmpty()) return false
         val suppliedRefs = snapshot.items.map { it.ref.uppercase(Locale.ROOT) }.toSet()
         if (TEMPORARY_REF.findAll(text).any { match ->
                 match.value.uppercase(Locale.ROOT) in suppliedRefs
@@ -59,6 +60,15 @@ object ContextReferenceMutationGuard {
         return CONTEXTUAL_IT.any { pattern -> pattern.containsMatchIn(text) }
     }
 
+    fun isUnsupportedMutationWording(
+        text: String,
+        snapshot: ReadOnlyTaskContextSnapshot
+    ): Boolean = containsContextReference(text, snapshot) &&
+        containsMutationWording(text)
+
+    fun containsMutationWording(text: String): Boolean =
+        MUTATION_WORDING.containsMatchIn(text)
+
     private fun ordinalPosition(value: String): Int = when (value.lowercase(Locale.ROOT)) {
         "first", "1st" -> 1
         "second", "2nd" -> 2
@@ -84,5 +94,8 @@ object ContextReferenceMutationGuard {
         Regex("(?i)\\b(?:delete|remove|complete|finish|undo|reopen)\\s+it(?:\\s+(?:please|now))?[.!?]?\\s*$"),
         Regex("(?i)\\bmark\\s+it\\s+(?:complete|done|unfinished|undone|active)\\b"),
         Regex("(?i)\\b(?:move|reschedule|change|update)\\s+it\\s+(?:to|on|for|with)\\b")
+    )
+    private val MUTATION_WORDING = Regex(
+        "(?i)\\b(?:delete|remove|move|reschedule|mark|complete|finish|update|change|edit|rename|break\\s+down)\\b"
     )
 }

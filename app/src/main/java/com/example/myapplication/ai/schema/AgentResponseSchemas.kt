@@ -58,6 +58,30 @@ object AgentResponseSchemas {
         )
     }
 
+    fun contextReadRepairResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "context_read_repair",
+            properties = JSONObject().apply {
+                put("route", stringEnum("CONTEXT_READ", "ASK_CLARIFICATION"))
+                put("task_text", stringType())
+                put("reply", stringType())
+                put("context_ref", stringType())
+                put("context_detail", stringEnum("NONE", "SUMMARY", "TITLE", "DATE", "TIME", "STATUS", "SUBTASKS"))
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+                put("listen_again", booleanType())
+            },
+            required = JSONArray().apply {
+                put("route")
+                put("task_text")
+                put("reply")
+                put("context_ref")
+                put("context_detail")
+                put("confidence")
+                put("listen_again")
+            }
+        )
+    }
+
     fun conversationResponseResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_response",

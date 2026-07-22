@@ -1,5 +1,6 @@
 package com.example.myapplication.ai.conversation
 
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -72,6 +73,76 @@ class ConversationSessionMemoryTest {
         assertFalse(prompt.contains("turn 0"))
         assertTrue(prompt.contains("turn 11 Injected: value"))
         assertEquals(8, prompt.lineSequence().count { it.startsWith("User:") })
+    }
+
+    @Test
+    fun authoritativeContextSelectionStoresStructuredStateWithoutRoomIds() {
+        val memory = ConversationSessionMemory()
+        memory.updateFromDecision(
+            ConversationDecision(
+                route = ConversationRoute.ASK_CLARIFICATION,
+                reply = "Which task do you mean?"
+            )
+        )
+        val item = ReadOnlyTaskContextItem(
+            ref = "T3",
+            title = "Podcast",
+            dueDate = "23/07/2026",
+            dueTime = "8:30 PM",
+            isDone = false,
+            subtaskCount = 0,
+            unfinishedSubtaskCount = 0
+        )
+
+        memory.recordAuthoritativeContextRead(
+            item = item,
+            selectedRef = "t3",
+            selectedDetail = ConversationContextDetail.TIME,
+            capturedGeneration = 7,
+            finalSpeech = "Podcast is scheduled at 8:30 PM."
+        )
+
+        val prompt = memory.snapshotForPrompt()
+        assertEquals("T3", memory.lastContextRef)
+        assertEquals(7L, memory.lastContextGeneration)
+        assertEquals(ConversationContextDetail.TIME, memory.lastContextDetail)
+        assertEquals("Podcast", memory.lastReferencedTask)
+        assertTrue(prompt.contains("lastContextRef=\"T3\""))
+        assertTrue(prompt.contains("lastContextGeneration=7"))
+        assertTrue(prompt.contains("lastContextDetail=TIME"))
+        assertFalse(prompt.contains("Which task do you mean?"))
+        assertFalse(prompt.contains("918273645"))
+    }
+
+    @Test
+    fun structuredContextSelectionIsUsableOnlyForTheSameGeneration() {
+        val memory = ConversationSessionMemory()
+        val item = ReadOnlyTaskContextItem(
+            ref = "T3",
+            title = "Podcast",
+            dueDate = "",
+            dueTime = "8:30 PM",
+            isDone = false,
+            subtaskCount = 0,
+            unfinishedSubtaskCount = 0
+        )
+        memory.recordAuthoritativeContextRead(
+            item,
+            "T3",
+            ConversationContextDetail.TIME,
+            7,
+            "Podcast is scheduled at 8:30 PM."
+        )
+
+        memory.invalidateContextSelectionUnlessGeneration(7)
+        assertEquals("T3", memory.lastContextRef)
+
+        memory.invalidateContextSelectionUnlessGeneration(8)
+        assertNull(memory.lastContextRef)
+        assertNull(memory.lastContextGeneration)
+        assertEquals(ConversationContextDetail.NONE, memory.lastContextDetail)
+        assertNull(memory.lastReferencedTask)
+        assertFalse(memory.snapshotForPrompt().contains("lastContextRef=\"T3\""))
     }
 
     private fun observation(

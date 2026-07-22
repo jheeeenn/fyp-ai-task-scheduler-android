@@ -43,11 +43,11 @@ class ContextReferenceMutationGuardTest {
     fun blockedReferenceDoesNotReachDownstreamMutationPipeline() {
         var taskAgentReached = false
         var roomMutationReached = false
-        val decision = taskCommand("delete the second one")
+        val decision = taskCommand("move the second task to next day")
 
         if (!ContextReferenceMutationGuard.shouldBlock(
                 decision = decision,
-                currentUtterance = "delete the second one",
+                currentUtterance = "move the second task to next day",
                 snapshot = twoItemSnapshot
             )
         ) {
@@ -97,6 +97,28 @@ class ContextReferenceMutationGuardTest {
                 decision = taskCommand("delete T2"),
                 currentUtterance = "please handle my request",
                 snapshot = twoItemSnapshot
+            )
+        )
+    }
+
+    @Test
+    fun exposedReferenceDetectionDefersContextualCommandsToCentralPath() {
+        assertTrue(
+            ContextReferenceMutationGuard.containsContextReference(
+                "move the second task to next day",
+                twoItemSnapshot
+            )
+        )
+        assertTrue(
+            ContextReferenceMutationGuard.isUnsupportedMutationWording(
+                "move the second task to next day",
+                twoItemSnapshot
+            )
+        )
+        assertFalse(
+            ContextReferenceMutationGuard.containsContextReference(
+                "delete the medicine task",
+                twoItemSnapshot
             )
         )
     }
