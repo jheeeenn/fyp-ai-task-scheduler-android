@@ -32,8 +32,19 @@ class ConversationSessionMemory {
         latestExecutionOperation = observation.operation
         latestExecutionOutcome = observation.outcome
         latestRequiredInput = observation.requiredInput
-        if (observation.taskTitle.isNotBlank()) lastReferencedTask = observation.taskTitle
-        addTurn("Observation: operation=${observation.operation.name} outcome=${observation.outcome.name} task=${observation.taskTitle} requiredInput=${observation.requiredInput.name}")
+        if (observation.taskTitle.isNotBlank()) {
+            lastReferencedTask = sanitizeUntrustedValue(observation.taskTitle)
+        }
+        if (observation.operation == ExecutionOperation.QUERY_TASK && observation.dateText.isNotBlank()) {
+            lastQueryDate = sanitizeUntrustedValue(observation.dateText)
+        }
+        addTurn(
+            "Observation: operation=${observation.operation.name} " +
+                "outcome=${observation.outcome.name} " +
+                "task=${sanitizeUntrustedValue(observation.taskTitle)} " +
+                "date=${sanitizeUntrustedValue(observation.dateText)} " +
+                "requiredInput=${observation.requiredInput.name}"
+        )
     }
 
     fun recordFinalSpokenResponse(text: String) {
@@ -45,7 +56,6 @@ class ConversationSessionMemory {
         when (decision.route) {
             ConversationRoute.TASK_COMMAND -> {
                 pendingAction = "TASK_COMMAND"
-                lastReferencedTask = decision.taskText.takeIf { it.isNotBlank() } ?: lastReferencedTask
             }
             ConversationRoute.ASK_CLARIFICATION -> pendingAction = "ASK_CLARIFICATION"
             ConversationRoute.END_SESSION -> pendingAction = null
@@ -84,13 +94,28 @@ class ConversationSessionMemory {
     }
 
     private fun addTurn(turn: String) {
-        turns.addLast(turn)
+        turns.addLast(sanitizeForPrompt(turn))
         while (turns.size > MAX_TURNS) {
             turns.removeFirst()
         }
     }
 
+    private fun sanitizeForPrompt(value: String): String = buildString(value.length) {
+        value.forEach { character ->
+            if (character.isISOControl()) append(' ') else append(character)
+        }
+    }.replace(WHITESPACE, " ").trim().take(MAX_MEMORY_TEXT_LENGTH)
+
+    private fun sanitizeUntrustedValue(value: String): String = sanitizeForPrompt(value)
+        .replace("\\", "\\\\")
+        .replace("=", "\\=")
+        .replace(":", "\\:")
+        .take(MAX_MEMORY_VALUE_LENGTH)
+
     companion object {
         private const val MAX_TURNS = 8
+        private const val MAX_MEMORY_TEXT_LENGTH = 240
+        private const val MAX_MEMORY_VALUE_LENGTH = 120
+        private val WHITESPACE = Regex("\\s+")
     }
 }

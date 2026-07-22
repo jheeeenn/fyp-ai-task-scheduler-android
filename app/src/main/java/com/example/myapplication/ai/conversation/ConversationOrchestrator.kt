@@ -64,20 +64,28 @@ class ConversationOrchestrator(
         memory.recordFinalSpokenResponse(response.speech)
     }
 
-    suspend fun process(normalizedText: String, appContextSummary: String): ConversationDecision {
+    suspend fun process(
+        normalizedText: String,
+        appContextSummary: String,
+        readOnlyTaskContextSnapshot: String = NO_TASK_CONTEXT
+    ): ConversationDecision {
         memory.recordUser(normalizedText)
+        val routingMemory = appendTaskContext(
+            memorySnapshot = memory.snapshotForPrompt(),
+            readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
+        )
 
         val parsed = try {
             val rawContent = conversationAgentClient.process(
                 userText = normalizedText,
-                memorySnapshot = memory.snapshotForPrompt(),
+                memorySnapshot = routingMemory,
                 appContextSummary = appContextSummary
             )
             parser.parse(rawContent)
         } catch (e: ConversationSchemaException) {
-            retryWithRepair(normalizedText, appContextSummary, e)
+            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, e)
         } catch (e: ConversationAgentResponseException) {
-            retryWithRepair(normalizedText, appContextSummary, e)
+            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, e)
         }
 
         val decision = normalizeDecision(parsed, normalizedText)
@@ -88,6 +96,7 @@ class ConversationOrchestrator(
     private suspend fun retryWithRepair(
         normalizedText: String,
         appContextSummary: String,
+        readOnlyTaskContextSnapshot: String,
         firstFailure: Exception
     ): ConversationDecision {
         Log.e("CONVO_ORCH_SCHEMA", "first response invalid, retrying once", firstFailure)
@@ -95,7 +104,10 @@ class ConversationOrchestrator(
         return try {
             val repairContent = conversationAgentClient.processRepair(
                 userText = normalizedText,
-                appContextSummary = appContextSummary
+                appContextSummary = appendTaskContext(
+                    memorySnapshot = appContextSummary,
+                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
+                )
             )
             val repairedDecision = parser.parse(repairContent)
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
@@ -131,5 +143,32 @@ class ConversationOrchestrator(
                 listenAgain = false
             )
         }
+    }
+
+    fun clearSessionMemory() {
+        memory.clear()
+    }
+
+    private fun appendTaskContext(
+        memorySnapshot: String,
+        readOnlyTaskContextSnapshot: String
+    ): String = buildString {
+        append(memorySnapshot.trim())
+        appendLine()
+        appendLine()
+        appendLine("Read-only task context:")
+        append(
+            readOnlyTaskContextSnapshot.takeIf { it.isNotBlank() }
+                ?: NO_TASK_CONTEXT
+        )
+    }
+
+    private companion object {
+        val NO_TASK_CONTEXT = """
+            Scope: NONE
+            Generation: 0
+            Items: None
+            Truncated: false
+        """.trimIndent()
     }
 }

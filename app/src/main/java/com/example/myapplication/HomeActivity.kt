@@ -58,6 +58,7 @@ import com.example.myapplication.ai.conversation.ObservedTask
 import com.example.myapplication.ai.conversation.RequiredInput
 import com.example.myapplication.ai.conversation.TaskObservationMapper
 import com.example.myapplication.ai.conversation.TemporalObservationInputs
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
 import java.text.SimpleDateFormat
@@ -89,6 +90,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var conversationOrchestrator: ConversationOrchestrator
+    private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()
 
 
     private lateinit var assistantSession: AssistantVoiceSession
@@ -324,6 +326,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     override fun onAssistantCancelled() {
+        clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
         clearPendingDeleteState()
@@ -331,6 +334,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     override fun onAssistantSessionStopped() {
+        clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
         clearPendingDeleteState()
@@ -632,7 +636,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val conversationDecision = try {
                     conversationOrchestrator.process(
                         normalizedText = normalized,
-                        appContextSummary = buildConversationAppContextSummary()
+                        appContextSummary = buildConversationAppContextSummary(),
+                        readOnlyTaskContextSnapshot = readOnlyTaskContextStore.snapshotForPrompt()
                     )
                 } catch (e: ConversationOrchestratorException) {
                     Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
@@ -666,6 +671,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ConversationRoute.END_SESSION -> {
                         Log.d("CONVO_ORCH", "handled directly as END_SESSION")
+                        clearConversationSessionContext()
                         homeFollowUpContext = HomeFollowUpContext.NONE
                         if (conversationDecision.reply.isNotBlank()) {
                             assistantSession.speak(conversationDecision.reply, listenAgain = false)
@@ -1195,6 +1201,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             lastQueryWasToday = queryWindow.isExactDate && queryWindow.startDateInclusive == today
 
             val filteredTasks = TaskTemporalFilter.filterAndSort(allTasks, queryWindow)
+            readOnlyTaskContextStore.replaceRecentQueryResults(
+                tasks = filteredTasks,
+                subtasksByParentId = currentSubtasksByParentId
+            )
 
             val replyMode = detectQueryReplyMode(normalized)
             val reply = buildTaskQueryReply(filteredTasks, lastQueryWasToday, replyMode, queryWindow)
@@ -1511,12 +1521,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun endAssistantConversation() {
+        clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         assistantSession.getBottomSheet()?.clearHint()
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
         assistantSession.speakThenStop(responseManager.stopListening())
+    }
+
+    private fun clearConversationSessionContext() {
+        readOnlyTaskContextStore.clear()
+        if (::conversationOrchestrator.isInitialized) {
+            conversationOrchestrator.clearSessionMemory()
+        }
     }
 
 
@@ -1605,6 +1623,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val filteredTasks = TaskTemporalFilter.filterAndSort(
                 tasks = allTasks,
                 window = lastQueryWindow
+            )
+            readOnlyTaskContextStore.replaceRecentQueryResults(
+                tasks = filteredTasks,
+                subtasksByParentId = currentSubtasksByParentId
             )
 
             val reply = buildTaskQueryReply(
@@ -2181,6 +2203,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         )
         ambiguityRetryCount = 0
         homeFollowUpContext = HomeFollowUpContext.TASK_MATCH_AMBIGUITY
+        readOnlyTaskContextStore.replaceTaskMatchChoices(listOf(bestTask, secondTask))
 
         lifecycleScope.launch {
             speakObservation(

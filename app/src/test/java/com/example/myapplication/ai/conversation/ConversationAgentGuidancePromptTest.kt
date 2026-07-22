@@ -40,7 +40,7 @@ class ConversationAgentGuidancePromptTest {
 
     @Test
     fun unsafeOrUnclearRoutingFailsClosed() {
-        assertTrue(prompt.contains("without authoritatively supplied selectable choices"))
+        assertTrue(prompt.contains("no authoritative read-only task context supplies the answer"))
         assertTrue(prompt.contains("ASK_CLARIFICATION"))
         assertTrue(prompt.contains("Do not use TASK_COMMAND merely because"))
         assertTrue(prompt.contains("\"task\", \"schedule\", \"class\", or a date"))
