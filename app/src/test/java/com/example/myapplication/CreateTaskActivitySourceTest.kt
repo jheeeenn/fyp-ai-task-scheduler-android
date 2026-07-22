@@ -199,6 +199,12 @@ class CreateTaskActivitySourceTest {
         assertTrue(controlsBody.contains("!isFinishing"))
         assertTrue(controlsBody.contains("!isDestroyed"))
         assertTrue(controlsBody.contains("!isCreateTaskExitPending"))
+        assertTrue(controlsBody.contains("!isSavingTask"))
+        assertTrue(controlsBody.contains("etTaskTitle.isEnabled = canEnable"))
+        assertTrue(controlsBody.contains("btnSaveTask.isEnabled = canEnable"))
+        assertTrue(controlsBody.contains("btnPickDate.isEnabled = canEnable"))
+        assertTrue(controlsBody.contains("btnPickTime.isEnabled = canEnable"))
+        assertTrue(controlsBody.contains("btnTalkAssistant.isEnabled = canEnable"))
         assertFalse(controlsBody.contains("btnCancelTask"))
         assertFalse(controlsBody.contains("btnGoHome"))
         assertTrue(
@@ -226,13 +232,19 @@ class CreateTaskActivitySourceTest {
             .substringBefore("btnTalkAssistant.setOnClickListenerWithHaptic")
 
         assertTrue(cancelClickBody.contains("invalidateCreateDraftResolution()"))
+        assertTrue(cancelClickBody.contains("if (isSavingTask) return@setOnClickListenerWithHaptic"))
         assertTrue(
-            cancelClickBody.indexOf("invalidateCreateDraftResolution()") <
+            cancelClickBody.indexOf("if (isSavingTask)") <
+                    cancelClickBody.indexOf("invalidateCreateDraftResolution()") &&
+                    cancelClickBody.indexOf("invalidateCreateDraftResolution()") <
                     cancelClickBody.indexOf("handleCreateDraftMove(CreateDraftMove.Cancel)")
         )
         assertTrue(homeClickBody.contains("invalidateCreateDraftResolution()"))
+        assertTrue(homeClickBody.contains("if (isSavingTask) return@setOnClickListenerWithHaptic"))
         assertTrue(
-            homeClickBody.indexOf("invalidateCreateDraftResolution()") <
+            homeClickBody.indexOf("if (isSavingTask)") <
+                    homeClickBody.indexOf("invalidateCreateDraftResolution()") &&
+                    homeClickBody.indexOf("invalidateCreateDraftResolution()") <
                     homeClickBody.indexOf("assistantSession.speakThenRun")
         )
     }
@@ -248,9 +260,39 @@ class CreateTaskActivitySourceTest {
         assertTrue(
             saveBody.indexOf("isSavingTask = true") < saveBody.indexOf("lifecycleScope.launch")
         )
+        assertTrue(saveBody.contains("isSavingTask = true\n        setCreateDraftControlsEnabled(false)"))
         assertTrue(saveBody.contains("category=INSERT_FAILED"))
         assertTrue(saveBody.contains("isSavingTask = false"))
+        assertTrue(
+            saveBody.indexOf("isSavingTask = false") <
+                    saveBody.indexOf("setCreateDraftControlsEnabled(true)", saveBody.indexOf("isSavingTask = false"))
+        )
         assertEquals(1, Regex("dao\\.insert\\(").findAll(source).count())
+    }
+
+    @Test
+    fun saveCoroutineUsesOnlyImmutableValidatedSnapshots() {
+        val coroutineBody = saveBody.substringAfter("lifecycleScope.launch")
+        listOf(
+            "finalTitle", "finalDate", "finalTime", "finalYear",
+            "finalMonth", "finalDay", "finalHour", "finalMinute"
+        ).forEach { snapshot ->
+            assertTrue(saveBody.contains("val $snapshot ="))
+            assertTrue(saveBody.indexOf("val $snapshot =") < saveBody.indexOf("lifecycleScope.launch"))
+        }
+        assertTrue(coroutineBody.contains("title = finalTitle"))
+        assertTrue(coroutineBody.contains("dueDate = finalDate"))
+        assertTrue(coroutineBody.contains("dueTime = finalTime"))
+        assertTrue(coroutineBody.contains("taskTitle = finalTitle"))
+        assertTrue(coroutineBody.contains("year = finalYear"))
+        assertTrue(coroutineBody.contains("month = finalMonth"))
+        assertTrue(coroutineBody.contains("day = finalDay"))
+        assertTrue(coroutineBody.contains("hour24 = finalHour"))
+        assertTrue(coroutineBody.contains("minute = finalMinute"))
+        listOf(
+            "selectedDate", "selectedTime", "selectedYear", "selectedMonth",
+            "selectedDay", "selectedHour24", "selectedMinute"
+        ).forEach { mutableField -> assertFalse(coroutineBody.contains(mutableField)) }
     }
 
     @Test

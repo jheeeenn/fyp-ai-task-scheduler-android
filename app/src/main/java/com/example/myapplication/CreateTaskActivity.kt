@@ -192,11 +192,13 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         btnCancelTask.setOnClickListenerWithHaptic {
+            if (isSavingTask) return@setOnClickListenerWithHaptic
             invalidateCreateDraftResolution()
             handleCreateDraftMove(CreateDraftMove.Cancel)
         }
 
         btnGoHome.setOnClickListenerWithHaptic {
+            if (isSavingTask) return@setOnClickListenerWithHaptic
             invalidateCreateDraftResolution()
             isCreateTaskExitPending = true
             setCreateDraftControlsEnabled(false)
@@ -483,16 +485,25 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
+        val finalTitle = title
+        val finalDate = selectedDate!!
+        val finalTime = selectedTime!!
+        val finalYear = selectedYear!!
+        val finalMonth = selectedMonth!!
+        val finalDay = selectedDay!!
+        val finalHour = selectedHour24!!
+        val finalMinute = selectedMinute!!
+
         isSavingTask = true
-        setCreateDraftControlsEnabled(true)
+        setCreateDraftControlsEnabled(false)
         lifecycleScope.launch {
             val insertedId = try {
                 withContext(Dispatchers.IO) {
                     dao.insert(
                         TaskEntity(
-                            title = title,
-                            dueDate = selectedDate,
-                            dueTime = selectedTime
+                            title = finalTitle,
+                            dueDate = finalDate,
+                            dueTime = finalTime
                         )
                     )
                 }
@@ -515,12 +526,12 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
             val scheduled = scheduleReminder(
                 taskId = insertedId.toInt(),
-                taskTitle = title,
-                year = selectedYear!!,
-                month = selectedMonth!!,
-                day = selectedDay!!,
-                hour24 = selectedHour24!!,
-                minute = selectedMinute!!
+                taskTitle = finalTitle,
+                year = finalYear,
+                month = finalMonth,
+                day = finalDay,
+                hour24 = finalHour,
+                minute = finalMinute
             )
 
             if (scheduled) {
@@ -1145,9 +1156,9 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun setCreateDraftControlsEnabled(enabled: Boolean) {
-        val canEnable = enabled && !isCreateTaskExitPending && !isFinishing && !isDestroyed
+        val canEnable = enabled && !isSavingTask && !isCreateTaskExitPending && !isFinishing && !isDestroyed
         etTaskTitle.isEnabled = canEnable
-        btnSaveTask.isEnabled = canEnable && !isSavingTask
+        btnSaveTask.isEnabled = canEnable
         btnPickDate.isEnabled = canEnable
         btnPickTime.isEnabled = canEnable
         btnTalkAssistant.isEnabled = canEnable
