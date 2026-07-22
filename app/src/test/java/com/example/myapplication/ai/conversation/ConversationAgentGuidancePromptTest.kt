@@ -59,6 +59,9 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("\"context_ref\":\"T2\",\"context_detail\":\"SUMMARY\""))
         assertTrue(prompt.contains("User: Delete the second one."))
         assertTrue(prompt.contains("\"route\":\"ASK_CLARIFICATION\""))
+        assertTrue(prompt.contains("User: Edit the first one."))
+        assertTrue(prompt.contains("\"context_action\":\"UPDATE\""))
+        assertTrue(prompt.contains("\"context_action\":\"RESCHEDULE\""))
     }
 
     @Test

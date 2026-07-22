@@ -6,6 +6,7 @@ data class ConversationDecision(
     val reply: String = "",
     val contextRef: String = "",
     val contextDetail: ConversationContextDetail = ConversationContextDetail.NONE,
+    val contextAction: ConversationContextAction = ConversationContextAction.NONE,
     val confidence: Double = 0.0,
     val listenAgain: Boolean = true,
     val source: String = "conversation_agent"

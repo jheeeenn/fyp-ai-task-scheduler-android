@@ -36,6 +36,7 @@ import java.util.Locale
 import com.example.myapplication.voice.TextNormalizer
 
 import com.example.myapplication.ai.AiIntent
+import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.LocalConversationIntentClassifier
 import com.example.myapplication.ai.agent.ActionValidator
 import com.example.myapplication.ai.agent.AgentOrchestrator
@@ -50,6 +51,7 @@ import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
 import com.example.myapplication.ai.conversation.ConversationRoute
+import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.conversation.AllowedUserMove
 import com.example.myapplication.ai.conversation.AndroidObservationResponseRenderer
 import com.example.myapplication.ai.conversation.ConversationResponse
@@ -61,6 +63,10 @@ import com.example.myapplication.ai.conversation.RequiredInput
 import com.example.myapplication.ai.conversation.TaskObservationMapper
 import com.example.myapplication.ai.conversation.TemporalObservationInputs
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionValidationResult
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionTargetValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDisposition
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
@@ -614,10 +620,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val shouldDeferContextReference =
                 (homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS) &&
-                    ContextReferenceMutationGuard.containsContextReference(
-                        normalized,
-                        readOnlyTaskContextStore.snapshot()
-                    )
+                    (ContextReferenceMutationGuard.containsContextReference(
+                            normalized,
+                            readOnlyTaskContextStore.snapshot()
+                        ))
 
             if (!shouldDeferContextReference) {
                 val convoResult = conversationIntentClassifier.classify(normalized)
@@ -708,7 +714,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val contextRepairEligible = ContextReadRepairPolicy.shouldAttempt(
                     primaryDecision = conversationDecision,
                     capturedSnapshot = taskContextCapture.snapshot,
-                    isResultInteraction = isResultInteraction
+                    isResultInteraction = isResultInteraction,
+                    normalizedText = normalized
                 )
 
                 if (contextRepairEligible) {
@@ -742,6 +749,70 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     } catch (_: Exception) {
                         Log.e("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_FAILED")
                     }
+                }
+
+                val contextActionRepairEligible = !contextRepairEligible &&
+                    ContextActionRepairPolicy.shouldAttempt(
+                        normalizedText = normalized,
+                        primaryDecision = conversationDecision,
+                        capturedSnapshot = taskContextCapture.snapshot,
+                        isResultInteraction = isResultInteraction,
+                        contextFocus = contextFocus
+                    )
+                if (contextActionRepairEligible) {
+                    Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ATTEMPTED")
+                    try {
+                        val repairedDecision = conversationOrchestrator.processContextActionRepair(
+                            normalizedText = normalized,
+                            readOnlyTaskContextSnapshot = taskContextCapture.promptText,
+                            primaryRoute = conversationDecision.route,
+                            currentInteraction = homeFollowUpContext.name,
+                            contextFocus = contextFocus
+                        )
+                        when (repairedDecision.route) {
+                            ConversationRoute.CONTEXT_ACTION -> {
+                                val repairValidation = ContextActionDecisionValidator.validate(
+                                    decision = repairedDecision,
+                                    capturedSnapshot = taskContextCapture.snapshot,
+                                    currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                                )
+                                if (repairValidation.isValid) {
+                                    conversationDecision = repairedDecision
+                                    Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ACCEPTED")
+                                } else {
+                                    Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_REJECTED")
+                                }
+                            }
+                            ConversationRoute.ASK_CLARIFICATION -> {
+                                conversationDecision = repairedDecision.copy(
+                                    reply = "Please say the explicit task name for that change."
+                                )
+                                Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ACCEPTED")
+                            }
+                            else -> Log.d(
+                                "HOME_CONTEXT_ACTION_REPAIR",
+                                "CONTEXT_ACTION_REPAIR_REJECTED"
+                            )
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        Log.e("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_FAILED")
+                    }
+                }
+                if (contextActionRepairEligible &&
+                    conversationDecision.source == "conversation_agent" &&
+                    conversationDecision.route in setOf(
+                        ConversationRoute.ASK_CLARIFICATION,
+                        ConversationRoute.UNKNOWN
+                    )
+                ) {
+                    conversationDecision = ConversationDecision(
+                        route = ConversationRoute.ASK_CLARIFICATION,
+                        reply = "Please say the explicit task name for that change.",
+                        listenAgain = true,
+                        source = "android_context_action_fail_closed"
+                    )
                 }
 
                 if (
@@ -836,6 +907,96 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         assistantSession.speak(
                             speech,
                             listenAgain = conversationDecision.listenAgain
+                        )
+                        return@launch
+                    }
+                    ConversationRoute.CONTEXT_ACTION -> {
+                        val validation = ContextActionDecisionValidator.validate(
+                            decision = conversationDecision,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                        )
+                        Log.d(
+                            "HOME_CONTEXT_ACTION",
+                            "route=${conversationDecision.route} " +
+                                "ref=${conversationDecision.contextRef} " +
+                                "action=${conversationDecision.contextAction} " +
+                                "capturedGeneration=${taskContextCapture.snapshot.generation} " +
+                                "validation=${validation.result}"
+                        )
+                        if (!validation.isValid) {
+                            val clarification = if (
+                                validation.result == ContextActionValidationResult.STALE_GENERATION
+                            ) {
+                                "Those task results changed. Please repeat your task query."
+                            } else {
+                                "Please repeat the requested change."
+                            }
+                            rejectContextAction(clarification, "android_context_action_validation")
+                            return@launch
+                        }
+
+                        val capturedGeneration = taskContextCapture.snapshot.generation
+                        val privateTaskId = readOnlyTaskContextStore.resolveRef(
+                            ref = validation.ref,
+                            expectedGeneration = capturedGeneration
+                        )
+                        if (privateTaskId == null) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+                        val taskDao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+                        val initiallyFetchedTask = withContext(Dispatchers.IO) {
+                            taskDao.getById(privateTaskId)
+                        }
+                        val initiallyEligible = isEligibleContextActionTarget(initiallyFetchedTask)
+                        Log.d(
+                            "CONTEXT_ACTION_TARGET_RESOLVED",
+                            "generation=$capturedGeneration eligible=$initiallyEligible"
+                        )
+                        if (!initiallyEligible) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+
+                        val extractedChange = try {
+                            agentOrchestrator.processContextAction(
+                                normalizedText = normalized,
+                                expectedAction = validation.action
+                            )
+                        } catch (_: TaskAgentProcessingException) {
+                            rejectContextAction(
+                                "Please repeat the requested change.",
+                                "android_context_action_extraction"
+                            )
+                            return@launch
+                        }
+
+                        if (readOnlyTaskContextStore.currentGeneration() != capturedGeneration) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+                        val reResolvedTaskId = readOnlyTaskContextStore.resolveRef(
+                            ref = validation.ref,
+                            expectedGeneration = capturedGeneration
+                        )
+                        if (reResolvedTaskId == null || reResolvedTaskId != privateTaskId) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+                        val authoritativeTask = withContext(Dispatchers.IO) {
+                            taskDao.getById(reResolvedTaskId)
+                        }
+                        if (!isEligibleContextActionTarget(authoritativeTask)) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        openContextActionEditScreen(
+                            task = requireNotNull(authoritativeTask),
+                            action = validation.action,
+                            extractedChange = extractedChange
                         )
                         return@launch
                     }
@@ -1362,6 +1523,76 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         task = task,
         subtasks = currentSubtasksByParentId[task.id].orEmpty()
     )
+
+    private fun isEligibleContextActionTarget(task: TaskEntity?): Boolean =
+        ContextActionTargetValidator.isEligible(task)
+
+    private fun rejectUnavailableContextAction() {
+        rejectContextAction(
+            reply = "That task is no longer available. Please repeat your task query.",
+            source = "android_context_action_target_unavailable"
+        )
+    }
+
+    private fun rejectContextAction(reply: String, source: String) {
+        conversationOrchestrator.commitFinalDecision(
+            ConversationDecision(
+                route = ConversationRoute.ASK_CLARIFICATION,
+                reply = reply,
+                listenAgain = true,
+                source = source
+            )
+        )
+        assistantSession.speak(reply, listenAgain = true)
+    }
+
+    private suspend fun openContextActionEditScreen(
+        task: TaskEntity,
+        action: ConversationContextAction,
+        extractedChange: AiParsedCommand
+    ) {
+        val operation = if (action == ConversationContextAction.RESCHEDULE) {
+            ExecutionOperation.RESCHEDULE_TASK
+        } else {
+            ExecutionOperation.UPDATE_TASK
+        }
+        val reply = if (action == ConversationContextAction.RESCHEDULE) {
+            responseManager.openReschedule()
+        } else {
+            responseManager.openEditTask()
+        }
+        speakObservationThenRun(
+            ExecutionObservation(
+                operation = operation,
+                outcome = ExecutionOutcome.INFORMATION,
+                taskTitle = task.title,
+                tasks = listOf(observedTask(task)),
+                dateText = extractedChange.newDateText.orEmpty(),
+                timeText = extractedChange.newTimeText.orEmpty(),
+                listenAgain = false,
+                fallbackSpeech = reply
+            )
+        ) {
+            val editIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
+                putExtra("task_id", task.id)
+                putExtra("task_title", task.title)
+                putExtra("task_date", task.dueDate)
+                putExtra("task_time", task.dueTime)
+                putExtra("opened_by_assistant", true)
+                putExtra("prefill_new_date_text", extractedChange.newDateText)
+                putExtra("prefill_new_time_text", extractedChange.newTimeText)
+                if (action == ConversationContextAction.UPDATE &&
+                    !extractedChange.taskTitle.isNullOrBlank()
+                ) {
+                    putExtra("prefill_title", extractedChange.taskTitle)
+                }
+                if (action == ConversationContextAction.RESCHEDULE) {
+                    putExtra("assistant_mode", "reschedule")
+                }
+            }
+            startActivity(editIntent)
+        }
+    }
 
     private fun todayDateString(): String {
         return SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())

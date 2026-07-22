@@ -91,6 +91,31 @@ Current interaction: $currentInteraction
         executeConversationRequest(repairPrompt, RequestKind.CONTEXT_READ_REPAIR)
     }
 
+    open suspend fun processContextActionRepair(
+        userText: String,
+        memorySnapshot: String,
+        taskContextSnapshot: String,
+        primaryRoute: ConversationRoute,
+        currentInteraction: String
+    ): String = withContext(Dispatchers.IO) {
+        val repairPrompt = """
+Memory snapshot:
+$memorySnapshot
+
+Captured task context:
+$taskContextSnapshot
+
+Normalized user text:
+$userText
+
+Primary route: ${primaryRoute.name}
+Primary interpretation abstained: true
+Current interaction: $currentInteraction
+""".trimIndent()
+
+        executeConversationRequest(repairPrompt, RequestKind.CONTEXT_ACTION_REPAIR)
+    }
+
     open suspend fun respondToObservation(observationJson: String, memorySnapshot: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
             val userPrompt = """
@@ -122,24 +147,28 @@ $userText
         val temperature = when (kind) {
             RequestKind.ROUTING -> ROUTING_TEMPERATURE
             RequestKind.CONTEXT_READ_REPAIR -> ROUTING_TEMPERATURE
+            RequestKind.CONTEXT_ACTION_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.RESPONSE -> RESPONSE_TEMPERATURE
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_TEMPERATURE
         }
         val maxTokens = when (kind) {
             RequestKind.ROUTING -> 256
             RequestKind.CONTEXT_READ_REPAIR -> CONTEXT_READ_REPAIR_MAX_TOKENS
+            RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_MAX_TOKENS
             RequestKind.RESPONSE -> RESPONSE_MAX_TOKENS
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_MAX_TOKENS
         }
         val responseFormat = when (kind) {
             RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
             RequestKind.CONTEXT_READ_REPAIR -> AgentResponseSchemas.contextReadRepairResponseFormat()
+            RequestKind.CONTEXT_ACTION_REPAIR -> AgentResponseSchemas.contextActionRepairResponseFormat()
             RequestKind.RESPONSE -> AgentResponseSchemas.conversationResponseResponseFormat()
             RequestKind.CREATE_DRAFT_MOVE -> AgentResponseSchemas.createDraftMoveResponseFormat()
         }
         val systemPrompt = when (kind) {
             RequestKind.ROUTING -> ROUTING_SYSTEM_PROMPT
             RequestKind.CONTEXT_READ_REPAIR -> CONTEXT_READ_REPAIR_SYSTEM_PROMPT
+            RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT
             RequestKind.RESPONSE -> RESPONSE_SYSTEM_PROMPT
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_SYSTEM_PROMPT
         }
@@ -163,8 +192,8 @@ $userText
 
         if (kind == RequestKind.CREATE_DRAFT_MOVE) {
             Log.d("CONVO_CREATE_DRAFT_SCHEMA", "Strict create-draft move schema enabled")
-        } else if (kind == RequestKind.CONTEXT_READ_REPAIR) {
-            Log.d("CONVO_CONTEXT_REPAIR_SCHEMA", "Strict context-read repair schema enabled")
+        } else if (kind == RequestKind.CONTEXT_READ_REPAIR || kind == RequestKind.CONTEXT_ACTION_REPAIR) {
+            Log.d("CONVO_CONTEXT_REPAIR_SCHEMA", "Strict bounded context repair schema enabled")
         } else {
             Log.d(
                 "CONVO_AGENT_SCHEMA",
@@ -275,13 +304,20 @@ $userText
         return endpointUrl
     }
 
-    private enum class RequestKind { ROUTING, CONTEXT_READ_REPAIR, RESPONSE, CREATE_DRAFT_MOVE }
+    private enum class RequestKind {
+        ROUTING,
+        CONTEXT_READ_REPAIR,
+        CONTEXT_ACTION_REPAIR,
+        RESPONSE,
+        CREATE_DRAFT_MOVE
+    }
 
     companion object {
         const val ROUTING_TEMPERATURE = 0.0
         const val RESPONSE_TEMPERATURE = 0.35
         const val RESPONSE_MAX_TOKENS = 128
         const val CONTEXT_READ_REPAIR_MAX_TOKENS = 160
+        const val CONTEXT_ACTION_REPAIR_MAX_TOKENS = 180
         const val CREATE_DRAFT_TEMPERATURE = 0.0
         const val CREATE_DRAFT_MAX_TOKENS = 112
         internal val CREATE_DRAFT_SYSTEM_PROMPT = """
@@ -352,13 +388,14 @@ Do not output explanations, markdown, task-agent fields, or text outside the req
         internal val CONTEXT_READ_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded semantic repair after the primary routing interpretation abstained.
 
-Return only the required seven-field ConversationDecision JSON.
+Return only the required eight-field ConversationDecision JSON.
 Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only.
 Never return TASK_COMMAND, DIRECT_REPLY, END_SESSION or UNKNOWN.
 
 Use CONTEXT_READ only for a read-only question that one supplied item uniquely answers.
 Select exactly one supplied temporary ref and the requested detail.
 Keep task_text and reply empty for CONTEXT_READ.
+context_action must be NONE for both allowed routes.
 Do not write factual task replies; Android validates the ref and renders the answer.
 Never invent a ref, title, fact or Room ID.
 
@@ -377,6 +414,28 @@ Mutation requests must remain ASK_CLARIFICATION. Reference-based mutation is uns
 For ASK_CLARIFICATION, context_ref must be empty and context_detail must be NONE.
 These principles are semantic guidance, not an exhaustive phrase dictionary.
 Do not output markdown, explanations or task-agent fields.
+""".trimIndent()
+        internal val CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT = """
+You perform one bounded semantic repair after the primary routing interpretation abstained.
+
+Return only the required eight-field ConversationDecision JSON.
+Allowed routes are CONTEXT_ACTION and ASK_CLARIFICATION only.
+Never return CONTEXT_READ, TASK_COMMAND, DIRECT_REPLY, END_SESSION or UNKNOWN.
+
+Use CONTEXT_ACTION only when the user asks to update, edit, or reschedule exactly one supplied
+context item. Select exactly one supplied temporary ref. A target may be identified by a supplied
+ref, an ordinal, one unique supplied title, or the Android-validated current focus. Current focus
+is valid only for the captured generation. Never invent a ref or compare against database records.
+
+Use UPDATE for opening or editing general task details and explicit replacement titles.
+Use RESCHEDULE for a date or time change. For CONTEXT_ACTION, task_text and reply must be empty,
+context_detail must be NONE, and context_action must be UPDATE or RESCHEDULE. Android privately
+resolves and re-fetches the target and uses the original normalized utterance for extraction.
+
+DELETE, MARK_DONE, MARK_UNDONE, and BREAKDOWN_TASK by context are unsupported. For these use
+ASK_CLARIFICATION, ask for the explicit task name, keep context_ref empty, context_detail NONE,
+and context_action NONE. Never claim that any mutation succeeded. Never output factual task data,
+Room IDs, markdown, explanations, or task-agent fields.
 """.trimIndent()
         val RESPONSE_SYSTEM_PROMPT = """
 You are the response-writing part of the Conversation Agent.
@@ -420,11 +479,12 @@ natural_response, action, task_title, target_task_title, date, time, recurrence,
 
 Return ONLY one valid compact JSON object.
 The JSON object must contain EXACTLY these fields:
-route, task_text, reply, context_ref, context_detail, confidence, listen_again
+route, task_text, reply, context_ref, context_detail, context_action, confidence, listen_again
 
 Allowed route values:
 TASK_COMMAND
 CONTEXT_READ
+CONTEXT_ACTION
 DIRECT_REPLY
 ASK_CLARIFICATION
 END_SESSION
@@ -439,6 +499,18 @@ Route rules:
 - Use ASK_CLARIFICATION when the user may refer to a prior result but no authoritative read-only task context supplies the answer, the intended task operation cannot be determined safely, or speech recognition may have distorted the request.
 - Use END_SESSION when the user wants to stop or exit the assistant.
 - Use UNKNOWN for unsupported off-topic requests.
+
+Context-action rules:
+- Use CONTEXT_ACTION when the user asks to update, edit, or reschedule exactly one supplied context item.
+- Select exactly one supplied temporary ref. Never invent a ref.
+- Use UPDATE for opening or editing general task details or changing a title.
+- Use RESCHEDULE when changing a date or time.
+- A target may be identified by a temporary ref, ordinal, unique supplied title, or previously Android-validated current focus.
+- Current focus is valid only while its generation matches the supplied snapshot.
+- For CONTEXT_ACTION keep task_text and reply empty, context_detail NONE, and context_action UPDATE or RESCHEDULE.
+- Android uses the original normalized utterance for extraction, privately resolves the ref, and re-fetches the task.
+- Do not place raw factual task data in reply and never claim that an edit or reschedule succeeded.
+- Contextual DELETE, MARK_DONE, MARK_UNDONE, and BREAKDOWN_TASK are unsupported. Use ASK_CLARIFICATION, ask for the explicit task name, and do not output CONTEXT_ACTION.
 
 Read-only task context rules:
 - The labelled Read-only task context is trusted factual data supplied by Android. Android remains authoritative.
@@ -461,34 +533,43 @@ Read-only task context rules:
 - Use CONTEXT_READ when exactly one supplied item answers the question. Use ASK_CLARIFICATION only for genuine ambiguity.
 - Use ASK_CLARIFICATION when a contextual reference cannot be resolved safely from the supplied snapshot.
 - Never claim that a task was modified, deleted, completed, rescheduled, created or saved. Stale context is never execution authority.
-- Reference-based mutations are not implemented. If the user asks to mutate "the second one", "that task", "it", or a temporary ref such as T1, use ASK_CLARIFICATION. Do not silently replace a relative reference with a title and do not claim success.
+- Reference-based UPDATE and RESCHEDULE use CONTEXT_ACTION. Other reference-based mutations remain ASK_CLARIFICATION.
 - Continue routing explicit title-based task operations normally as TASK_COMMAND.
 
 Contextual examples are illustrative, not an exhaustive phrase dictionary.
 Example supplied snapshot: T1 is Take medicine at 11:00 AM. T2 is Buy groceries at 8:30 PM.
 
 User: What was the second one?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"SUMMARY","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"SUMMARY","context_action":"NONE","confidence":0.97,"listen_again":true}
 
 User: What time is the first task?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","context_action":"NONE","confidence":0.97,"listen_again":true}
 
 User: Is the second one completed?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"STATUS","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"STATUS","context_action":"NONE","confidence":0.97,"listen_again":true}
 
 User: What time it is for the second?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"TIME","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"TIME","context_action":"NONE","confidence":0.97,"listen_again":true}
 
 Example supplied snapshot: T3 has the unique title Podcast.
 User: What time is the podcast?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T3","context_detail":"TIME","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T3","context_detail":"TIME","context_action":"NONE","confidence":0.97,"listen_again":true}
 
 Example supplied snapshot: two supplied titles both contain Podcast.
 User: What time is the podcast?
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which podcast task do you mean?","context_ref":"","context_detail":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which podcast task do you mean?","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.97,"listen_again":true}
+
+User: Edit the first one.
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"UPDATE","confidence":0.97,"listen_again":false}
+
+User: Move the second one to next Friday at 3 PM.
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","confidence":0.97,"listen_again":false}
+
+Current validated focus: T2. User: Change it to 4 PM.
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","confidence":0.97,"listen_again":false}
 
 User: Delete the second one.
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Please say the task name you want to delete.","context_ref":"","context_detail":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Please say the task name you want to delete.","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.97,"listen_again":true}
 
 Guidance and execution distinction:
 - "How do I create a task?" is DIRECT_REPLY. "Create a task called revision" is TASK_COMMAND.
@@ -510,35 +591,36 @@ App-guidance reply rules:
 
 Output examples:
 User: hello
-{"route":"DIRECT_REPLY","task_text":"","reply":"Hello. I can help you manage your tasks by voice.","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"Hello. I can help you manage your tasks by voice.","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: how are you
-{"route":"DIRECT_REPLY","task_text":"","reply":"I am ready to help you manage your tasks. What would you like to do?","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"I am ready to help you manage your tasks. What would you like to do?","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: what can you do
-{"route":"DIRECT_REPLY","task_text":"","reply":"I can help you create, check, reschedule, complete, and break down tasks. For example, say, 'Show my tasks tomorrow.'","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"I can help you create, check, reschedule, complete, and break down tasks. For example, say, 'Show my tasks tomorrow.'","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: How do I create a task?
-{"route":"DIRECT_REPLY","task_text":"","reply":"Say, 'Create a task called revision tomorrow at 4 PM.' I will open task creation with recognised details ready for review.","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"Say, 'Create a task called revision tomorrow at 4 PM.' I will open task creation with recognised details ready for review.","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: Create a task called revision
-{"route":"TASK_COMMAND","task_text":"Create a task called revision","reply":"","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Create a task called revision","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: what tasks do i have today
-{"route":"TASK_COMMAND","task_text":"what tasks do i have today","reply":"","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"what tasks do i have today","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: remind me to take medicine tomorrow at 6 pm
-{"route":"TASK_COMMAND","task_text":"remind me to take medicine tomorrow at 6 pm","reply":"","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"remind me to take medicine tomorrow at 6 pm","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":true}
 
 User: bye
-{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","confidence":0.95,"listen_again":false}
+{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.95,"listen_again":false}
 
 Rules:
 - For TASK_COMMAND, copy the user's task-related request into task_text and keep reply empty.
 - For CONTEXT_READ, keep task_text and reply empty, use one supplied context_ref, and select a non-NONE context_detail.
+- For CONTEXT_ACTION, keep task_text and reply empty, use one supplied context_ref, context_detail NONE, and context_action UPDATE or RESCHEDULE.
 - For DIRECT_REPLY, keep task_text empty and provide a short natural spoken reply.
 - For ASK_CLARIFICATION, ask one short clarification question.
-- For every route other than CONTEXT_READ, context_ref must be empty and context_detail must be NONE.
+- CONTEXT_READ requires context_action NONE. Every route other than CONTEXT_READ and CONTEXT_ACTION requires empty context_ref, context_detail NONE, and context_action NONE.
 - For END_SESSION, set listen_again to false.
 - Do not claim that a task was created, deleted, updated, rescheduled, completed, or saved.
 - Operational success must never be claimed by routing.

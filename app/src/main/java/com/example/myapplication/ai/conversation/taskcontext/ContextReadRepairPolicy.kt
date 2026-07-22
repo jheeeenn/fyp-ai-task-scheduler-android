@@ -20,12 +20,14 @@ object ContextReadRepairPolicy {
     fun shouldAttempt(
         primaryDecision: ConversationDecision,
         capturedSnapshot: ReadOnlyTaskContextSnapshot,
-        isResultInteraction: Boolean
+        isResultInteraction: Boolean,
+        normalizedText: String = ""
     ): Boolean = primaryDecision.source == PRIMARY_SOURCE &&
         (primaryDecision.route == ConversationRoute.ASK_CLARIFICATION ||
             primaryDecision.route == ConversationRoute.UNKNOWN) &&
         capturedSnapshot.items.isNotEmpty() &&
-        isResultInteraction
+        isResultInteraction &&
+        (normalizedText.isBlank() || !ContextReferenceMutationGuard.containsMutationWording(normalizedText))
 
     fun evaluate(
         normalizedText: String,

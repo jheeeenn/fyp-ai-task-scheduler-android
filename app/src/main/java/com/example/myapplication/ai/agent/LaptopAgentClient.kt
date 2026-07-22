@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.myapplication.SettingsActivity
 import com.example.myapplication.ai.schema.AgentResponseSchemas
+import com.example.myapplication.ai.conversation.ConversationContextAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -20,7 +21,7 @@ class TaskAgentResponseException(
     cause: Throwable? = null
 ) : IOException(message, cause)
 
-class LaptopAgentClient(
+open class LaptopAgentClient(
     context: Context? = null,
     private val endpointUrl: String = SettingsActivity.DEFAULT_TASK_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
@@ -33,7 +34,22 @@ class LaptopAgentClient(
         .callTimeout(75, TimeUnit.SECONDS)
         .build()
 
-    suspend fun process(normalizedText: String): String = withContext(Dispatchers.IO) {
+    open suspend fun process(normalizedText: String): String = withContext(Dispatchers.IO) {
+        execute(normalizedText, SYSTEM_PROMPT)
+    }
+
+    open suspend fun processContextAction(
+        normalizedText: String,
+        expectedAction: ConversationContextAction
+    ): String = withContext(Dispatchers.IO) {
+        val prompt = CONTEXT_ACTION_SYSTEM_PROMPT.replace(
+            "{{EXPECTED_ACTION}}",
+            expectedAction.name
+        )
+        execute(normalizedText, prompt)
+    }
+
+    private fun execute(normalizedText: String, systemPrompt: String): String {
         val payload = JSONObject().apply {
             put("model", modelId)
             put("temperature", 0.0)
@@ -43,7 +59,7 @@ class LaptopAgentClient(
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", SYSTEM_PROMPT)
+                    put("content", systemPrompt)
                 })
                 put(JSONObject().apply {
                     put("role", "user")
@@ -62,7 +78,7 @@ class LaptopAgentClient(
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        try {
+        return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 Log.d("LAPTOP_AGENT", "HTTP ${response.code}: $body")
@@ -124,6 +140,26 @@ class LaptopAgentClient(
     }
 
     companion object {
+        internal val CONTEXT_ACTION_SYSTEM_PROMPT = """
+You extract only requested changes for one task that Android has already selected and validated.
+Expected contextual action: {{EXPECTED_ACTION}}.
+You must not select, identify, query, or mutate a task or request database access.
+Never output a Room ID. target_task_title, target_date, and target_time must remain empty.
+Never claim that a change succeeded; natural_response must be empty.
+
+Return the existing strict TaskAgentResponse JSON fields.
+When expected action is RESCHEDULE, action must be RESCHEDULE_TASK, task_title must be empty,
+and copy new date meaning into new_date and new time meaning into new_time. Preserve literal
+phrases such as "next Wednesday" and "around 4 PM". Do not calculate dates. Date-only or
+time-only changes are valid.
+When expected action is UPDATE, action must be UPDATE_TASK. If the user explicitly supplies a
+replacement title, put only that replacement in task_title. target_task_title remains empty.
+An edit request with no replacement fields is valid and should still return UPDATE_TASK.
+Do not return recurrence, priority, missing fields, clarification, confirmation, or a plan.
+Keep date and time compatible fields empty unless they duplicate new_date and new_time.
+Do not output markdown or explanations.
+""".trimIndent()
+
         internal val SYSTEM_PROMPT = """
 You are a strict JSON task-command parser for an Android task scheduling app.
 

@@ -75,6 +75,22 @@ object ContextReferenceMutationGuard {
             SUPPLIED_RESULT_ORDINAL.containsMatchIn(text) ||
             STANDALONE_SUPPLIED_ORDINAL.containsMatchIn(text)
 
+    fun hasFocusReference(text: String): Boolean =
+        DEICTIC_TASK_REFERENCE.containsMatchIn(text) ||
+            FOCUS_PRONOUN.containsMatchIn(text)
+
+    fun containsUniqueSuppliedTitle(
+        text: String,
+        snapshot: ReadOnlyTaskContextSnapshot
+    ): Boolean {
+        val normalized = text.trim().lowercase(Locale.ROOT)
+        if (normalized.isEmpty()) return false
+        val matches = snapshot.items.count { item ->
+            item.title.isNotBlank() && normalized.contains(item.title.lowercase(Locale.ROOT))
+        }
+        return matches == 1
+    }
+
     private fun ordinalPosition(value: String): Int = when (value.lowercase(Locale.ROOT)) {
         "first", "1st" -> 1
         "second", "2nd" -> 2
@@ -96,10 +112,13 @@ object ContextReferenceMutationGuard {
         "(?i)\\bthe\\s+($ORDINAL)(?=\\s*(?:$|to\\b|on\\b|for\\b))"
     )
     private val DEICTIC_TASK_REFERENCE = Regex("(?i)\\b(?:that|this)\\s+(?:task|one)\\b")
+    private val FOCUS_PRONOUN = Regex("(?i)\\b(?:it|its|that one|that task)\\b")
     private val CONTEXTUAL_IT = listOf(
         Regex("(?i)\\b(?:delete|remove|complete|finish|undo|reopen)\\s+it(?:\\s+(?:please|now))?[.!?]?\\s*$"),
         Regex("(?i)\\bmark\\s+it\\s+(?:complete|done|unfinished|undone|active)\\b"),
-        Regex("(?i)\\b(?:move|reschedule|change|update)\\s+it\\s+(?:to|on|for|with)\\b")
+        Regex("(?i)\\b(?:move|reschedule|change|update)\\s+it\\s+(?:to|on|for|with)\\b"),
+        Regex("(?i)\\b(?:edit|update|change|rename)\\s+its\\b"),
+        Regex("(?i)\\b(?:edit|update|change)\\s+it(?:\\s+please)?[.!?]?\\s*$")
     )
     private val MUTATION_WORDING = Regex(
         "(?i)\\b(?:delete|remove|move|reschedule|mark|complete|finish|update|change|edit|rename|break\\s+down)\\b"

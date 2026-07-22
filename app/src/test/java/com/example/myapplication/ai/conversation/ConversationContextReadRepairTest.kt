@@ -427,8 +427,15 @@ class ConversationContextReadRepairTest {
             .getJSONObject("route")
             .getJSONArray("enum")
         val routes = (0 until routeEnum.length()).map { routeEnum.getString(it) }.toSet()
+        val actionEnum = format
+            .getJSONObject("json_schema")
+            .getJSONObject("schema")
+            .getJSONObject("properties")
+            .getJSONObject("context_action")
+            .getJSONArray("enum")
 
         assertEquals(setOf("CONTEXT_READ", "ASK_CLARIFICATION"), routes)
+        assertEquals(listOf("NONE"), (0 until actionEnum.length()).map { actionEnum.getString(it) })
     }
 
     private class FakeClient(
@@ -488,6 +495,7 @@ class ConversationContextReadRepairTest {
             .put("reply", reply)
             .put("context_ref", contextRef)
             .put("context_detail", contextDetail)
+            .put("context_action", "NONE")
             .put("confidence", 0.97)
             .put("listen_again", true)
             .toString()

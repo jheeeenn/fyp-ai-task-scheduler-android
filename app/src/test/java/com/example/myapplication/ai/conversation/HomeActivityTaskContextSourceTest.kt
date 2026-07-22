@@ -83,7 +83,7 @@ class HomeActivityTaskContextSourceTest {
     fun contextReadIsValidatedAndRenderedBeforeTaskAgentWithoutRoomAccess() {
         val contextReadBranch = source
             .substringAfter("ConversationRoute.CONTEXT_READ ->")
-            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+            .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
         val contextBranchStart = source.indexOf("ConversationRoute.CONTEXT_READ ->")
         val taskAgentCall = source.indexOf("agentOrchestrator.process(taskAgentInput)")
 
@@ -104,7 +104,7 @@ class HomeActivityTaskContextSourceTest {
     fun contextReadLogContainsOnlyNonSensitiveValidationMetadata() {
         val contextReadBranch = source
             .substringAfter("ConversationRoute.CONTEXT_READ ->")
-            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+            .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
         val log = contextReadBranch
             .substringAfter("Log.d(")
             .substringBefore(")\n")
@@ -137,7 +137,7 @@ class HomeActivityTaskContextSourceTest {
     }
 
     @Test
-    fun contextualCommandsBypassClassifierAndReachCentralPathWithoutScreenTransition() {
+    fun contextualCommandsBypassClassifierAndReachCentralPath() {
         val voiceFlow = source
             .substringAfter("private fun handleVoiceCommand(command: String)")
             .substringBefore("// branches for actions")
@@ -146,8 +146,95 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(voiceFlow.contains("contextual reference deferred to Conversation Agent"))
         assertTrue(voiceFlow.contains("conversationOrchestrator.process("))
         assertTrue(voiceFlow.contains("CreateTaskActivity").not())
-        assertTrue(voiceFlow.contains("taskDao()").not())
         assertTrue(voiceFlow.contains("updateDoneStatus").not())
+    }
+
+    @Test
+    fun contextActionValidatesResolvesRefRefetchesAndThenOpensEditScreen() {
+        val branch = source
+            .substringAfter("ConversationRoute.CONTEXT_ACTION ->")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val validation = branch.indexOf("ContextActionDecisionValidator.validate(")
+        val resolve = branch.indexOf("readOnlyTaskContextStore.resolveRef(")
+        val firstFetch = branch.indexOf("taskDao.getById(privateTaskId)")
+        val extraction = branch.indexOf("agentOrchestrator.processContextAction(")
+        val secondFetch = branch.indexOf("taskDao.getById(reResolvedTaskId)")
+        val open = branch.indexOf("openContextActionEditScreen(")
+
+        assertTrue(validation >= 0)
+        assertTrue(validation < resolve)
+        assertTrue(resolve < firstFetch)
+        assertTrue(firstFetch < extraction)
+        assertTrue(extraction < secondFetch)
+        assertTrue(secondFetch < open)
+        assertTrue(branch.contains("currentGeneration() != capturedGeneration"))
+        assertTrue(branch.contains("reResolvedTaskId != privateTaskId"))
+        assertTrue(branch.contains("TaskMatcher").not())
+        assertTrue(branch.contains("findTaskMatchResult").not())
+        assertTrue(branch.contains("updateDoneStatus").not())
+        assertTrue(branch.contains("deleteTask").not())
+        assertTrue(branch.contains("insertTask").not())
+    }
+
+    @Test
+    fun contextActionEditHelperUsesAuthoritativeTaskAndOnlyPrefillsChanges() {
+        val helper = source
+            .substringAfter("private suspend fun openContextActionEditScreen(")
+            .substringBefore("private fun todayDateString()")
+
+        assertTrue(helper.contains("EditTaskActivity::class.java"))
+        assertTrue(helper.contains("putExtra(\"task_id\", task.id)"))
+        assertTrue(helper.contains("putExtra(\"task_title\", task.title)"))
+        assertTrue(helper.contains("putExtra(\"task_date\", task.dueDate)"))
+        assertTrue(helper.contains("putExtra(\"task_time\", task.dueTime)"))
+        assertTrue(helper.contains("putExtra(\"opened_by_assistant\", true)"))
+        assertTrue(helper.contains("putExtra(\"prefill_title\", extractedChange.taskTitle)"))
+        assertTrue(helper.contains("putExtra(\"prefill_new_date_text\", extractedChange.newDateText)"))
+        assertTrue(helper.contains("putExtra(\"prefill_new_time_text\", extractedChange.newTimeText)"))
+        assertTrue(helper.contains("putExtra(\"assistant_mode\", \"reschedule\")"))
+        assertTrue(helper.contains("startActivity(editIntent)"))
+    }
+
+    @Test
+    fun contextActionLogsContainNoPrivateIdsTitlesOrDatabaseObjects() {
+        val branch = source
+            .substringAfter("ConversationRoute.CONTEXT_ACTION ->")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val homeLog = branch
+            .substringAfter("\"HOME_CONTEXT_ACTION\"")
+            .substringBefore(")\n")
+        val resolvedLog = branch
+            .substringAfter("\"CONTEXT_ACTION_TARGET_RESOLVED\"")
+            .substringBefore(")\n")
+
+        listOf(homeLog, resolvedLog).forEach { log ->
+            assertTrue(log.contains("privateTaskId").not())
+            assertTrue(log.contains("reResolvedTaskId").not())
+            assertTrue(log.contains("task.title").not())
+            assertTrue(log.contains("initiallyFetchedTask").not())
+            assertTrue(log.contains("authoritativeTask").not())
+        }
+        assertTrue(homeLog.contains("ref="))
+        assertTrue(homeLog.contains("action="))
+        assertTrue(homeLog.contains("capturedGeneration="))
+        assertTrue(homeLog.contains("validation="))
+        assertTrue(resolvedLog.contains("eligible="))
+    }
+
+    @Test
+    fun contextActionRepairIsMutuallyExclusiveAndUsesSameCapture() {
+        val requestFlow = source
+            .substringAfter("val taskContextCapture = readOnlyTaskContextStore.capture()")
+            .substringBefore("// branches for actions")
+
+        assertTrue(requestFlow.contains("val contextActionRepairEligible = !contextRepairEligible"))
+        assertTrue(requestFlow.contains("ContextActionRepairPolicy.shouldAttempt("))
+        assertTrue(requestFlow.contains("processContextActionRepair("))
+        assertTrue(requestFlow.contains("CONTEXT_ACTION_REPAIR_ATTEMPTED"))
+        assertTrue(requestFlow.contains("CONTEXT_ACTION_REPAIR_ACCEPTED"))
+        assertTrue(requestFlow.contains("CONTEXT_ACTION_REPAIR_REJECTED"))
+        assertTrue(requestFlow.contains("CONTEXT_ACTION_REPAIR_FAILED"))
+        assertTrue(requestFlow.contains("capturedSnapshot = taskContextCapture.snapshot"))
     }
 
     @Test

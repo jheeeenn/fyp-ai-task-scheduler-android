@@ -137,6 +137,7 @@ class ConversationOrchestrator(
                 taskText = decision.taskText.ifBlank { normalizedText }
             )
             ConversationRoute.CONTEXT_READ -> decision
+            ConversationRoute.CONTEXT_ACTION -> decision
             ConversationRoute.DIRECT_REPLY -> decision.copy(
                 reply = decision.reply.ifBlank { "Hi. I can help you create, check, reschedule, delete, complete, or break down tasks." }
             )
@@ -190,6 +191,23 @@ class ConversationOrchestrator(
         return parser.parse(rawContent).copy(source = SOURCE_CONTEXT_REPAIR)
     }
 
+    suspend fun processContextActionRepair(
+        normalizedText: String,
+        readOnlyTaskContextSnapshot: String,
+        primaryRoute: ConversationRoute,
+        currentInteraction: String,
+        contextFocus: ConversationContextFocus? = null
+    ): ConversationDecision {
+        val rawContent = conversationAgentClient.processContextActionRepair(
+            userText = normalizedText,
+            memorySnapshot = appendContextFocus(memory.snapshotForPrompt(), contextFocus),
+            taskContextSnapshot = readOnlyTaskContextSnapshot,
+            primaryRoute = primaryRoute,
+            currentInteraction = currentInteraction
+        )
+        return parser.parse(rawContent).copy(source = SOURCE_CONTEXT_ACTION_REPAIR)
+    }
+
     fun recordAuthoritativeContextRead(
         item: ReadOnlyTaskContextItem,
         selectedRef: String,
@@ -239,6 +257,7 @@ class ConversationOrchestrator(
     private companion object {
         const val SOURCE_SCHEMA_REPAIR = "conversation_agent_schema_repair"
         const val SOURCE_CONTEXT_REPAIR = "conversation_agent_context_repair"
+        const val SOURCE_CONTEXT_ACTION_REPAIR = "conversation_agent_context_action_repair"
         val NO_TASK_CONTEXT = """
             Scope: NONE
             Generation: 0

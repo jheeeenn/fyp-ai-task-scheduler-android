@@ -47,7 +47,16 @@ class ConversationDecisionParser {
                 e
             )
         }
-        validateRouteFields(route, taskText, reply, contextRef, contextDetail)
+        val contextActionText = requireString(json, "context_action")
+        val contextAction = try {
+            ConversationContextAction.valueOf(contextActionText)
+        } catch (e: IllegalArgumentException) {
+            throw ConversationSchemaException(
+                "Invalid ConversationDecision context_action: $contextActionText",
+                e
+            )
+        }
+        validateRouteFields(route, taskText, reply, contextRef, contextDetail, contextAction)
 
         return ConversationDecision(
             route = route,
@@ -55,6 +64,7 @@ class ConversationDecisionParser {
             reply = reply,
             contextRef = contextRef,
             contextDetail = contextDetail,
+            contextAction = contextAction,
             confidence = confidence,
             listenAgain = requireBoolean(json, "listen_again")
         )
@@ -65,7 +75,8 @@ class ConversationDecisionParser {
         taskText: String,
         reply: String,
         contextRef: String,
-        contextDetail: ConversationContextDetail
+        contextDetail: ConversationContextDetail,
+        contextAction: ConversationContextAction
     ) {
         if (route == ConversationRoute.CONTEXT_READ) {
             if (taskText.isNotEmpty() || reply.isNotEmpty()) {
@@ -83,12 +94,40 @@ class ConversationDecisionParser {
                     "CONTEXT_READ requires a non-NONE context_detail"
                 )
             }
+            if (contextAction != ConversationContextAction.NONE) {
+                throw ConversationSchemaException("CONTEXT_READ requires context_action NONE")
+            }
             return
         }
 
-        if (contextRef.isNotEmpty() || contextDetail != ConversationContextDetail.NONE) {
+        if (route == ConversationRoute.CONTEXT_ACTION) {
+            if (taskText.isNotEmpty() || reply.isNotEmpty()) {
+                throw ConversationSchemaException(
+                    "CONTEXT_ACTION requires empty task_text and reply"
+                )
+            }
+            if (!TEMPORARY_REF.matches(contextRef)) {
+                throw ConversationSchemaException(
+                    "CONTEXT_ACTION requires a temporary context_ref"
+                )
+            }
+            if (contextDetail != ConversationContextDetail.NONE) {
+                throw ConversationSchemaException("CONTEXT_ACTION requires context_detail NONE")
+            }
+            if (contextAction == ConversationContextAction.NONE) {
+                throw ConversationSchemaException(
+                    "CONTEXT_ACTION requires UPDATE or RESCHEDULE context_action"
+                )
+            }
+            return
+        }
+
+        if (contextRef.isNotEmpty() ||
+            contextDetail != ConversationContextDetail.NONE ||
+            contextAction != ConversationContextAction.NONE
+        ) {
             throw ConversationSchemaException(
-                "Non-context routes require empty context_ref and NONE context_detail"
+                "Non-context routes require empty context_ref, NONE context_detail, and NONE context_action"
             )
         }
     }
@@ -178,6 +217,7 @@ class ConversationDecisionParser {
             "reply",
             "context_ref",
             "context_detail",
+            "context_action",
             "confidence",
             "listen_again"
         )

@@ -41,14 +41,14 @@ class ReadOnlyTaskContextPromptTest {
         assertTrue(prompt.contains("Use CONTEXT_READ for a read-only question"))
         assertTrue(prompt.contains("You do not write factual task replies"))
         assertTrue(prompt.contains("Android will verify the ref"))
-        assertTrue(prompt.contains("Reference-based mutations are not implemented"))
-        assertTrue(prompt.contains("use ASK_CLARIFICATION"))
+        assertTrue(prompt.contains("Reference-based UPDATE and RESCHEDULE use CONTEXT_ACTION"))
+        assertTrue(prompt.contains("Other reference-based mutations remain ASK_CLARIFICATION"))
         assertTrue(prompt.contains("Continue routing explicit title-based task operations normally as TASK_COMMAND"))
         assertTrue(prompt.contains("Never claim that a task was modified, deleted, completed, rescheduled, created or saved"))
     }
 
     @Test
-    fun conversationDecisionSchemaContainsExactlySevenRequiredFields() {
+    fun conversationDecisionSchemaContainsExactlyEightRequiredFields() {
         val format = AgentResponseSchemas.conversationDecisionResponseFormat()
         val schema = format.getJSONObject("json_schema").getJSONObject("schema")
         val propertyNames = schema.getJSONObject("properties").keys().asSequence().toSet()
@@ -60,6 +60,7 @@ class ReadOnlyTaskContextPromptTest {
             "reply",
             "context_ref",
             "context_detail",
+            "context_action",
             "confidence",
             "listen_again"
         )
@@ -79,6 +80,7 @@ class ReadOnlyTaskContextPromptTest {
         assertFalse(createDraftSchema.contains("task_ref"))
         assertFalse(createDraftSchema.contains("context_ref"))
         assertFalse(createDraftSchema.contains("context_detail"))
+        assertFalse(createDraftSchema.contains("context_action"))
     }
 
     private class CapturingClient : ConversationAgentClient(null) {
@@ -96,6 +98,7 @@ class ReadOnlyTaskContextPromptTest {
                 .put("reply", "")
                 .put("context_ref", "T2")
                 .put("context_detail", "SUMMARY")
+                .put("context_action", "NONE")
                 .put("confidence", 0.99)
                 .put("listen_again", true)
                 .toString()
