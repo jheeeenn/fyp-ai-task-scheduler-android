@@ -12,6 +12,7 @@ fun interface CreateDraftSemanticClient {
 
 enum class CreateDraftMoveSource(val logValue: String) {
     CONVERSATION_AGENT_PRIMARY("conversation_agent_primary"),
+    CONVERSATION_AGENT_REPAIR("conversation_agent_repair"),
     LOCAL_SAFETY_REFLEX("local_safety_reflex"),
     LOCAL_FAILURE_FALLBACK("local_failure_fallback"),
     DETERMINISTIC_UNKNOWN("deterministic_unknown")
@@ -64,7 +65,8 @@ class CreateDraftSemanticOrchestrator(
             val decision = parser.parse(rawContent)
             if (decision.move == CreateDraftAgentMoveType.UNKNOWN) {
                 Log.d("CREATE_MOVE_PRIMARY", "state=$state category=AGENT_ABSTAINED")
-                return localFailureFallback(localCandidate, state)
+                validatedLocalFallback(localCandidate, state)?.let { return it }
+                return attemptSemanticRepair(userText, state, context, localCandidate)
             }
             if (decision.move == CreateDraftAgentMoveType.CONFIRM_SAVE &&
                 !isCompatibleWithAgentConfirmation(localCandidate)
@@ -93,10 +95,63 @@ class CreateDraftSemanticOrchestrator(
         }
     }
 
+    private suspend fun attemptSemanticRepair(
+        userText: String,
+        state: CreateTaskDialogState,
+        context: CreateDraftAgentContext,
+        localCandidate: CreateDraftMove
+    ): CreateDraftMoveResolution {
+        Log.d("CREATE_MOVE_REPAIR", "state=$state category=REPAIR_ATTEMPTED")
+        return try {
+            val rawContent = semanticClient.interpretCreateDraftMove(userText, context.toRepairPromptText())
+            val decision = parser.parse(rawContent)
+            if (decision.move == CreateDraftAgentMoveType.UNKNOWN) {
+                Log.d("CREATE_MOVE_REPAIR", "state=$state category=REPAIR_ABSTAINED")
+                return deterministicUnknown(agentAttempted = true)
+            }
+            if (decision.move == CreateDraftAgentMoveType.CONFIRM_SAVE &&
+                !isCompatibleWithAgentConfirmation(localCandidate)
+            ) {
+                Log.d(
+                    "CREATE_MOVE_REPAIR",
+                    "state=$state category=REPAIR_REJECTED reason=CONFIRM_CONTRADICTION"
+                )
+                return deterministicUnknown(agentAttempted = true)
+            }
+            val validation = validator.validate(decision, state)
+            if (!validation.accepted) {
+                Log.d(
+                    "CREATE_MOVE_REPAIR",
+                    "state=$state category=REPAIR_REJECTED reason=STATE_OR_CONFIDENCE"
+                )
+                return deterministicUnknown(agentAttempted = true)
+            }
+            Log.d("CREATE_MOVE_REPAIR", "state=$state category=REPAIR_ACCEPTED")
+            CreateDraftMoveResolution(
+                move = validation.move,
+                source = CreateDraftMoveSource.CONVERSATION_AGENT_REPAIR,
+                confidence = decision.confidence,
+                agentAttempted = true
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("CREATE_MOVE_REPAIR", "state=$state category=REPAIR_FAILED", e)
+            deterministicUnknown(agentAttempted = true)
+        }
+    }
+
     private fun localFailureFallback(
         localCandidate: CreateDraftMove,
         state: CreateTaskDialogState
-    ): CreateDraftMoveResolution {
+    ): CreateDraftMoveResolution =
+        validatedLocalFallback(localCandidate, state)
+            ?: deterministicUnknown(agentAttempted = true)
+
+    private fun validatedLocalFallback(
+        localCandidate: CreateDraftMove,
+        state: CreateTaskDialogState
+    ): CreateDraftMoveResolution? {
         val validation = validator.validateLocalCandidate(localCandidate, state)
         return if (validation.accepted) {
             CreateDraftMoveResolution(
@@ -106,7 +161,7 @@ class CreateDraftSemanticOrchestrator(
                 agentAttempted = true
             )
         } else {
-            deterministicUnknown(agentAttempted = true)
+            null
         }
     }
 

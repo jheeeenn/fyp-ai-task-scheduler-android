@@ -4,8 +4,31 @@ import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateTaskDialogState
 
+enum class CreateDraftPreviousAssistantAct {
+    NONE,
+    ASKED_FOR_TITLE,
+    ASKED_FOR_DATE,
+    ASKED_FOR_TIME,
+    ASKED_WHICH_FIELD_TO_CHANGE,
+    ASKED_TO_CONFIRM_SAVE,
+    SAVE_IN_PROGRESS
+}
+
+enum class CreateDraftExpectedResponseKind {
+    TITLE_VALUE,
+    DATE_VALUE,
+    TIME_VALUE,
+    FIELD_SELECTION_OR_REPLACEMENT,
+    CONFIRM_REJECT_OR_CORRECT,
+    NONE
+}
+
 data class CreateDraftAgentContext(
     val currentState: String,
+    val previousAssistantAct: CreateDraftPreviousAssistantAct,
+    val expectedResponseKind: CreateDraftExpectedResponseKind,
+    val draftComplete: Boolean,
+    val completedDraftWasPresented: Boolean,
     val expectedField: String,
     val pendingReplacementField: String,
     val hasTitle: Boolean,
@@ -20,6 +43,10 @@ data class CreateDraftAgentContext(
 ) {
     fun toPromptText(): String = buildString {
         appendLine("Current state: $currentState")
+        appendLine("Previous assistant act: ${previousAssistantAct.name}")
+        appendLine("Expected response kind: ${expectedResponseKind.name}")
+        appendLine("Draft complete: $draftComplete")
+        appendLine("Completed draft was presented: $completedDraftWasPresented")
         appendLine("Expected field: $expectedField")
         appendLine("Pending replacement field: $pendingReplacementField")
         appendLine("Title exists: $hasTitle")
@@ -33,6 +60,18 @@ data class CreateDraftAgentContext(
         append("Authority limitations: ${authorityLimitations.joinToString("; ")}")
     }
 
+    fun toRepairPromptText(): String = buildString {
+        appendLine(toPromptText())
+        appendLine()
+        appendLine("Semantic repair status: PRIMARY_AND_LOCAL_ABSTAINED")
+        append(
+            "Repair instruction: The first semantic interpretation abstained and no valid deterministic " +
+                    "proposal exists. Re-evaluate the user's meaning only within the supplied interaction act " +
+                    "and allowed moves. Do not invent missing values. Use UNKNOWN only if the meaning remains " +
+                    "genuinely ambiguous."
+        )
+    }
+
     companion object {
         fun capture(
             state: CreateTaskDialogState,
@@ -42,8 +81,14 @@ data class CreateDraftAgentContext(
             hasSelectedTime: Boolean,
             localCandidate: CreateDraftMove
         ): CreateDraftAgentContext {
+            val draftComplete = hasTitle && hasSelectedDate && hasSelectedTime
             return CreateDraftAgentContext(
                 currentState = "${state.name}: ${stateDescription(state)}",
+                previousAssistantAct = previousAssistantAct(state),
+                expectedResponseKind = expectedResponseKind(state),
+                draftComplete = draftComplete,
+                completedDraftWasPresented =
+                    state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION && draftComplete,
                 expectedField = expectedField(state)?.name.orEmpty(),
                 pendingReplacementField = pendingReplacementField?.name.orEmpty(),
                 hasTitle = hasTitle,
@@ -97,6 +142,32 @@ data class CreateDraftAgentContext(
             CreateTaskDialogState.WAITING_FOR_TIME -> CreateDraftField.TIME
             else -> null
         }
+
+        private fun previousAssistantAct(state: CreateTaskDialogState): CreateDraftPreviousAssistantAct =
+            when (state) {
+                CreateTaskDialogState.IDLE -> CreateDraftPreviousAssistantAct.NONE
+                CreateTaskDialogState.WAITING_FOR_TITLE -> CreateDraftPreviousAssistantAct.ASKED_FOR_TITLE
+                CreateTaskDialogState.WAITING_FOR_DATE -> CreateDraftPreviousAssistantAct.ASKED_FOR_DATE
+                CreateTaskDialogState.WAITING_FOR_TIME -> CreateDraftPreviousAssistantAct.ASKED_FOR_TIME
+                CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD ->
+                    CreateDraftPreviousAssistantAct.ASKED_WHICH_FIELD_TO_CHANGE
+                CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ->
+                    CreateDraftPreviousAssistantAct.ASKED_TO_CONFIRM_SAVE
+                CreateTaskDialogState.READY_TO_SAVE -> CreateDraftPreviousAssistantAct.SAVE_IN_PROGRESS
+            }
+
+        private fun expectedResponseKind(state: CreateTaskDialogState): CreateDraftExpectedResponseKind =
+            when (state) {
+                CreateTaskDialogState.IDLE,
+                CreateTaskDialogState.WAITING_FOR_TITLE -> CreateDraftExpectedResponseKind.TITLE_VALUE
+                CreateTaskDialogState.WAITING_FOR_DATE -> CreateDraftExpectedResponseKind.DATE_VALUE
+                CreateTaskDialogState.WAITING_FOR_TIME -> CreateDraftExpectedResponseKind.TIME_VALUE
+                CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD ->
+                    CreateDraftExpectedResponseKind.FIELD_SELECTION_OR_REPLACEMENT
+                CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ->
+                    CreateDraftExpectedResponseKind.CONFIRM_REJECT_OR_CORRECT
+                CreateTaskDialogState.READY_TO_SAVE -> CreateDraftExpectedResponseKind.NONE
+            }
 
         private fun allowedMoves(state: CreateTaskDialogState): List<String> = when (state) {
             CreateTaskDialogState.IDLE,

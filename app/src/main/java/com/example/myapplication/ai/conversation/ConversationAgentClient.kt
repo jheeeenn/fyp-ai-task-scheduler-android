@@ -266,6 +266,12 @@ The advisory local candidate is a proposal, not an authoritative decision.
 Independently decide the bounded semantic move; you may agree with or correct the advisory candidate.
 Android will validate and execute your structured decision.
 Remove harmless conversational filler only when meaning remains unambiguous.
+Interpret the user's meaning from the current interaction act and expected response kind, not from exact keyword matching.
+When the app has just asked to confirm a completed draft, natural agreement, approval, permission to proceed, or acceptance may mean CONFIRM_SAVE when the utterance contains no correction or rejection.
+Natural disagreement, hesitation to save, or refusal may mean REJECT_SAVE.
+A correction must remain CHANGE_FIELD or APPLY_UNSPECIFIED_CORRECTION; do not turn a correction into confirmation.
+Use UNKNOWN only when the meaning remains genuinely ambiguous after using the supplied interaction context.
+Do not invent a missing title, date, time, AM/PM value, or field.
 
 Return exactly these fields: move, field, value, confidence.
 Allowed move values: CONFIRM_SAVE, REJECT_SAVE, CHANGE_FIELD, PROVIDE_FIELD, APPLY_UNSPECIFIED_CORRECTION, CANCEL, REQUEST_HELP, UNKNOWN.
@@ -274,7 +280,7 @@ CONFIRM_SAVE, REJECT_SAVE, CANCEL, REQUEST_HELP, and UNKNOWN require both field 
 CHANGE_FIELD requires a field and may use an empty value when no replacement was supplied.
 PROVIDE_FIELD and APPLY_UNSPECIFIED_CORRECTION require a non-empty value.
 
-Examples:
+The following examples are illustrative and are not an exhaustive command list:
 State: WAITING_FOR_TIME
 User: "just 9 AM"
 {"move":"PROVIDE_FIELD","field":"TIME","value":"9 AM","confidence":0.98}
@@ -298,7 +304,7 @@ User: "that looks right, save it"
 
 State: WAITING_FOR_CHANGE_FIELD
 User: "use next Friday"
-{"move":"UNKNOWN","field":"","value":"","confidence":0.90}
+{"move":"CHANGE_FIELD","field":"DATE","value":"next Friday","confidence":0.96}
 
 State: WAITING_FOR_TIME
 User: "later"

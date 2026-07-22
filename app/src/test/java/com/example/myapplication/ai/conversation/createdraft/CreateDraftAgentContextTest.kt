@@ -3,11 +3,72 @@ package com.example.myapplication.ai.conversation.createdraft
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateTaskDialogState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CreateDraftAgentContextTest {
+    @Test
+    fun everyDialogStateMapsToStableInteractionContext() {
+        val expected = mapOf(
+            CreateTaskDialogState.IDLE to
+                    (CreateDraftPreviousAssistantAct.NONE to CreateDraftExpectedResponseKind.TITLE_VALUE),
+            CreateTaskDialogState.WAITING_FOR_TITLE to
+                    (CreateDraftPreviousAssistantAct.ASKED_FOR_TITLE to CreateDraftExpectedResponseKind.TITLE_VALUE),
+            CreateTaskDialogState.WAITING_FOR_DATE to
+                    (CreateDraftPreviousAssistantAct.ASKED_FOR_DATE to CreateDraftExpectedResponseKind.DATE_VALUE),
+            CreateTaskDialogState.WAITING_FOR_TIME to
+                    (CreateDraftPreviousAssistantAct.ASKED_FOR_TIME to CreateDraftExpectedResponseKind.TIME_VALUE),
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD to
+                    (CreateDraftPreviousAssistantAct.ASKED_WHICH_FIELD_TO_CHANGE to
+                            CreateDraftExpectedResponseKind.FIELD_SELECTION_OR_REPLACEMENT),
+            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION to
+                    (CreateDraftPreviousAssistantAct.ASKED_TO_CONFIRM_SAVE to
+                            CreateDraftExpectedResponseKind.CONFIRM_REJECT_OR_CORRECT),
+            CreateTaskDialogState.READY_TO_SAVE to
+                    (CreateDraftPreviousAssistantAct.SAVE_IN_PROGRESS to CreateDraftExpectedResponseKind.NONE)
+        )
+
+        expected.forEach { (state, expectedContext) ->
+            val context = CreateDraftAgentContext.capture(
+                state = state,
+                pendingReplacementField = null,
+                hasTitle = false,
+                hasSelectedDate = false,
+                hasSelectedTime = false,
+                localCandidate = CreateDraftMove.Unknown
+            )
+            assertEquals("state=$state", expectedContext.first, context.previousAssistantAct)
+            assertEquals("state=$state", expectedContext.second, context.expectedResponseKind)
+        }
+    }
+
+    @Test
+    fun completeSaveConfirmationIncludesPresentedDraftContext() {
+        val context = CreateDraftAgentContext.capture(
+            state = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION,
+            pendingReplacementField = null,
+            hasTitle = true,
+            hasSelectedDate = true,
+            hasSelectedTime = true,
+            localCandidate = CreateDraftMove.Unknown
+        )
+        val text = context.toPromptText()
+
+        assertEquals(CreateDraftPreviousAssistantAct.ASKED_TO_CONFIRM_SAVE, context.previousAssistantAct)
+        assertEquals(
+            CreateDraftExpectedResponseKind.CONFIRM_REJECT_OR_CORRECT,
+            context.expectedResponseKind
+        )
+        assertTrue(context.draftComplete)
+        assertTrue(context.completedDraftWasPresented)
+        assertTrue(text.contains("Previous assistant act: ASKED_TO_CONFIRM_SAVE"))
+        assertTrue(text.contains("Expected response kind: CONFIRM_REJECT_OR_CORRECT"))
+        assertTrue(text.contains("Draft complete: true"))
+        assertTrue(text.contains("Completed draft was presented: true"))
+    }
+
     @Test
     fun contextContainsOnlyTrustedDraftPresenceAndState() {
         val text = CreateDraftAgentContext.capture(
