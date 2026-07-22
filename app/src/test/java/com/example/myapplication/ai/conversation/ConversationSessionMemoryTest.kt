@@ -20,7 +20,7 @@ class ConversationSessionMemoryTest {
         )
 
         assertNull(memory.lastReferencedTask)
-        assertFalse(memory.snapshotForPrompt().contains("lastReferencedTask=delete the second one"))
+        assertFalse(memory.snapshotForPrompt().contains("lastReferencedTask=\"delete the second one\""))
     }
 
     @Test
@@ -30,7 +30,7 @@ class ConversationSessionMemoryTest {
         memory.recordObservation(observation(taskTitle = "Take medicine"))
 
         assertEquals("Take medicine", memory.lastReferencedTask)
-        assertTrue(memory.snapshotForPrompt().contains("lastReferencedTask=Take medicine"))
+        assertTrue(memory.snapshotForPrompt().contains("lastReferencedTask=\"Take medicine\""))
     }
 
     @Test
@@ -45,7 +45,7 @@ class ConversationSessionMemoryTest {
         )
 
         assertEquals("Friday, 24 July", memory.lastQueryDate)
-        assertTrue(memory.snapshotForPrompt().contains("lastQueryDate=Friday, 24 July"))
+        assertTrue(memory.snapshotForPrompt().contains("lastQueryDate=\"Friday, 24 July\""))
     }
 
     @Test

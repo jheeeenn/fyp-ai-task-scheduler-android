@@ -16,7 +16,7 @@ class ReadOnlyTaskContextPromptTest {
             Scope: RECENT_QUERY_RESULTS
             Generation: 4
             Items:
-            T1 | title=Take medicine | date=23/07/2026 | time=11\:00 AM | status=ACTIVE | subtasks=0 | unfinished_subtasks=0
+            {"ref":"T1","title":"Take medicine","date":"23/07/2026","time":"11:00 AM","status":"ACTIVE","subtasks":0,"unfinished_subtasks":0}
             Truncated: false
         """.trimIndent()
 

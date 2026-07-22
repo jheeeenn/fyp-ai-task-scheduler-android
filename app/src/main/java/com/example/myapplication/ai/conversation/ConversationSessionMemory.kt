@@ -41,8 +41,8 @@ class ConversationSessionMemory {
         addTurn(
             "Observation: operation=${observation.operation.name} " +
                 "outcome=${observation.outcome.name} " +
-                "task=${sanitizeUntrustedValue(observation.taskTitle)} " +
-                "date=${sanitizeUntrustedValue(observation.dateText)} " +
+                "task=${jsonString(sanitizeUntrustedValue(observation.taskTitle))} " +
+                "date=${jsonString(sanitizeUntrustedValue(observation.dateText))} " +
                 "requiredInput=${observation.requiredInput.name}"
         )
     }
@@ -73,8 +73,8 @@ class ConversationSessionMemory {
             } else {
                 turns.forEach { appendLine(it) }
             }
-            appendLine("lastReferencedTask=${lastReferencedTask.orEmpty()}")
-            appendLine("lastQueryDate=${lastQueryDate.orEmpty()}")
+            appendLine("lastReferencedTask=${jsonString(lastReferencedTask.orEmpty())}")
+            appendLine("lastQueryDate=${jsonString(lastQueryDate.orEmpty())}")
             appendLine("pendingAction=${pendingAction.orEmpty()}")
             appendLine("latestExecutionOperation=${latestExecutionOperation?.name.orEmpty()}")
             appendLine("latestExecutionOutcome=${latestExecutionOutcome?.name.orEmpty()}")
@@ -107,10 +107,19 @@ class ConversationSessionMemory {
     }.replace(WHITESPACE, " ").trim().take(MAX_MEMORY_TEXT_LENGTH)
 
     private fun sanitizeUntrustedValue(value: String): String = sanitizeForPrompt(value)
-        .replace("\\", "\\\\")
-        .replace("=", "\\=")
-        .replace(":", "\\:")
         .take(MAX_MEMORY_VALUE_LENGTH)
+
+    private fun jsonString(value: String): String = buildString(value.length + 2) {
+        append('"')
+        value.forEach { character ->
+            when (character) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                else -> append(character)
+            }
+        }
+        append('"')
+    }
 
     companion object {
         private const val MAX_TURNS = 8

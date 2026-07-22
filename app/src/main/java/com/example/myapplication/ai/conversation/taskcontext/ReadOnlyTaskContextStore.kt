@@ -50,7 +50,10 @@ class ReadOnlyTaskContextStore {
 
     /** Android-only infrastructure for future authoritative reference handling. */
     @Synchronized
-    fun resolveRef(ref: String): Long? = roomIdByRef[ref.uppercase(Locale.ROOT)]
+    fun resolveRef(ref: String, expectedGeneration: Long): Long? {
+        if (expectedGeneration != generation) return null
+        return roomIdByRef[ref.trim().uppercase(Locale.ROOT)]
+    }
 
     private fun replace(
         scope: TaskContextScope,
@@ -91,9 +94,13 @@ class ReadOnlyTaskContextStore {
             appendLine("Items:")
             items.forEach { item ->
                 appendLine(
-                    "${item.ref} | title=${item.title} | date=${item.dueDate} | " +
-                        "time=${item.dueTime} | status=${if (item.isDone) "COMPLETED" else "ACTIVE"} | " +
-                        "subtasks=${item.subtaskCount} | unfinished_subtasks=${item.unfinishedSubtaskCount}"
+                    "{\"ref\":${jsonString(item.ref)}," +
+                        "\"title\":${jsonString(item.title)}," +
+                        "\"date\":${jsonString(item.dueDate)}," +
+                        "\"time\":${jsonString(item.dueTime)}," +
+                        "\"status\":${jsonString(if (item.isDone) "COMPLETED" else "ACTIVE")}," +
+                        "\"subtasks\":${item.subtaskCount}," +
+                        "\"unfinished_subtasks\":${item.unfinishedSubtaskCount}}"
                 )
             }
         }
@@ -108,17 +115,24 @@ class ReadOnlyTaskContextStore {
         val flattened = buildString(value.length) {
             value.forEach { character ->
                 when {
-                    character == '\n' || character == '\r' || character == '\t' -> append(' ')
-                    character.isISOControl() -> append(' ')
-                    character == '\\' -> append("\\\\")
-                    character == '|' -> append("\\|")
-                    character == '=' -> append("\\=")
-                    character == ':' -> append("\\:")
+                    character.isISOControl() || character.isWhitespace() -> append(' ')
                     else -> append(character)
                 }
             }
         }
         return flattened.replace(WHITESPACE, " ").trim()
+    }
+
+    private fun jsonString(value: String): String = buildString(value.length + 2) {
+        append('"')
+        value.forEach { character ->
+            when (character) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                else -> append(character)
+            }
+        }
+        append('"')
     }
 
     private companion object {

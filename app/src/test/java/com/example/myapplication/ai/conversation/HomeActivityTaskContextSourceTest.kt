@@ -47,4 +47,23 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(clearHelper.contains("readOnlyTaskContextStore.clear()"))
         assertTrue(clearHelper.contains("conversationOrchestrator.clearSessionMemory()"))
     }
+
+    @Test
+    fun contextualReferenceGuardReturnsBeforeTaskAgentDelegation() {
+        val taskCommandBranch = source
+            .substringAfter("ConversationRoute.TASK_COMMAND ->")
+            .substringBefore("ConversationRoute.UNKNOWN ->")
+        val branchStart = source.indexOf("ConversationRoute.TASK_COMMAND ->")
+        val guardCall = source.indexOf("ContextReferenceMutationGuard.shouldBlock", branchStart)
+        val taskAgentCall = source.indexOf("agentOrchestrator.process(taskAgentInput)", branchStart)
+
+        assertTrue(taskCommandBranch.contains("ContextReferenceMutationGuard.shouldBlock"))
+        assertTrue(taskCommandBranch.contains("ContextReferenceMutationGuard.BLOCK_REASON"))
+        assertTrue(taskCommandBranch.contains("Please say the task name for that change."))
+        assertTrue(taskCommandBranch.contains("listenAgain = true"))
+        assertTrue(taskCommandBranch.contains("return@launch"))
+        assertTrue(guardCall in (branchStart + 1) until taskAgentCall)
+        assertTrue(taskCommandBranch.contains("AppDatabase").not())
+        assertTrue(taskCommandBranch.contains("taskDao()").not())
+    }
 }

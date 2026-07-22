@@ -58,6 +58,7 @@ import com.example.myapplication.ai.conversation.ObservedTask
 import com.example.myapplication.ai.conversation.RequiredInput
 import com.example.myapplication.ai.conversation.TaskObservationMapper
 import com.example.myapplication.ai.conversation.TemporalObservationInputs
+import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.QueryDetailMode
@@ -679,6 +680,23 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         return@launch
                     }
                     ConversationRoute.TASK_COMMAND -> {
+                        val taskContextSnapshot = readOnlyTaskContextStore.snapshot()
+                        if (ContextReferenceMutationGuard.shouldBlock(
+                                decision = conversationDecision,
+                                currentUtterance = normalized,
+                                snapshot = taskContextSnapshot
+                            )
+                        ) {
+                            Log.w(
+                                "HOME_CONTEXT_GUARD",
+                                ContextReferenceMutationGuard.BLOCK_REASON
+                            )
+                            assistantSession.speak(
+                                "Please say the task name for that change.",
+                                listenAgain = true
+                            )
+                            return@launch
+                        }
                         taskAgentInput = conversationDecision.taskText.ifBlank { normalized }
                         Log.d("CONVO_ORCH", "routed to task agent with text='$taskAgentInput'")
                     }
