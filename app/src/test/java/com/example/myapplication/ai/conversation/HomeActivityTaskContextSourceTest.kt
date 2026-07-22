@@ -182,6 +182,44 @@ class HomeActivityTaskContextSourceTest {
     }
 
     @Test
+    fun homePassesTypedFocusAndCommitsOnlyFinalSpokenRoutes() {
+        val requestFlow = source
+            .substringAfter("val taskContextCapture = readOnlyTaskContextStore.capture()")
+            .substringBefore("// branches for actions")
+        assertTrue(requestFlow.contains("contextFocusForSnapshot("))
+        assertTrue(requestFlow.contains("taskContextCapture.snapshot"))
+        assertTrue(requestFlow.contains("contextFocus = contextFocus"))
+        assertTrue(requestFlow.contains("Current validated task focus").not())
+        assertTrue(requestFlow.contains("ConversationRoute.ASK_CLARIFICATION ->"))
+        assertTrue(requestFlow.contains("ConversationRoute.DIRECT_REPLY ->"))
+        assertTrue(requestFlow.contains("conversationOrchestrator.commitFinalDecision(conversationDecision)"))
+        assertTrue(requestFlow.contains("ConversationRoute.CONTEXT_READ ->"))
+        assertTrue(requestFlow.contains("recordAuthoritativeContextRead("))
+    }
+
+    @Test
+    fun contextFocusFallbackUsesCapturedSnapshotValidatorAndSafeLogs() {
+        val requestFlow = source
+            .substringAfter("val taskContextCapture = readOnlyTaskContextStore.capture()")
+            .substringBefore("// branches for actions")
+        val fallback = requestFlow
+            .substringAfter("ContextFocusCarryForwardPolicy.resolve(")
+            .substringBefore("if (conversationDecision.route != ConversationRoute.CONTEXT_READ)")
+
+        assertTrue(fallback.contains("capturedSnapshot = taskContextCapture.snapshot"))
+        assertTrue(fallback.contains("ReadOnlyTaskContextReadValidator.validate("))
+        assertTrue(fallback.contains("currentGeneration = readOnlyTaskContextStore.currentGeneration()"))
+        assertTrue(fallback.contains("CONTEXT_FOCUS_FALLBACK_ACCEPTED"))
+        assertTrue(fallback.contains("CONTEXT_FOCUS_FALLBACK_REJECTED"))
+        assertTrue(requestFlow.contains("CONTEXT_FOCUS_AVAILABLE"))
+        assertTrue(requestFlow.contains("CONTEXT_FOCUS_STALE"))
+        assertTrue(fallback.contains("title=").not())
+        assertTrue(fallback.contains("Room").not())
+        assertTrue(fallback.contains("resolveRef(").not())
+        assertTrue(fallback.contains("agentOrchestrator").not())
+    }
+
+    @Test
     fun captureLoggingContainsOnlySnapshotMetadata() {
         val captureLog = source
             .substringAfter("\"HOME_CONTEXT_CAPTURE\"")

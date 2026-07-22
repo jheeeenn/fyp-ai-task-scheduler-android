@@ -70,6 +70,9 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("Use ASK_CLARIFICATION only for genuine ambiguity"))
         assertTrue(prompt.contains("Example supplied snapshot: T3 has the unique title Podcast"))
         assertTrue(prompt.contains("two supplied titles both contain Podcast"))
+        assertTrue(prompt.contains("Current validated task focus"))
+        assertTrue(prompt.contains("what time is it?"))
+        assertTrue(prompt.contains("When focus Available is false"))
     }
 
     @Test
@@ -81,6 +84,9 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(repairPrompt.contains("Match titles case-insensitively using only supplied items"))
         assertTrue(repairPrompt.contains("more than one supplied title plausibly matches"))
         assertTrue(repairPrompt.contains("Mutation requests must remain ASK_CLARIFICATION"))
-        assertTrue(repairPrompt.contains("generation equals the captured snapshot generation"))
+        assertTrue(repairPrompt.contains("Current validated task focus"))
+        assertTrue(repairPrompt.contains("authoritative Android-validated conversational focus"))
+        assertTrue(repairPrompt.contains("what time is it?"))
+        assertTrue(repairPrompt.contains("If Available is false, there is no validated focus"))
     }
 }

@@ -5,6 +5,7 @@ import java.util.Locale
 
 class ConversationSessionMemory {
     private val turns = ArrayDeque<String>()
+    private var authoritativeContextTitle: String? = null
 
     var lastReferencedTask: String? = null
         private set
@@ -69,37 +70,61 @@ class ConversationSessionMemory {
         capturedGeneration: Long,
         finalSpeech: String
     ) {
-        if (turns.lastOrNull()?.startsWith("Assistant: ") == true) {
-            turns.removeLast()
-        }
         pendingAction = null
         lastContextRef = selectedRef.trim().uppercase(Locale.ROOT)
         lastContextGeneration = capturedGeneration
         lastContextDetail = selectedDetail
-        lastReferencedTask = sanitizeUntrustedValue(item.title)
+        authoritativeContextTitle = sanitizeUntrustedValue(item.title)
+        lastReferencedTask = authoritativeContextTitle
         recordFinalSpokenResponse(finalSpeech)
     }
 
-    fun invalidateContextSelectionUnlessGeneration(currentGeneration: Long) {
-        val selectedGeneration = lastContextGeneration ?: return
-        if (selectedGeneration != currentGeneration) {
-            clearStructuredContextSelection()
-            lastReferencedTask = null
-        }
+    fun contextFocusForGeneration(
+        currentGeneration: Long,
+        suppliedRefs: Set<String>
+    ): ConversationContextFocus? {
+        val ref = lastContextRef ?: return null
+        val generation = lastContextGeneration ?: return null
+        val title = authoritativeContextTitle ?: return null
+        if (generation != currentGeneration) return null
+        if (suppliedRefs.none { it.equals(ref, ignoreCase = true) }) return null
+        return ConversationContextFocus(
+            available = true,
+            ref = ref,
+            generation = generation,
+            detail = lastContextDetail,
+            title = title
+        )
     }
 
-    fun updateFromDecision(decision: ConversationDecision) {
+    fun clearInvalidContextFocus(
+        currentGeneration: Long,
+        suppliedRefs: Set<String>
+    ): Boolean {
+        if (lastContextRef == null) return false
+        if (contextFocusForGeneration(currentGeneration, suppliedRefs) != null) return false
+        clearStructuredContextSelection()
+        lastReferencedTask = null
+        return true
+    }
+
+    fun commitFinalDecision(decision: ConversationDecision) {
         when (decision.route) {
             ConversationRoute.TASK_COMMAND -> {
                 pendingAction = "TASK_COMMAND"
             }
-            ConversationRoute.ASK_CLARIFICATION -> pendingAction = "ASK_CLARIFICATION"
-            ConversationRoute.END_SESSION -> pendingAction = null
-            ConversationRoute.CONTEXT_READ,
+            ConversationRoute.ASK_CLARIFICATION -> {
+                pendingAction = "ASK_CLARIFICATION"
+                recordAssistant(decision.reply)
+            }
+            ConversationRoute.END_SESSION,
             ConversationRoute.DIRECT_REPLY,
-            ConversationRoute.UNKNOWN -> Unit
+            ConversationRoute.UNKNOWN -> {
+                pendingAction = null
+                recordAssistant(decision.reply)
+            }
+            ConversationRoute.CONTEXT_READ -> Unit
         }
-        recordAssistant(decision.reply)
     }
 
     fun snapshotForPrompt(): String {
@@ -112,9 +137,6 @@ class ConversationSessionMemory {
             }
             appendLine("lastReferencedTask=${jsonString(lastReferencedTask.orEmpty())}")
             appendLine("lastQueryDate=${jsonString(lastQueryDate.orEmpty())}")
-            appendLine("lastContextRef=${jsonString(lastContextRef.orEmpty())}")
-            appendLine("lastContextGeneration=${lastContextGeneration?.toString().orEmpty()}")
-            appendLine("lastContextDetail=${lastContextDetail.name}")
             appendLine("pendingAction=${pendingAction.orEmpty()}")
             appendLine("latestExecutionOperation=${latestExecutionOperation?.name.orEmpty()}")
             appendLine("latestExecutionOutcome=${latestExecutionOutcome?.name.orEmpty()}")
@@ -129,6 +151,7 @@ class ConversationSessionMemory {
         lastContextRef = null
         lastContextGeneration = null
         lastContextDetail = ConversationContextDetail.NONE
+        authoritativeContextTitle = null
         pendingAction = null
         latestExecutionOperation = null
         latestExecutionOutcome = null
@@ -140,6 +163,7 @@ class ConversationSessionMemory {
         lastContextRef = null
         lastContextGeneration = null
         lastContextDetail = ConversationContextDetail.NONE
+        authoritativeContextTitle = null
     }
 
     private fun addTurn(turn: String) {

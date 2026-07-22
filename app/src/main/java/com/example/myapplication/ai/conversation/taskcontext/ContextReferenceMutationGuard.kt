@@ -31,25 +31,7 @@ object ContextReferenceMutationGuard {
         snapshot: ReadOnlyTaskContextSnapshot
     ): Boolean {
         if (snapshot.items.isEmpty()) return false
-        val suppliedRefs = snapshot.items.map { it.ref.uppercase(Locale.ROOT) }.toSet()
-        if (TEMPORARY_REF.findAll(text).any { match ->
-                match.value.uppercase(Locale.ROOT) in suppliedRefs
-            }
-        ) {
-            return true
-        }
-
-        if (SUPPLIED_RESULT_ORDINAL.findAll(text).any { match ->
-                ordinalPosition(match.groupValues[1]) in 1..snapshot.items.size
-            }
-        ) {
-            return true
-        }
-
-        if (STANDALONE_SUPPLIED_ORDINAL.findAll(text).any { match ->
-                ordinalPosition(match.groupValues[1]) in 1..snapshot.items.size
-            }
-        ) {
+        if (explicitSuppliedRefs(text, snapshot).isNotEmpty()) {
             return true
         }
 
@@ -68,6 +50,30 @@ object ContextReferenceMutationGuard {
 
     fun containsMutationWording(text: String): Boolean =
         MUTATION_WORDING.containsMatchIn(text)
+
+    fun explicitSuppliedRefs(
+        text: String,
+        snapshot: ReadOnlyTaskContextSnapshot
+    ): Set<String> {
+        if (snapshot.items.isEmpty()) return emptySet()
+        val itemByRef = snapshot.items.associateBy { it.ref.uppercase(Locale.ROOT) }
+        val refs = linkedSetOf<String>()
+        TEMPORARY_REF.findAll(text).forEach { match ->
+            itemByRef[match.value.uppercase(Locale.ROOT)]?.let { refs += it.ref }
+        }
+        sequenceOf(SUPPLIED_RESULT_ORDINAL, STANDALONE_SUPPLIED_ORDINAL)
+            .flatMap { pattern -> pattern.findAll(text) }
+            .forEach { match ->
+                val position = ordinalPosition(match.groupValues[1])
+                snapshot.items.getOrNull(position - 1)?.let { refs += it.ref }
+            }
+        return refs
+    }
+
+    fun hasExplicitContextSelector(text: String): Boolean =
+        TEMPORARY_REF.containsMatchIn(text) ||
+            SUPPLIED_RESULT_ORDINAL.containsMatchIn(text) ||
+            STANDALONE_SUPPLIED_ORDINAL.containsMatchIn(text)
 
     private fun ordinalPosition(value: String): Int = when (value.lowercase(Locale.ROOT)) {
         "first", "1st" -> 1

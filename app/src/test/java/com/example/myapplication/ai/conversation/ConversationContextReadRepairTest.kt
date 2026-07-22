@@ -2,6 +2,9 @@ package com.example.myapplication.ai.conversation
 
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDisposition
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextFocusCarryForwardPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextCapture
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
@@ -14,6 +17,196 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationContextReadRepairTest {
+    @Test
+    fun provisionalClarificationIsNotCommittedBeforeContextRepair() = kotlinx.coroutines.runBlocking {
+        val client = FakeClient(
+            primaryResponse = decisionJson("ASK_CLARIFICATION", reply = "Which task are you asking about?"),
+            repairResponse = decisionJson("ASK_CLARIFICATION", reply = "Which task?")
+        )
+        val memory = ConversationSessionMemory()
+        val orchestrator = ConversationOrchestrator(
+            client,
+            ConversationDecisionParser(),
+            ConversationResponseParser(),
+            memory
+        )
+        val capture = capture()
+
+        val primary = orchestrator.process(
+            "what time is it",
+            "AFTER_TASK_DETAILS",
+            capture.promptText
+        )
+
+        assertEquals(ConversationRoute.ASK_CLARIFICATION, primary.route)
+        assertFalse(memory.snapshotForPrompt().contains("Which task are you asking about?"))
+        assertEquals(1, memory.snapshotForPrompt().lineSequence().count { it == "User: what time is it" })
+        assertEquals(null, memory.pendingAction)
+
+        orchestrator.processContextReadRepair(
+            "what time is it",
+            capture.promptText,
+            primary.route,
+            "AFTER_TASK_DETAILS"
+        )
+
+        assertFalse(client.repairMemorySnapshot.contains("Which task are you asking about?"))
+        assertEquals(
+            1,
+            client.repairMemorySnapshot.lineSequence().count { it == "User: what time is it" }
+        )
+        assertEquals(2, client.totalCalls)
+    }
+
+    @Test
+    fun onlyFinalClarificationIsCommittedWhenRepairAbstains() = kotlinx.coroutines.runBlocking {
+        val client = FakeClient(
+            primaryResponse = decisionJson("ASK_CLARIFICATION", reply = "Which task are you asking about?"),
+            repairResponse = decisionJson("ASK_CLARIFICATION", reply = "Which one?")
+        )
+        val memory = ConversationSessionMemory()
+        val orchestrator = ConversationOrchestrator(
+            client,
+            ConversationDecisionParser(),
+            ConversationResponseParser(),
+            memory
+        )
+        val capture = capture()
+        val primary = orchestrator.process("what time is it", "AFTER_TASK_DETAILS", capture.promptText)
+        orchestrator.processContextReadRepair(
+            "what time is it",
+            capture.promptText,
+            primary.route,
+            "AFTER_TASK_DETAILS"
+        )
+
+        orchestrator.commitFinalDecision(primary)
+
+        val prompt = memory.snapshotForPrompt()
+        assertEquals(1, prompt.lineSequence().count { it == "User: what time is it" })
+        assertEquals(
+            1,
+            prompt.lineSequence().count { it == "Assistant: Which task are you asking about?" }
+        )
+        assertFalse(prompt.contains("Which one?"))
+    }
+
+    @Test
+    fun acceptedRepairLeavesNoPrimaryClarificationInMemory() = kotlinx.coroutines.runBlocking {
+        val client = FakeClient(
+            primaryResponse = decisionJson("ASK_CLARIFICATION", reply = "Which task are you asking about?"),
+            repairResponse = decisionJson(
+                "CONTEXT_READ",
+                contextRef = "T2",
+                contextDetail = "TIME"
+            )
+        )
+        val memory = ConversationSessionMemory()
+        val orchestrator = ConversationOrchestrator(
+            client,
+            ConversationDecisionParser(),
+            ConversationResponseParser(),
+            memory
+        )
+        val capture = capture()
+        val primary = orchestrator.process("what time is it", "AFTER_TASK_DETAILS", capture.promptText)
+        val repaired = orchestrator.processContextReadRepair(
+            "what time is it",
+            capture.promptText,
+            primary.route,
+            "AFTER_TASK_DETAILS"
+        )
+        val item = capture.snapshot.items.first { it.ref == repaired.contextRef }
+
+        orchestrator.recordAuthoritativeContextRead(
+            item,
+            repaired.contextRef,
+            repaired.contextDetail,
+            capture.snapshot.generation,
+            "Groceries is scheduled at 8:30 PM."
+        )
+
+        val prompt = memory.snapshotForPrompt()
+        assertFalse(prompt.contains("Which task are you asking about?"))
+        assertEquals(1, prompt.lineSequence().count { it == "User: what time is it" })
+        assertEquals(1, prompt.lineSequence().count { it == "Assistant: Groceries is scheduled at 8:30 PM." })
+    }
+
+    @Test
+    fun doubleAbstentionCarriesValidatedT2FocusWithoutThirdModelCall() = kotlinx.coroutines.runBlocking {
+        val client = FakeClient(
+            primaryResponse = decisionJson("ASK_CLARIFICATION", reply = "Which task?"),
+            repairResponse = decisionJson("ASK_CLARIFICATION", reply = "Which task?")
+        )
+        val memory = ConversationSessionMemory()
+        val orchestrator = ConversationOrchestrator(
+            client,
+            ConversationDecisionParser(),
+            ConversationResponseParser(),
+            memory
+        )
+        val capture = capture()
+        val focusedItem = capture.snapshot.items.first { it.ref == "T2" }
+        memory.recordAuthoritativeContextRead(
+            focusedItem,
+            "T2",
+            ConversationContextDetail.TIME,
+            capture.snapshot.generation,
+            "Groceries is scheduled at 8:30 PM."
+        )
+        val focus = memory.contextFocusForGeneration(
+            capture.snapshot.generation,
+            capture.snapshot.items.map { it.ref }.toSet()
+        )
+
+        val primary = orchestrator.process(
+            "what time is it",
+            "AFTER_TASK_DETAILS",
+            capture.promptText,
+            focus
+        )
+        val repair = orchestrator.processContextReadRepair(
+            "what time is it",
+            capture.promptText,
+            primary.route,
+            "AFTER_TASK_DETAILS",
+            focus
+        )
+        assertEquals(ConversationRoute.ASK_CLARIFICATION, repair.route)
+
+        val fallback = requireNotNull(
+            ContextFocusCarryForwardPolicy.resolve(
+                "what time is it",
+                focus,
+                capture.snapshot,
+                isResultInteraction = true
+            )
+        )
+        val validation = ReadOnlyTaskContextReadValidator.validate(
+            fallback,
+            capture.snapshot,
+            capture.snapshot.generation
+        )
+
+        assertEquals(ContextFocusCarryForwardPolicy.SOURCE, fallback.source)
+        assertEquals("T2", fallback.contextRef)
+        assertEquals(ConversationContextDetail.TIME, fallback.contextDetail)
+        assertTrue(validation.isValid)
+        assertEquals(
+            "Groceries is scheduled at 8:30 PM.",
+            ReadOnlyTaskContextResponseRenderer.render(
+                requireNotNull(validation.item),
+                validation.detail
+            )
+        )
+        assertEquals(2, client.totalCalls)
+        assertTrue(client.primaryMemorySnapshot.contains("Current validated task focus:"))
+        assertTrue(client.primaryMemorySnapshot.contains("Ref: T2"))
+        assertTrue(client.repairMemorySnapshot.contains("Current validated task focus:"))
+        assertTrue(client.repairMemorySnapshot.contains("Ref: T2"))
+        assertFalse(client.repairMemorySnapshot.contains("Which task?"))
+    }
+
     @Test
     fun primaryClarificationCanBeRepairedToT2TimeUsingSameCapture() = kotlinx.coroutines.runBlocking {
         val client = FakeClient(
@@ -247,7 +440,9 @@ class ConversationContextReadRepairTest {
         )
     ) : ConversationAgentClient(null) {
         var totalCalls: Int = 0
+        var primaryMemorySnapshot: String = ""
         var repairTaskContext: String = ""
+        var repairMemorySnapshot: String = ""
 
         override suspend fun process(
             userText: String,
@@ -255,6 +450,7 @@ class ConversationContextReadRepairTest {
             appContextSummary: String
         ): String {
             totalCalls += 1
+            primaryMemorySnapshot = memorySnapshot
             return primaryResponse
         }
 
@@ -274,6 +470,7 @@ class ConversationContextReadRepairTest {
             currentInteraction: String
         ): String {
             totalCalls += 1
+            repairMemorySnapshot = memorySnapshot
             repairTaskContext = taskContextSnapshot
             return repairResponse
         }

@@ -2,6 +2,7 @@ package com.example.myapplication.ai.conversation
 
 import android.util.Log
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import kotlinx.coroutines.CancellationException
 
 class ConversationOrchestratorException(
@@ -68,12 +69,14 @@ class ConversationOrchestrator(
     suspend fun process(
         normalizedText: String,
         appContextSummary: String,
-        readOnlyTaskContextSnapshot: String = NO_TASK_CONTEXT
+        readOnlyTaskContextSnapshot: String = NO_TASK_CONTEXT,
+        contextFocus: ConversationContextFocus? = null
     ): ConversationDecision {
         memory.recordUser(normalizedText)
         val routingMemory = appendTaskContext(
             memorySnapshot = memory.snapshotForPrompt(),
-            readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
+            readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
+            contextFocus = contextFocus
         )
 
         val parsed = try {
@@ -84,13 +87,12 @@ class ConversationOrchestrator(
             )
             parser.parse(rawContent)
         } catch (e: ConversationSchemaException) {
-            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, e)
+            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, contextFocus, e)
         } catch (e: ConversationAgentResponseException) {
-            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, e)
+            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, contextFocus, e)
         }
 
         val decision = normalizeDecision(parsed, normalizedText)
-        memory.updateFromDecision(decision)
         return decision
     }
 
@@ -98,6 +100,7 @@ class ConversationOrchestrator(
         normalizedText: String,
         appContextSummary: String,
         readOnlyTaskContextSnapshot: String,
+        contextFocus: ConversationContextFocus?,
         firstFailure: Exception
     ): ConversationDecision {
         Log.e("CONVO_ORCH_SCHEMA", "first response invalid, retrying once", firstFailure)
@@ -107,7 +110,8 @@ class ConversationOrchestrator(
                 userText = normalizedText,
                 appContextSummary = appendTaskContext(
                     memorySnapshot = appContextSummary,
-                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
+                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
+                    contextFocus = contextFocus
                 )
             )
             val repairedDecision = parser.parse(repairContent).copy(
@@ -153,19 +157,32 @@ class ConversationOrchestrator(
         memory.clear()
     }
 
-    fun invalidateStaleContextMemory(currentGeneration: Long) {
-        memory.invalidateContextSelectionUnlessGeneration(currentGeneration)
+    fun contextFocusForSnapshot(snapshot: ReadOnlyTaskContextSnapshot): ConversationContextFocus? =
+        memory.contextFocusForGeneration(
+            currentGeneration = snapshot.generation,
+            suppliedRefs = snapshot.items.map { it.ref }.toSet()
+        )
+
+    fun clearInvalidContextFocus(snapshot: ReadOnlyTaskContextSnapshot): Boolean =
+        memory.clearInvalidContextFocus(
+            currentGeneration = snapshot.generation,
+            suppliedRefs = snapshot.items.map { it.ref }.toSet()
+        )
+
+    fun commitFinalDecision(decision: ConversationDecision) {
+        memory.commitFinalDecision(decision)
     }
 
     suspend fun processContextReadRepair(
         normalizedText: String,
         readOnlyTaskContextSnapshot: String,
         primaryRoute: ConversationRoute,
-        currentInteraction: String
+        currentInteraction: String,
+        contextFocus: ConversationContextFocus? = null
     ): ConversationDecision {
         val rawContent = conversationAgentClient.processContextReadRepair(
             userText = normalizedText,
-            memorySnapshot = memory.snapshotForPrompt(),
+            memorySnapshot = appendContextFocus(memory.snapshotForPrompt(), contextFocus),
             taskContextSnapshot = readOnlyTaskContextSnapshot,
             primaryRoute = primaryRoute,
             currentInteraction = currentInteraction
@@ -191,7 +208,8 @@ class ConversationOrchestrator(
 
     private fun appendTaskContext(
         memorySnapshot: String,
-        readOnlyTaskContextSnapshot: String
+        readOnlyTaskContextSnapshot: String,
+        contextFocus: ConversationContextFocus?
     ): String = buildString {
         append(memorySnapshot.trim())
         appendLine()
@@ -201,6 +219,21 @@ class ConversationOrchestrator(
             readOnlyTaskContextSnapshot.takeIf { it.isNotBlank() }
                 ?: NO_TASK_CONTEXT
         )
+        appendLine()
+        appendLine()
+        appendLine("Current validated task focus:")
+        append(contextFocus?.toPromptText() ?: ConversationContextFocus.UNAVAILABLE_PROMPT)
+    }
+
+    private fun appendContextFocus(
+        memorySnapshot: String,
+        contextFocus: ConversationContextFocus?
+    ): String = buildString {
+        append(memorySnapshot.trim())
+        appendLine()
+        appendLine()
+        appendLine("Current validated task focus:")
+        append(contextFocus?.toPromptText() ?: ConversationContextFocus.UNAVAILABLE_PROMPT)
     }
 
     private companion object {

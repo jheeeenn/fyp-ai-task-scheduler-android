@@ -45,6 +45,7 @@ import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.AppGuidanceContext
+import com.example.myapplication.ai.conversation.ConversationDecision
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
@@ -63,6 +64,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMut
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDisposition
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextFocusCarryForwardPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
@@ -653,9 +655,24 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             try {
                 Log.d("CONVO_ORCH", "normalized='$normalized'")
                 val taskContextCapture = readOnlyTaskContextStore.capture()
-                conversationOrchestrator.invalidateStaleContextMemory(
-                    taskContextCapture.snapshot.generation
+                val isResultInteraction =
+                    homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
+                        homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS
+                val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
+                    taskContextCapture.snapshot
                 )
+                if (contextFocus != null) {
+                    Log.d(
+                        "HOME_CONTEXT_FOCUS",
+                        "CONTEXT_FOCUS_AVAILABLE ref=${contextFocus.ref} " +
+                            "generation=${contextFocus.generation} detail=${contextFocus.detail}"
+                    )
+                } else if (conversationOrchestrator.clearInvalidContextFocus(taskContextCapture.snapshot)) {
+                    Log.d(
+                        "HOME_CONTEXT_FOCUS",
+                        "CONTEXT_FOCUS_STALE generation=${taskContextCapture.snapshot.generation}"
+                    )
+                }
                 Log.d(
                     "HOME_CONTEXT_CAPTURE",
                     "scope=${taskContextCapture.snapshot.scope} " +
@@ -667,12 +684,22 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     conversationOrchestrator.process(
                         normalizedText = normalized,
                         appContextSummary = buildConversationAppContextSummary(),
-                        readOnlyTaskContextSnapshot = taskContextCapture.promptText
+                        readOnlyTaskContextSnapshot = taskContextCapture.promptText,
+                        contextFocus = contextFocus
                     )
                 } catch (e: ConversationOrchestratorException) {
                     Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
+                    val fallbackReply = "I could not understand that request correctly. Please try again."
+                    conversationOrchestrator.commitFinalDecision(
+                        ConversationDecision(
+                            route = ConversationRoute.UNKNOWN,
+                            reply = fallbackReply,
+                            listenAgain = true,
+                            source = "android_conversation_failure"
+                        )
+                    )
                     assistantSession.speak(
-                        "I could not understand that request correctly. Please try again.",
+                        fallbackReply,
                         listenAgain = true
                     )
                     return@launch
@@ -681,9 +708,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val contextRepairEligible = ContextReadRepairPolicy.shouldAttempt(
                     primaryDecision = conversationDecision,
                     capturedSnapshot = taskContextCapture.snapshot,
-                    isResultInteraction =
-                        homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
-                            homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS
+                    isResultInteraction = isResultInteraction
                 )
 
                 if (contextRepairEligible) {
@@ -693,7 +718,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             normalizedText = normalized,
                             readOnlyTaskContextSnapshot = taskContextCapture.promptText,
                             primaryRoute = conversationDecision.route,
-                            currentInteraction = homeFollowUpContext.name
+                            currentInteraction = homeFollowUpContext.name,
+                            contextFocus = contextFocus
                         )
                         val repairEvaluation = ContextReadRepairPolicy.evaluate(
                             normalizedText = normalized,
@@ -715,6 +741,40 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         throw e
                     } catch (_: Exception) {
                         Log.e("HOME_CONTEXT_REPAIR", "CONTEXT_REPAIR_FAILED")
+                    }
+                }
+
+                if (
+                    (conversationDecision.route == ConversationRoute.ASK_CLARIFICATION ||
+                        conversationDecision.route == ConversationRoute.UNKNOWN) &&
+                    isResultInteraction
+                ) {
+                    val focusFallback = ContextFocusCarryForwardPolicy.resolve(
+                        normalizedText = normalized,
+                        focus = contextFocus,
+                        capturedSnapshot = taskContextCapture.snapshot,
+                        isResultInteraction = true
+                    )
+                    val fallbackValidation = focusFallback?.let { candidate ->
+                        ReadOnlyTaskContextReadValidator.validate(
+                            decision = candidate,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                        )
+                    }
+                    if (focusFallback != null && fallbackValidation?.isValid == true) {
+                        conversationDecision = focusFallback
+                        Log.d(
+                            "HOME_CONTEXT_FOCUS",
+                            "CONTEXT_FOCUS_FALLBACK_ACCEPTED ref=${focusFallback.contextRef} " +
+                                "generation=${taskContextCapture.snapshot.generation} " +
+                                "detail=${focusFallback.contextDetail}"
+                        )
+                    } else {
+                        Log.d(
+                            "HOME_CONTEXT_FOCUS",
+                            "CONTEXT_FOCUS_FALLBACK_REJECTED generation=${taskContextCapture.snapshot.generation}"
+                        )
                     }
                 }
 
@@ -750,6 +810,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             } else {
                                 "Please ask again using one of the supplied task results."
                             }
+                            conversationOrchestrator.commitFinalDecision(
+                                ConversationDecision(
+                                    route = ConversationRoute.ASK_CLARIFICATION,
+                                    reply = clarification,
+                                    listenAgain = true,
+                                    source = "android_context_validation"
+                                )
+                            )
                             assistantSession.speak(clarification, listenAgain = true)
                             return@launch
                         }
@@ -773,6 +841,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ConversationRoute.DIRECT_REPLY -> {
                         Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
                         assistantSession.speak(
                             conversationDecision.reply,
                             listenAgain = conversationDecision.listenAgain
@@ -781,16 +850,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     ConversationRoute.ASK_CLARIFICATION -> {
                         Log.d("CONVO_ORCH", "handled directly as ASK_CLARIFICATION")
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
                         assistantSession.speak(conversationDecision.reply, listenAgain = true)
                         return@launch
                     }
                     ConversationRoute.END_SESSION -> {
                         Log.d("CONVO_ORCH", "handled directly as END_SESSION")
-                        clearConversationSessionContext()
-                        homeFollowUpContext = HomeFollowUpContext.NONE
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
                         if (conversationDecision.reply.isNotBlank()) {
                             assistantSession.speak(conversationDecision.reply, listenAgain = false)
                         }
+                        clearConversationSessionContext()
+                        homeFollowUpContext = HomeFollowUpContext.NONE
                         return@launch
                     }
                     ConversationRoute.TASK_COMMAND -> {
@@ -805,19 +876,35 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 "HOME_CONTEXT_GUARD",
                                 ContextReferenceMutationGuard.BLOCK_REASON
                             )
+                            val clarification = "Please say the task name for that change."
+                            conversationOrchestrator.commitFinalDecision(
+                                ConversationDecision(
+                                    route = ConversationRoute.ASK_CLARIFICATION,
+                                    reply = clarification,
+                                    listenAgain = true,
+                                    source = ContextReferenceMutationGuard.BLOCK_REASON
+                                )
+                            )
                             assistantSession.speak(
-                                "Please say the task name for that change.",
+                                clarification,
                                 listenAgain = true
                             )
                             return@launch
                         }
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
                         taskAgentInput = conversationDecision.taskText.ifBlank { normalized }
                         Log.d("CONVO_ORCH", "routed to task agent with text='$taskAgentInput'")
                     }
                     ConversationRoute.UNKNOWN -> {
                         Log.d("CONVO_ORCH", "handled directly as UNKNOWN")
+                        val fallbackReply = conversationDecision.reply.ifBlank {
+                            "I cannot help with that request yet."
+                        }
+                        conversationOrchestrator.commitFinalDecision(
+                            conversationDecision.copy(reply = fallbackReply)
+                        )
                         assistantSession.speak(
-                            conversationDecision.reply.ifBlank { "I cannot help with that request yet." },
+                            fallbackReply,
                             listenAgain = true
                         )
                         return@launch
