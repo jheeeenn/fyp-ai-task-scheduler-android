@@ -62,6 +62,21 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("User: Edit the first one."))
         assertTrue(prompt.contains("\"context_action\":\"UPDATE\""))
         assertTrue(prompt.contains("\"context_action\":\"RESCHEDULE\""))
+        assertTrue(prompt.contains("Never choose T1 or any snapshot item as a default"))
+        assertTrue(prompt.contains("Reading all task results does not establish current focus"))
+        assertTrue(prompt.contains("User: Move it to Friday."))
+        assertTrue(prompt.contains("Which task do you want to reschedule?"))
+        assertTrue(prompt.contains("Generation matches snapshot"))
+    }
+
+    @Test
+    fun contextActionRepairPromptRequiresGroundedFocusForPronouns() {
+        val repairPrompt = ConversationAgentClient.CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT
+        assertTrue(repairPrompt.contains("may use CONTEXT_ACTION only when Current validated"))
+        assertTrue(repairPrompt.contains("Available: true"))
+        assertTrue(repairPrompt.contains("Never choose T1 as a default"))
+        assertTrue(repairPrompt.contains("Reading all results does not establish"))
+        assertTrue(repairPrompt.contains("previously Android-validated CONTEXT_READ"))
     }
 
     @Test

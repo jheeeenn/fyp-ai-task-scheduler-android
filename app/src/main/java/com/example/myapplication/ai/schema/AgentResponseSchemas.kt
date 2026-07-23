@@ -112,6 +112,28 @@ object AgentResponseSchemas {
         )
     }
 
+    fun contextActionExtractionResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "context_action_extraction",
+            properties = JSONObject().apply {
+                put("action", stringEnum("UPDATE_TASK", "RESCHEDULE_TASK"))
+                put("replacement_title", stringType())
+                put("new_date", stringType())
+                put("new_time", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+                put("need_clarification", booleanType())
+            },
+            required = JSONArray().apply {
+                put("action")
+                put("replacement_title")
+                put("new_date")
+                put("new_time")
+                put("confidence")
+                put("need_clarification")
+            }
+        )
+    }
+
     fun conversationResponseResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_response",

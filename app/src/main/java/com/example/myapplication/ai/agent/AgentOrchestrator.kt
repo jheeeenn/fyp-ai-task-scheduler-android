@@ -11,8 +11,10 @@ class AgentOrchestrator(
     private val taskAgentResponseParser: TaskAgentResponseParser,
     private val taskActionNormalizer: TaskActionNormalizer,
     private val actionValidator: ActionValidator,
-    private val contextActionTaskNormalizer: ContextActionTaskNormalizer = ContextActionTaskNormalizer(),
-    private val contextActionTaskValidator: ContextActionTaskValidator = ContextActionTaskValidator()
+    private val contextActionExtractionParser: ContextActionExtractionResponseParser =
+        ContextActionExtractionResponseParser(),
+    private val contextActionExtractionValidator: ContextActionExtractionValidator =
+        ContextActionExtractionValidator()
 ) {
     suspend fun process(normalizedText: String): AiParsedCommand {
         return try {
@@ -32,13 +34,12 @@ class AgentOrchestrator(
     suspend fun processContextAction(
         normalizedText: String,
         expectedAction: ConversationContextAction
-    ): AiParsedCommand {
+    ): ContextActionChangeSet {
         return try {
             Log.d("AGENT_ORCHESTRATOR", "Trying bounded context-action extraction")
             val rawContent = laptopAgentClient.processContextAction(normalizedText, expectedAction)
-            val response = taskAgentResponseParser.parse(rawContent)
-            val command = contextActionTaskNormalizer.normalize(response)
-            contextActionTaskValidator.validate(command, expectedAction)
+            val response = contextActionExtractionParser.parse(rawContent)
+            contextActionExtractionValidator.validate(response, expectedAction)
         } catch (e: Exception) {
             Log.e("AGENT_ORCHESTRATOR", "Context-action extraction failed closed", e)
             throw TaskAgentProcessingException("Task agent failed to extract context action", e)

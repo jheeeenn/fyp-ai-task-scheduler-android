@@ -36,7 +36,6 @@ import java.util.Locale
 import com.example.myapplication.voice.TextNormalizer
 
 import com.example.myapplication.ai.AiIntent
-import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.LocalConversationIntentClassifier
 import com.example.myapplication.ai.agent.ActionValidator
 import com.example.myapplication.ai.agent.AgentOrchestrator
@@ -44,6 +43,7 @@ import com.example.myapplication.ai.agent.LaptopAgentClient
 import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.agent.TaskAgentProcessingException
+import com.example.myapplication.ai.agent.ContextActionChangeSet
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.AppGuidanceContext
 import com.example.myapplication.ai.conversation.ConversationDecision
@@ -67,6 +67,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisi
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionTargetValidator
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDisposition
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
@@ -776,10 +777,35 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     capturedSnapshot = taskContextCapture.snapshot,
                                     currentGeneration = readOnlyTaskContextStore.currentGeneration()
                                 )
-                                if (repairValidation.isValid) {
+                                val repairGrounding = if (repairValidation.isValid) {
+                                    ContextActionReferenceGroundingValidator.validate(
+                                        normalizedText = normalized,
+                                        decision = repairedDecision,
+                                        capturedSnapshot = taskContextCapture.snapshot,
+                                        currentFocus = contextFocus
+                                    )
+                                } else {
+                                    null
+                                }
+                                if (repairValidation.isValid && repairGrounding?.isValid == true) {
                                     conversationDecision = repairedDecision
                                     Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ACCEPTED")
                                 } else {
+                                    if (repairValidation.isValid && repairGrounding != null) {
+                                        conversationDecision = ConversationDecision(
+                                            route = ConversationRoute.ASK_CLARIFICATION,
+                                            reply = if (
+                                                repairedDecision.contextAction ==
+                                                ConversationContextAction.RESCHEDULE
+                                            ) {
+                                                "Which task do you want to reschedule?"
+                                            } else {
+                                                "Which task do you want to edit?"
+                                            },
+                                            listenAgain = true,
+                                            source = "android_context_action_reference_grounding"
+                                        )
+                                    }
                                     Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_REJECTED")
                                 }
                             }
@@ -936,9 +962,34 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             return@launch
                         }
 
+                        val grounding = ContextActionReferenceGroundingValidator.validate(
+                            normalizedText = normalized,
+                            decision = conversationDecision,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentFocus = contextFocus
+                        )
+                        Log.d(
+                            "HOME_CONTEXT_ACTION_GROUNDING",
+                            "ref=${conversationDecision.contextRef} result=${grounding.result}"
+                        )
+                        if (!grounding.isValid) {
+                            val clarification = if (
+                                conversationDecision.contextAction == ConversationContextAction.RESCHEDULE
+                            ) {
+                                "Which task do you want to reschedule?"
+                            } else {
+                                "Which task do you want to edit?"
+                            }
+                            rejectContextAction(
+                                clarification,
+                                "android_context_action_reference_grounding"
+                            )
+                            return@launch
+                        }
+
                         val capturedGeneration = taskContextCapture.snapshot.generation
                         val privateTaskId = readOnlyTaskContextStore.resolveRef(
-                            ref = validation.ref,
+                            ref = grounding.ref,
                             expectedGeneration = capturedGeneration
                         )
                         if (privateTaskId == null) {
@@ -977,7 +1028,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             return@launch
                         }
                         val reResolvedTaskId = readOnlyTaskContextStore.resolveRef(
-                            ref = validation.ref,
+                            ref = grounding.ref,
                             expectedGeneration = capturedGeneration
                         )
                         if (reResolvedTaskId == null || reResolvedTaskId != privateTaskId) {
@@ -1549,7 +1600,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private suspend fun openContextActionEditScreen(
         task: TaskEntity,
         action: ConversationContextAction,
-        extractedChange: AiParsedCommand
+        extractedChange: ContextActionChangeSet
     ) {
         val operation = if (action == ConversationContextAction.RESCHEDULE) {
             ExecutionOperation.RESCHEDULE_TASK
@@ -1582,9 +1633,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 putExtra("prefill_new_date_text", extractedChange.newDateText)
                 putExtra("prefill_new_time_text", extractedChange.newTimeText)
                 if (action == ConversationContextAction.UPDATE &&
-                    !extractedChange.taskTitle.isNullOrBlank()
+                    !extractedChange.replacementTitle.isNullOrBlank()
                 ) {
-                    putExtra("prefill_title", extractedChange.taskTitle)
+                    putExtra("prefill_title", extractedChange.replacementTitle)
                 }
                 if (action == ConversationContextAction.RESCHEDULE) {
                     putExtra("assistant_mode", "reschedule")

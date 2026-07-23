@@ -426,6 +426,10 @@ Use CONTEXT_ACTION only when the user asks to update, edit, or reschedule exactl
 context item. Select exactly one supplied temporary ref. A target may be identified by a supplied
 ref, an ordinal, one unique supplied title, or the Android-validated current focus. Current focus
 is valid only for the captured generation. Never invent a ref or compare against database records.
+"it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated
+task focus says Available: true. When focus is unavailable, these pronouns are unresolved and
+require ASK_CLARIFICATION. Never choose T1 as a default. Reading all results does not establish
+focus. Focus is established only by a previously Android-validated CONTEXT_READ selection.
 
 Use UPDATE for opening or editing general task details and explicit replacement titles.
 Use RESCHEDULE for a date or time change. For CONTEXT_ACTION, task_text and reply must be empty,
@@ -507,6 +511,9 @@ Context-action rules:
 - Use RESCHEDULE when changing a date or time.
 - A target may be identified by a temporary ref, ordinal, unique supplied title, or previously Android-validated current focus.
 - Current focus is valid only while its generation matches the supplied snapshot.
+- "it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated task focus says Available: true.
+- When focus is unavailable, those pronouns are unresolved. Never choose T1 or any snapshot item as a default.
+- Reading all task results does not establish current focus. Focus is established only by a previously Android-validated CONTEXT_READ selection.
 - For CONTEXT_ACTION keep task_text and reply empty, context_detail NONE, and context_action UPDATE or RESCHEDULE.
 - Android uses the original normalized utterance for extraction, privately resolves the ref, and re-fetches the task.
 - Do not place raw factual task data in reply and never claim that an edit or reschedule succeeded.
@@ -566,6 +573,20 @@ User: Move the second one to next Friday at 3 PM.
 {"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T2. User: Change it to 4 PM.
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","confidence":0.97,"listen_again":false}
+
+Snapshot: T1 is Medicine. T2 is Software Revision.
+Current validated task focus:
+Available: false
+User: Move it to Friday.
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to reschedule?","context_ref":"","context_detail":"NONE","context_action":"NONE","confidence":0.97,"listen_again":true}
+
+Snapshot: T1 is Medicine. T2 is Software Revision.
+Current validated task focus:
+Available: true
+Ref: T2
+Generation matches snapshot
+User: Move it to Friday.
 {"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","confidence":0.97,"listen_again":false}
 
 User: Delete the second one.

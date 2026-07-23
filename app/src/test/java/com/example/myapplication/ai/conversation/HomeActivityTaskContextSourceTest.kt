@@ -152,9 +152,11 @@ class HomeActivityTaskContextSourceTest {
     @Test
     fun contextActionValidatesResolvesRefRefetchesAndThenOpensEditScreen() {
         val branch = source
+            .substringAfter("val taskAgentInput: String")
             .substringAfter("ConversationRoute.CONTEXT_ACTION ->")
             .substringBefore("ConversationRoute.DIRECT_REPLY ->")
         val validation = branch.indexOf("ContextActionDecisionValidator.validate(")
+        val grounding = branch.indexOf("ContextActionReferenceGroundingValidator.validate(")
         val resolve = branch.indexOf("readOnlyTaskContextStore.resolveRef(")
         val firstFetch = branch.indexOf("taskDao.getById(privateTaskId)")
         val extraction = branch.indexOf("agentOrchestrator.processContextAction(")
@@ -162,18 +164,43 @@ class HomeActivityTaskContextSourceTest {
         val open = branch.indexOf("openContextActionEditScreen(")
 
         assertTrue(validation >= 0)
-        assertTrue(validation < resolve)
+        assertTrue(validation < grounding)
+        assertTrue(grounding < resolve)
         assertTrue(resolve < firstFetch)
         assertTrue(firstFetch < extraction)
         assertTrue(extraction < secondFetch)
         assertTrue(secondFetch < open)
         assertTrue(branch.contains("currentGeneration() != capturedGeneration"))
         assertTrue(branch.contains("reResolvedTaskId != privateTaskId"))
+        assertTrue(branch.countOccurrences("ref = grounding.ref") == 2)
         assertTrue(branch.contains("TaskMatcher").not())
         assertTrue(branch.contains("findTaskMatchResult").not())
         assertTrue(branch.contains("updateDoneStatus").not())
         assertTrue(branch.contains("deleteTask").not())
         assertTrue(branch.contains("insertTask").not())
+    }
+
+    private fun String.countOccurrences(needle: String): Int =
+        windowed(needle.length).count { it == needle }
+
+    @Test
+    fun groundingFailureReturnsBeforeResolutionDatabaseAndExtraction() {
+        val branch = source
+            .substringAfter("val taskAgentInput: String")
+            .substringAfter("ConversationRoute.CONTEXT_ACTION ->")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val failure = branch
+            .substringAfter("if (!grounding.isValid)")
+            .substringBefore("val capturedGeneration")
+
+        assertTrue(failure.contains("Which task do you want to reschedule?"))
+        assertTrue(failure.contains("Which task do you want to edit?"))
+        assertTrue(failure.contains("return@launch"))
+        assertTrue(failure.contains("resolveRef(").not())
+        assertTrue(failure.contains("getById(").not())
+        assertTrue(failure.contains("processContextAction(").not())
+        assertTrue(failure.contains("TaskMatcher").not())
+        assertTrue(failure.contains("EditTaskActivity").not())
     }
 
     @Test
@@ -188,7 +215,7 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(helper.contains("putExtra(\"task_date\", task.dueDate)"))
         assertTrue(helper.contains("putExtra(\"task_time\", task.dueTime)"))
         assertTrue(helper.contains("putExtra(\"opened_by_assistant\", true)"))
-        assertTrue(helper.contains("putExtra(\"prefill_title\", extractedChange.taskTitle)"))
+        assertTrue(helper.contains("putExtra(\"prefill_title\", extractedChange.replacementTitle)"))
         assertTrue(helper.contains("putExtra(\"prefill_new_date_text\", extractedChange.newDateText)"))
         assertTrue(helper.contains("putExtra(\"prefill_new_time_text\", extractedChange.newTimeText)"))
         assertTrue(helper.contains("putExtra(\"assistant_mode\", \"reschedule\")"))
@@ -198,6 +225,7 @@ class HomeActivityTaskContextSourceTest {
     @Test
     fun contextActionLogsContainNoPrivateIdsTitlesOrDatabaseObjects() {
         val branch = source
+            .substringAfter("val taskAgentInput: String")
             .substringAfter("ConversationRoute.CONTEXT_ACTION ->")
             .substringBefore("ConversationRoute.DIRECT_REPLY ->")
         val homeLog = branch
@@ -235,6 +263,15 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(requestFlow.contains("CONTEXT_ACTION_REPAIR_REJECTED"))
         assertTrue(requestFlow.contains("CONTEXT_ACTION_REPAIR_FAILED"))
         assertTrue(requestFlow.contains("capturedSnapshot = taskContextCapture.snapshot"))
+        val repairedContextAction = requestFlow
+            .substringAfter("ConversationRoute.CONTEXT_ACTION ->")
+            .substringBefore("ConversationRoute.ASK_CLARIFICATION ->")
+        val structural = repairedContextAction.indexOf("ContextActionDecisionValidator.validate(")
+        val grounding = repairedContextAction.indexOf("ContextActionReferenceGroundingValidator.validate(")
+        val acceptance = repairedContextAction.indexOf("CONTEXT_ACTION_REPAIR_ACCEPTED")
+        assertTrue(structural >= 0)
+        assertTrue(structural < grounding)
+        assertTrue(grounding < acceptance)
     }
 
     @Test

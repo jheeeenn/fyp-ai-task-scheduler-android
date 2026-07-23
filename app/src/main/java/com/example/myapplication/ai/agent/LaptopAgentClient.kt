@@ -35,7 +35,12 @@ open class LaptopAgentClient(
         .build()
 
     open suspend fun process(normalizedText: String): String = withContext(Dispatchers.IO) {
-        execute(normalizedText, SYSTEM_PROMPT)
+        execute(
+            normalizedText = normalizedText,
+            systemPrompt = SYSTEM_PROMPT,
+            responseFormat = AgentResponseSchemas.taskAgentResponseFormat(),
+            boundedContextAction = false
+        )
     }
 
     open suspend fun processContextAction(
@@ -46,16 +51,26 @@ open class LaptopAgentClient(
             "{{EXPECTED_ACTION}}",
             expectedAction.name
         )
-        execute(normalizedText, prompt)
+        execute(
+            normalizedText = normalizedText,
+            systemPrompt = prompt,
+            responseFormat = AgentResponseSchemas.contextActionExtractionResponseFormat(),
+            boundedContextAction = true
+        )
     }
 
-    private fun execute(normalizedText: String, systemPrompt: String): String {
+    private fun execute(
+        normalizedText: String,
+        systemPrompt: String,
+        responseFormat: JSONObject,
+        boundedContextAction: Boolean
+    ): String {
         val payload = JSONObject().apply {
             put("model", modelId)
             put("temperature", 0.0)
             put("max_tokens", 512)
             put("stream", false)
-            put("response_format", AgentResponseSchemas.taskAgentResponseFormat())
+            put("response_format", responseFormat)
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
@@ -68,7 +83,11 @@ open class LaptopAgentClient(
             })
         }
 
-        Log.d("TASK_AGENT_SCHEMA", "Structured TaskAgentResponse schema enabled")
+        if (boundedContextAction) {
+            Log.d("CONTEXT_ACTION_EXTRACTION_SCHEMA", "enabled")
+        } else {
+            Log.d("TASK_AGENT_SCHEMA", "Structured TaskAgentResponse schema enabled")
+        }
 
         val requestEndpointUrl = getEndpointUrl()
         Log.d("LAPTOP_AGENT_CONFIG", "Using Task Agent endpoint: $requestEndpointUrl")
@@ -81,10 +100,22 @@ open class LaptopAgentClient(
         return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                Log.d("LAPTOP_AGENT", "HTTP ${response.code}: $body")
+                if (boundedContextAction) {
+                    Log.d(
+                        "LAPTOP_AGENT",
+                        "Context-action HTTP ${response.code}; responseChars=${body.length}"
+                    )
+                } else {
+                    Log.d("LAPTOP_AGENT", "HTTP ${response.code}: $body")
+                }
 
                 if (!response.isSuccessful) {
-                    throw IOException("LM Studio HTTP ${response.code}: $body")
+                    val message = if (boundedContextAction) {
+                        "LM Studio context-action HTTP ${response.code}"
+                    } else {
+                        "LM Studio HTTP ${response.code}: $body"
+                    }
+                    throw IOException(message)
                 }
 
                 val root = JSONObject(body)
@@ -144,19 +175,24 @@ open class LaptopAgentClient(
 You extract only requested changes for one task that Android has already selected and validated.
 Expected contextual action: {{EXPECTED_ACTION}}.
 You must not select, identify, query, or mutate a task or request database access.
-Never output a Room ID. target_task_title, target_date, and target_time must remain empty.
-Never claim that a change succeeded; natural_response must be empty.
+Never output or request a task ID or Room ID. Never claim that a change succeeded.
 
-Return the existing strict TaskAgentResponse JSON fields.
-When expected action is RESCHEDULE, action must be RESCHEDULE_TASK, task_title must be empty,
-and copy new date meaning into new_date and new time meaning into new_time. Preserve literal
-phrases such as "next Wednesday" and "around 4 PM". Do not calculate dates. Date-only or
-time-only changes are valid.
+Return exactly these six JSON fields:
+action, replacement_title, new_date, new_time, confidence, need_clarification.
+No additional fields are allowed.
+When expected action is RESCHEDULE, action must be RESCHEDULE_TASK, replacement_title must be
+empty, and copy new date meaning into new_date and new time meaning into new_time. Preserve
+literal phrases such as "next Wednesday" and "around 4 PM". Do not calculate dates. Date-only
+or time-only changes are valid.
 When expected action is UPDATE, action must be UPDATE_TASK. If the user explicitly supplies a
-replacement title, put only that replacement in task_title. target_task_title remains empty.
+replacement title, put only that replacement in replacement_title.
 An edit request with no replacement fields is valid and should still return UPDATE_TASK.
-Do not return recurrence, priority, missing fields, clarification, confirmation, or a plan.
-Keep date and time compatible fields empty unless they duplicate new_date and new_time.
+Set need_clarification to false when the requested changes can be extracted. Empty change fields
+are allowed because Android opens an edit screen for manual review.
+
+User: "move it to next Friday at 3 PM"
+{"action":"RESCHEDULE_TASK","replacement_title":"","new_date":"next Friday","new_time":"3 PM","confidence":0.98,"need_clarification":false}
+
 Do not output markdown or explanations.
 """.trimIndent()
 
