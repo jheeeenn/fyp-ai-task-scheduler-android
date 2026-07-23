@@ -12,6 +12,67 @@ import org.junit.Test
 
 class ContextActionReferenceGroundingValidatorTest {
     @Test
+    fun pronounWithoutFocusWinsOverDestinationTitleMatch() {
+        val destinationTitleSnapshot = snapshot.copy(
+            items = listOf(item("T1", "Friday"), item("T2", "Software Revision"))
+        )
+        val result = validateAgainst(
+            text = "move it to Friday",
+            selectedRef = "T1",
+            capturedSnapshot = destinationTitleSnapshot,
+            focus = null
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS, result.result)
+        assertFalse(result.isValid)
+    }
+
+    @Test
+    fun pronounWithoutFocusWinsOverReplacementTitleMatch() {
+        val result = validateAgainst(
+            text = "rename it to Software Revision",
+            selectedRef = "T2",
+            capturedSnapshot = snapshot,
+            focus = null
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS, result.result)
+        assertFalse(result.isValid)
+    }
+
+    @Test
+    fun validFocusWinsOverDestinationTitleMatch() {
+        val destinationTitleSnapshot = snapshot.copy(
+            items = listOf(item("T1", "Friday"), item("T2", "Software Revision"))
+        )
+        val result = validateAgainst(
+            text = "move it to Friday",
+            selectedRef = "T2",
+            capturedSnapshot = destinationTitleSnapshot,
+            focus = focus("T2")
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS, result.result)
+        assertEquals("T2", result.ref)
+    }
+
+    @Test
+    fun titleGroundingStillAppliesWhenNoPronounIsPresent() {
+        val titledSnapshot = snapshot.copy(
+            items = listOf(item("T1", "Friday"), item("T2", "Software Revision"))
+        )
+        val result = validateAgainst(
+            text = "move Friday to Monday",
+            selectedRef = "T1",
+            capturedSnapshot = titledSnapshot,
+            focus = null
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE, result.result)
+        assertEquals("T1", result.ref)
+    }
+
+    @Test
     fun noFocusPronounCannotAcceptT1OrAnyDefault() {
         val result = validate("move it to Friday", "T1", focus = null)
         assertEquals(ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS, result.result)
@@ -87,10 +148,22 @@ class ContextActionReferenceGroundingValidatorTest {
         text: String,
         selectedRef: String,
         focus: ConversationContextFocus? = null
+    ) = validateAgainst(
+        text = text,
+        selectedRef = selectedRef,
+        capturedSnapshot = snapshot,
+        focus = focus
+    )
+
+    private fun validateAgainst(
+        text: String,
+        selectedRef: String,
+        capturedSnapshot: ReadOnlyTaskContextSnapshot,
+        focus: ConversationContextFocus?
     ) = ContextActionReferenceGroundingValidator.validate(
         normalizedText = text,
         decision = decision(selectedRef),
-        capturedSnapshot = snapshot,
+        capturedSnapshot = capturedSnapshot,
         currentFocus = focus
     )
 

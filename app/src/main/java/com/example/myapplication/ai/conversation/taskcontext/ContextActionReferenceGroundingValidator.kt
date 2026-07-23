@@ -80,20 +80,6 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
-        val titleMatches = suppliedTitleMatches(normalizedText, capturedSnapshot)
-        if (titleMatches.size > 1) {
-            return GroundedContextActionReference(
-                ContextActionReferenceGroundingResult.AMBIGUOUS_TITLE
-            )
-        }
-        if (titleMatches.size == 1) {
-            return compareSelected(
-                selectedRef = selectedRef,
-                expectedRef = titleMatches.single().ref,
-                validResult = ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE
-            )
-        }
-
         if (FOCUS_REFERENCE.containsMatchIn(normalizedText)) {
             if (currentFocus == null || !currentFocus.available) {
                 return GroundedContextActionReference(
@@ -112,6 +98,20 @@ object ContextActionReferenceGroundingValidator {
                 selectedRef = selectedRef,
                 expectedRef = focusItem.ref,
                 validResult = ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS
+            )
+        }
+
+        val titleMatches = suppliedTitleMatches(normalizedText, capturedSnapshot)
+        if (titleMatches.size > 1) {
+            return GroundedContextActionReference(
+                ContextActionReferenceGroundingResult.AMBIGUOUS_TITLE
+            )
+        }
+        if (titleMatches.size == 1) {
+            return compareSelected(
+                selectedRef = selectedRef,
+                expectedRef = titleMatches.single().ref,
+                validResult = ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE
             )
         }
 
