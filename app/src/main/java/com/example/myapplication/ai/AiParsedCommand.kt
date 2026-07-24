@@ -12,6 +12,7 @@ data class AiParsedCommand(
     val newTimeText: String? = null,
     val recurrence: String? = null,
     val priority: String? = null,
+    val queryPresentation: TaskQueryPresentation = TaskQueryPresentation.NONE,
     val confidence: Float = 0f,
     val source: String = "local",
     val needsClarification: Boolean = false,

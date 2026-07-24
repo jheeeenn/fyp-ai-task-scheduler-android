@@ -2,8 +2,15 @@ package com.example.myapplication.ai.conversation
 
 object AndroidObservationResponseRenderer {
     fun render(observation: ExecutionObservation): ConversationResponse {
-        val speech = observation.fallbackSpeech.trim().ifBlank {
-            emergencySpeech(observation.outcome)
+        val speech = if (
+            observation.operation == ExecutionOperation.QUERY_TASK &&
+            observation.queryPage != null
+        ) {
+            AccessibleTaskQuerySpeechRenderer.render(observation)
+        } else {
+            observation.fallbackSpeech.trim().ifBlank {
+                emergencySpeech(observation.outcome)
+            }
         }
 
         return ConversationResponse(

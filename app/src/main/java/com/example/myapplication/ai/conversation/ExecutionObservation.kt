@@ -7,6 +7,39 @@ enum class ExecutionOperation { CREATE_TASK, QUERY_TASK, UPDATE_TASK, RESCHEDULE
 enum class ExecutionOutcome { SUCCESS, PARTIAL_SUCCESS, INFORMATION, NO_RESULTS, NOT_FOUND, AMBIGUOUS, NEEDS_CONFIRMATION, NEEDS_CLARIFICATION, CANCELLED, REJECTED, FAILURE }
 enum class RequiredInput { NONE, CONFIRMATION, TASK_CHOICE, EXACT_DATE, EXACT_TIME, TITLE, CHANGE_FIELD, RETRY }
 enum class AllowedUserMove { CONFIRM, REJECT, SELECT_OPTION, PROVIDE_DATE, PROVIDE_TIME, PROVIDE_TITLE, CHANGE_FIELD, CANCEL, REQUEST_HELP, RETRY, END_SESSION }
+enum class TaskQueryPresentationLevel { COUNT_ONLY, OVERVIEW, DETAILS }
+enum class TaskQuerySpeechDetail { BRIEF, BALANCED, DETAILED }
+enum class TaskQuerySpeechTone { FRIENDLY, NEUTRAL, PROFESSIONAL }
+
+data class TaskQueryPageObservation(
+    val totalTaskCount: Int,
+    val pageStartPosition: Int,
+    val pageEndPosition: Int,
+    val pageNumber: Int,
+    val pageCount: Int,
+    val pageSize: Int,
+    val hasNextPage: Boolean,
+    val presentation: TaskQueryPresentationLevel,
+    val detailLevel: TaskQuerySpeechDetail,
+    val tone: TaskQuerySpeechTone,
+    val includeTaskDates: Boolean,
+    val temporalLabel: String
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("total_task_count", totalTaskCount)
+        put("page_start_position", pageStartPosition)
+        put("page_end_position", pageEndPosition)
+        put("page_number", pageNumber)
+        put("page_count", pageCount)
+        put("page_size", pageSize)
+        put("has_next_page", hasNextPage)
+        put("presentation", presentation.name)
+        put("detail_level", detailLevel.name)
+        put("tone", tone.name)
+        put("include_task_dates", includeTaskDates)
+        put("temporal_label", temporalLabel)
+    }
+}
 
 data class ObservedTask(
     val title: String,
@@ -38,6 +71,7 @@ data class ExecutionObservation(
     val detail: String = "",
     val facts: List<String> = emptyList(),
     val tasks: List<ObservedTask> = emptyList(),
+    val queryPage: TaskQueryPageObservation? = null,
     val choices: List<String> = emptyList(),
     val planItems: List<String> = emptyList(),
     val requiredInput: RequiredInput = RequiredInput.NONE,
@@ -57,6 +91,7 @@ data class ExecutionObservation(
         put("detail", detail)
         put("facts", JSONArray().apply { facts.forEach { put(it) } })
         put("tasks", JSONArray().apply { tasks.forEach { put(it.toJson()) } })
+        queryPage?.let { put("query_page", it.toJson()) }
         put("choices", JSONArray().apply { choices.forEach { put(it) } })
         put("plan_items", JSONArray().apply { planItems.forEach { put(it) } })
         put("required_input", requiredInput.name)

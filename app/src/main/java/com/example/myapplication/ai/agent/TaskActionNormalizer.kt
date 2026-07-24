@@ -3,6 +3,7 @@ package com.example.myapplication.ai.agent
 import android.util.Log
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
+import com.example.myapplication.ai.TaskQueryPresentation
 
 class TaskActionNormalizer {
     fun normalize(response: TaskAgentResponse): AiParsedCommand {
@@ -11,6 +12,20 @@ class TaskActionNormalizer {
         var targetTaskTitle = response.target_task_title.clean()
         val recurrence = normalizeRecurrence(response.recurrence)
         val priority = normalizePriority(response.priority)
+        val parsedQueryPresentation = TaskQueryPresentation.fromWireValue(response.query_presentation)
+            ?: throw TaskAgentValidationException(
+                "Unsupported query_presentation '${response.query_presentation}'"
+            )
+        val queryPresentation = if (
+            normalizedAction == AiIntent.QUERY_TASK.name &&
+            parsedQueryPresentation == TaskQueryPresentation.NONE
+        ) {
+            // Compatibility policy: a structurally valid QUERY_TASK with NONE is safely
+            // normalized to the documented default instead of hiding query results.
+            TaskQueryPresentation.OVERVIEW
+        } else {
+            parsedQueryPresentation
+        }
         val legacyDate = response.date.clean()
         val legacyTime = response.time.clean()
         val targetDate = response.target_date.clean()
@@ -63,6 +78,7 @@ class TaskActionNormalizer {
             newTimeText = effectiveNewTime.takeIf { it.isNotBlank() },
             recurrence = recurrence.takeIf { it.isNotBlank() },
             priority = priority.takeIf { it.isNotBlank() },
+            queryPresentation = queryPresentation,
             confidence = response.confidence.coerceIn(0f, 1f),
             source = "laptop_agent",
             needsClarification = response.need_clarification,
@@ -78,6 +94,7 @@ class TaskActionNormalizer {
             "TASK_AGENT_NORMALIZE",
             "intent=${command.intent}, title=${command.taskTitle}, target=${command.targetTaskTitle}, " +
                 "recurrence=${command.recurrence}, priority=${command.priority}, " +
+                "queryPresentation=${command.queryPresentation}, " +
                 "needsClarification=${command.needsClarification}, missingFields=${command.missingFields}, " +
                 "requiresConfirmation=$requiresConfirmation"
         )

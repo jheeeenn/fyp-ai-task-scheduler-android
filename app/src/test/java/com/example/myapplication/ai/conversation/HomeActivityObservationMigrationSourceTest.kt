@@ -8,31 +8,26 @@ import java.io.File
 class HomeActivityObservationMigrationSourceTest {
     private val source = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
 
-    @Test fun detailedFollowUpQueryUsesLastQueryWindowAndDetailedMode() {
-        val body = source.substringAfter("private fun handleDetailedFollowUpQuery()").substringBefore("private fun openCreateTaskFromFollowUp")
-        assertTrue(body.contains("dateText = lastQueryWindow.spokenLabel"))
-        assertTrue(body.contains("responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED)"))
-        assertTrue(body.contains("detail = if (filteredTasks.isEmpty())"))
-        assertTrue(body.contains("Offer to create a new task."))
-        assertTrue(body.contains("After giving the task details, ask whether the user needs anything else."))
-        assertTrue(body.contains("fallbackSpeech = spokenReply"))
-        assertFalse(body.contains("facts = listOf(spokenReply)"))
-        assertTrue(body.contains("val hint = responseManager.hintCreateOrRead()"))
-        assertFalse(body.contains("showAssistantReply(reply)"))
-        assertFalse(body.contains("setIdleState()"))
+    @Test fun detailedQueryUsesStructuredPageAndNeverReplyLengthCoverage() {
+        val body = source.substringAfter("private fun buildQueryPageObservation(")
+            .substringBefore("private fun taskQuerySpeechDetail(")
+        assertTrue(body.contains("session.currentPageTasks.map"))
+        assertTrue(body.contains("session.presentation == TaskQueryPresentation.DETAILS"))
+        assertTrue(body.contains("queryPage = TaskQueryPageObservation("))
+        assertFalse(body.contains("getMaxTasksForMode"))
+        assertFalse(body.contains(".take("))
     }
 
     @Test fun initialQueryExposesStructuredTasksAndGuidanceButNotFallbackAsFacts() {
-        val body = source.substringAfter("private fun handleQueryTask(").substringBefore("private fun detectQueryReplyMode")
-        assertTrue(body.contains("taskCount = filteredTasks.size"))
+        val body = source.substringAfter("private fun handleQueryTask(")
+            .substringBefore("\n    private fun buildNoTasksQueryReply(")
+        assertTrue(body.contains("val filteredTasks = TaskTemporalFilter.filterAndSort"))
+        assertTrue(body.contains("orderedTasks = filteredTasks"))
         assertTrue(body.contains("dateText = queryWindow.spokenLabel"))
-        assertTrue(body.contains("detail = responseGuidance"))
-        assertTrue(body.contains("tasks = filteredTasks.take(responseManager.getMaxTasksForMode"))
-        assertTrue(body.contains(".map { observedTask(it) }"))
         assertTrue(body.contains("Offer to create a new task."))
-        assertTrue(body.contains("After giving the requested summary, offer to read more task details."))
-        assertTrue(body.contains("After giving the task details, ask whether the user needs anything else."))
-        assertTrue(body.contains("fallbackSpeech = spokenReply"))
+        assertTrue(body.contains("tasks = emptyList()"))
+        assertTrue(body.contains("buildCountOnlyQueryObservation(session)"))
+        assertTrue(body.contains("publishAndSpeakCurrentQueryPage(session)"))
         assertFalse(body.contains("facts = listOf(spokenReply)"))
     }
 

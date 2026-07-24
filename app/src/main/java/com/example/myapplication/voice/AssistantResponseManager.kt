@@ -10,12 +10,6 @@ enum class AssistantVerbosity {
     BRIEF, BALANCED, DETAILED
 }
 
-enum class QueryDetailMode {
-    SHORT,
-    NORMAL,
-    DETAILED
-}
-
 data class AssistantProfile(
     val tone: AssistantTone,
     val verbosity: AssistantVerbosity
@@ -341,17 +335,6 @@ class AssistantResponseManager(
         }
     }
 
-    fun queryAndMore(remaining: Int): String {
-        return when (verbosity) {
-            AssistantVerbosity.BRIEF -> ""
-            AssistantVerbosity.BALANCED,
-            AssistantVerbosity.DETAILED -> when (tone) {
-                AssistantTone.FRIENDLY -> " And $remaining more."
-                AssistantTone.NEUTRAL -> " And $remaining more."
-                AssistantTone.PROFESSIONAL -> " Plus $remaining more."
-            }
-        }
-    }
     fun microphonePermissionNeeded(): String = when (tone) {
         AssistantTone.FRIENDLY -> "I need microphone permission before I can listen."
         AssistantTone.NEUTRAL -> "Microphone permission is needed for voice commands."
@@ -364,13 +347,6 @@ class AssistantResponseManager(
         AssistantTone.PROFESSIONAL -> "Please confirm the save, or specify which field you would like to change."
     }
 
-    fun getMaxTasksForMode(mode: QueryDetailMode): Int {
-        return when (verbosity) {
-            AssistantVerbosity.BRIEF -> 1
-            AssistantVerbosity.BALANCED -> if (mode == QueryDetailMode.DETAILED) 3 else 2
-            AssistantVerbosity.DETAILED -> if (mode == QueryDetailMode.DETAILED) 5 else 3
-        }
-    }
     fun followUpCreateAfterNoTasks(): String = when (tone) {
         AssistantTone.FRIENDLY -> "Would you like to create one?"
         AssistantTone.NEUTRAL -> "Would you like to create a task?"
@@ -634,6 +610,5 @@ class UserPreferenceState {
         }
     }
 }
-
 
 

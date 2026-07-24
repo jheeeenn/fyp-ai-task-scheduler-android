@@ -9,15 +9,16 @@ class HomeActivityTaskContextSourceTest {
 
     @Test
     fun authoritativeQueryResultsPopulateContextBeforeObservationSpeech() {
-        val body = source.substringAfter("private fun handleQueryTask(").substringBefore("private fun detectQueryReplyMode")
-        val afterFilteredResults = body.substringAfter("val filteredTasks = TaskTemporalFilter.filterAndSort")
-        val replacement = afterFilteredResults.indexOf("readOnlyTaskContextStore.replaceRecentQueryResults(")
-        val speech = afterFilteredResults.indexOf("speakObservation(")
+        val body = source
+            .substringAfter("private suspend fun publishAndSpeakCurrentQueryPage(")
+            .substringBefore("private fun buildQueryPageObservation(")
+        val replacement = body.indexOf("readOnlyTaskContextStore.replaceRecentQueryResults(")
+        val speech = body.indexOf("speakObservation(")
 
         assertTrue(replacement >= 0)
         assertTrue(replacement < speech)
-        assertTrue(afterFilteredResults.contains("tasks = filteredTasks"))
-        assertTrue(afterFilteredResults.contains("subtasksByParentId = currentSubtasksByParentId"))
+        assertTrue(body.contains("tasks = pageTasks"))
+        assertTrue(body.contains("subtasksByParentId = session.subtasksByParentId"))
     }
 
     @Test
@@ -275,17 +276,16 @@ class HomeActivityTaskContextSourceTest {
     }
 
     @Test
-    fun afterDetailsReadAllRerunsDetailedQueryWithoutTaskAgent() {
+    fun queryPageContinuationUsesPrivateSessionWithoutTaskAgent() {
         val handler = source
-            .substringAfter("private fun handleConversationIntent(")
-            .substringBefore("private fun extractSpokenTaskPhrase")
-        val details = handler
-            .substringAfter("HomeFollowUpContext.AFTER_TASK_DETAILS ->")
-            .substringBefore("HomeFollowUpContext.DELETE_CONFIRMATION ->")
+            .substringAfter("private fun continueTaskQueryPage()")
+            .substringBefore("private fun repeatCurrentTaskQueryPage()")
 
-        assertTrue(details.contains("ConversationIntent.READ_ALL"))
-        assertTrue(details.contains("handleDetailedFollowUpQuery()"))
-        assertTrue(details.contains("agentOrchestrator").not())
+        assertTrue(handler.contains("advanceOnePage()"))
+        assertTrue(handler.contains("publishAndSpeakCurrentQueryPage(nextSession)"))
+        assertTrue(handler.contains("agentOrchestrator").not())
+        assertTrue(handler.contains("TaskMatcher").not())
+        assertTrue(handler.contains("taskDao").not())
     }
 
     @Test

@@ -64,6 +64,7 @@ class LocalTaskParser {
             AiIntent.DELETE_TASK -> parseDeleteTask(normalizedText, localIntentResult)
             AiIntent.QUERY_TASK -> AiParsedCommand(
                 intent = AiIntent.QUERY_TASK.name,
+                queryPresentation = TaskQueryPresentation.OVERVIEW,
                 confidence = localIntentResult.confidence,
                 source = "local"
             )

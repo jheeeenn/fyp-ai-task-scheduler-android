@@ -3,6 +3,7 @@ package com.example.myapplication.ai.agent
 import android.util.Log
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
+import com.example.myapplication.ai.TaskQueryPresentation
 
 class TaskAgentValidationException(message: String) : Exception(message)
 
@@ -28,6 +29,12 @@ class ActionValidator {
         }
 
         when (command.intent) {
+            AiIntent.QUERY_TASK.name -> {
+                if (command.queryPresentation == TaskQueryPresentation.NONE) {
+                    fail("QUERY_TASK requires a query presentation")
+                }
+            }
+
             AiIntent.CREATE_TASK.name -> {
                 if (command.taskTitle.isNullOrBlank()) {
                     fail("CREATE_TASK requires taskTitle")
@@ -53,6 +60,13 @@ class ActionValidator {
                     fail("${command.intent} requires targetTaskTitle or temporal constraint")
                 }
             }
+        }
+
+        if (
+            command.intent != AiIntent.QUERY_TASK.name &&
+            command.queryPresentation != TaskQueryPresentation.NONE
+        ) {
+            fail("${command.intent} requires queryPresentation=NONE")
         }
 
         Log.d("TASK_AGENT_VALIDATE", "Accepted action=${command.intent}, confidence=${command.confidence}")

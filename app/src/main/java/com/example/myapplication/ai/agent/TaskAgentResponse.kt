@@ -13,6 +13,7 @@ data class TaskAgentResponse(
     val new_time: String = "",
     val recurrence: String = "",
     val priority: String = "",
+    val query_presentation: String = "NONE",
     val confidence: Float = 0f,
     val need_clarification: Boolean = false,
     val missing_fields: List<String> = emptyList(),

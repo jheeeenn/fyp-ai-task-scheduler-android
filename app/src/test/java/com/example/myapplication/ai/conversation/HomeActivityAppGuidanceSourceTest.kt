@@ -35,6 +35,8 @@ class HomeActivityAppGuidanceSourceTest {
             "HomeFollowUpContext.AFTER_NO_TASKS -> Pair(",
             "HomeFollowUpContext.AFTER_TASK_SUMMARY -> Pair(",
             "HomeFollowUpContext.AFTER_TASK_DETAILS -> Pair(",
+            "HomeFollowUpContext.QUERY_COUNT -> Pair(",
+            "HomeFollowUpContext.QUERY_PAGE -> Pair(",
             "HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> Pair(",
             "HomeFollowUpContext.DELETE_CONFIRMATION -> Pair(",
             "HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> Pair(",

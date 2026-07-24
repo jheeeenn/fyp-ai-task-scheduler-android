@@ -36,6 +36,7 @@ import java.util.Locale
 import com.example.myapplication.voice.TextNormalizer
 
 import com.example.myapplication.ai.AiIntent
+import com.example.myapplication.ai.TaskQueryPresentation
 import com.example.myapplication.ai.LocalConversationIntentClassifier
 import com.example.myapplication.ai.agent.ActionValidator
 import com.example.myapplication.ai.agent.AgentOrchestrator
@@ -61,6 +62,10 @@ import com.example.myapplication.ai.conversation.ExecutionOutcome
 import com.example.myapplication.ai.conversation.ObservedTask
 import com.example.myapplication.ai.conversation.RequiredInput
 import com.example.myapplication.ai.conversation.TaskObservationMapper
+import com.example.myapplication.ai.conversation.TaskQueryPageObservation
+import com.example.myapplication.ai.conversation.TaskQueryPresentationLevel
+import com.example.myapplication.ai.conversation.TaskQuerySpeechDetail
+import com.example.myapplication.ai.conversation.TaskQuerySpeechTone
 import com.example.myapplication.ai.conversation.TemporalObservationInputs
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
@@ -75,8 +80,10 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextFocusCarryFo
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
+import com.example.myapplication.ai.conversation.query.AccessibleTaskQuerySession
 import com.example.myapplication.voice.AssistantResponseManager
-import com.example.myapplication.voice.QueryDetailMode
+import com.example.myapplication.voice.AssistantTone
+import com.example.myapplication.voice.AssistantVerbosity
 import java.text.SimpleDateFormat
 
 import com.example.myapplication.voice.AssistantVoiceHost
@@ -112,17 +119,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var assistantSession: AssistantVoiceSession
     private lateinit var voiceHelper: VoiceHelper
 
-    private enum class QueryReplyMode {
-        SHORT,
-        NORMAL,
-        DETAILED
-    }
-
     private enum class HomeFollowUpContext {
         NONE,
         AFTER_NO_TASKS,
         AFTER_TASK_SUMMARY,
         AFTER_TASK_DETAILS,
+        QUERY_COUNT,
+        QUERY_PAGE,
         TASK_MATCH_AMBIGUITY,
         DELETE_CONFIRMATION,
         BREAKDOWN_CONFIRMATION,
@@ -130,10 +133,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
-    private var lastQueryWasToday = false
-    private var lastQueryDate: String? = null
     private val temporalQueryResolver = TemporalQueryResolver()
-    private var lastQueryWindow: TemporalQueryWindow = TemporalQueryWindow(TemporalResolutionStatus.NONE)
+    private var accessibleTaskQuerySession: AccessibleTaskQuerySession? = null
+    private var queryReadingStateGeneration: Long = 0
 
     //for delete confirmation when the task intent is 'delete'
     private var pendingDeleteTaskId: Long? = null
@@ -506,6 +508,25 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
             )
 
+            HomeFollowUpContext.QUERY_COUNT -> Pair(
+                "A task query count was read, but no task item has been exposed yet.",
+                listOf(
+                    "Accept the offer to hear the first group.",
+                    "Decline the offer or end the assistant session.",
+                    "Give another task command."
+                )
+            )
+
+            HomeFollowUpContext.QUERY_PAGE -> Pair(
+                "The current group of authoritative task-query results was read.",
+                listOf(
+                    "Say continue for the next group, repeat the current group, or stop.",
+                    "Ask what the first, second, or another task in the current group was.",
+                    "Ask for a current task's date, time, status, or subtask summary.",
+                    "Give a contextual update or reschedule request for a task in the current group."
+                )
+            )
+
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> Pair(
                 "More than one task matched the request.",
                 listOf(
@@ -617,10 +638,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
 
+        if (handleQueryReadingFollowUp(normalized)) {
+            return
+        }
+
         if (homeFollowUpContext != HomeFollowUpContext.NONE) {
             val shouldDeferContextReference =
                 (homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
-                    homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS) &&
+                    homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
+                    homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE) &&
                     (ContextReferenceMutationGuard.containsContextReference(
                             normalized,
                             readOnlyTaskContextStore.snapshot()
@@ -664,7 +690,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val taskContextCapture = readOnlyTaskContextStore.capture()
                 val isResultInteraction =
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
-                        homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS
+                        homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
+                        homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE
                 val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
                     taskContextCapture.snapshot
                 )
@@ -1072,6 +1099,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         if (conversationDecision.reply.isNotBlank()) {
                             assistantSession.speak(conversationDecision.reply, listenAgain = false)
                         }
+                        logQueryPageEndIfActive("USER_STOPPED")
                         clearConversationSessionContext()
                         homeFollowUpContext = HomeFollowUpContext.NONE
                         return@launch
@@ -1184,7 +1212,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         handleQueryTask(
                             normalized = normalized,
                             agentDateText = aiResult.targetDateText ?: aiResult.dateText,
-                            agentTimeText = aiResult.targetTimeText ?: aiResult.timeText
+                            agentTimeText = aiResult.targetTimeText ?: aiResult.timeText,
+                            presentation = aiResult.queryPresentation
                         )
                     }
                     // delete task
@@ -1657,8 +1686,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun handleQueryTask(
         normalized: String,
         agentDateText: String?,
-        agentTimeText: String?
+        agentTimeText: String?,
+        presentation: TaskQueryPresentation
     ) {
+        val queryRequestGeneration =
+            clearAccessibleTaskQuerySession(clearTaskContext = true)
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
             val taskData = withContext(Dispatchers.IO) {
@@ -1667,6 +1699,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 roots to subtasks
             }
             val allTasks = taskData.first
+            if (queryRequestGeneration != queryReadingStateGeneration) {
+                return@launch
+            }
             currentSubtasksByParentId = taskData.second
 
             val today = todayDateString()
@@ -1697,103 +1732,54 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 return@launch
             }
 
-            lastQueryWindow = queryWindow
-            lastQueryDate = if (queryWindow.isExactDate) queryWindow.startDateInclusive else null
-            lastQueryWasToday = queryWindow.isExactDate && queryWindow.startDateInclusive == today
+            val queryWasToday =
+                queryWindow.isExactDate && queryWindow.startDateInclusive == today
 
             val filteredTasks = TaskTemporalFilter.filterAndSort(allTasks, queryWindow)
-            readOnlyTaskContextStore.replaceRecentQueryResults(
-                tasks = filteredTasks,
-                subtasksByParentId = currentSubtasksByParentId
-            )
-
-            val replyMode = detectQueryReplyMode(normalized)
-            val reply = buildTaskQueryReply(filteredTasks, lastQueryWasToday, replyMode, queryWindow)
-
-            val hint = if (filteredTasks.isEmpty()) {
-                responseManager.hintCreateOrRead()
-            } else {
-                when (replyMode) {
-                    QueryReplyMode.SHORT, QueryReplyMode.NORMAL -> responseManager.hintYesNo()
-                    QueryReplyMode.DETAILED -> responseManager.hintCreateOrRead()
-                }
-            }
-
-            homeFollowUpContext = when {
-                filteredTasks.isEmpty() -> HomeFollowUpContext.AFTER_NO_TASKS
-                replyMode == QueryReplyMode.DETAILED -> HomeFollowUpContext.AFTER_TASK_DETAILS
-                else -> HomeFollowUpContext.AFTER_TASK_SUMMARY
-            }
-            // log
-            Log.d(
-                "HOME_QUERY",
-                "queryWindow=$queryWindow queryToday=$lastQueryWasToday replyMode=$replyMode taskCount=${filteredTasks.size} nextContext=$homeFollowUpContext"
-            )
-
-            val spokenFollowUp = when {
-                filteredTasks.isEmpty() -> responseManager.followUpCreateAfterNoTasks()
-                replyMode == QueryReplyMode.DETAILED -> responseManager.followUpAnythingElse()
-                else -> responseManager.followUpReadAllTasks()
-            }
-
-            val spokenReply = responseManager.combineReplyWithFollowUp(reply, spokenFollowUp)
-            val responseGuidance = when {
-                filteredTasks.isEmpty() -> "Offer to create a new task."
-                replyMode == QueryReplyMode.DETAILED -> "After giving the task details, ask whether the user needs anything else."
-                else -> "After giving the requested summary, offer to read more task details."
-            }
-
-            speakObservation(
-                ExecutionObservation(
-                    operation = ExecutionOperation.QUERY_TASK,
-                    outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
-                    taskCount = filteredTasks.size,
-                    dateText = queryWindow.spokenLabel,
-                    detail = responseGuidance,
-                    tasks = filteredTasks.take(responseManager.getMaxTasksForMode(if (replyMode == QueryReplyMode.DETAILED) QueryDetailMode.DETAILED else QueryDetailMode.NORMAL)).map { observedTask(it) },
-                    listenAgain = true,
-                    fallbackSpeech = spokenReply,
-                    fallbackHint = hint
+            if (filteredTasks.isEmpty()) {
+                accessibleTaskQuerySession = null
+                currentSubtasksByParentId = emptyMap()
+                homeFollowUpContext = HomeFollowUpContext.AFTER_NO_TASKS
+                val noTasks = buildNoTasksQueryReply(queryWasToday, queryWindow)
+                speakObservation(
+                    ExecutionObservation(
+                        operation = ExecutionOperation.QUERY_TASK,
+                        outcome = ExecutionOutcome.NO_RESULTS,
+                        taskCount = 0,
+                        dateText = queryWindow.spokenLabel,
+                        detail = "Offer to create a new task.",
+                        tasks = emptyList(),
+                        listenAgain = true,
+                        fallbackSpeech = responseManager.combineReplyWithFollowUp(
+                            noTasks,
+                            responseManager.followUpCreateAfterNoTasks()
+                        ),
+                        fallbackHint = responseManager.hintCreateOrRead()
+                    )
                 )
+                return@launch
+            }
+
+            val session = AccessibleTaskQuerySession(
+                orderedTasks = filteredTasks,
+                subtasksByParentId = currentSubtasksByParentId,
+                queryWindow = queryWindow,
+                presentation = presentation
             )
-        }
-    }
-    private fun detectQueryReplyMode(normalized: String): QueryReplyMode {
-        return when {
-            normalized.contains("show all") ||
-                    normalized.contains("read all") ||
-                    normalized.contains("list all") ||
-                    normalized.contains("all my tasks") -> {
-                QueryReplyMode.DETAILED
+            accessibleTaskQuerySession = session
+            Log.d(
+                "HOME_QUERY_READING_SESSION",
+                "totalCount=${session.orderedTasks.size} presentation=${session.presentation} " +
+                    "pageSize=${session.pageSize}"
+            )
+
+            if (presentation == TaskQueryPresentation.COUNT_ONLY) {
+                homeFollowUpContext = HomeFollowUpContext.QUERY_COUNT
+                speakObservation(buildCountOnlyQueryObservation(session))
+            } else {
+                homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
+                publishAndSpeakCurrentQueryPage(session)
             }
-
-            normalized.contains("do i have") ||
-                    normalized.contains("anything today") ||
-                    normalized.contains("any task") ||
-                    normalized.contains("any tasks") -> {
-                QueryReplyMode.SHORT
-            }
-
-            else -> {
-                QueryReplyMode.NORMAL
-            }
-        }
-    }
-
-    private fun buildTaskQueryReply(
-        tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean,
-        mode: QueryReplyMode,
-        queryWindow: TemporalQueryWindow
-    ): String {
-        if (tasks.isEmpty()) {
-            return buildNoTasksQueryReply(queryToday, queryWindow)
-        }
-
-        return when (mode) {
-            QueryReplyMode.SHORT -> buildShortQueryReply(tasks, queryToday, queryWindow)
-            QueryReplyMode.NORMAL -> buildNormalQueryReply(tasks, queryToday, queryWindow)
-            QueryReplyMode.DETAILED -> buildDetailedQueryReply(tasks, queryToday, queryWindow)
         }
     }
 
@@ -1806,75 +1792,128 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return "You have no tasks $label."
     }
 
-    private fun buildShortQueryReply(
-        tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean,
-        queryWindow: TemporalQueryWindow
-    ): String {
-        val label = spokenTemporalLabel(queryWindow)
-        if (label != null && !queryToday) {
-            return "Yes, you have ${tasks.size} task${if (tasks.size > 1) "s" else ""} $label."
+    private fun buildCountOnlyQueryObservation(
+        session: AccessibleTaskQuerySession
+    ): ExecutionObservation = ExecutionObservation(
+        operation = ExecutionOperation.QUERY_TASK,
+        outcome = ExecutionOutcome.INFORMATION,
+        taskCount = session.orderedTasks.size,
+        dateText = session.queryWindow.spokenLabel,
+        tasks = emptyList(),
+        queryPage = TaskQueryPageObservation(
+            totalTaskCount = session.orderedTasks.size,
+            pageStartPosition = 0,
+            pageEndPosition = 0,
+            pageNumber = 0,
+            pageCount = session.pageCount,
+            pageSize = session.pageSize,
+            hasNextPage = session.hasNextPage,
+            presentation = TaskQueryPresentationLevel.COUNT_ONLY,
+            detailLevel = TaskQuerySpeechDetail.BRIEF,
+            tone = taskQuerySpeechTone(),
+            includeTaskDates = false,
+            temporalLabel = taskQueryTemporalLabel(session.queryWindow)
+        ),
+        listenAgain = true,
+        fallbackSpeech = "",
+        fallbackHint = responseManager.hintYesNo()
+    )
+
+    private suspend fun publishAndSpeakCurrentQueryPage(
+        session: AccessibleTaskQuerySession
+    ) {
+        val pageTasks = session.currentPageTasks
+        readOnlyTaskContextStore.replaceRecentQueryResults(
+            tasks = pageTasks,
+            subtasksByParentId = session.subtasksByParentId
+        )
+        if (::conversationOrchestrator.isInitialized) {
+            conversationOrchestrator.clearInvalidContextFocus(readOnlyTaskContextStore.snapshot())
         }
-        return responseManager.queryShortCount(tasks.size, queryToday)
+        val contextGeneration = readOnlyTaskContextStore.currentGeneration()
+        Log.d(
+            "HOME_QUERY_PAGE",
+            "pageNumber=${session.currentPageIndex + 1} pageCount=${session.pageCount} " +
+                "pageItemCount=${pageTasks.size} hasNext=${session.hasNextPage} " +
+                "contextGeneration=$contextGeneration"
+        )
+        speakObservation(buildQueryPageObservation(session))
     }
 
-    private fun buildNormalQueryReply(
-        tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean,
-        queryWindow: TemporalQueryWindow
-    ): String {
-        val intro = buildQueryIntro(tasks.size, queryToday, queryWindow)
-
-        val maxTasks = responseManager.getMaxTasksForMode(QueryDetailMode.NORMAL)
-
-        val taskDetails = tasks.take(maxTasks).joinToString(" ") { task ->
-            buildCompactTaskSpeech(task)
+    private fun buildQueryPageObservation(
+        session: AccessibleTaskQuerySession
+    ): ExecutionObservation {
+        val presentationLevel = when (session.presentation) {
+            TaskQueryPresentation.DETAILS -> TaskQueryPresentationLevel.DETAILS
+            TaskQueryPresentation.COUNT_ONLY -> TaskQueryPresentationLevel.COUNT_ONLY
+            TaskQueryPresentation.NONE,
+            TaskQueryPresentation.OVERVIEW -> TaskQueryPresentationLevel.OVERVIEW
         }
-
-        val moreText = if (tasks.size > maxTasks) {
-            responseManager.queryAndMore(tasks.size - maxTasks)
-        } else {
-            ""
-        }
-
-        return "$intro $taskDetails$moreText".trim()
+        return ExecutionObservation(
+            operation = ExecutionOperation.QUERY_TASK,
+            outcome = ExecutionOutcome.INFORMATION,
+            taskCount = session.orderedTasks.size,
+            dateText = session.queryWindow.spokenLabel,
+            tasks = session.currentPageTasks.map { task ->
+                TaskObservationMapper.observedTask(
+                    task = task,
+                    subtasks = session.subtasksByParentId[task.id].orEmpty()
+                )
+            },
+            queryPage = TaskQueryPageObservation(
+                totalTaskCount = session.orderedTasks.size,
+                pageStartPosition = session.currentPageStartPosition,
+                pageEndPosition = session.currentPageEndPosition,
+                pageNumber = session.currentPageIndex + 1,
+                pageCount = session.pageCount,
+                pageSize = session.pageSize,
+                hasNextPage = session.hasNextPage,
+                presentation = presentationLevel,
+                detailLevel = taskQuerySpeechDetail(session.presentation),
+                tone = taskQuerySpeechTone(),
+                includeTaskDates = !session.queryWindow.isExactDate ||
+                    session.presentation == TaskQueryPresentation.DETAILS,
+                temporalLabel = taskQueryTemporalLabel(session.queryWindow)
+            ),
+            listenAgain = true,
+            fallbackSpeech = "",
+            fallbackHint = if (session.hasNextPage) {
+                "Say continue, repeat, or stop."
+            } else {
+                "Ask about a task in this group, repeat, or stop."
+            }
+        )
     }
 
-    private fun buildDetailedQueryReply(
-        tasks: List<com.example.myapplication.data.TaskEntity>,
-        queryToday: Boolean,
-        queryWindow: TemporalQueryWindow
-    ): String {
-        val intro = buildQueryIntro(tasks.size, queryToday, queryWindow)
-
-
-        val maxTasks = responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED)
-
-        val taskDetails = tasks.take(maxTasks).joinToString(" ") { task ->
-            buildSingleTaskSpeech(task)
+    private fun taskQuerySpeechDetail(
+        presentation: TaskQueryPresentation
+    ): TaskQuerySpeechDetail {
+        if (presentation == TaskQueryPresentation.DETAILS) {
+            return TaskQuerySpeechDetail.DETAILED
         }
-
-        val moreText = if (tasks.size > maxTasks) {
-            responseManager.queryAndMore(tasks.size - maxTasks)
-        } else {
-            ""
+        return when (responseManager.verbosity) {
+            AssistantVerbosity.BRIEF -> TaskQuerySpeechDetail.BRIEF
+            AssistantVerbosity.BALANCED -> TaskQuerySpeechDetail.BALANCED
+            AssistantVerbosity.DETAILED -> TaskQuerySpeechDetail.DETAILED
         }
-
-        return "$intro $taskDetails$moreText".trim()
     }
 
-
-    private fun buildQueryIntro(
-        count: Int,
-        queryToday: Boolean,
-        queryWindow: TemporalQueryWindow
-    ): String {
-        val label = spokenTemporalLabel(queryWindow)
-        if (label != null && !queryToday) {
-            return "You have $count task${if (count > 1) "s" else ""} $label."
-        }
-        return responseManager.queryIntro(count, queryToday)
+    private fun taskQuerySpeechTone(): TaskQuerySpeechTone = when (responseManager.tone) {
+        AssistantTone.FRIENDLY -> TaskQuerySpeechTone.FRIENDLY
+        AssistantTone.NEUTRAL -> TaskQuerySpeechTone.NEUTRAL
+        AssistantTone.PROFESSIONAL -> TaskQuerySpeechTone.PROFESSIONAL
     }
+
+    private fun taskQueryTemporalLabel(queryWindow: TemporalQueryWindow): String =
+        spokenTemporalLabel(queryWindow)
+            ?: if (
+                queryWindow.isExactDate &&
+                queryWindow.startDateInclusive == todayDateString()
+            ) {
+                "today"
+            } else {
+                ""
+            }
 
     private fun spokenTemporalLabel(queryWindow: TemporalQueryWindow): String? {
         if (queryWindow.isExactDate &&
@@ -1882,68 +1921,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             !queryWindow.hasTimeConstraint
         ) return null
         return TemporalQueryLabelFormatter.spokenLabel(queryWindow)
-    }
-
-    private fun buildCompactTaskSpeech(task: com.example.myapplication.data.TaskEntity): String {
-        val title = task.title.ifBlank { "Untitled task" }
-        val hasTime = !task.dueTime.isNullOrBlank()
-
-        val subtaskSpeech = buildUnfinishedSubtaskSpeech(task.id, compact = true)
-        val base = if (hasTime) {
-            "$title at ${task.dueTime}."
-        } else {
-            "$title."
-        }
-        return "$base$subtaskSpeech"
-    }
-
-    private fun buildSingleTaskSpeech(task: com.example.myapplication.data.TaskEntity): String {
-        val title = task.title.ifBlank { "Untitled task" }
-
-        val hasDate = !task.dueDate.isNullOrBlank()
-        val hasTime = !task.dueTime.isNullOrBlank()
-
-        val base = when {
-            hasDate && hasTime -> "$title on ${formatDateForSpeech(task.dueDate)} at ${task.dueTime}."
-            hasDate -> "$title on ${formatDateForSpeech(task.dueDate)}."
-            hasTime -> "$title at ${task.dueTime}."
-            else -> "$title."
-        }
-        return "$base${buildUnfinishedSubtaskSpeech(task.id, compact = false)}"
-    }
-
-    private fun buildUnfinishedSubtaskSpeech(parentTaskId: Long, compact: Boolean): String {
-        val subtasks = currentSubtasksByParentId[parentTaskId].orEmpty()
-        if (subtasks.isEmpty()) return ""
-
-        val unfinished = subtasks.filter { !it.isDone }
-        val intro = " It has ${subtasks.size} subtasks."
-        if (unfinished.isEmpty()) return "$intro All are completed."
-
-        val names = unfinished.take(2).joinToString(", ") { it.title }
-        val more = if (unfinished.size > 2) ", and ${unfinished.size - 2} more" else ""
-        return if (compact) {
-            "$intro ${unfinished.size} unfinished."
-        } else {
-            "$intro ${unfinished.size} are unfinished: $names$more."
-        }
-    }
-
-    private fun formatDateForSpeech(date: String?): String {
-        if (date.isNullOrBlank()) return "unknown date"
-
-        return try {
-            val inputFormat = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.UK)
-            val outputFormat = java.text.SimpleDateFormat("d MMMM yyyy", Locale.UK)
-            val parsedDate = inputFormat.parse(date)
-            if (parsedDate != null) {
-                outputFormat.format(parsedDate)
-            } else {
-                date
-            }
-        } catch (e: Exception) {
-            date
-        }
     }
 
 
@@ -2031,7 +2008,105 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         "read them"
     )
 
+    private fun handleQueryReadingFollowUp(normalized: String): Boolean {
+        val session = accessibleTaskQuerySession
+        return when (homeFollowUpContext) {
+            HomeFollowUpContext.QUERY_COUNT -> when {
+                session != null && isSimpleFollowUpAgreement(normalized) -> {
+                    startQueryOverviewFromCount()
+                    true
+                }
+
+                isSimpleFollowUpEndCommand(normalized) -> {
+                    endAssistantConversation()
+                    true
+                }
+
+                else -> false
+            }
+
+            HomeFollowUpContext.QUERY_PAGE -> when {
+                normalized in setOf(
+                    "continue",
+                    "next",
+                    "next group",
+                    "read more",
+                    "keep going"
+                ) || (
+                    normalized == "yes" &&
+                        session?.hasNextPage == true
+                    ) -> {
+                    continueTaskQueryPage()
+                    true
+                }
+
+                normalized in setOf(
+                    "repeat",
+                    "repeat that",
+                    "read that again",
+                    "again"
+                ) -> {
+                    repeatCurrentTaskQueryPage()
+                    true
+                }
+
+                isSimpleFollowUpEndCommand(normalized) -> {
+                    endAssistantConversation()
+                    true
+                }
+
+                else -> false
+            }
+
+            else -> false
+        }
+    }
+
+    private fun startQueryOverviewFromCount() {
+        val session = accessibleTaskQuerySession ?: return
+        val overviewSession = session.beginOverview()
+        accessibleTaskQuerySession = overviewSession
+        homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
+        lifecycleScope.launch {
+            publishAndSpeakCurrentQueryPage(overviewSession)
+        }
+    }
+
+    private fun continueTaskQueryPage() {
+        val currentSession = accessibleTaskQuerySession ?: return
+        val nextSession = currentSession.advanceOnePage()
+        if (nextSession == null) {
+            Log.d("HOME_QUERY_PAGE_END", "reason=LAST_PAGE")
+            assistantSession.speak("That was the last group.", listenAgain = true)
+            return
+        }
+        Log.d(
+            "HOME_QUERY_PAGE_CONTINUE",
+            "fromPage=${currentSession.currentPageIndex + 1} " +
+                "toPage=${nextSession.currentPageIndex + 1}"
+        )
+        accessibleTaskQuerySession = nextSession
+        homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
+        lifecycleScope.launch {
+            publishAndSpeakCurrentQueryPage(nextSession)
+        }
+    }
+
+    private fun repeatCurrentTaskQueryPage() {
+        val session = accessibleTaskQuerySession ?: return
+        val contextGeneration = readOnlyTaskContextStore.currentGeneration()
+        Log.d(
+            "HOME_QUERY_PAGE_REPEAT",
+            "pageNumber=${session.currentPageIndex + 1} contextGenerationUnchanged=true"
+        )
+        lifecycleScope.launch {
+            speakObservation(buildQueryPageObservation(session))
+            check(readOnlyTaskContextStore.currentGeneration() == contextGeneration)
+        }
+    }
+
     private fun endAssistantConversation() {
+        logQueryPageEndIfActive("USER_STOPPED")
         clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         assistantSession.getBottomSheet()?.clearHint()
@@ -2042,9 +2117,25 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun clearConversationSessionContext() {
-        readOnlyTaskContextStore.clear()
+        clearAccessibleTaskQuerySession(clearTaskContext = true)
         if (::conversationOrchestrator.isInitialized) {
             conversationOrchestrator.clearSessionMemory()
+        }
+    }
+
+    private fun clearAccessibleTaskQuerySession(clearTaskContext: Boolean): Long {
+        queryReadingStateGeneration += 1
+        accessibleTaskQuerySession = null
+        currentSubtasksByParentId = emptyMap()
+        if (clearTaskContext) {
+            readOnlyTaskContextStore.clear()
+        }
+        return queryReadingStateGeneration
+    }
+
+    private fun logQueryPageEndIfActive(reason: String) {
+        if (accessibleTaskQuerySession != null) {
+            Log.d("HOME_QUERY_PAGE_END", "reason=$reason")
         }
     }
 
@@ -2072,17 +2163,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_SUMMARY -> {
                 when {
-                    normalized.contains("read all") ||
-                            normalized.contains("show all") ||
-                            isSimpleFollowUpAgreement(normalized) -> {
-                        handleDetailedFollowUpQuery()
+                    isSimpleFollowUpEndCommand(normalized) -> {
+                        endAssistantConversation()
                         true
                     }
-
-                    isSimpleFollowUpEndCommand(normalized) -> {
-    endAssistantConversation()
-    true
-}
 
                     else -> false
                 }
@@ -2090,21 +2174,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_DETAILS -> {
                 when {
-                    normalized.contains("read all") ||
-                            normalized.contains("show all") -> {
-                        handleDetailedFollowUpQuery()
+                    isSimpleFollowUpEndCommand(normalized) -> {
+                        endAssistantConversation()
                         true
                     }
-
-                    isSimpleFollowUpEndCommand(normalized) -> {
-    endAssistantConversation()
-    true
-}
 
                     else -> false
                 }
             }
 
+            HomeFollowUpContext.QUERY_COUNT,
+            HomeFollowUpContext.QUERY_PAGE -> false
             HomeFollowUpContext.NONE -> false
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> false
@@ -2112,65 +2192,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION -> false
         }
 
-    }
-    private fun handleDetailedFollowUpQuery() {
-        lifecycleScope.launch {
-            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-            val taskData = withContext(Dispatchers.IO) {
-                val roots = dao.getRootTasks()
-                val subtasks = roots.associate { root -> root.id to dao.getSubtasks(root.id) }
-                roots to subtasks
-            }
-            val allTasks = taskData.first
-            currentSubtasksByParentId = taskData.second
-
-            val today = todayDateString()
-            val queryToday = lastQueryWindow.isExactDate && lastQueryWindow.startDateInclusive == today
-
-            val filteredTasks = TaskTemporalFilter.filterAndSort(
-                tasks = allTasks,
-                window = lastQueryWindow
-            )
-            readOnlyTaskContextStore.replaceRecentQueryResults(
-                tasks = filteredTasks,
-                subtasksByParentId = currentSubtasksByParentId
-            )
-
-            val reply = buildTaskQueryReply(
-                tasks = filteredTasks,
-                queryToday = queryToday,
-                mode = QueryReplyMode.DETAILED,
-                queryWindow = lastQueryWindow
-            )
-
-            homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
-
-            val hint = responseManager.hintCreateOrRead()
-            val spokenReply = responseManager.combineReplyWithFollowUp(
-                reply,
-                responseManager.followUpAnythingElse()
-            )
-
-            speakObservation(
-                ExecutionObservation(
-                    operation = ExecutionOperation.QUERY_TASK,
-                    outcome = if (filteredTasks.isEmpty()) ExecutionOutcome.NO_RESULTS else ExecutionOutcome.INFORMATION,
-                    taskCount = filteredTasks.size,
-                    dateText = lastQueryWindow.spokenLabel,
-                    detail = if (filteredTasks.isEmpty()) {
-                        "Offer to create a new task."
-                    } else {
-                        "After giving the task details, ask whether the user needs anything else."
-                    },
-                    tasks = filteredTasks
-                        .take(responseManager.getMaxTasksForMode(QueryDetailMode.DETAILED))
-                        .map { observedTask(it) },
-                    listenAgain = true,
-                    fallbackSpeech = spokenReply,
-                    fallbackHint = hint
-                )
-            )
-        }
     }
     private fun openCreateTaskFromFollowUp() {
         homeFollowUpContext = HomeFollowUpContext.NONE
@@ -2897,22 +2918,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_SUMMARY -> {
                 when (intent) {
-                    ConversationIntent.READ_ALL -> {
-                        // log
-                        Log.d("HOME_CONVO_ACTION", "reading all from follow-up")
-                        handleDetailedFollowUpQuery()
-                        true
-                    }
-
-                    ConversationIntent.CONFIRM_YES -> {
-                        if (isSimpleFollowUpAgreement(normalized)) {
-                            handleDetailedFollowUpQuery()
-                            true
-                        } else {
-                            false
-                        }
-                    }
-
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
                         if (isSimpleFollowUpEndCommand(normalized)) {
@@ -2929,12 +2934,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             HomeFollowUpContext.AFTER_TASK_DETAILS -> {
                 when (intent) {
-                    ConversationIntent.READ_ALL -> {
-                        Log.d("HOME_CONVO_ACTION", "re-reading detailed query results")
-                        handleDetailedFollowUpQuery()
-                        true
-                    }
-
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
                         if (isSimpleFollowUpEndCommand(normalized)) {
@@ -2948,6 +2947,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     else -> false
                 }
             }
+            HomeFollowUpContext.QUERY_COUNT,
+            HomeFollowUpContext.QUERY_PAGE -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> {
                 when (intent) {
                     ConversationIntent.CONFIRM_YES -> {
