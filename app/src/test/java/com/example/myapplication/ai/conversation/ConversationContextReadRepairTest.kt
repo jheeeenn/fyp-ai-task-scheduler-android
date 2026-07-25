@@ -433,9 +433,23 @@ class ConversationContextReadRepairTest {
             .getJSONObject("properties")
             .getJSONObject("context_action")
             .getJSONArray("enum")
+        val moveEnum = format
+            .getJSONObject("json_schema")
+            .getJSONObject("schema")
+            .getJSONObject("properties")
+            .getJSONObject("query_reading_move")
+            .getJSONArray("enum")
+        val hintEnum = format
+            .getJSONObject("json_schema")
+            .getJSONObject("schema")
+            .getJSONObject("properties")
+            .getJSONObject("query_presentation_hint")
+            .getJSONArray("enum")
 
         assertEquals(setOf("CONTEXT_READ", "ASK_CLARIFICATION"), routes)
         assertEquals(listOf("NONE"), (0 until actionEnum.length()).map { actionEnum.getString(it) })
+        assertEquals(listOf("NONE"), (0 until moveEnum.length()).map { moveEnum.getString(it) })
+        assertEquals(listOf("NONE"), (0 until hintEnum.length()).map { hintEnum.getString(it) })
     }
 
     private class FakeClient(
@@ -496,6 +510,8 @@ class ConversationContextReadRepairTest {
             .put("context_ref", contextRef)
             .put("context_detail", contextDetail)
             .put("context_action", "NONE")
+            .put("query_reading_move", "NONE")
+            .put("query_presentation_hint", "NONE")
             .put("confidence", 0.97)
             .put("listen_again", true)
             .toString()

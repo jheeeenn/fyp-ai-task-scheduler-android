@@ -127,6 +127,9 @@ class ConversationSessionMemory {
             ConversationRoute.CONTEXT_ACTION -> {
                 pendingAction = "CONTEXT_ACTION"
             }
+            ConversationRoute.QUERY_READING_CONTROL -> {
+                pendingAction = null
+            }
         }
     }
 

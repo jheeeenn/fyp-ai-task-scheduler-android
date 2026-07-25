@@ -10,10 +10,8 @@ class HomeActivityAccessibleQuerySourceTest {
 
     @Test
     fun structuredPresentationIsAuthoritativeAndPhraseDetectionIsGone() {
-        val queryCall = source
-            .substringAfter("handleQueryTask(")
-            .substringBefore(")")
-        assertTrue(queryCall.contains("presentation = aiResult.queryPresentation"))
+        assertTrue(source.contains("TaskQueryPresentationReconciler.reconcile("))
+        assertTrue(source.contains("presentation = presentationResolution.effective"))
         assertFalse(source.contains("detectQueryReplyMode"))
         assertFalse(source.contains("getMaxTasksForMode"))
         assertFalse(source.contains("QueryReplyMode"))
@@ -63,7 +61,7 @@ class HomeActivityAccessibleQuerySourceTest {
             .substringAfter("private fun buildQueryPageObservation(")
             .substringBefore("private fun taskQuerySpeechDetail(")
         val replace = publisher.indexOf("readOnlyTaskContextStore.replaceRecentQueryResults(")
-        val speak = publisher.indexOf("speakObservation(buildQueryPageObservation(session))")
+        val speak = publisher.indexOf("speakRepeatableObservation(")
 
         assertTrue(replace >= 0)
         assertTrue(replace < speak)
@@ -98,10 +96,10 @@ class HomeActivityAccessibleQuerySourceTest {
     fun repeatDoesNotReplaceContextAndChecksGenerationStability() {
         val body = source
             .substringAfter("private fun repeatCurrentTaskQueryPage()")
-            .substringBefore("private fun endAssistantConversation()")
+            .substringBefore("private fun repeatLastAuthoritativeSpeech()")
 
         assertTrue(body.contains("val contextGeneration = readOnlyTaskContextStore.currentGeneration()"))
-        assertTrue(body.contains("speakObservation(buildQueryPageObservation(session))"))
+        assertTrue(body.contains("speakRepeatableObservation("))
         assertTrue(body.contains("contextGenerationUnchanged=true"))
         assertTrue(body.contains("currentGeneration() == contextGeneration"))
         assertFalse(body.contains("replaceRecentQueryResults"))
@@ -125,9 +123,69 @@ class HomeActivityAccessibleQuerySourceTest {
         assertTrue(start.contains("session.beginOverview()"))
         assertTrue(start.contains("publishAndSpeakCurrentQueryPage(overviewSession)"))
         assertTrue(clear.contains("accessibleTaskQuerySession = null"))
+        assertTrue(clear.contains("authoritativeRepeatState = null"))
         assertTrue(clear.contains("readOnlyTaskContextStore.clear()"))
         assertTrue(source.substringAfter("override fun onAssistantCancelled()").substringBefore("override fun onAssistantSessionStopped()").contains("clearConversationSessionContext()"))
         assertTrue(source.substringAfter("override fun onAssistantSessionStopped()").substringBefore("override fun onResume()").contains("clearConversationSessionContext()"))
+    }
+
+    @Test
+    fun acceptedStructuredRepeatUsesOnlyAndroidOwnedSpeechAndPreservesContext() {
+        val executor = source
+            .substringAfter("private fun executeQueryReadingControl(")
+            .substringBefore("private fun currentQueryReadingInteractionState()")
+        val repeat = source
+            .substringAfter("private fun repeatLastAuthoritativeSpeech()")
+            .substringBefore("private fun endAssistantConversation()")
+
+        assertTrue(executor.contains("QueryReadingControlPolicy.validate("))
+        assertTrue(executor.contains("ConversationQueryReadingMove.REPEAT_LAST -> repeatLastAuthoritativeSpeech()"))
+        assertTrue(repeat.contains("assistantSession.speak(repeatState.speech"))
+        assertTrue(repeat.contains("currentGeneration() == contextGeneration"))
+        listOf(
+            "conversationOrchestrator.process(",
+            "agentOrchestrator.process(",
+            "replaceRecentQueryResults(",
+            "dao.",
+            "getRootTasks",
+            "getSubtasks",
+            "TaskMatcher"
+        ).forEach { forbidden -> assertFalse(repeat.contains(forbidden)) }
+    }
+
+    @Test
+    fun authoritativeRepeatStateIsWrittenOnlyAfterDeterministicPageCountOrValidatedContextRead() {
+        val repeatableObservation = source
+            .substringAfter("private suspend fun speakRepeatableObservation(")
+            .substringBefore("private suspend fun speakObservationThenRun(")
+        val contextRead = source
+            .substringAfter("ConversationRoute.CONTEXT_READ ->")
+            .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
+
+        assertTrue(repeatableObservation.contains("val response = renderObservationResponse(observation)"))
+        assertTrue(repeatableObservation.contains("speech = response.speech"))
+        assertTrue(contextRead.indexOf("if (!validation.isValid)") < contextRead.indexOf("authoritativeRepeatState = AuthoritativeRepeatState("))
+        assertTrue(contextRead.contains("kind = RepeatableSpeechKind.CONTEXT_READ"))
+        assertFalse(repeatableObservation.contains("TaskEntity"))
+        assertFalse(repeatableObservation.contains(".id"))
+    }
+
+    @Test
+    fun queryReadingControlIsCentralSemanticFallbackWhileExactHandlersStayBounded() {
+        val exact = source
+            .substringAfter("private fun handleQueryReadingFollowUp(")
+            .substringBefore("private fun executeQueryReadingControl(")
+        val routes = source
+            .substringAfter("when (conversationDecision.route)")
+            .substringBefore("val taskAgentInput: String")
+
+        assertTrue(exact.contains("HomeFollowUpContext.QUERY_COUNT"))
+        assertTrue(exact.contains("HomeFollowUpContext.QUERY_PAGE"))
+        assertFalse(exact.contains("can you say that again"))
+        assertFalse(exact.contains("repeat the group"))
+        assertFalse(exact.contains("read the next group"))
+        assertTrue(routes.contains("ConversationRoute.QUERY_READING_CONTROL"))
+        assertTrue(routes.contains("executeQueryReadingControl(conversationDecision.queryReadingMove)"))
     }
 
     @Test
@@ -151,7 +209,7 @@ class HomeActivityAccessibleQuerySourceTest {
             .substringBefore("\n    private fun buildNoTasksQueryReply(")
         val pageRegion = source
             .substringAfter("\"HOME_QUERY_PAGE\"")
-            .substringBefore("speakObservation(buildQueryPageObservation(session))")
+            .substringBefore("speakRepeatableObservation(")
 
         listOf(queryRegion, pageRegion).forEach { log ->
             assertFalse(log.contains("task.id"))

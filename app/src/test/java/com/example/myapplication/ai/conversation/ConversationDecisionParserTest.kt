@@ -1,5 +1,6 @@
 package com.example.myapplication.ai.conversation
 
+import com.example.myapplication.ai.TaskQueryPresentation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -123,14 +124,74 @@ class ConversationDecisionParserTest {
         val decision = parser.parse(
             decisionJson(
                 route = "TASK_COMMAND",
-                taskText = "delete the medicine task"
+                taskText = "what do I have tomorrow",
+                queryPresentationHint = "OVERVIEW"
             )
         )
 
         assertEquals(ConversationRoute.TASK_COMMAND, decision.route)
+        assertEquals(TaskQueryPresentation.OVERVIEW, decision.queryPresentationHint)
         assertEquals("", decision.contextRef)
         assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
         assertEquals(ConversationContextAction.NONE, decision.contextAction)
+    }
+
+    @Test
+    fun queryReadingControlRequiresNonNoneMoveAndEmptyFactualFields() {
+        val accepted = parser.parse(
+            decisionJson(
+                route = "QUERY_READING_CONTROL",
+                queryReadingMove = "REPEAT_LAST"
+            )
+        )
+
+        assertEquals(ConversationRoute.QUERY_READING_CONTROL, accepted.route)
+        assertEquals(ConversationQueryReadingMove.REPEAT_LAST, accepted.queryReadingMove)
+
+        listOf(
+            decisionJson(route = "QUERY_READING_CONTROL"),
+            decisionJson(route = "QUERY_READING_CONTROL", queryReadingMove = "REPEAT_LAST", reply = "Repeating it."),
+            decisionJson(route = "QUERY_READING_CONTROL", queryReadingMove = "REPEAT_LAST", taskText = "repeat"),
+            decisionJson(route = "QUERY_READING_CONTROL", queryReadingMove = "REPEAT_LAST", contextRef = "T1")
+        ).forEach { invalid ->
+            assertThrows(ConversationSchemaException::class.java) { parser.parse(invalid) }
+        }
+    }
+
+    @Test
+    fun routesOtherThanQueryReadingControlRequireMoveNone() {
+        listOf("TASK_COMMAND", "CONTEXT_READ", "CONTEXT_ACTION", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN")
+            .forEach { route ->
+                assertThrows(ConversationSchemaException::class.java) {
+                    parser.parse(
+                        decisionJson(
+                            route = route,
+                            taskText = if (route == "TASK_COMMAND") "show tasks" else "",
+                            reply = if (route == "DIRECT_REPLY") "Hello" else "",
+                            contextRef = when (route) {
+                                "CONTEXT_READ", "CONTEXT_ACTION" -> "T1"
+                                else -> ""
+                            },
+                            contextDetail = if (route == "CONTEXT_READ") "TITLE" else "NONE",
+                            contextAction = if (route == "CONTEXT_ACTION") "UPDATE" else "NONE",
+                            queryReadingMove = "REPEAT_LAST"
+                        )
+                    )
+                }
+            }
+    }
+
+    @Test
+    fun routesOtherThanTaskCommandRequirePresentationHintNone() {
+        assertThrows(ConversationSchemaException::class.java) {
+            parser.parse(
+                decisionJson(
+                    route = "DIRECT_REPLY",
+                    reply = "Hello",
+                    queryPresentationHint = "COUNT_ONLY"
+                )
+            )
+        }
     }
 
     @Test
@@ -171,7 +232,9 @@ class ConversationDecisionParserTest {
         reply: String = "",
         contextRef: String = "",
         contextDetail: String = "NONE",
-        contextAction: String = "NONE"
+        contextAction: String = "NONE",
+        queryReadingMove: String = "NONE",
+        queryPresentationHint: String = "NONE"
     ): String = """
         {
           "route":"$route",
@@ -180,6 +243,8 @@ class ConversationDecisionParserTest {
           "context_ref":"$contextRef",
           "context_detail":"$contextDetail",
           "context_action":"$contextAction",
+          "query_reading_move":"$queryReadingMove",
+          "query_presentation_hint":"$queryPresentationHint",
           "confidence":0.97,
           "listen_again":true
         }

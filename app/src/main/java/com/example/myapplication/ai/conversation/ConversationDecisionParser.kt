@@ -1,5 +1,6 @@
 package com.example.myapplication.ai.conversation
 
+import com.example.myapplication.ai.TaskQueryPresentation
 import org.json.JSONObject
 
 class ConversationSchemaException(
@@ -56,7 +57,31 @@ class ConversationDecisionParser {
                 e
             )
         }
-        validateRouteFields(route, taskText, reply, contextRef, contextDetail, contextAction)
+        val queryReadingMoveText = requireString(json, "query_reading_move")
+        val queryReadingMove = try {
+            ConversationQueryReadingMove.valueOf(queryReadingMoveText)
+        } catch (e: IllegalArgumentException) {
+            throw ConversationSchemaException(
+                "Invalid ConversationDecision query_reading_move: $queryReadingMoveText",
+                e
+            )
+        }
+        val queryPresentationHintText = requireString(json, "query_presentation_hint")
+        val queryPresentationHint =
+            TaskQueryPresentation.fromWireValue(queryPresentationHintText)
+                ?: throw ConversationSchemaException(
+                    "Invalid ConversationDecision query_presentation_hint: $queryPresentationHintText"
+                )
+        validateRouteFields(
+            route,
+            taskText,
+            reply,
+            contextRef,
+            contextDetail,
+            contextAction,
+            queryReadingMove,
+            queryPresentationHint
+        )
 
         return ConversationDecision(
             route = route,
@@ -65,6 +90,8 @@ class ConversationDecisionParser {
             contextRef = contextRef,
             contextDetail = contextDetail,
             contextAction = contextAction,
+            queryReadingMove = queryReadingMove,
+            queryPresentationHint = queryPresentationHint,
             confidence = confidence,
             listenAgain = requireBoolean(json, "listen_again")
         )
@@ -76,8 +103,50 @@ class ConversationDecisionParser {
         reply: String,
         contextRef: String,
         contextDetail: ConversationContextDetail,
-        contextAction: ConversationContextAction
+        contextAction: ConversationContextAction,
+        queryReadingMove: ConversationQueryReadingMove,
+        queryPresentationHint: TaskQueryPresentation
     ) {
+        if (route == ConversationRoute.QUERY_READING_CONTROL) {
+            if (taskText.isNotEmpty() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
+                throw ConversationSchemaException(
+                    "QUERY_READING_CONTROL requires empty task_text, reply, and context_ref"
+                )
+            }
+            if (contextDetail != ConversationContextDetail.NONE ||
+                contextAction != ConversationContextAction.NONE
+            ) {
+                throw ConversationSchemaException(
+                    "QUERY_READING_CONTROL requires context_detail NONE and context_action NONE"
+                )
+            }
+            if (queryReadingMove == ConversationQueryReadingMove.NONE) {
+                throw ConversationSchemaException(
+                    "QUERY_READING_CONTROL requires a non-NONE query_reading_move"
+                )
+            }
+            if (queryPresentationHint != TaskQueryPresentation.NONE) {
+                throw ConversationSchemaException(
+                    "QUERY_READING_CONTROL requires query_presentation_hint NONE"
+                )
+            }
+            return
+        }
+
+        if (queryReadingMove != ConversationQueryReadingMove.NONE) {
+            throw ConversationSchemaException(
+                "Non-query-control routes require query_reading_move NONE"
+            )
+        }
+
+        if (route != ConversationRoute.TASK_COMMAND &&
+            queryPresentationHint != TaskQueryPresentation.NONE
+        ) {
+            throw ConversationSchemaException(
+                "Non-TASK_COMMAND routes require query_presentation_hint NONE"
+            )
+        }
+
         if (route == ConversationRoute.CONTEXT_READ) {
             if (taskText.isNotEmpty() || reply.isNotEmpty()) {
                 throw ConversationSchemaException(
@@ -218,6 +287,8 @@ class ConversationDecisionParser {
             "context_ref",
             "context_detail",
             "context_action",
+            "query_reading_move",
+            "query_presentation_hint",
             "confidence",
             "listen_again"
         )

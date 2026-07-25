@@ -94,11 +94,39 @@ class ConversationAgentGuidancePromptTest {
     }
 
     @Test
+    fun semanticQueryReadingControlsNeverAuthorTaskFactsOrRepeatSpeech() {
+        assertTrue(prompt.contains("Use QUERY_READING_CONTROL only when App context reports QUERY_COUNT or QUERY_PAGE"))
+        assertTrue(prompt.contains("illustrative semantic mappings, not an exhaustive phrase dictionary"))
+        assertTrue(prompt.contains("\"can you repeat that?\""))
+        assertTrue(prompt.contains("\"repeat the group\""))
+        assertTrue(prompt.contains("\"read the next group\""))
+        assertTrue(prompt.contains("\"yes please\""))
+        assertTrue(prompt.contains("maps to REPEAT_LAST"))
+        assertTrue(prompt.contains("maps to REPEAT_PAGE"))
+        assertTrue(prompt.contains("maps to CONTINUE"))
+        assertTrue(prompt.contains("maps to START_OVERVIEW"))
+        assertTrue(prompt.contains("Never use factual DIRECT_REPLY"))
+        assertTrue(prompt.contains("Never copy task titles, times, dates, counts, task data, or text to be repeated into reply"))
+    }
+
+    @Test
+    fun semanticQueryPresentationExamplesCoverOmittedNouns() {
+        assertTrue(prompt.contains("\"Do I have any tomorrow?\""))
+        assertTrue(prompt.contains("\"Anything scheduled tomorrow?\""))
+        assertTrue(prompt.contains("\"How many this week?\""))
+        assertTrue(prompt.contains("\"What do I have tomorrow?\""))
+        assertTrue(prompt.contains("\"query_presentation_hint\":\"COUNT_ONLY\""))
+        assertTrue(prompt.contains("\"query_presentation_hint\":\"OVERVIEW\""))
+        assertTrue(prompt.contains("\"query_presentation_hint\":\"DETAILS\""))
+    }
+
+    @Test
     fun repairPromptIsReadOnlyAndGenerationBounded() {
         val repairPrompt = ConversationAgentClient.CONTEXT_READ_REPAIR_SYSTEM_PROMPT
 
         assertTrue(repairPrompt.contains("Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only"))
-        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, DIRECT_REPLY, END_SESSION or UNKNOWN"))
+        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, QUERY_READING_CONTROL, DIRECT_REPLY, END_SESSION or UNKNOWN"))
+        assertTrue(repairPrompt.contains("query_reading_move and query_presentation_hint must both be NONE"))
         assertTrue(repairPrompt.contains("Match titles case-insensitively using only supplied items"))
         assertTrue(repairPrompt.contains("more than one supplied title plausibly matches"))
         assertTrue(repairPrompt.contains("Mutation requests must remain ASK_CLARIFICATION"))

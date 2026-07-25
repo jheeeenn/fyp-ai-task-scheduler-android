@@ -13,7 +13,7 @@ class HomeActivityTaskContextSourceTest {
             .substringAfter("private suspend fun publishAndSpeakCurrentQueryPage(")
             .substringBefore("private fun buildQueryPageObservation(")
         val replacement = body.indexOf("readOnlyTaskContextStore.replaceRecentQueryResults(")
-        val speech = body.indexOf("speakObservation(")
+        val speech = body.indexOf("speakRepeatableObservation(")
 
         assertTrue(replacement >= 0)
         assertTrue(replacement < speech)

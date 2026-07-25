@@ -138,6 +138,7 @@ class ConversationOrchestrator(
             )
             ConversationRoute.CONTEXT_READ -> decision
             ConversationRoute.CONTEXT_ACTION -> decision
+            ConversationRoute.QUERY_READING_CONTROL -> decision
             ConversationRoute.DIRECT_REPLY -> decision.copy(
                 reply = decision.reply.ifBlank { "Hi. I can help you create, check, reschedule, delete, complete, or break down tasks." }
             )

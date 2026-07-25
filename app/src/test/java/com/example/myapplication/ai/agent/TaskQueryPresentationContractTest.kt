@@ -97,6 +97,10 @@ class TaskQueryPresentationContractTest {
 
         assertTrue(prompt.contains("\"What task do I have tomorrow?\" -> action=QUERY_TASK, query_presentation=OVERVIEW"))
         assertTrue(prompt.contains("\"Do I have any tasks tomorrow?\" -> action=QUERY_TASK, query_presentation=COUNT_ONLY"))
+        assertTrue(prompt.contains("\"Do I have any tomorrow?\" -> action=QUERY_TASK, query_presentation=COUNT_ONLY"))
+        assertTrue(prompt.contains("\"Anything tomorrow?\" -> action=QUERY_TASK, query_presentation=COUNT_ONLY"))
+        assertTrue(prompt.contains("\"How many this week?\" -> action=QUERY_TASK, query_presentation=COUNT_ONLY"))
+        assertTrue(prompt.contains("\"What do I have tomorrow?\" -> action=QUERY_TASK, query_presentation=OVERVIEW"))
         assertTrue(prompt.contains("\"Read all task details tomorrow.\" -> action=QUERY_TASK, query_presentation=DETAILS"))
         assertTrue(prompt.contains("For every non-QUERY_TASK action, query_presentation must be NONE."))
     }

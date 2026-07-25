@@ -38,12 +38,14 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "CONTEXT_READ", "CONTEXT_ACTION", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())
                 put("context_detail", stringEnum("NONE", "SUMMARY", "TITLE", "DATE", "TIME", "STATUS", "SUBTASKS"))
                 put("context_action", stringEnum("NONE", "UPDATE", "RESCHEDULE"))
+                put("query_reading_move", stringEnum("NONE", "START_OVERVIEW", "CONTINUE", "REPEAT_LAST", "REPEAT_PAGE", "STOP"))
+                put("query_presentation_hint", stringEnum("NONE", "COUNT_ONLY", "OVERVIEW", "DETAILS"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
                 put("listen_again", booleanType())
             },
@@ -54,6 +56,8 @@ object AgentResponseSchemas {
                 put("context_ref")
                 put("context_detail")
                 put("context_action")
+                put("query_reading_move")
+                put("query_presentation_hint")
                 put("confidence")
                 put("listen_again")
             }
@@ -70,6 +74,8 @@ object AgentResponseSchemas {
                 put("context_ref", stringType())
                 put("context_detail", stringEnum("NONE", "SUMMARY", "TITLE", "DATE", "TIME", "STATUS", "SUBTASKS"))
                 put("context_action", stringEnum("NONE"))
+                put("query_reading_move", stringEnum("NONE"))
+                put("query_presentation_hint", stringEnum("NONE"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
                 put("listen_again", booleanType())
             },
@@ -80,6 +86,8 @@ object AgentResponseSchemas {
                 put("context_ref")
                 put("context_detail")
                 put("context_action")
+                put("query_reading_move")
+                put("query_presentation_hint")
                 put("confidence")
                 put("listen_again")
             }
@@ -96,6 +104,8 @@ object AgentResponseSchemas {
                 put("context_ref", stringType())
                 put("context_detail", stringEnum("NONE"))
                 put("context_action", stringEnum("NONE", "UPDATE", "RESCHEDULE"))
+                put("query_reading_move", stringEnum("NONE"))
+                put("query_presentation_hint", stringEnum("NONE"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
                 put("listen_again", booleanType())
             },
@@ -106,6 +116,8 @@ object AgentResponseSchemas {
                 put("context_ref")
                 put("context_detail")
                 put("context_action")
+                put("query_reading_move")
+                put("query_presentation_hint")
                 put("confidence")
                 put("listen_again")
             }

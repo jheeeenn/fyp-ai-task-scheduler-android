@@ -37,6 +37,7 @@ import com.example.myapplication.voice.TextNormalizer
 
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.TaskQueryPresentationReconciler
 import com.example.myapplication.ai.LocalConversationIntentClassifier
 import com.example.myapplication.ai.agent.ActionValidator
 import com.example.myapplication.ai.agent.AgentOrchestrator
@@ -52,6 +53,7 @@ import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
 import com.example.myapplication.ai.conversation.ConversationRoute
+import com.example.myapplication.ai.conversation.ConversationQueryReadingMove
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.conversation.AllowedUserMove
 import com.example.myapplication.ai.conversation.AndroidObservationResponseRenderer
@@ -81,6 +83,10 @@ import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContext
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
 import com.example.myapplication.ai.conversation.query.AccessibleTaskQuerySession
+import com.example.myapplication.ai.conversation.query.AuthoritativeRepeatState
+import com.example.myapplication.ai.conversation.query.QueryReadingControlPolicy
+import com.example.myapplication.ai.conversation.query.QueryReadingInteractionState
+import com.example.myapplication.ai.conversation.query.RepeatableSpeechKind
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.AssistantTone
 import com.example.myapplication.voice.AssistantVerbosity
@@ -135,6 +141,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var homeFollowUpContext = HomeFollowUpContext.NONE
     private val temporalQueryResolver = TemporalQueryResolver()
     private var accessibleTaskQuerySession: AccessibleTaskQuerySession? = null
+    private var authoritativeRepeatState: AuthoritativeRepeatState? = null
     private var queryReadingStateGeneration: Long = 0
 
     //for delete confirmation when the task intent is 'delete'
@@ -957,6 +964,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             capturedGeneration = taskContextCapture.snapshot.generation,
                             finalSpeech = speech
                         )
+                        authoritativeRepeatState = AuthoritativeRepeatState(
+                            speech = speech,
+                            kind = RepeatableSpeechKind.CONTEXT_READ,
+                            contextGeneration = taskContextCapture.snapshot.generation
+                        )
                         assistantSession.speak(
                             speech,
                             listenAgain = conversationDecision.listenAgain
@@ -1078,6 +1090,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         )
                         return@launch
                     }
+                    ConversationRoute.QUERY_READING_CONTROL -> {
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        executeQueryReadingControl(conversationDecision.queryReadingMove)
+                        return@launch
+                    }
                     ConversationRoute.DIRECT_REPLY -> {
                         Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
@@ -1154,6 +1171,23 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 // log
                 Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$taskAgentInput'")
                 val aiResult = agentOrchestrator.process(taskAgentInput)
+                val presentationResolution = TaskQueryPresentationReconciler.reconcile(
+                    taskAgentIntent = aiResult.intent,
+                    conversationHint = conversationDecision.queryPresentationHint,
+                    taskAgentValue = aiResult.queryPresentation
+                )
+                if (
+                    aiResult.intent == AiIntent.QUERY_TASK.name ||
+                    conversationDecision.queryPresentationHint != TaskQueryPresentation.NONE
+                ) {
+                    Log.d(
+                        "HOME_QUERY_PRESENTATION",
+                        "conversationHint=${conversationDecision.queryPresentationHint} " +
+                            "taskAgentValue=${aiResult.queryPresentation} " +
+                            "effective=${presentationResolution.effective} " +
+                            "source=${presentationResolution.source}"
+                    )
+                }
 
                 Log.d(
                     "TASK_PIPELINE",
@@ -1213,7 +1247,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             normalized = normalized,
                             agentDateText = aiResult.targetDateText ?: aiResult.dateText,
                             agentTimeText = aiResult.targetTimeText ?: aiResult.timeText,
-                            presentation = aiResult.queryPresentation
+                            presentation = presentationResolution.effective
                         )
                     }
                     // delete task
@@ -1595,6 +1629,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         deliverObservationResponse(observation, renderObservationResponse(observation))
     }
 
+    private suspend fun speakRepeatableObservation(
+        observation: ExecutionObservation,
+        kind: RepeatableSpeechKind,
+        contextGeneration: Long?
+    ) {
+        val response = renderObservationResponse(observation)
+        authoritativeRepeatState = AuthoritativeRepeatState(
+            speech = response.speech,
+            kind = kind,
+            contextGeneration = contextGeneration
+        )
+        deliverObservationResponse(observation, response)
+    }
+
     private suspend fun speakObservationThenRun(observation: ExecutionObservation, action: () -> Unit) {
         deliverObservationResponse(observation, renderObservationResponse(observation), action)
     }
@@ -1775,7 +1823,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
             if (presentation == TaskQueryPresentation.COUNT_ONLY) {
                 homeFollowUpContext = HomeFollowUpContext.QUERY_COUNT
-                speakObservation(buildCountOnlyQueryObservation(session))
+                speakRepeatableObservation(
+                    observation = buildCountOnlyQueryObservation(session),
+                    kind = RepeatableSpeechKind.QUERY_COUNT,
+                    contextGeneration = null
+                )
             } else {
                 homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
                 publishAndSpeakCurrentQueryPage(session)
@@ -1837,7 +1889,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "pageItemCount=${pageTasks.size} hasNext=${session.hasNextPage} " +
                 "contextGeneration=$contextGeneration"
         )
-        speakObservation(buildQueryPageObservation(session))
+        speakRepeatableObservation(
+            observation = buildQueryPageObservation(session),
+            kind = RepeatableSpeechKind.QUERY_PAGE,
+            contextGeneration = contextGeneration
+        )
     }
 
     private fun buildQueryPageObservation(
@@ -2046,7 +2102,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     "read that again",
                     "again"
                 ) -> {
-                    repeatCurrentTaskQueryPage()
+                    repeatLastAuthoritativeSpeech()
                     true
                 }
 
@@ -2061,6 +2117,42 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             else -> false
         }
     }
+
+    private fun executeQueryReadingControl(move: ConversationQueryReadingMove) {
+        val validation = QueryReadingControlPolicy.validate(
+            move = move,
+            interactionState = currentQueryReadingInteractionState(),
+            hasActiveSession = accessibleTaskQuerySession?.orderedTasks?.isNotEmpty() == true,
+            hasAuthoritativeRepeat = currentAuthoritativeRepeatState() != null
+        )
+        if (!validation.isValid) {
+            val clarificationDecision = ConversationDecision(
+                route = ConversationRoute.ASK_CLARIFICATION,
+                reply = validation.clarification,
+                listenAgain = true,
+                source = "android_query_reading_control_validation"
+            )
+            conversationOrchestrator.commitFinalDecision(clarificationDecision)
+            assistantSession.speak(validation.clarification, listenAgain = true)
+            return
+        }
+
+        when (move) {
+            ConversationQueryReadingMove.START_OVERVIEW -> startQueryOverviewFromCount()
+            ConversationQueryReadingMove.CONTINUE -> continueTaskQueryPage()
+            ConversationQueryReadingMove.REPEAT_LAST -> repeatLastAuthoritativeSpeech()
+            ConversationQueryReadingMove.REPEAT_PAGE -> repeatCurrentTaskQueryPage()
+            ConversationQueryReadingMove.STOP -> endAssistantConversation()
+            ConversationQueryReadingMove.NONE -> Unit
+        }
+    }
+
+    private fun currentQueryReadingInteractionState(): QueryReadingInteractionState =
+        when (homeFollowUpContext) {
+            HomeFollowUpContext.QUERY_COUNT -> QueryReadingInteractionState.QUERY_COUNT
+            HomeFollowUpContext.QUERY_PAGE -> QueryReadingInteractionState.QUERY_PAGE
+            else -> QueryReadingInteractionState.NONE
+        }
 
     private fun startQueryOverviewFromCount() {
         val session = accessibleTaskQuerySession ?: return
@@ -2100,8 +2192,40 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             "pageNumber=${session.currentPageIndex + 1} contextGenerationUnchanged=true"
         )
         lifecycleScope.launch {
-            speakObservation(buildQueryPageObservation(session))
+            speakRepeatableObservation(
+                observation = buildQueryPageObservation(session),
+                kind = RepeatableSpeechKind.QUERY_PAGE,
+                contextGeneration = contextGeneration
+            )
             check(readOnlyTaskContextStore.currentGeneration() == contextGeneration)
+        }
+    }
+
+    private fun repeatLastAuthoritativeSpeech() {
+        val repeatState = currentAuthoritativeRepeatState()
+        if (repeatState == null) {
+            assistantSession.speak(
+                "There is no current response available to repeat.",
+                listenAgain = true
+            )
+            return
+        }
+        val contextGeneration = readOnlyTaskContextStore.currentGeneration()
+        assistantSession.speak(repeatState.speech, listenAgain = true)
+        check(readOnlyTaskContextStore.currentGeneration() == contextGeneration)
+    }
+
+    private fun currentAuthoritativeRepeatState(): AuthoritativeRepeatState? {
+        val repeatState = authoritativeRepeatState ?: return null
+        if (repeatState.speech.isBlank()) return null
+        val requiredGeneration = repeatState.contextGeneration
+        return if (
+            requiredGeneration == null ||
+            requiredGeneration == readOnlyTaskContextStore.currentGeneration()
+        ) {
+            repeatState
+        } else {
+            null
         }
     }
 
@@ -2126,6 +2250,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun clearAccessibleTaskQuerySession(clearTaskContext: Boolean): Long {
         queryReadingStateGeneration += 1
         accessibleTaskQuerySession = null
+        authoritativeRepeatState = null
         currentSubtasksByParentId = emptyMap()
         if (clearTaskContext) {
             readOnlyTaskContextStore.clear()
