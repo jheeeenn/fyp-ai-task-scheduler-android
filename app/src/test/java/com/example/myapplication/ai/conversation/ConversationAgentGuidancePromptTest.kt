@@ -95,7 +95,8 @@ class ConversationAgentGuidancePromptTest {
 
     @Test
     fun semanticQueryReadingControlsNeverAuthorTaskFactsOrRepeatSpeech() {
-        assertTrue(prompt.contains("Use QUERY_READING_CONTROL only when App context reports QUERY_COUNT or QUERY_PAGE"))
+        assertTrue(prompt.contains("exact Interaction state field is QUERY_COUNT or QUERY_PAGE"))
+        assertTrue(prompt.contains("Do not infer query-reading state from the natural Current interaction description"))
         assertTrue(prompt.contains("illustrative semantic mappings, not an exhaustive phrase dictionary"))
         assertTrue(prompt.contains("\"can you repeat that?\""))
         assertTrue(prompt.contains("\"repeat the group\""))
@@ -107,6 +108,14 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("maps to START_OVERVIEW"))
         assertTrue(prompt.contains("Never use factual DIRECT_REPLY"))
         assertTrue(prompt.contains("Never copy task titles, times, dates, counts, task data, or text to be repeated into reply"))
+    }
+
+    @Test
+    fun queryReadingExamplesUseTheSerializedInteractionStateFormat() {
+        assertTrue(prompt.contains("App context:\nInteraction state:\nQUERY_COUNT\nUser: yes please"))
+        assertTrue(prompt.contains("App context:\nInteraction state:\nQUERY_PAGE\nUser: can you say that again"))
+        assertFalse(prompt.contains("App context interaction: QUERY_COUNT"))
+        assertFalse(prompt.contains("App context interaction: QUERY_PAGE"))
     }
 
     @Test

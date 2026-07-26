@@ -131,6 +131,9 @@ class HomeActivityAccessibleQuerySourceTest {
 
     @Test
     fun acceptedStructuredRepeatUsesOnlyAndroidOwnedSpeechAndPreservesContext() {
+        val validator = source
+            .substringAfter("private fun validateQueryReadingControl(")
+            .substringBefore("private fun executeQueryReadingControl(")
         val executor = source
             .substringAfter("private fun executeQueryReadingControl(")
             .substringBefore("private fun currentQueryReadingInteractionState()")
@@ -138,7 +141,7 @@ class HomeActivityAccessibleQuerySourceTest {
             .substringAfter("private fun repeatLastAuthoritativeSpeech()")
             .substringBefore("private fun endAssistantConversation()")
 
-        assertTrue(executor.contains("QueryReadingControlPolicy.validate("))
+        assertTrue(validator.contains("QueryReadingControlPolicy.validate("))
         assertTrue(executor.contains("ConversationQueryReadingMove.REPEAT_LAST -> repeatLastAuthoritativeSpeech()"))
         assertTrue(repeat.contains("assistantSession.speak(repeatState.speech"))
         assertTrue(repeat.contains("currentGeneration() == contextGeneration"))
@@ -174,7 +177,7 @@ class HomeActivityAccessibleQuerySourceTest {
     fun queryReadingControlIsCentralSemanticFallbackWhileExactHandlersStayBounded() {
         val exact = source
             .substringAfter("private fun handleQueryReadingFollowUp(")
-            .substringBefore("private fun executeQueryReadingControl(")
+            .substringBefore("private fun validateQueryReadingControl(")
         val routes = source
             .substringAfter("when (conversationDecision.route)")
             .substringBefore("val taskAgentInput: String")
@@ -186,6 +189,35 @@ class HomeActivityAccessibleQuerySourceTest {
         assertFalse(exact.contains("read the next group"))
         assertTrue(routes.contains("ConversationRoute.QUERY_READING_CONTROL"))
         assertTrue(routes.contains("executeQueryReadingControl(conversationDecision.queryReadingMove)"))
+    }
+
+    @Test
+    fun queryReadingControlIsValidatedBeforeEitherCommitOrExecution() {
+        val branch = source
+            .substringAfter("ConversationRoute.QUERY_READING_CONTROL -> {")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val validate = branch.indexOf("validateQueryReadingControl(")
+        val invalidCheck = branch.indexOf("if (!validation.isValid)")
+        val clarificationCommit =
+            branch.indexOf("commitFinalDecision(clarificationDecision)")
+        val invalidReturn = branch.indexOf("return@launch", clarificationCommit)
+        val acceptedCommit =
+            branch.indexOf("commitFinalDecision(conversationDecision)")
+        val execute = branch.indexOf("executeQueryReadingControl(")
+
+        assertTrue(validate >= 0)
+        assertTrue(validate < invalidCheck)
+        assertTrue(invalidCheck < clarificationCommit)
+        assertTrue(clarificationCommit < invalidReturn)
+        assertTrue(invalidReturn < acceptedCommit)
+        assertTrue(acceptedCommit < execute)
+        assertTrue(branch.countOccurrences("commitFinalDecision(clarificationDecision)") == 1)
+        assertTrue(branch.countOccurrences("commitFinalDecision(conversationDecision)") == 1)
+        assertFalse(
+            branch.substringBefore("if (!validation.isValid)")
+                .contains("commitFinalDecision(")
+        )
+        assertFalse(branch.contains("recordUser("))
     }
 
     @Test

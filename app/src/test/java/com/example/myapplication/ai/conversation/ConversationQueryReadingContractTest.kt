@@ -39,7 +39,7 @@ class ConversationQueryReadingContractTest {
     @Test
     fun queryReadingControlExamplesUseEmptyReplyAndNoTaskFacts() {
         val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
-        val examples = prompt.substringAfter("App context interaction: QUERY_COUNT")
+        val examples = prompt.substringAfter("Interaction state:\nQUERY_COUNT")
 
         assertTrue(examples.contains("\"query_reading_move\":\"START_OVERVIEW\""))
         assertTrue(examples.contains("\"query_reading_move\":\"CONTINUE\""))

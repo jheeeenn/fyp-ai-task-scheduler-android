@@ -508,7 +508,8 @@ Route rules:
 - Use UNKNOWN for unsupported off-topic requests.
 
 Query-reading control rules:
-- Use QUERY_READING_CONTROL only when App context reports QUERY_COUNT or QUERY_PAGE.
+- Use QUERY_READING_CONTROL only when the App context's exact Interaction state field is QUERY_COUNT or QUERY_PAGE.
+- Do not infer query-reading state from the natural Current interaction description.
 - QUERY_READING_CONTROL is semantic control, not factual speech. Keep task_text, reply, and context_ref empty; set context_detail and context_action to NONE.
 - Set exactly one non-NONE query_reading_move. Android validates and performs the move.
 - Never copy task titles, times, dates, counts, task data, or text to be repeated into reply.
@@ -671,19 +672,27 @@ User: read the full details for tomorrow
 User: remind me to take medicine tomorrow at 6 pm
 {"route":"TASK_COMMAND","task_text":"remind me to take medicine tomorrow at 6 pm","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
-App context interaction: QUERY_COUNT
+App context:
+Interaction state:
+QUERY_COUNT
 User: yes please
 {"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"START_OVERVIEW","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
-App context interaction: QUERY_PAGE
+App context:
+Interaction state:
+QUERY_PAGE
 User: can you say that again
 {"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
-App context interaction: QUERY_PAGE
+App context:
+Interaction state:
+QUERY_PAGE
 User: repeat the group
 {"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_PAGE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
-App context interaction: QUERY_PAGE
+App context:
+Interaction state:
+QUERY_PAGE
 User: read the next group
 {"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"CONTINUE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 

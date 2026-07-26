@@ -18,6 +18,7 @@ class HomeActivityAppGuidanceSourceTest {
         assertTrue(contextBuilder.contains("Activate the Talk Assistant button to speak."))
         assertTrue(contextBuilder.contains("Long-press the Talk Assistant button to type"))
         assertTrue(contextBuilder.contains("Voice and typed inputs use the same assistant pipeline."))
+        assertTrue(contextBuilder.contains("interactionState = homeFollowUpContext.name"))
         assertTrue(contextBuilder.contains("return guidanceContext.toPromptText()"))
         assertFalse(contextBuilder.contains("Android-generated speech"))
         assertTrue(contextBuilder.contains("The app reads verified task-query results."))
@@ -48,6 +49,8 @@ class HomeActivityAppGuidanceSourceTest {
         assertFalse(contextBuilder.contains("candidate2Id"))
         assertFalse(contextBuilder.contains("lastQueryDate"))
         assertFalse(contextBuilder.contains("lastQueryWindow"))
+        assertFalse(contextBuilder.contains("TaskEntity"))
+        assertFalse(contextBuilder.contains("task.title"))
     }
 
     @Test

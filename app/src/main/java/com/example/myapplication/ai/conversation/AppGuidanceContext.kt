@@ -6,6 +6,7 @@ data class AppGuidanceContext(
     val supportedCapabilities: List<String>,
     val screenActions: List<String>,
     val inputMethods: List<String>,
+    val interactionState: String,
     val currentInteraction: String,
     val currentInteractionGuidance: List<String>,
     val usageExamples: List<String>,
@@ -17,6 +18,7 @@ data class AppGuidanceContext(
         appendItems("Supported capabilities", supportedCapabilities)
         appendItems("Available screen actions", screenActions)
         appendItems("Input methods", inputMethods)
+        appendValue("Interaction state", interactionState)
         appendValue("Current interaction", currentInteraction)
         appendItems("What the user may say now", currentInteractionGuidance)
         appendItems("Example commands", usageExamples)

@@ -592,6 +592,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "Long-press the Talk Assistant button to type an assistant request.",
                 "Voice and typed inputs use the same assistant pipeline."
             ),
+            interactionState = homeFollowUpContext.name,
             currentInteraction = interaction.first,
             currentInteractionGuidance = interaction.second,
             usageExamples = listOf(
@@ -612,7 +613,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
         Log.d(
             "CONVO_APP_CONTEXT",
-            "screen=${guidanceContext.currentScreen} interaction=${guidanceContext.currentInteraction} " +
+            "screen=${guidanceContext.currentScreen} interactionState=${guidanceContext.interactionState} " +
                     "capabilityCount=${guidanceContext.supportedCapabilities.size} " +
                     "inputMethodCount=${guidanceContext.inputMethods.size}"
         )
@@ -1091,6 +1092,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         return@launch
                     }
                     ConversationRoute.QUERY_READING_CONTROL -> {
+                        val validation = validateQueryReadingControl(
+                            conversationDecision.queryReadingMove
+                        )
+                        if (!validation.isValid) {
+                            val clarificationDecision = ConversationDecision(
+                                route = ConversationRoute.ASK_CLARIFICATION,
+                                reply = validation.clarification,
+                                listenAgain = true,
+                                source = "android_query_reading_control_validation"
+                            )
+                            conversationOrchestrator.commitFinalDecision(clarificationDecision)
+                            assistantSession.speak(validation.clarification, listenAgain = true)
+                            return@launch
+                        }
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
                         executeQueryReadingControl(conversationDecision.queryReadingMove)
                         return@launch
@@ -2118,25 +2133,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
     }
 
-    private fun executeQueryReadingControl(move: ConversationQueryReadingMove) {
-        val validation = QueryReadingControlPolicy.validate(
+    private fun validateQueryReadingControl(move: ConversationQueryReadingMove) =
+        QueryReadingControlPolicy.validate(
             move = move,
             interactionState = currentQueryReadingInteractionState(),
             hasActiveSession = accessibleTaskQuerySession?.orderedTasks?.isNotEmpty() == true,
             hasAuthoritativeRepeat = currentAuthoritativeRepeatState() != null
         )
-        if (!validation.isValid) {
-            val clarificationDecision = ConversationDecision(
-                route = ConversationRoute.ASK_CLARIFICATION,
-                reply = validation.clarification,
-                listenAgain = true,
-                source = "android_query_reading_control_validation"
-            )
-            conversationOrchestrator.commitFinalDecision(clarificationDecision)
-            assistantSession.speak(validation.clarification, listenAgain = true)
-            return
-        }
 
+    private fun executeQueryReadingControl(move: ConversationQueryReadingMove) {
         when (move) {
             ConversationQueryReadingMove.START_OVERVIEW -> startQueryOverviewFromCount()
             ConversationQueryReadingMove.CONTINUE -> continueTaskQueryPage()

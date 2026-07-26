@@ -12,6 +12,7 @@ class AppGuidanceContextTest {
         supportedCapabilities = listOf("Create tasks.", "Query tasks."),
         screenActions = listOf("Open today's tasks."),
         inputMethods = listOf("Use the Talk Assistant button."),
+        interactionState = "NONE",
         currentInteraction = "No follow-up is pending.",
         currentInteractionGuidance = listOf("Ask for app guidance."),
         usageExamples = listOf("Say, 'Show my tasks tomorrow.'"),
@@ -28,6 +29,7 @@ class AppGuidanceContextTest {
             "Supported capabilities:",
             "Available screen actions:",
             "Input methods:",
+            "Interaction state:",
             "Current interaction:",
             "What the user may say now:",
             "Example commands:",
@@ -40,6 +42,7 @@ class AppGuidanceContextTest {
             *context.supportedCapabilities.toTypedArray(),
             *context.screenActions.toTypedArray(),
             *context.inputMethods.toTypedArray(),
+            context.interactionState,
             context.currentInteraction,
             *context.currentInteractionGuidance.toTypedArray(),
             *context.usageExamples.toTypedArray(),
@@ -60,6 +63,19 @@ class AppGuidanceContextTest {
     }
 
     @Test
+    fun exactInteractionStateIsSerializedSeparatelyFromNaturalGuidance() {
+        listOf("NONE", "QUERY_COUNT", "QUERY_PAGE").forEach { state ->
+            val prompt = context.copy(interactionState = state).toPromptText()
+            val serializedState = prompt
+                .substringAfter("Interaction state:\n")
+                .substringBefore("\n")
+
+            assertEquals(state, serializedState)
+            assertTrue(prompt.contains("Current interaction:\n${context.currentInteraction}"))
+        }
+    }
+
+    @Test
     fun trustedContextContainsNoTaskIdentifiersOrRoomTerminology() {
         val prompt = context.toPromptText()
 
@@ -67,6 +83,8 @@ class AppGuidanceContextTest {
         assertFalse(prompt.contains("task ID", ignoreCase = true))
         assertFalse(prompt.contains("Room"))
         assertFalse(prompt.contains("TaskEntity"))
+        assertFalse(prompt.contains("T1"))
+        assertFalse(prompt.contains("Take medicine"))
         assertFalse(prompt.contains("http://"))
         assertFalse(prompt.contains("https://"))
     }
