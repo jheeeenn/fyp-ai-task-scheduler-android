@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation.query
 internal enum class RepeatableSpeechKind {
     QUERY_COUNT,
     QUERY_PAGE,
+    DAILY_BRIEFING,
     CONTEXT_READ
 }
 

@@ -26,6 +26,55 @@ class ConversationDecisionParserTest {
     }
 
     @Test
+    fun acceptsStrictDailyBriefingRoute() {
+        val decision = parser.parse(decisionJson(route = "DAILY_BRIEFING"))
+
+        assertEquals(ConversationRoute.DAILY_BRIEFING, decision.route)
+        assertEquals("", decision.taskText)
+        assertEquals("", decision.reply)
+        assertEquals("", decision.contextRef)
+        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
+        assertEquals(ConversationContextAction.NONE, decision.contextAction)
+        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
+        assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
+        assertEquals(true, decision.listenAgain)
+    }
+
+    @Test
+    fun dailyBriefingRequiresEmptyFieldsAcceptedConfidenceAndListenAgain() {
+        listOf(
+            decisionJson(route = "DAILY_BRIEFING", taskText = "brief me"),
+            decisionJson(route = "DAILY_BRIEFING", reply = "Here is the briefing"),
+            decisionJson(route = "DAILY_BRIEFING", contextRef = "T1"),
+            decisionJson(route = "DAILY_BRIEFING", contextDetail = "TIME"),
+            decisionJson(route = "DAILY_BRIEFING", contextAction = "UPDATE"),
+            decisionJson(route = "DAILY_BRIEFING", queryReadingMove = "REPEAT_LAST"),
+            decisionJson(route = "DAILY_BRIEFING", queryPresentationHint = "OVERVIEW"),
+            decisionJson(route = "DAILY_BRIEFING", confidence = 0.79),
+            decisionJson(route = "DAILY_BRIEFING", listenAgain = false)
+        ).forEach { invalid ->
+            assertThrows(ConversationSchemaException::class.java) { parser.parse(invalid) }
+        }
+    }
+
+    @Test
+    fun dailyBriefingOnlyConstraintsDoNotLeakIntoOtherRoutes() {
+        val task = parser.parse(
+            decisionJson(
+                route = "TASK_COMMAND",
+                taskText = "show all my tasks today",
+                queryPresentationHint = "OVERVIEW",
+                confidence = 0.60,
+                listenAgain = false
+            )
+        )
+
+        assertEquals(ConversationRoute.TASK_COMMAND, task.route)
+        assertEquals(0.60, task.confidence, 0.0)
+        assertEquals(false, task.listenAgain)
+    }
+
+    @Test
     fun acceptsValidContextActions() {
         val reschedule = parser.parse(
             decisionJson(
@@ -234,7 +283,9 @@ class ConversationDecisionParserTest {
         contextDetail: String = "NONE",
         contextAction: String = "NONE",
         queryReadingMove: String = "NONE",
-        queryPresentationHint: String = "NONE"
+        queryPresentationHint: String = "NONE",
+        confidence: Double = 0.97,
+        listenAgain: Boolean = true
     ): String = """
         {
           "route":"$route",
@@ -245,8 +296,8 @@ class ConversationDecisionParserTest {
           "context_action":"$contextAction",
           "query_reading_move":"$queryReadingMove",
           "query_presentation_hint":"$queryPresentationHint",
-          "confidence":0.97,
-          "listen_again":true
+          "confidence":$confidence,
+          "listen_again":$listenAgain
         }
     """.trimIndent()
 }

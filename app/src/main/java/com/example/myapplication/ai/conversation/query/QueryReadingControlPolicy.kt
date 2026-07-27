@@ -5,7 +5,8 @@ import com.example.myapplication.ai.conversation.ConversationQueryReadingMove
 internal enum class QueryReadingInteractionState {
     NONE,
     QUERY_COUNT,
-    QUERY_PAGE
+    QUERY_PAGE,
+    DAILY_BRIEFING
 }
 
 internal data class QueryReadingControlValidation(
@@ -38,8 +39,9 @@ internal object QueryReadingControlPolicy {
                     hasActiveSession
 
             ConversationQueryReadingMove.STOP ->
-                interactionState != QueryReadingInteractionState.NONE &&
-                    hasActiveSession
+                interactionState == QueryReadingInteractionState.DAILY_BRIEFING ||
+                    (interactionState != QueryReadingInteractionState.NONE &&
+                        hasActiveSession)
 
             ConversationQueryReadingMove.NONE -> false
         }

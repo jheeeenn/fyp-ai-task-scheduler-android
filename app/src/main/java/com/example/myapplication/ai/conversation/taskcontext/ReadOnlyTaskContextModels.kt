@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation.taskcontext
 enum class TaskContextScope {
     NONE,
     RECENT_QUERY_RESULTS,
+    DAILY_BRIEFING,
     TASK_MATCH_CHOICES
 }
 

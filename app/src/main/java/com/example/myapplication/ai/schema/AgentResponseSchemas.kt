@@ -56,7 +56,7 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "DAILY_BRIEFING", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())

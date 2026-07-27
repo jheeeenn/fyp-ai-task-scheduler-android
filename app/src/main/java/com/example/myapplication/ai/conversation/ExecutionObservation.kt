@@ -3,7 +3,7 @@ package com.example.myapplication.ai.conversation
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class ExecutionOperation { CREATE_TASK, QUERY_TASK, UPDATE_TASK, RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, MARK_UNDONE, BREAKDOWN_TASK, NAVIGATION, SYSTEM }
+enum class ExecutionOperation { CREATE_TASK, QUERY_TASK, DAILY_BRIEFING, UPDATE_TASK, RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, MARK_UNDONE, BREAKDOWN_TASK, NAVIGATION, SYSTEM }
 enum class ExecutionOutcome { SUCCESS, PARTIAL_SUCCESS, INFORMATION, NO_RESULTS, NOT_FOUND, AMBIGUOUS, NEEDS_CONFIRMATION, NEEDS_CLARIFICATION, CANCELLED, REJECTED, FAILURE }
 enum class RequiredInput { NONE, CONFIRMATION, TASK_CHOICE, EXACT_DATE, EXACT_TIME, TITLE, CHANGE_FIELD, RETRY }
 enum class AllowedUserMove { CONFIRM, REJECT, SELECT_OPTION, PROVIDE_DATE, PROVIDE_TIME, PROVIDE_TITLE, CHANGE_FIELD, CANCEL, REQUEST_HELP, RETRY, END_SESSION }
@@ -66,6 +66,9 @@ data class ExecutionObservation(
     val outcome: ExecutionOutcome,
     val taskTitle: String = "",
     val taskCount: Int = 0,
+    val overdueTaskCount: Int = 0,
+    val todayActiveTaskCount: Int = 0,
+    val additionalTodayTaskCount: Int = 0,
     val dateText: String = "",
     val timeText: String = "",
     val detail: String = "",
@@ -86,6 +89,11 @@ data class ExecutionObservation(
         put("expected_response_type", outcome.toConversationResponseType().name)
         put("task_title", taskTitle)
         put("task_count", taskCount)
+        if (operation == ExecutionOperation.DAILY_BRIEFING) {
+            put("overdue_task_count", overdueTaskCount)
+            put("today_active_task_count", todayActiveTaskCount)
+            put("additional_today_task_count", additionalTodayTaskCount)
+        }
         put("date_text", dateText)
         put("time_text", timeText)
         put("detail", detail)

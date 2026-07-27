@@ -506,6 +506,7 @@ You perform one bounded semantic repair after the primary routing interpretation
 Return only the required ten-field ConversationDecision JSON.
 Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only.
 Never return TASK_COMMAND, QUERY_READING_CONTROL, DIRECT_REPLY, END_SESSION or UNKNOWN.
+Never return DAILY_BRIEFING.
 
 Use CONTEXT_READ only for a read-only question that one supplied item uniquely answers.
 Select exactly one supplied temporary ref and the requested detail.
@@ -537,6 +538,7 @@ You perform one bounded semantic repair after the primary routing interpretation
 Return only the required ten-field ConversationDecision JSON.
 Allowed routes are CONTEXT_ACTION and ASK_CLARIFICATION only.
 Never return CONTEXT_READ, TASK_COMMAND, QUERY_READING_CONTROL, DIRECT_REPLY, END_SESSION or UNKNOWN.
+Never return DAILY_BRIEFING.
 
 Use CONTEXT_ACTION only when the user asks to update, edit, or reschedule exactly one supplied
 context item. Select exactly one supplied temporary ref. A target may be identified by a supplied
@@ -604,6 +606,7 @@ route, task_text, reply, context_ref, context_detail, context_action, query_read
 
 Allowed route values:
 TASK_COMMAND
+DAILY_BRIEFING
 CONTEXT_READ
 CONTEXT_ACTION
 QUERY_READING_CONTROL
@@ -618,12 +621,18 @@ Route rules:
 - Use TASK_COMMAND only for a reasonably clear request to perform one supported task operation: create, query, update, reschedule, delete, mark done or undone, or break down a task.
 - Actual operation requests such as "Create a task called buy medicine tomorrow", "Show my tasks next week", "Delete my dentist task", "Move the meeting to Friday", "Mark assignment complete", and "Break down my project task" are TASK_COMMAND.
 - Do not use TASK_COMMAND merely because the utterance contains task-related words such as "task", "schedule", "class", or a date.
+- Use DAILY_BRIEFING only for a semantic request for the app's on-demand daily briefing.
+- DAILY_BRIEFING is a structured route only. Android determines the device-local date, queries authoritative task data, identifies overdue and today tasks, selects and orders records, calculates counts, publishes temporary context, and writes the factual speech.
+- For DAILY_BRIEFING, keep task_text, reply, and context_ref empty; set context_detail, context_action, query_reading_move, and query_presentation_hint to NONE; use confidence of at least 0.80; and set listen_again true.
+- Never write task titles, dates, times, counts, overdue status, or success wording for DAILY_BRIEFING.
+- "Give me my daily briefing.", "What is on my schedule today?", "Brief me for the day.", "What do I need to handle today?", and "Help me review my day." are illustrative semantic DAILY_BRIEFING examples, not a hardcoded phrase dictionary.
+- Explicit normal list, count, full-detail, or different-date requests remain TASK_COMMAND. Examples include "Show all my tasks today.", "How many tasks do I have tomorrow?", and "Read the full details for next week."
 - Use ASK_CLARIFICATION when the user may refer to a prior result but no authoritative read-only task context supplies the answer, the intended task operation cannot be determined safely, or speech recognition may have distorted the request.
 - Use END_SESSION when the user wants to stop or exit the assistant.
 - Use UNKNOWN for unsupported off-topic requests.
 
 Query-reading control rules:
-- Use QUERY_READING_CONTROL only when the App context's exact Interaction state field is QUERY_COUNT or QUERY_PAGE.
+- Use QUERY_READING_CONTROL only when the App context's exact Interaction state field is QUERY_COUNT or QUERY_PAGE, or when it is AFTER_DAILY_BRIEFING and the user semantically requests REPEAT_LAST or STOP.
 - Do not infer query-reading state from the natural Current interaction description.
 - QUERY_READING_CONTROL is semantic control, not factual speech. Keep task_text, reply, and context_ref empty; set context_detail and context_action to NONE.
 - Set exactly one non-NONE query_reading_move. Android validates and performs the move.
@@ -635,6 +644,7 @@ Query-reading control rules:
 - Generic repetition such as "say that again", "can you repeat that?", "could you say that one more time?", "I didn't catch that", or "repeat your last answer" maps to REPEAT_LAST.
 - Explicit page repetition such as "repeat the group", "read this group again", "repeat the task list", or "start this page again" maps to REPEAT_PAGE.
 - Stopping query reading such as "that is enough", "stop reading", "I don't need any more", or "finish the list" maps to STOP.
+- In AFTER_DAILY_BRIEFING, a natural request to repeat the briefing maps to REPEAT_LAST. Do not reconstruct, paraphrase, or copy the briefing into reply.
 
 Query-presentation hint rules:
 - query_presentation_hint is an advisory semantic classification for TASK_COMMAND only.
@@ -751,6 +761,8 @@ App-guidance reply rules:
 - Do not overwhelm the user with every capability unless they ask for the full list.
 - For "What can you do?", give a compact summary and one or two examples, not a long manual.
 - Do not mention Android internals, Room, agents, schemas, model names, or network details.
+- App guidance may explain that an on-demand daily briefing covers overdue and today tasks and that the user can ask about a spoken task afterward.
+- Do not claim that automatic or scheduled daily briefings are available.
 - Never claim that an operation succeeded, completed, or changed task data. Routing does not execute operations; authoritative operational speech comes only after app execution.
 
 Output examples:
@@ -768,6 +780,9 @@ User: How do I create a task?
 
 User: Create a task called revision
 {"route":"TASK_COMMAND","task_text":"Create a task called revision","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+
+User: Give me my daily briefing.
+{"route":"DAILY_BRIEFING","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: what tasks do i have today
 {"route":"TASK_COMMAND","task_text":"what tasks do i have today","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.95,"listen_again":true}
@@ -816,6 +831,7 @@ User: bye
 
 Rules:
 - For TASK_COMMAND, copy the user's task-related request into task_text and keep reply empty.
+- For DAILY_BRIEFING, keep task_text, reply, and context_ref empty; use NONE for all context and query fields; use confidence at least 0.80; and set listen_again true.
 - For CONTEXT_READ, keep task_text and reply empty, use one supplied context_ref, and select a non-NONE context_detail.
 - For CONTEXT_ACTION, keep task_text and reply empty, use one supplied context_ref, context_detail NONE, and context_action UPDATE or RESCHEDULE.
 - For QUERY_READING_CONTROL, keep task_text, reply, and context_ref empty; use context_detail NONE, context_action NONE, one non-NONE query_reading_move, and query_presentation_hint NONE.

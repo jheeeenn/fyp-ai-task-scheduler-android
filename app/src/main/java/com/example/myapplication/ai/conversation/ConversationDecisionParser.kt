@@ -72,6 +72,7 @@ class ConversationDecisionParser {
                 ?: throw ConversationSchemaException(
                     "Invalid ConversationDecision query_presentation_hint: $queryPresentationHintText"
                 )
+        val listenAgain = requireBoolean(json, "listen_again")
         validateRouteFields(
             route,
             taskText,
@@ -80,7 +81,9 @@ class ConversationDecisionParser {
             contextDetail,
             contextAction,
             queryReadingMove,
-            queryPresentationHint
+            queryPresentationHint,
+            confidence,
+            listenAgain
         )
 
         return ConversationDecision(
@@ -93,7 +96,7 @@ class ConversationDecisionParser {
             queryReadingMove = queryReadingMove,
             queryPresentationHint = queryPresentationHint,
             confidence = confidence,
-            listenAgain = requireBoolean(json, "listen_again")
+            listenAgain = listenAgain
         )
     }
 
@@ -105,8 +108,36 @@ class ConversationDecisionParser {
         contextDetail: ConversationContextDetail,
         contextAction: ConversationContextAction,
         queryReadingMove: ConversationQueryReadingMove,
-        queryPresentationHint: TaskQueryPresentation
+        queryPresentationHint: TaskQueryPresentation,
+        confidence: Double,
+        listenAgain: Boolean
     ) {
+        if (route == ConversationRoute.DAILY_BRIEFING) {
+            if (taskText.isNotEmpty() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
+                throw ConversationSchemaException(
+                    "DAILY_BRIEFING requires empty task_text, reply, and context_ref"
+                )
+            }
+            if (contextDetail != ConversationContextDetail.NONE ||
+                contextAction != ConversationContextAction.NONE ||
+                queryReadingMove != ConversationQueryReadingMove.NONE ||
+                queryPresentationHint != TaskQueryPresentation.NONE
+            ) {
+                throw ConversationSchemaException(
+                    "DAILY_BRIEFING requires NONE context and query fields"
+                )
+            }
+            if (confidence < MIN_ACCEPTED_ROUTING_CONFIDENCE) {
+                throw ConversationSchemaException(
+                    "DAILY_BRIEFING confidence is below the accepted routing threshold"
+                )
+            }
+            if (!listenAgain) {
+                throw ConversationSchemaException("DAILY_BRIEFING requires listen_again true")
+            }
+            return
+        }
+
         if (route == ConversationRoute.QUERY_READING_CONTROL) {
             if (taskText.isNotEmpty() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
                 throw ConversationSchemaException(
@@ -280,6 +311,7 @@ class ConversationDecisionParser {
     }
 
     companion object {
+        const val MIN_ACCEPTED_ROUTING_CONFIDENCE = 0.80
         private val REQUIRED_FIELDS = setOf(
             "route",
             "task_text",

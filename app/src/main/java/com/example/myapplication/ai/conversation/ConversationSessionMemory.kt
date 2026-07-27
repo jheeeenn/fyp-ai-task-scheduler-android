@@ -113,6 +113,9 @@ class ConversationSessionMemory {
             ConversationRoute.TASK_COMMAND -> {
                 pendingAction = "TASK_COMMAND"
             }
+            ConversationRoute.DAILY_BRIEFING -> {
+                pendingAction = "DAILY_BRIEFING"
+            }
             ConversationRoute.ASK_CLARIFICATION -> {
                 pendingAction = "ASK_CLARIFICATION"
                 recordAssistant(decision.reply)

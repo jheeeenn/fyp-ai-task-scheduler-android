@@ -55,6 +55,8 @@ import com.example.myapplication.ai.conversation.ConversationOrchestratorExcepti
 import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.ai.conversation.ConversationQueryReadingMove
 import com.example.myapplication.ai.conversation.ConversationContextAction
+import com.example.myapplication.ai.conversation.DailyBriefingSnapshotBuilder
+import com.example.myapplication.ai.conversation.DailyBriefingSpeechRenderer
 import com.example.myapplication.ai.conversation.AllowedUserMove
 import com.example.myapplication.ai.conversation.AndroidObservationResponseRenderer
 import com.example.myapplication.ai.conversation.ConversationResponse
@@ -138,6 +140,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         AFTER_NO_TASKS,
         AFTER_TASK_SUMMARY,
         AFTER_TASK_DETAILS,
+        AFTER_DAILY_BRIEFING,
         QUERY_COUNT,
         QUERY_PAGE,
         TASK_MATCH_AMBIGUITY,
@@ -534,6 +537,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
             )
 
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING -> Pair(
+                "An authoritative on-demand daily briefing was read.",
+                listOf(
+                    "Ask what the first, second, or another spoken task was.",
+                    "Ask for a spoken task's date, time, status, or subtask summary.",
+                    "Give a contextual update or reschedule request for a spoken task.",
+                    "Ask to repeat the exact briefing, request the full task list, or end the session."
+                )
+            )
+
             HomeFollowUpContext.QUERY_COUNT -> Pair(
                 "A task query count was read, but no task item has been exposed yet.",
                 listOf(
@@ -592,6 +605,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             supportedCapabilities = listOf(
                 "Create a task.",
                 "Query tasks by date, time, or date range.",
+                "Provide an on-demand daily briefing covering overdue and today tasks.",
                 "Update a task.",
                 "Reschedule a task.",
                 "Delete a task after confirmation.",
@@ -616,6 +630,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             currentInteractionGuidance = interaction.second,
             usageExamples = listOf(
                 "Say, 'Show my tasks tomorrow.'",
+                "Say, 'Give me my daily briefing.'",
                 "Say, 'Create a task called revision tomorrow at 4 PM.'",
                 "Say, 'How do I reschedule a task?' for app guidance."
             ),
@@ -625,6 +640,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "Delete requires confirmation before the app deletes the task.",
                 "The app marks a matched task complete or incomplete.",
                 "The app reads verified task-query results.",
+                "Daily briefings are available on demand and are not delivered automatically on a schedule.",
+                "After a daily briefing, the user may ask about one of the spoken tasks.",
                 "Task breakdown requires plan approval and any missing scheduling information.",
                 "App guidance must not claim that an operation occurred unless the app successfully completed it."
             )
@@ -683,6 +700,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val shouldDeferContextReference =
                 (homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
+                    homeFollowUpContext == HomeFollowUpContext.AFTER_DAILY_BRIEFING ||
                     homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE) &&
                     (ContextReferenceMutationGuard.containsContextReference(
                             normalized,
@@ -728,6 +746,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val isResultInteraction =
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
                         homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
+                        homeFollowUpContext == HomeFollowUpContext.AFTER_DAILY_BRIEFING ||
                         homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE
                 val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
                     taskContextCapture.snapshot
@@ -955,6 +974,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
                 val taskAgentInput: String
                 when (conversationDecision.route) {
+                    ConversationRoute.DAILY_BRIEFING -> {
+                        executeDailyBriefing(
+                            requestToken = requestToken,
+                            decision = conversationDecision
+                        )
+                        return@launch
+                    }
                     ConversationRoute.CONTEXT_READ -> {
                         val validation = ReadOnlyTaskContextReadValidator.validate(
                             decision = conversationDecision,
@@ -1786,6 +1812,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         interaction = when (kind) {
             RepeatableSpeechKind.QUERY_COUNT -> SafeObservationInteraction.QUERY_COUNT
             RepeatableSpeechKind.QUERY_PAGE -> SafeObservationInteraction.QUERY_PAGE
+            RepeatableSpeechKind.DAILY_BRIEFING -> SafeObservationInteraction.NONE
             RepeatableSpeechKind.CONTEXT_READ -> SafeObservationInteraction.NONE
         },
         querySessionActive = accessibleTaskQuerySession != null,
@@ -1834,6 +1861,103 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         task = task,
         subtasks = currentSubtasksByParentId[task.id].orEmpty()
     )
+
+    private suspend fun executeDailyBriefing(
+        requestToken: AssistantRequestToken,
+        decision: ConversationDecision
+    ) {
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        Log.d(
+            "DAILY_BRIEFING_REQUEST",
+            "requestGeneration=${requestToken.requestGeneration}"
+        )
+
+        val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+        val roomData = withContext(Dispatchers.IO) {
+            val roots = dao.getRootTasks()
+            val subtasks = roots.associate { root ->
+                root.id to dao.getSubtasks(root.id)
+            }
+            roots to subtasks
+        }
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+
+        val snapshot = DailyBriefingSnapshotBuilder.build(
+            localDate = todayDateString(),
+            rootTasks = roomData.first,
+            subtasksByParentId = roomData.second
+        )
+        Log.d(
+            "DAILY_BRIEFING_SNAPSHOT",
+            "overdueCount=${snapshot.overdueCount} " +
+                "todayCount=${snapshot.todayActiveCount} " +
+                "highlightedCount=${snapshot.highlightedTasks.size} " +
+                "additionalCount=${snapshot.additionalTodayCount}"
+        )
+
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        clearAccessibleTaskQuerySession(clearTaskContext = true)
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        readOnlyTaskContextStore.replaceDailyBriefingResults(
+            tasks = snapshot.highlightedRoomTasks,
+            subtasksByParentId = roomData.second
+        )
+        currentSubtasksByParentId = roomData.second
+        if (::conversationOrchestrator.isInitialized) {
+            conversationOrchestrator.clearInvalidContextFocus(
+                readOnlyTaskContextStore.snapshot()
+            )
+        }
+        val contextGeneration = readOnlyTaskContextStore.currentGeneration()
+        Log.d(
+            "DAILY_BRIEFING_CONTEXT",
+            "generation=$contextGeneration itemCount=${snapshot.highlightedTasks.size}"
+        )
+
+        val speech = DailyBriefingSpeechRenderer.render(snapshot)
+        val observation = ExecutionObservation(
+            operation = ExecutionOperation.DAILY_BRIEFING,
+            outcome = ExecutionOutcome.INFORMATION,
+            taskCount = snapshot.todayActiveCount,
+            overdueTaskCount = snapshot.overdueCount,
+            todayActiveTaskCount = snapshot.todayActiveCount,
+            additionalTodayTaskCount = snapshot.additionalTodayCount,
+            dateText = snapshot.localDate,
+            detail = "Authoritative on-demand daily briefing.",
+            tasks = snapshot.highlightedTasks,
+            listenAgain = true,
+            fallbackSpeech = speech
+        )
+        val response = AndroidObservationResponseRenderer.render(observation)
+
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        conversationOrchestrator.commitFinalDecision(decision)
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        recordObservationResponse(observation, response)
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        authoritativeRepeatState = AuthoritativeRepeatState(
+            speech = response.speech,
+            kind = RepeatableSpeechKind.DAILY_BRIEFING,
+            contextGeneration = contextGeneration
+        )
+        homeFollowUpContext = HomeFollowUpContext.AFTER_DAILY_BRIEFING
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        Log.d(
+            "DAILY_BRIEFING_RESPONSE",
+            "source=android_deterministic speechLength=${response.speech.length}"
+        )
+        deliverObservationResponse(observation, response)
+    }
+
+    private fun isDailyBriefingRequestCurrent(
+        requestToken: AssistantRequestToken
+    ): Boolean {
+        val current = isAssistantRequestCurrent(requestToken)
+        if (!current) {
+            Log.d("DAILY_BRIEFING_STALE", "reason=REQUEST_CHANGED")
+        }
+        return current
+    }
 
     private fun isEligibleContextActionTarget(task: TaskEntity?): Boolean =
         ContextActionTargetValidator.isEligible(task)
@@ -2326,6 +2450,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 else -> false
             }
 
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING -> false
             else -> false
         }
     }
@@ -2359,6 +2484,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         when (homeFollowUpContext) {
             HomeFollowUpContext.QUERY_COUNT -> QueryReadingInteractionState.QUERY_COUNT
             HomeFollowUpContext.QUERY_PAGE -> QueryReadingInteractionState.QUERY_PAGE
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING ->
+                QueryReadingInteractionState.DAILY_BRIEFING
             else -> QueryReadingInteractionState.NONE
         }
 
@@ -2582,6 +2709,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
 
                     else -> false
+                }
+            }
+
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING -> {
+                if (isSimpleFollowUpEndCommand(normalized)) {
+                    endAssistantConversation()
+                    true
+                } else {
+                    false
                 }
             }
 
@@ -3335,6 +3471,21 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
 
             HomeFollowUpContext.AFTER_TASK_DETAILS -> {
+                when (intent) {
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        if (isSimpleFollowUpEndCommand(normalized)) {
+                            endAssistantConversation()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+
+                    else -> false
+                }
+            }
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING -> {
                 when (intent) {
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
