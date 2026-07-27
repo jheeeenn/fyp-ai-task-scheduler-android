@@ -5,6 +5,8 @@ import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.ai.conversation.taskcontext.TaskContextScope
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
+import com.example.myapplication.ai.conversation.taskcontext.ContextItemRestatementDisposition
+import com.example.myapplication.ai.conversation.taskcontext.ContextItemRestatementPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.query.QueryReadingControlPolicy
 import com.example.myapplication.ai.conversation.query.QueryReadingInteractionState
@@ -68,7 +70,29 @@ class DailyBriefingContractTest {
         ).forEach { assertTrue(prompt.contains(it)) }
         assertTrue(prompt.contains("illustrative semantic DAILY_BRIEFING examples"))
         assertTrue(prompt.contains("remain TASK_COMMAND"))
+        assertTrue(prompt.contains("upcoming tasks within seven days"))
+        assertTrue(prompt.contains("one deterministic suggested focus"))
         assertTrue(prompt.contains("Do not claim that automatic or scheduled daily briefings are available"))
+    }
+
+    @Test
+    fun appGuidanceDescribesExpandedOnDemandScopeWithoutAdaptiveClaims() {
+        assertTrue(
+            homeSource.contains(
+                "covering overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus"
+            )
+        )
+        assertTrue(
+            homeSource.contains(
+                "not behavioural learning, habit-based recommendations, priority fields, or calendar integration"
+            )
+        )
+        assertTrue(
+            homeSource.contains(
+                "Daily briefings are available on demand and are not delivered automatically on a schedule."
+            )
+        )
+        assertFalse(homeSource.contains("scheduled briefing notification", ignoreCase = true))
     }
 
     @Test
@@ -92,26 +116,46 @@ class DailyBriefingContractTest {
     }
 
     @Test
-    fun onlyHighlightedTasksEnterFreshReadOnlyContextInSpokenOrder() {
+    fun onlySpokenTasksEnterFreshReadOnlyContextInNumberedOrder() {
         val store = ReadOnlyTaskContextStore()
         val before = store.currentGeneration()
-        val tasks = (1L..5L).map { id ->
+        val tasks = (1L..8L).map { id ->
             TaskEntity(
                 id = id,
                 title = "Task $id",
-                dueDate = "27/07/2026",
+                dueDate = "28/07/2026",
                 dueTime = "${id + 8}:00"
             )
         }
+        val briefing = DailyBriefingSnapshotBuilder.build(
+            localDate = "27/07/2026",
+            rootTasks = tasks,
+            subtasksByParentId = emptyMap()
+        )
 
-        store.replaceDailyBriefingResults(tasks)
+        store.replaceDailyBriefingResults(briefing.spokenRoomTasks)
         val snapshot = store.snapshot()
 
         assertTrue(snapshot.generation > before)
         assertEquals(TaskContextScope.DAILY_BRIEFING, snapshot.scope)
-        assertEquals(tasks.map { it.title }, snapshot.items.map { it.title })
+        assertEquals(
+            briefing.spokenItems.map { it.task.title },
+            snapshot.items.map { it.title }
+        )
         assertEquals(listOf("T1", "T2", "T3", "T4", "T5"), snapshot.items.map { it.ref })
         assertFalse(snapshot.truncated)
+        assertFalse(snapshot.items.any { it.title in setOf("Task 6", "Task 7", "Task 8") })
+
+        val restatement = ContextItemRestatementPolicy.resolve(
+            normalizedText = "repeat the third one",
+            capturedSnapshot = snapshot,
+            currentGeneration = store.currentGeneration()
+        )
+        assertEquals(ContextItemRestatementDisposition.RESOLVED, restatement.disposition)
+        assertEquals("T3", restatement.decision?.contextRef)
+
+        store.replaceDailyBriefingResults(briefing.spokenRoomTasks)
+        assertTrue(store.currentGeneration() > snapshot.generation)
     }
 
     @Test
@@ -125,12 +169,6 @@ class DailyBriefingContractTest {
         )
         store.replaceDailyBriefingResults(listOf(task))
         val capture = store.capture()
-        val read = ConversationDecision(
-            route = ConversationRoute.CONTEXT_READ,
-            contextRef = "T1",
-            contextDetail = ConversationContextDetail.TIME,
-            confidence = 0.97
-        )
         val reschedule = ConversationDecision(
             route = ConversationRoute.CONTEXT_ACTION,
             contextRef = "T1",
@@ -138,13 +176,27 @@ class DailyBriefingContractTest {
             confidence = 0.97
         )
 
-        assertTrue(
-            ReadOnlyTaskContextReadValidator.validate(
-                read,
-                capture.snapshot,
-                store.currentGeneration()
-            ).isValid
-        )
+        listOf(
+            ConversationContextDetail.TIME,
+            ConversationContextDetail.DATE,
+            ConversationContextDetail.STATUS,
+            ConversationContextDetail.SUBTASKS,
+            ConversationContextDetail.SUMMARY
+        ).forEach { detail ->
+            val read = ConversationDecision(
+                route = ConversationRoute.CONTEXT_READ,
+                contextRef = "T1",
+                contextDetail = detail,
+                confidence = 0.97
+            )
+            assertTrue(
+                ReadOnlyTaskContextReadValidator.validate(
+                    read,
+                    capture.snapshot,
+                    store.currentGeneration()
+                ).isValid
+            )
+        }
         assertTrue(
             ContextActionDecisionValidator.validate(
                 reschedule,
@@ -221,6 +273,7 @@ class DailyBriefingContractTest {
             "getRootTasks",
             "getSubtasks",
             "agentOrchestrator",
+            "conversationAgentClient",
             "conversationOrchestrator.process(",
             "replaceDailyBriefingResults",
             "DailyBriefingSnapshotBuilder"
@@ -235,7 +288,17 @@ class DailyBriefingContractTest {
             taskCount = 6,
             overdueTaskCount = 2,
             todayActiveTaskCount = 6,
+            upcomingActiveTaskCount = 3,
             additionalTodayTaskCount = 1,
+            additionalUpcomingTaskCount = 2,
+            dailyBriefingItems = listOf(
+                DailyBriefingItem(
+                    category = DailyBriefingItemCategory.TODAY,
+                    task = ObservedTask("Revision", "27/07/2026", "15:00"),
+                    isSuggestedFocus = true
+                )
+            ),
+            dailyBriefingFocusReason = DailyBriefingFocusReason.EARLIEST_TODAY,
             tasks = listOf(ObservedTask("Revision", "27/07/2026", "15:00")),
             listenAgain = true,
             fallbackSpeech = "Deterministic speech"
@@ -246,9 +309,21 @@ class DailyBriefingContractTest {
         assertEquals("INFORMATION", json.getString("outcome"))
         assertEquals(2, json.getInt("overdue_task_count"))
         assertEquals(6, json.getInt("today_active_task_count"))
+        assertEquals(3, json.getInt("upcoming_active_task_count"))
         assertEquals(1, json.getInt("additional_today_task_count"))
+        assertEquals(2, json.getInt("additional_upcoming_task_count"))
+        assertEquals(1, json.getJSONArray("numbered_task_facts").length())
+        assertEquals(1, json.getJSONObject("suggested_focus").getInt("ordinal"))
+        assertEquals(
+            "TODAY",
+            json.getJSONObject("suggested_focus").getString("category")
+        )
         assertEquals(1, json.getJSONArray("tasks").length())
         assertFalse(json.toString().contains("Deterministic speech"))
         assertFalse(json.toString().contains("task_id"))
+        assertEquals(
+            "Deterministic speech",
+            AndroidObservationResponseRenderer.render(observation).speech
+        )
     }
 }

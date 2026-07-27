@@ -61,6 +61,14 @@ data class ObservedTask(
     }
 }
 
+private fun DailyBriefingItem.toObservationJson(ordinal: Int): JSONObject =
+    JSONObject().apply {
+        put("ordinal", ordinal)
+        put("category", category.name)
+        put("is_suggested_focus", isSuggestedFocus)
+        put("task", task.toJson())
+    }
+
 data class ExecutionObservation(
     val operation: ExecutionOperation,
     val outcome: ExecutionOutcome,
@@ -68,7 +76,11 @@ data class ExecutionObservation(
     val taskCount: Int = 0,
     val overdueTaskCount: Int = 0,
     val todayActiveTaskCount: Int = 0,
+    val upcomingActiveTaskCount: Int = 0,
     val additionalTodayTaskCount: Int = 0,
+    val additionalUpcomingTaskCount: Int = 0,
+    val dailyBriefingItems: List<DailyBriefingItem> = emptyList(),
+    val dailyBriefingFocusReason: DailyBriefingFocusReason? = null,
     val dateText: String = "",
     val timeText: String = "",
     val detail: String = "",
@@ -92,7 +104,29 @@ data class ExecutionObservation(
         if (operation == ExecutionOperation.DAILY_BRIEFING) {
             put("overdue_task_count", overdueTaskCount)
             put("today_active_task_count", todayActiveTaskCount)
+            put("upcoming_active_task_count", upcomingActiveTaskCount)
             put("additional_today_task_count", additionalTodayTaskCount)
+            put("additional_upcoming_task_count", additionalUpcomingTaskCount)
+            put(
+                "numbered_task_facts",
+                JSONArray().apply {
+                    dailyBriefingItems.forEachIndexed { index, item ->
+                        put(item.toObservationJson(index + 1))
+                    }
+                }
+            )
+            dailyBriefingItems.indexOfFirst { it.isSuggestedFocus }
+                .takeIf { it >= 0 }
+                ?.let { focusIndex ->
+                    put(
+                        "suggested_focus",
+                        JSONObject().apply {
+                            put("ordinal", focusIndex + 1)
+                            put("category", dailyBriefingItems[focusIndex].category.name)
+                            dailyBriefingFocusReason?.let { put("reason", it.name) }
+                        }
+                    )
+                }
         }
         put("date_text", dateText)
         put("time_text", timeText)

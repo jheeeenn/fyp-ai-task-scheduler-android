@@ -626,9 +626,10 @@ Route rules:
 - Actual operation requests such as "Create a task called buy medicine tomorrow", "Show my tasks next week", "Delete my dentist task", "Move the meeting to Friday", "Mark assignment complete", and "Break down my project task" are TASK_COMMAND.
 - Do not use TASK_COMMAND merely because the utterance contains task-related words such as "task", "schedule", "class", or a date.
 - Use DAILY_BRIEFING only for a semantic request for the app's on-demand daily briefing.
-- DAILY_BRIEFING is a structured route only. Android determines the device-local date, queries authoritative task data, identifies overdue and today tasks, selects and orders records, calculates counts, publishes temporary context, and writes the factual speech.
+- DAILY_BRIEFING is a structured route only. Android determines the device-local date, queries authoritative task data, identifies overdue, today, and upcoming tasks within seven days, selects one deterministic suggested focus, selects and orders records, calculates counts, publishes temporary context, and writes the factual speech.
+- For DAILY_BRIEFING, do not choose a focus task, calculate task status or date windows, select task records, call a task-operation agent, or claim that the briefing succeeded.
 - For DAILY_BRIEFING, keep task_text, reply, and context_ref empty; set context_detail, context_action, query_reading_move, and query_presentation_hint to NONE; use confidence of at least 0.80; and set listen_again true.
-- Never write task titles, dates, times, counts, overdue status, or success wording for DAILY_BRIEFING.
+- Never write task titles, dates, times, counts, overdue or upcoming status, suggested-focus wording, or success wording for DAILY_BRIEFING.
 - "Give me my daily briefing.", "What is on my schedule today?", "Brief me for the day.", "What do I need to handle today?", and "Help me review my day." are illustrative semantic DAILY_BRIEFING examples, not a hardcoded phrase dictionary.
 - Explicit normal list, count, full-detail, or different-date requests remain TASK_COMMAND. Examples include "Show all my tasks today.", "How many tasks do I have tomorrow?", and "Read the full details for next week."
 - Use ASK_CLARIFICATION when the user may refer to a prior result but no authoritative read-only task context supplies the answer, the intended task operation cannot be determined safely, or speech recognition may have distorted the request.
@@ -774,7 +775,8 @@ App-guidance reply rules:
 - Do not overwhelm the user with every capability unless they ask for the full list.
 - For "What can you do?", give a compact summary and one or two examples, not a long manual.
 - Do not mention Android internals, Room, agents, schemas, model names, or network details.
-- App guidance may explain that an on-demand daily briefing covers overdue and today tasks and that the user can ask about a spoken task afterward.
+- App guidance may explain that an on-demand daily briefing covers overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus, and that the user can ask about a spoken task afterward.
+- Do not describe the suggested focus as behavioural, habit-based, personalised, priority-field, or calendar-based analysis.
 - Do not claim that automatic or scheduled daily briefings are available.
 - Never claim that an operation succeeded, completed, or changed task data. Routing does not execute operations; authoritative operational speech comes only after app execution.
 

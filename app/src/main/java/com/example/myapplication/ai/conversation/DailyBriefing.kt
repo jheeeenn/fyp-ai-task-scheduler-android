@@ -5,17 +5,40 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
+enum class DailyBriefingItemCategory {
+    OVERDUE,
+    TODAY,
+    UPCOMING
+}
+
+enum class DailyBriefingFocusReason {
+    RECENTLY_OVERDUE,
+    EARLIEST_TODAY,
+    NEXT_UPCOMING
+}
+
+data class DailyBriefingItem(
+    val category: DailyBriefingItemCategory,
+    val task: ObservedTask,
+    val isSuggestedFocus: Boolean
+)
+
 data class DailyBriefingSnapshot(
     val localDate: String,
     val overdueCount: Int,
     val todayActiveCount: Int,
-    val highlightedTasks: List<ObservedTask>,
+    val upcomingActiveCount: Int,
+    val spokenItems: List<DailyBriefingItem>,
     val additionalTodayCount: Int,
-    internal val highlightedRoomTasks: List<TaskEntity>
+    val additionalUpcomingCount: Int,
+    val suggestedFocus: ObservedTask?,
+    val suggestedFocusReason: DailyBriefingFocusReason?,
+    internal val spokenRoomTasks: List<TaskEntity>
 )
 
 object DailyBriefingSnapshotBuilder {
-    const val MAX_HIGHLIGHTED_TASKS = 5
+    const val UPCOMING_WINDOW_DAYS = 7
+    const val MAX_SPOKEN_TASKS = 5
 
     fun build(
         localDate: String,
@@ -24,32 +47,87 @@ object DailyBriefingSnapshotBuilder {
     ): DailyBriefingSnapshot {
         val todayMillis = parseDateMillis(localDate)
             ?: throw IllegalArgumentException("localDate must use dd/MM/yyyy")
+        val upcomingBoundaryMillis = Calendar.getInstance().run {
+            timeInMillis = todayMillis
+            add(Calendar.DAY_OF_MONTH, UPCOMING_WINDOW_DAYS)
+            timeInMillis
+        }
         val activeRoots = rootTasks.filter { it.parentTaskId == null && !it.isDone }
-        val overdueCount = activeRoots.count { task ->
-            val dueMillis = parseDateMillis(task.dueDate)
-            dueMillis != null && dueMillis < todayMillis
+        val datedRoots = activeRoots.mapNotNull { task ->
+            parseDateMillis(task.dueDate)?.let { dueDateMillis ->
+                DatedRoomTask(task, dueDateMillis)
+            }
         }
-        val todayTasks = activeRoots
-            .filter { parseDateMillis(it.dueDate) == todayMillis }
-            .sortedWith(
-                compareBy<TaskEntity> { parseTimeMinute(it.dueTime) ?: Int.MAX_VALUE }
-                    .thenBy { it.title.lowercase(Locale.UK) }
-                    .thenBy { it.id }
+
+        val overdueTasks = datedRoots
+            .filter { it.dueDateMillis < todayMillis }
+        val todayTasks = datedRoots
+            .filter { it.dueDateMillis == todayMillis }
+            .sortedWith(todayComparator)
+        val upcomingTasks = datedRoots
+            .filter {
+                it.dueDateMillis > todayMillis &&
+                    it.dueDateMillis <= upcomingBoundaryMillis
+            }
+            .sortedWith(upcomingComparator)
+
+        val focusSelection = when {
+            overdueTasks.isNotEmpty() -> FocusSelection(
+                candidate = overdueTasks.sortedWith(overdueFocusComparator).first(),
+                reason = DailyBriefingFocusReason.RECENTLY_OVERDUE
             )
-        val highlightedRoomTasks = todayTasks.take(MAX_HIGHLIGHTED_TASKS)
-        val highlightedTasks = highlightedRoomTasks.map { task ->
-            TaskObservationMapper.observedTask(
-                task = task,
-                subtasks = subtasksByParentId[task.id].orEmpty()
+            todayTasks.isNotEmpty() -> FocusSelection(
+                candidate = todayTasks.first(),
+                reason = DailyBriefingFocusReason.EARLIEST_TODAY
+            )
+            upcomingTasks.isNotEmpty() -> FocusSelection(
+                candidate = upcomingTasks.first(),
+                reason = DailyBriefingFocusReason.NEXT_UPCOMING
+            )
+            else -> null
+        }
+
+        val selected = buildList {
+            focusSelection?.let { focus ->
+                add(CategorizedRoomTask(focus.candidate, focus.reason.category))
+            }
+            addAll(
+                todayTasks
+                    .filterNot { it.task.id == focusSelection?.candidate?.task?.id }
+                    .map { CategorizedRoomTask(it, DailyBriefingItemCategory.TODAY) }
+            )
+            addAll(
+                upcomingTasks
+                    .filterNot { it.task.id == focusSelection?.candidate?.task?.id }
+                    .map { CategorizedRoomTask(it, DailyBriefingItemCategory.UPCOMING) }
+            )
+        }.take(MAX_SPOKEN_TASKS)
+
+        val spokenItems = selected.map { selectedTask ->
+            DailyBriefingItem(
+                category = selectedTask.category,
+                task = observedTask(selectedTask.candidate.task, subtasksByParentId),
+                isSuggestedFocus =
+                    selectedTask.candidate.task.id == focusSelection?.candidate?.task?.id
             )
         }
+        val suggestedFocus = focusSelection?.candidate?.task?.let { task ->
+            observedTask(task, subtasksByParentId)
+        }
+
         return DailyBriefingSnapshot(
             localDate = localDate,
-            overdueCount = overdueCount,
+            overdueCount = overdueTasks.size,
             todayActiveCount = todayTasks.size,
-            highlightedTasks = highlightedTasks,
-            additionalTodayCount = todayTasks.size - highlightedTasks.size,
-            highlightedRoomTasks = highlightedRoomTasks
+            upcomingActiveCount = upcomingTasks.size,
+            spokenItems = spokenItems,
+            additionalTodayCount = todayTasks.size -
+                spokenItems.count { it.category == DailyBriefingItemCategory.TODAY },
+            additionalUpcomingCount = upcomingTasks.size -
+                spokenItems.count { it.category == DailyBriefingItemCategory.UPCOMING },
+            suggestedFocus = suggestedFocus,
+            suggestedFocusReason = focusSelection?.reason,
+            spokenRoomTasks = selected.map { it.candidate.task }
         )
     }
 
@@ -70,6 +148,14 @@ object DailyBriefingSnapshotBuilder {
         return null
     }
 
+    private fun observedTask(
+        task: TaskEntity,
+        subtasksByParentId: Map<Long, List<TaskEntity>>
+    ): ObservedTask = TaskObservationMapper.observedTask(
+        task = task,
+        subtasks = subtasksByParentId[task.id].orEmpty()
+    )
+
     private fun parseDateMillis(value: String?): Long? {
         if (value.isNullOrBlank()) return null
         return try {
@@ -81,6 +167,51 @@ object DailyBriefingSnapshotBuilder {
         }
     }
 
+    private fun timeSortValue(task: TaskEntity): Int =
+        parseTimeMinute(task.dueTime) ?: Int.MAX_VALUE
+
+    private val todayComparator =
+        compareBy<DatedRoomTask> { timeSortValue(it.task) }
+            .thenBy { it.task.title.lowercase(Locale.UK) }
+            .thenBy { it.task.id }
+
+    private val upcomingComparator =
+        compareBy<DatedRoomTask> { it.dueDateMillis }
+            .thenBy { timeSortValue(it.task) }
+            .thenBy { it.task.title.lowercase(Locale.UK) }
+            .thenBy { it.task.id }
+
+    private val overdueFocusComparator =
+        compareByDescending<DatedRoomTask> { it.dueDateMillis }
+            .thenBy { timeSortValue(it.task) }
+            .thenBy { it.task.title.lowercase(Locale.UK) }
+            .thenBy { it.task.id }
+
+    private val DailyBriefingFocusReason.category: DailyBriefingItemCategory
+        get() = when (this) {
+            DailyBriefingFocusReason.RECENTLY_OVERDUE ->
+                DailyBriefingItemCategory.OVERDUE
+            DailyBriefingFocusReason.EARLIEST_TODAY ->
+                DailyBriefingItemCategory.TODAY
+            DailyBriefingFocusReason.NEXT_UPCOMING ->
+                DailyBriefingItemCategory.UPCOMING
+        }
+
+    private data class DatedRoomTask(
+        val task: TaskEntity,
+        val dueDateMillis: Long
+    )
+
+    private data class CategorizedRoomTask(
+        val candidate: DatedRoomTask,
+        val category: DailyBriefingItemCategory
+    )
+
+    private data class FocusSelection(
+        val candidate: DatedRoomTask,
+        val reason: DailyBriefingFocusReason
+    )
+
     private const val DATE_PATTERN = "dd/MM/yyyy"
     private val TIME_PATTERNS = listOf("h:mm a", "h a", "HH:mm")
 }
@@ -89,54 +220,84 @@ object DailyBriefingSpeechRenderer {
     fun render(snapshot: DailyBriefingSnapshot): String {
         val sentences = mutableListOf<String>()
         sentences += "Here is your briefing for ${spokenDate(snapshot.localDate)}."
+        sentences += "You have ${countSummary(snapshot.overdueCount, "overdue task")}, " +
+            "${todaySummary(snapshot.todayActiveCount)}, and " +
+            "${countSummary(snapshot.upcomingActiveCount, "upcoming task")} " +
+            "within the next seven days."
 
-        val todaySummary = when (snapshot.todayActiveCount) {
-            0 -> "no active tasks due today"
-            1 -> "one active task today"
-            else -> "${spokenNumber(snapshot.todayActiveCount)} active tasks today"
-        }
-        sentences += if (snapshot.overdueCount == 0) {
-            "You have $todaySummary."
-        } else {
-            val overdueSummary = if (snapshot.overdueCount == 1) {
-                "one overdue task"
-            } else {
-                "${spokenNumber(snapshot.overdueCount)} overdue tasks"
-            }
-            "You have $overdueSummary and $todaySummary."
-        }
-
-        snapshot.highlightedTasks.forEachIndexed { index, task ->
-            sentences += renderTask(index, task)
+        snapshot.spokenItems.forEachIndexed { index, item ->
+            sentences += renderItem(index, item)
         }
 
         if (snapshot.additionalTodayCount > 0) {
-            sentences += if (snapshot.additionalTodayCount == 1) {
-                "There is one more active task due today."
-            } else {
-                "There are ${spokenNumber(snapshot.additionalTodayCount)} more active tasks due today."
-            }
+            sentences += remainingSummary(
+                count = snapshot.additionalTodayCount,
+                singular = "active task due today",
+                plural = "active tasks due today"
+            )
+        }
+        if (snapshot.additionalUpcomingCount > 0) {
+            sentences += remainingSummary(
+                count = snapshot.additionalUpcomingCount,
+                singular = "upcoming task within the next seven days",
+                plural = "upcoming tasks within the next seven days"
+            )
         }
 
-        sentences += if (snapshot.highlightedTasks.isEmpty()) {
-            "You can ask to review your upcoming tasks or create a new task."
+        sentences += if (snapshot.spokenItems.isEmpty()) {
+            "You can request the full task list or create a new task."
         } else {
             "You can ask about one of these tasks or request the full task list."
         }
         return sentences.joinToString(" ")
     }
 
-    private fun renderTask(index: Int, task: ObservedTask): String {
+    private fun renderItem(index: Int, item: DailyBriefingItem): String {
         val ordinal = ORDINALS.getOrElse(index) { "Next" }
-        val title = task.title.ifBlank { "Untitled task" }
-        val time = DailyBriefingSnapshotBuilder.parseTimeMinute(task.dueTime)
-            ?.let(::spokenTime)
-        val schedule = if (time == null) {
-            "$ordinal, $title, with no set time."
+        val introduction = if (item.isSuggestedFocus) {
+            "Suggested focus, ${ordinal.lowercase(Locale.UK)}"
         } else {
-            "$ordinal, $title at $time."
+            ordinal
         }
-        return schedule + subtaskDescription(task)
+        val title = item.task.title.ifBlank { "Untitled task" }
+        val time = DailyBriefingSnapshotBuilder.parseTimeMinute(item.task.dueTime)
+            ?.let(::spokenTime)
+        val schedule = when (item.category) {
+            DailyBriefingItemCategory.OVERDUE ->
+                "$introduction, $title, overdue since ${spokenDate(item.task.dueDate)}" +
+                    spokenTimeSuffix(time)
+            DailyBriefingItemCategory.TODAY ->
+                "$introduction, $title, due today" + spokenTimeSuffix(time)
+            DailyBriefingItemCategory.UPCOMING ->
+                "$introduction, $title, upcoming on ${spokenDate(item.task.dueDate)}" +
+                    spokenTimeSuffix(time)
+        }
+        return "$schedule." + subtaskDescription(item.task)
+    }
+
+    private fun spokenTimeSuffix(time: String?): String =
+        if (time == null) ", with no set time" else " at $time"
+
+    private fun countSummary(count: Int, singular: String): String = when (count) {
+        0 -> "no ${singular}s"
+        1 -> "one $singular"
+        else -> "${spokenNumber(count)} ${singular}s"
+    }
+
+    private fun todaySummary(count: Int): String = when (count) {
+        0 -> "no active tasks due today"
+        1 -> "one active task due today"
+        else -> "${spokenNumber(count)} active tasks due today"
+    }
+
+    private fun remainingSummary(
+        count: Int,
+        singular: String,
+        plural: String
+    ): String = if (count == 1) {
+        "There is one more $singular."
+    } else {
+        "There are ${spokenNumber(count)} more $plural."
     }
 
     private fun subtaskDescription(task: ObservedTask): String {

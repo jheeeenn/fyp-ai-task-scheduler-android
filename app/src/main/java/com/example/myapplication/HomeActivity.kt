@@ -609,7 +609,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             supportedCapabilities = listOf(
                 "Create a task.",
                 "Query tasks by date, time, or date range.",
-                "Provide an on-demand daily briefing covering overdue and today tasks.",
+                "Provide an on-demand daily briefing covering overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus.",
                 "Update a task.",
                 "Reschedule a task.",
                 "Delete a task after confirmation.",
@@ -645,6 +645,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "The app marks a matched task complete or incomplete.",
                 "The app reads verified task-query results.",
                 "Daily briefings are available on demand and are not delivered automatically on a schedule.",
+                "The daily briefing's suggested focus uses deterministic due-date and time ordering, not behavioural learning, habit-based recommendations, priority fields, or calendar integration.",
                 "After a daily briefing, the user may ask about one of the spoken tasks.",
                 "Task breakdown requires plan approval and any missing scheduling information.",
                 "App guidance must not claim that an operation occurred unless the app successfully completed it."
@@ -1856,15 +1857,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             "DAILY_BRIEFING_SNAPSHOT",
             "overdueCount=${snapshot.overdueCount} " +
                 "todayCount=${snapshot.todayActiveCount} " +
-                "highlightedCount=${snapshot.highlightedTasks.size} " +
-                "additionalCount=${snapshot.additionalTodayCount}"
+                "upcomingCount=${snapshot.upcomingActiveCount} " +
+                "spokenCount=${snapshot.spokenItems.size} " +
+                "additionalTodayCount=${snapshot.additionalTodayCount} " +
+                "additionalUpcomingCount=${snapshot.additionalUpcomingCount} " +
+                "focusCategory=${snapshot.spokenItems.firstOrNull { it.isSuggestedFocus }?.category?.name ?: "NONE"}"
         )
 
         if (!isDailyBriefingRequestCurrent(requestToken)) return
         clearAccessibleTaskQuerySession(clearTaskContext = true)
         if (!isDailyBriefingRequestCurrent(requestToken)) return
         readOnlyTaskContextStore.replaceDailyBriefingResults(
-            tasks = snapshot.highlightedRoomTasks,
+            tasks = snapshot.spokenRoomTasks,
             subtasksByParentId = roomData.second
         )
         currentSubtasksByParentId = roomData.second
@@ -1876,7 +1880,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val contextGeneration = readOnlyTaskContextStore.currentGeneration()
         Log.d(
             "DAILY_BRIEFING_CONTEXT",
-            "generation=$contextGeneration itemCount=${snapshot.highlightedTasks.size}"
+            "generation=$contextGeneration itemCount=${snapshot.spokenItems.size}"
         )
 
         val speech = DailyBriefingSpeechRenderer.render(snapshot)
@@ -1886,10 +1890,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             taskCount = snapshot.todayActiveCount,
             overdueTaskCount = snapshot.overdueCount,
             todayActiveTaskCount = snapshot.todayActiveCount,
+            upcomingActiveTaskCount = snapshot.upcomingActiveCount,
             additionalTodayTaskCount = snapshot.additionalTodayCount,
+            additionalUpcomingTaskCount = snapshot.additionalUpcomingCount,
+            dailyBriefingItems = snapshot.spokenItems,
+            dailyBriefingFocusReason = snapshot.suggestedFocusReason,
             dateText = snapshot.localDate,
             detail = "Authoritative on-demand daily briefing.",
-            tasks = snapshot.highlightedTasks,
+            tasks = snapshot.spokenItems.map { it.task },
             listenAgain = true,
             fallbackSpeech = speech
         )
