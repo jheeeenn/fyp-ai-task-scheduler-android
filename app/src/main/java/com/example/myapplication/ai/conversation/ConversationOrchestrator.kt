@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation
 import android.util.Log
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
 
 class ConversationOrchestratorException(
@@ -158,6 +159,20 @@ class ConversationOrchestrator(
         }
 
         val decision = normalizeDecision(parsed, normalizedText)
+        DebugDiagnosticLog.event(
+            "CONVERSATION_DECISION_DEBUG",
+            "route=${decision.route.name}\n" +
+                "task_text=${decision.taskText}\n" +
+                "reply=${decision.reply}\n" +
+                "context_ref=${decision.contextRef}\n" +
+                "context_detail=${decision.contextDetail.name}\n" +
+                "context_action=${decision.contextAction.name}\n" +
+                "query_reading_move=${decision.queryReadingMove.name}\n" +
+                "query_presentation_hint=${decision.queryPresentationHint.name}\n" +
+                "confidence=${decision.confidence}\n" +
+                "listen_again=${decision.listenAgain}\n" +
+                "source=${decision.source}"
+        )
         return decision
     }
 

@@ -5,6 +5,7 @@ import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
 
 class TaskAgentProcessingException(message: String, cause: Throwable) : Exception(message, cause)
@@ -31,7 +32,10 @@ class AgentOrchestrator(
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
         } catch (e: Exception) {
-            Log.e("AGENT_ORCHESTRATOR", "Task agent failed closed for text='$normalizedText'", e)
+            DebugDiagnosticLog.event(
+                "AGENT_ORCHESTRATOR",
+                "Task agent failed closed for text='$normalizedText'; category=${e::class.java.simpleName}"
+            )
             throw TaskAgentProcessingException("Task agent failed to process command", e)
         }
     }
@@ -56,6 +60,22 @@ class AgentOrchestrator(
             Log.d("ROUTINE_EXTRACTION", "Starting bounded routine extraction")
             val rawContent = laptopAgentClient.processRoutine(normalizedText)
             val response = routineExtractionParser.parse(rawContent)
+            DebugDiagnosticLog.event(
+                "ROUTINE_EXTRACTION_DEBUG",
+                "routineTitle=${response.routineTitle}\n" +
+                    "stepCount=${response.steps.size}\n" +
+                    "confidence=${response.confidence}\n" +
+                    "needClarification=${response.needClarification}"
+            )
+            response.steps.forEachIndexed { index, step ->
+                DebugDiagnosticLog.event(
+                    "ROUTINE_EXTRACTION_STEP",
+                    "index=${index + 1}\n" +
+                        "title=${step.title}\n" +
+                        "dateText=${step.dateText}\n" +
+                        "timeText=${step.timeText}"
+                )
+            }
             Log.d(
                 "ROUTINE_EXTRACTION",
                 "stepCount=${response.steps.size} " +

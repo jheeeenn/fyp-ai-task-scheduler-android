@@ -7,6 +7,7 @@ import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalResolution
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 import com.example.myapplication.ai.temporal.TemporalUseCase
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -130,10 +131,10 @@ class RoutineDraftController(
         }
 
         val base = baseCalendarProvider()
-        val parsedSteps = extraction.steps.map { step ->
+        val parsedSteps = extraction.steps.mapIndexed { index, step ->
             val dateResult = classifyDate(step.dateText, base)
             val time = resolveTime(step.timeText, base)
-            PendingRoutineStep(
+            val pendingStep = PendingRoutineStep(
                 title = step.title.trim(),
                 originalDateText = step.dateText.trim().takeIf(String::isNotEmpty),
                 originalTimeText = step.timeText.trim().takeIf(String::isNotEmpty),
@@ -142,6 +143,18 @@ class RoutineDraftController(
                 dateClassification = dateResult.classification,
                 originalDateConstraint = dateResult.constraint
             )
+            DebugDiagnosticLog.event(
+                "ROUTINE_STEP_VALIDATION",
+                "index=${index + 1}\n" +
+                    "title=${pendingStep.title}\n" +
+                    "originalDateText=${pendingStep.originalDateText.orEmpty()}\n" +
+                    "dateClassification=${pendingStep.dateClassification.name}\n" +
+                    "resolvedDate=${pendingStep.resolvedDate.orEmpty()}\n" +
+                    "originalTimeText=${pendingStep.originalTimeText.orEmpty()}\n" +
+                    "timeExact=${pendingStep.resolvedTime != null}\n" +
+                    "resolvedTime=${pendingStep.resolvedTime.orEmpty()}"
+            )
+            pendingStep
         }
         if (parsedSteps.any {
                 it.dateClassification == RoutineDateClassification.INVALID
@@ -182,19 +195,42 @@ class RoutineDraftController(
         val current = draft
             ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_STATE)
         val base = baseCalendarProvider()
-        val resolved = resolveDate(dateText, base)
-            ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
-        val constrainedSteps = current.steps.filter {
-            it.resolvedDate == null &&
-                it.dateClassification == RoutineDateClassification.CONSTRAINED
+        val constrainedSteps = current.steps.withIndex().filter { (_, step) ->
+            step.resolvedDate == null &&
+                step.dateClassification == RoutineDateClassification.CONSTRAINED
         }
-        val satisfiesEveryConstraint = constrainedSteps.all { step ->
-            val constraint = step.originalDateConstraint ?: return@all false
-            TemporalActionPolicy.validateClarification(
-                original = constraint,
-                exactDate = resolved,
-                exactMinute = null
+        val resolved = resolveDate(dateText, base)
+        val constraintChecks = constrainedSteps.map { (_, step) ->
+            resolved != null &&
+                step.originalDateConstraint?.let { constraint ->
+                    TemporalActionPolicy.validateClarification(
+                        original = constraint,
+                        exactDate = resolved,
+                        exactMinute = null
+                    )
+                } == true
+        }
+        constrainedSteps.forEachIndexed { checkIndex, (stepIndex, step) ->
+            DebugDiagnosticLog.event(
+                "ROUTINE_DATE_CONSTRAINT_CHECK",
+                "index=${stepIndex + 1}\n" +
+                    "originalConstraint=${step.originalDateText.orEmpty()}\n" +
+                    "candidateDate=${resolved.orEmpty()}\n" +
+                    "accepted=${constraintChecks.getOrElse(checkIndex) { false }}"
             )
+        }
+        val satisfiesEveryConstraint =
+            resolved != null && constraintChecks.all { it }
+        DebugDiagnosticLog.event(
+            "ROUTINE_SHARED_DATE_VALIDATION",
+            "input=$dateText\n" +
+                "resolvedDate=${resolved.orEmpty()}\n" +
+                "constrainedStepCount=${constrainedSteps.size}\n" +
+                "satisfiesEveryConstraint=$satisfiesEveryConstraint\n" +
+                "result=${if (satisfiesEveryConstraint) "ACCEPTED" else "REJECTED"}"
+        )
+        if (resolved == null) {
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
         }
         if (!satisfiesEveryConstraint) {
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
@@ -224,26 +260,46 @@ class RoutineDraftController(
         if (index < 0) return advance()
         val resolution = resolveTimeResolution(timeText, baseCalendarProvider())
         val minute = resolution?.startMinuteInclusive
-        if (resolution == null || !resolution.isExactTime || minute == null) {
+        val exact = resolution != null && resolution.isExactTime && minute != null
+        if (!exact) {
+            DebugDiagnosticLog.event(
+                "ROUTINE_STEP_TIME_VALIDATION",
+                "index=${index + 1}\n" +
+                    "input=$timeText\n" +
+                    "resolvedTime=${minute?.let(::formatMinute).orEmpty()}\n" +
+                    "exact=false\n" +
+                    "constraintSatisfied=false\n" +
+                    "result=REJECTED"
+            )
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_TIME)
         }
         val originalConstraint = current.steps[index].originalTimeText
             ?.takeIf(String::isNotBlank)
             ?.let { resolveTimeResolution(it, baseCalendarProvider()) }
-        if (originalConstraint != null &&
-            originalConstraint.hasTimeConstraint &&
-            !TemporalActionPolicy.validateClarification(
-                original = originalConstraint,
-                exactDate = null,
-                exactMinute = minute
-            )
-        ) {
+        val constraintSatisfied =
+            originalConstraint == null ||
+                !originalConstraint.hasTimeConstraint ||
+                TemporalActionPolicy.validateClarification(
+                    original = originalConstraint,
+                    exactDate = null,
+                    exactMinute = requireNotNull(minute)
+                )
+        DebugDiagnosticLog.event(
+            "ROUTINE_STEP_TIME_VALIDATION",
+            "index=${index + 1}\n" +
+                "input=$timeText\n" +
+                "resolvedTime=${minute?.let(::formatMinute).orEmpty()}\n" +
+                "exact=true\n" +
+                "constraintSatisfied=$constraintSatisfied\n" +
+                "result=${if (constraintSatisfied) "ACCEPTED" else "REJECTED"}"
+        )
+        if (!constraintSatisfied) {
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_TIME)
         }
         val updated = current.steps.toMutableList()
         updated[index] = updated[index].copy(
             originalTimeText = timeText.trim(),
-            resolvedTime = formatMinute(minute)
+            resolvedTime = formatMinute(requireNotNull(minute))
         )
         draft = current.copy(steps = updated, revision = current.revision + 1)
         return advance()
@@ -257,6 +313,16 @@ class RoutineDraftController(
         }
         val resolution = resolveTimeResolution(timeText, baseCalendarProvider())
         val minute = resolution?.startMinuteInclusive
+        val exact = resolution != null && resolution.isExactTime && minute != null
+        DebugDiagnosticLog.event(
+            "ROUTINE_STEP_TIME_VALIDATION",
+            "index=${stepIndex + 1}\n" +
+                "input=$timeText\n" +
+                "resolvedTime=${minute?.let(::formatMinute).orEmpty()}\n" +
+                "exact=$exact\n" +
+                "constraintSatisfied=$exact\n" +
+                "result=${if (exact) "ACCEPTED" else "REJECTED"}"
+        )
         if (resolution == null || !resolution.isExactTime || minute == null) {
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_TIME)
         }
@@ -286,7 +352,17 @@ class RoutineDraftController(
         val current = requireReviewDraft()
             ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_STATE)
         val resolved = resolveDate(dateText, baseCalendarProvider())
-            ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        DebugDiagnosticLog.event(
+            "ROUTINE_SHARED_DATE_VALIDATION",
+            "input=$dateText\n" +
+                "resolvedDate=${resolved.orEmpty()}\n" +
+                "constrainedStepCount=0\n" +
+                "satisfiesEveryConstraint=${resolved != null}\n" +
+                "result=${if (resolved != null) "ACCEPTED" else "REJECTED"}"
+        )
+        if (resolved == null) {
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        }
         draft = current.copy(
             steps = current.steps.map {
                 it.copy(

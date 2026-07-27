@@ -303,10 +303,12 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
         val normalized = TextNormalizer.normalize(rawCommand)
         // log
-        Log.d(
-            "CREATE_VOICE",
-            "raw='$rawCommand' normalized='$normalized' dialogState=$dialogState title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}' selectedDate='$selectedDate' selectedTime='$selectedTime'"
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "CREATE_VOICE",
+                "raw='$rawCommand' normalized='$normalized' dialogState=$dialogState title='${pendingTaskState.title}' date='${pendingTaskState.dateText}' time='${pendingTaskState.timeText}' selectedDate='$selectedDate' selectedTime='$selectedTime'"
+            )
+        }
 
         val capturedState = dialogState
         val localCandidate = createDraftSemanticOrchestrator.proposeLocal(normalized, capturedState)
@@ -980,10 +982,12 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             CreateTaskDialogState.WAITING_FOR_TIME -> temporalResolver.resolve(null, raw, raw)
             else -> temporalResolver.resolve(null, null, raw)
         }
-        Log.d(
-            "TEMPORAL_FOLLOWUP",
-            "raw='$raw' dialogState=$dialogState type=${resolution.type} date=${resolution.startDateInclusive} minute=${resolution.startMinuteInclusive} valid=$validationResult"
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "TEMPORAL_FOLLOWUP",
+                "raw='$raw' dialogState=$dialogState type=${resolution.type} date=${resolution.startDateInclusive} minute=${resolution.startMinuteInclusive} valid=$validationResult"
+            )
+        }
     }
 
     private fun applyTitle(title: String) {
@@ -1007,10 +1011,12 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun moveToNextMissingStep() {
         // log
-        Log.d(
-            "CREATE_STATE",
-            "title='${pendingTaskState.title}' selectedDate='$selectedDate' selectedTime='$selectedTime' semantic='$pendingSemanticTimePhrase'"
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "CREATE_STATE",
+                "title='${pendingTaskState.title}' selectedDate='$selectedDate' selectedTime='$selectedTime' semantic='$pendingSemanticTimePhrase'"
+            )
+        }
 
         when {
             pendingTaskState.title.isNullOrBlank() -> {

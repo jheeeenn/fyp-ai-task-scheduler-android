@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.myapplication.SettingsActivity
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import com.example.myapplication.ai.conversation.ConversationContextAction
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -127,7 +128,10 @@ open class LaptopAgentClient(
                         "Context-action HTTP ${response.code}; responseChars=${body.length}"
                     )
                 } else {
-                    Log.d("LAPTOP_AGENT", "HTTP ${response.code}: $body")
+                    DebugDiagnosticLog.longEvent(
+                        "LAPTOP_AGENT",
+                        "HTTP ${response.code}: $body"
+                    )
                 }
 
                 if (!response.isSuccessful) {
@@ -136,7 +140,7 @@ open class LaptopAgentClient(
                     } else if (boundedContextAction) {
                         "LM Studio context-action HTTP ${response.code}"
                     } else {
-                        "LM Studio HTTP ${response.code}: $body"
+                        "LM Studio HTTP ${response.code}"
                     }
                     throw IOException(message)
                 }
@@ -150,8 +154,14 @@ open class LaptopAgentClient(
                 val choice = choices.getJSONObject(0)
                 val message = choice.getJSONObject("message")
                 val content = message.optString("content", "")
-                val reasoningChars = message.optString("reasoning_content", "").length
                 val finishReason = choice.optString("finish_reason", "")
+
+                if (boundedRoutineExtraction) {
+                    DebugDiagnosticLog.longEvent(
+                        "ROUTINE_EXTRACTION_RAW",
+                        "content=$content"
+                    )
+                }
 
                 if (content.isBlank()) {
                     val lengthMessage = if (finishReason == "length") {
@@ -160,7 +170,7 @@ open class LaptopAgentClient(
                         ""
                     }
                     val errorMessage = "Task Agent returned blank content. " +
-                            "finishReason=$finishReason, reasoningChars=$reasoningChars.$lengthMessage"
+                            "finishReason=$finishReason.$lengthMessage"
                     Log.e("LAPTOP_AGENT", errorMessage)
                     throw TaskAgentResponseException(errorMessage)
                 }

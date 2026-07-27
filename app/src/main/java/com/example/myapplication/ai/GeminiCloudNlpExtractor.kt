@@ -1,6 +1,7 @@
 package com.example.myapplication.ai
 
 import android.util.Log
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -148,10 +149,13 @@ User command:
                 val response = client.newCall(request).execute()
                 val body = response.body?.string().orEmpty()
 
-                Log.d("LEGACY_CLOUD_RAW", body)
+                DebugDiagnosticLog.longEvent("LEGACY_CLOUD_RAW", body)
 
                 if (!response.isSuccessful) {
-                    Log.e("LEGACY_CLOUD_HTTP", "HTTP ${response.code}: $body")
+                    DebugDiagnosticLog.longEvent(
+                        "LEGACY_CLOUD_HTTP",
+                        "HTTP ${response.code}: $body"
+                    )
                     return@withContext AiParsedCommand(
                         intent = AiIntent.UNKNOWN.name,
                         confidence = 0.0f,
@@ -178,7 +182,7 @@ User command:
                     .getJSONObject(0)
                     .getString("text")
 
-                Log.d("LEGACY_CLOUD_TEXT", text)
+                DebugDiagnosticLog.longEvent("LEGACY_CLOUD_TEXT", text)
 
                 val parsed = JSONObject(text)
 
@@ -195,7 +199,7 @@ User command:
 
                 val validated = fillImplicitDate(validateCloudResult(result))
 
-                Log.d(
+                DebugDiagnosticLog.event(
                     "LEGACY_CLOUD_PARSED",
                     "intent=${validated.intent}, title=${validated.taskTitle}, date=${validated.dateText}, time=${validated.timeText}, source=${validated.source}, confidence=${validated.confidence}"
                 )

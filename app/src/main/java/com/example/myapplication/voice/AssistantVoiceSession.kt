@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
 import com.example.myapplication.AssistantBottomSheet
 import com.example.myapplication.VoiceHelper
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 
 class AssistantVoiceSession(
     private val activity: AppCompatActivity,
@@ -110,10 +111,15 @@ class AssistantVoiceSession(
                         if (!assistantSessionActive || isForceStopping) return
 
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val spokenText = matches?.firstOrNull()?.trim()?.lowercase()
+                        val finalRecognizedText = matches?.firstOrNull()?.trim()
+                        val spokenText = finalRecognizedText?.lowercase()
 
                         if (!spokenText.isNullOrEmpty()) {
                             retryCount = 0
+                            logUserTranscript(
+                                requireNotNull(finalRecognizedText),
+                                source = "VOICE"
+                            )
                             assistantBottomSheet?.showUserSpeech(spokenText)
                             assistantBottomSheet?.setProcessingState()
                             host.onAssistantFinalText(spokenText)
@@ -190,6 +196,7 @@ class AssistantVoiceSession(
         assistantBottomSheet?.showUserSpeech(typedText)
         assistantBottomSheet?.setProcessingState()
 
+        logUserTranscript(typedText, source = "TYPED")
         host.onAssistantFinalText(typedText.lowercase())
     }
 
@@ -254,6 +261,7 @@ class AssistantVoiceSession(
         assistantBottomSheet?.showAssistantReply(text)
         assistantBottomSheet?.setSpeakingState()
 
+        logAssistantTranscript(text, listenAgain)
         voiceHelper.speak(text) {
 
             activity.runOnUiThread {
@@ -288,6 +296,7 @@ class AssistantVoiceSession(
         assistantBottomSheet?.showAssistantReply(text)
         assistantBottomSheet?.setSpeakingState()
 
+        logAssistantTranscript(text, listenAgain = false)
         voiceHelper.speak(text) {
             activity.runOnUiThread {
                 assistantBottomSheet?.setIdleState()
@@ -328,6 +337,7 @@ class AssistantVoiceSession(
             assistantBottomSheet?.showAssistantReply(finalReply)
             assistantBottomSheet?.setIdleState()
 
+            logAssistantTranscript(finalReply, listenAgain = false)
             voiceHelper.speak(finalReply) {
                 activity.runOnUiThread {
                     assistantBottomSheet?.dismiss()
@@ -359,6 +369,7 @@ class AssistantVoiceSession(
         assistantBottomSheet?.showAssistantReply(reply)
         assistantBottomSheet?.setIdleState()
 
+        logAssistantTranscript(reply, listenAgain = false)
         voiceHelper.speak(reply) {
             activity.runOnUiThread {
                 assistantBottomSheet?.dismiss()
@@ -404,6 +415,7 @@ class AssistantVoiceSession(
         assistantBottomSheet?.showAssistantReply(text)
         assistantBottomSheet?.setSpeakingState()
 
+        logAssistantTranscript(text, listenAgain = false)
         voiceHelper.speak(text) {
             activity.runOnUiThread {
                 assistantBottomSheet?.setIdleState()
@@ -426,5 +438,19 @@ class AssistantVoiceSession(
 
     fun pauseListeningForAssistantSpeech() {
         stopListeningBeforeSpeak()}
+
+    private fun logUserTranscript(text: String, source: String) {
+        DebugDiagnosticLog.longEvent(
+            "ASSISTANT_TRANSCRIPT",
+            "role=USER\nsource=$source\ntext=$text"
+        )
+    }
+
+    private fun logAssistantTranscript(text: String, listenAgain: Boolean) {
+        DebugDiagnosticLog.longEvent(
+            "ASSISTANT_TRANSCRIPT",
+            "role=ASSISTANT\ndelivery=SPEAK\nlistenAgain=$listenAgain\ntext=$text"
+        )
+    }
 
 }

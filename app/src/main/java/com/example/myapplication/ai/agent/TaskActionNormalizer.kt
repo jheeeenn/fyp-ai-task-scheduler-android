@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.agent
 
 import android.util.Log
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskQueryPresentation
@@ -90,7 +91,7 @@ class TaskActionNormalizer {
             naturalResponse = response.natural_response.clean().takeIf { it.isNotBlank() }
         )
 
-        Log.d(
+        DebugDiagnosticLog.event(
             "TASK_AGENT_NORMALIZE",
             "intent=${command.intent}, title=${command.taskTitle}, target=${command.targetTaskTitle}, " +
                 "recurrence=${command.recurrence}, priority=${command.priority}, " +

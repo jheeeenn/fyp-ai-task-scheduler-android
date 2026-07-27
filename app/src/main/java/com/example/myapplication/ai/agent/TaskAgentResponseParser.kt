@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.agent
 
 import android.util.Log
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -16,7 +17,10 @@ class TaskAgentResponseParser {
         val json = try {
             JSONObject(jsonText)
         } catch (e: JSONException) {
-            Log.e("TASK_AGENT_PARSE", "Invalid JSON from LM Studio: $jsonText", e)
+            DebugDiagnosticLog.longEvent(
+                "TASK_AGENT_PARSE",
+                "Invalid JSON from LM Studio: $jsonText; category=${e::class.java.simpleName}"
+            )
             throw TaskAgentParseException("Invalid task-agent JSON", e)
         }
 

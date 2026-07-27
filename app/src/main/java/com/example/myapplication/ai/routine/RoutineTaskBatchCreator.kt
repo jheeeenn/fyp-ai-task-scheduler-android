@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.routine
 
 import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
 
 enum class RoutineCreationResultCategory {
@@ -48,7 +49,10 @@ class RoutineTaskBatchCreator(
     private val store: RoutineTaskStore,
     private val reminderScheduler: RoutineReminderScheduler
 ) {
-    suspend fun create(draft: PendingRoutineDraft): RoutineCreationResult {
+    suspend fun create(
+        draft: PendingRoutineDraft,
+        saveGeneration: Long = 0L
+    ): RoutineCreationResult {
         val tasks = draft.steps.map { step ->
             val date = requireNotNull(step.resolvedDate)
             val time = requireNotNull(step.resolvedTime)
@@ -60,37 +64,71 @@ class RoutineTaskBatchCreator(
                 parentTaskId = null
             )
         }
+        DebugDiagnosticLog.event(
+            "ROUTINE_SAVE_DEBUG",
+            "phase=BEGIN\nsaveGeneration=$saveGeneration\ntaskCount=${tasks.size}"
+        )
+        tasks.forEachIndexed { index, task ->
+            DebugDiagnosticLog.event(
+                "ROUTINE_SAVE_TASK",
+                "index=${index + 1}\n" +
+                    "title=${task.title}\n" +
+                    "date=${task.dueDate}\n" +
+                    "time=${task.dueTime}\n" +
+                    "parentTaskId=${task.parentTaskId}"
+            )
+        }
         val insertedIds = try {
             store.insertRootTasksAtomically(tasks)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return RoutineCreationResult(
+            val result = RoutineCreationResult(
                 category = RoutineCreationResultCategory.DATABASE_FAILURE,
                 taskCount = tasks.size,
                 insertedCount = 0,
                 reminderSuccessCount = 0
             )
+            logComplete(saveGeneration, result)
+            return result
         }
+        DebugDiagnosticLog.event(
+            "ROUTINE_SAVE_DEBUG",
+            "phase=DATABASE_COMPLETE\n" +
+                "saveGeneration=$saveGeneration\n" +
+                "insertedCount=${insertedIds.size}\n" +
+                "insertedIds=${insertedIds.joinToString(prefix = "[", postfix = "]")}"
+        )
         if (insertedIds.size != tasks.size) {
-            return RoutineCreationResult(
+            val result = RoutineCreationResult(
                 category = RoutineCreationResultCategory.DATABASE_FAILURE,
                 taskCount = tasks.size,
                 insertedCount = insertedIds.size,
                 reminderSuccessCount = 0
             )
+            logComplete(saveGeneration, result)
+            return result
         }
 
-        val reminderSuccessCount = tasks.zip(insertedIds).count { (task, id) ->
-            try {
+        var reminderSuccessCount = 0
+        tasks.zip(insertedIds).forEachIndexed { index, (task, id) ->
+            val scheduled = try {
                 reminderScheduler.schedule(task.copy(id = id))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 false
             }
+            if (scheduled) reminderSuccessCount += 1
+            DebugDiagnosticLog.event(
+                "ROUTINE_REMINDER_DEBUG",
+                "index=${index + 1}\n" +
+                    "taskId=$id\n" +
+                    "title=${task.title}\n" +
+                    "scheduled=$scheduled"
+            )
         }
-        return RoutineCreationResult(
+        val result = RoutineCreationResult(
             category = if (reminderSuccessCount == tasks.size) {
                 RoutineCreationResultCategory.SUCCESS
             } else {
@@ -99,6 +137,23 @@ class RoutineTaskBatchCreator(
             taskCount = tasks.size,
             insertedCount = insertedIds.size,
             reminderSuccessCount = reminderSuccessCount
+        )
+        logComplete(saveGeneration, result)
+        return result
+    }
+
+    private fun logComplete(
+        saveGeneration: Long,
+        result: RoutineCreationResult
+    ) {
+        DebugDiagnosticLog.event(
+            "ROUTINE_SAVE_DEBUG",
+            "phase=COMPLETE\n" +
+                "saveGeneration=$saveGeneration\n" +
+                "result=${result.category.name}\n" +
+                "taskCount=${result.taskCount}\n" +
+                "insertedCount=${result.insertedCount}\n" +
+                "reminderSuccessCount=${result.reminderSuccessCount}"
         )
     }
 }

@@ -280,8 +280,6 @@ $userText
                 val message = choice.getJSONObject("message")
 
                 val content = message.optString("content", "")
-                val reasoningChars =
-                    message.optString("reasoning_content", "").length
                 val finishReason =
                     choice.optString("finish_reason", "")
 
@@ -296,8 +294,7 @@ $userText
 
                     val errorMessage =
                         "Conversation Agent returned blank content. " +
-                                "finishReason=$finishReason, " +
-                                "reasoningChars=$reasoningChars.$lengthMessage"
+                                "finishReason=$finishReason.$lengthMessage"
 
                     Log.e("CONVO_AGENT", errorMessage)
                     throw ConversationAgentResponseException(errorMessage)

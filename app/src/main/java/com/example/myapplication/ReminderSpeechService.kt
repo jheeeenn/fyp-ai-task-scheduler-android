@@ -22,7 +22,9 @@ class ReminderSpeechService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val taskTitle = intent?.getStringExtra("task_title") ?: "Task reminder"
-        Log.d("REMINDER_DEBUG", "ReminderSpeechService onStartCommand taskTitle='$taskTitle'")
+        if (BuildConfig.DEBUG) {
+            Log.d("REMINDER_DEBUG", "ReminderSpeechService onStartCommand taskTitle='$taskTitle'")
+        }
         val notification: Notification = NotificationCompat.Builder(this, "reminder_speech_channel")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Speaking reminder")

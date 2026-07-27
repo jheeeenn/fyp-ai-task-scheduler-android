@@ -383,10 +383,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun handleVoiceInput(text: String) {
         val normalized = TextNormalizer.normalize(text)
-        Log.d(
-            "EDIT_VOICE",
-            "raw='$text' normalized='$normalized' pendingFieldTarget=$pendingFieldTarget waitingForSaveConfirmation=$waitingForSaveConfirmation hasPendingTemporal=${pendingTemporalClarification != null} selectedDate='$selectedDate' selectedTime='$selectedTime'"
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "EDIT_VOICE",
+                "raw='$text' normalized='$normalized' pendingFieldTarget=$pendingFieldTarget waitingForSaveConfirmation=$waitingForSaveConfirmation hasPendingTemporal=${pendingTemporalClarification != null} selectedDate='$selectedDate' selectedTime='$selectedTime'"
+            )
+        }
 
         if (isSaveCommand(normalized)) {
             if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
@@ -878,7 +880,9 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             EditFieldTarget.TIME -> {
                 val wasTemporalClarification = pendingTemporalClarification != null
                 val parsed = applySpokenTime(normalized)
-                Log.d("EDIT_TIME", "raw='$normalized' parsed=$parsed")
+                if (BuildConfig.DEBUG) {
+                    Log.d("EDIT_TIME", "raw='$normalized' parsed=$parsed")
+                }
                 if (parsed) {
                     if (!wasTemporalClarification) {
                         pendingFieldTarget = EditFieldTarget.NONE

@@ -21,7 +21,9 @@ class ReminderReceiver : BroadcastReceiver() {
         val taskTitle = intent.getStringExtra("task_title") ?: "Task reminder"
         val taskId = intent.getIntExtra("task_id", 0)
 
-        Log.d("REMINDER_DEBUG", "Receiver fired for taskTitle='$taskTitle' taskId=$taskId")
+        if (BuildConfig.DEBUG) {
+            Log.d("REMINDER_DEBUG", "Receiver fired for taskTitle='$taskTitle' taskId=$taskId")
+        }
 
         createNotificationChannel(context)
 
