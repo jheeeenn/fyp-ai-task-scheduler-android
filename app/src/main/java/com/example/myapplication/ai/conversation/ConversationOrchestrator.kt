@@ -29,13 +29,15 @@ class ConversationOrchestrator(
                 plan.styleContext.toSafeJson()
             )
             val envelope = SafeObservationStyleParser().parse(raw)
-            if (!SafeObservationStyleValidator.isValid(envelope)) {
-                Log.d("SAFE_OBSERVATION_STYLE_RESULT", "accepted=false source=MODEL_STYLE")
-                Log.d("SAFE_OBSERVATION_STYLE_FALLBACK", "reason=UNSAFE_OR_LOW_CONFIDENCE")
+            val validation = SafeObservationStyleValidator.evaluate(envelope)
+            Log.d(
+                "SAFE_OBSERVATION_STYLE_RESULT",
+                "accepted=${validation.accepted} reason=${validation.reason}"
+            )
+            if (!validation.accepted) {
                 deterministicTaskQueryResponse(plan)
             } else {
                 val speech = SafeTaskQuerySpeechComposer.compose(plan, envelope)
-                Log.d("SAFE_OBSERVATION_STYLE_RESULT", "accepted=true source=MODEL_STYLE")
                 Log.d(
                     "SAFE_OBSERVATION_COMPOSE",
                     "source=android_hybrid_safe coreLength=${plan.authoritativeCore.length} " +
@@ -48,6 +50,13 @@ class ConversationOrchestrator(
                     source = "android_hybrid_safe"
                 )
             }
+        } catch (e: ConversationSchemaException) {
+            Log.d(
+                "SAFE_OBSERVATION_STYLE_RESULT",
+                "accepted=false reason=${SafeStyleValidationReason.INVALID_FORMAT}"
+            )
+            Log.d("SAFE_OBSERVATION_STYLE_FALLBACK", "reason=INVALID_SCHEMA")
+            deterministicTaskQueryResponse(plan)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -59,7 +68,6 @@ class ConversationOrchestrator(
             } else {
                 "REQUEST_OR_SCHEMA_FAILURE"
             }
-            Log.d("SAFE_OBSERVATION_STYLE_RESULT", "accepted=false source=MODEL_STYLE")
             Log.d("SAFE_OBSERVATION_STYLE_FALLBACK", "reason=$reason")
             deterministicTaskQueryResponse(plan)
         }

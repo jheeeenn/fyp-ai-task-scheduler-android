@@ -73,6 +73,10 @@ import com.example.myapplication.ai.conversation.SafeObservationDeliveryGuard
 import com.example.myapplication.ai.conversation.SafeObservationDeliveryState
 import com.example.myapplication.ai.conversation.SafeObservationInteraction
 import com.example.myapplication.ai.conversation.SafeStyleTurnAuthorization
+import com.example.myapplication.ai.conversation.AssistantRequestToken
+import com.example.myapplication.ai.conversation.AssistantRequestTokenPolicy
+import com.example.myapplication.ai.conversation.SafeStyleAuthorizationPolicy
+import com.example.myapplication.ai.conversation.SafeStyleAuthorizationStatus
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionValidationResult
@@ -141,6 +145,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         BREAKDOWN_CONFIRMATION,
         BREAKDOWN_SCHEDULE_COLLECTION
     }
+    private enum class AssistantRequestInvalidationReason {
+        NEW_COMMAND,
+        USER_CANCELLED,
+        SESSION_STOPPED,
+        CONVERSATION_ENDED
+    }
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
     private val temporalQueryResolver = TemporalQueryResolver()
@@ -148,8 +158,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var authoritativeRepeatState: AuthoritativeRepeatState? = null
     private var currentQueryPageRepeatState: AuthoritativeRepeatState? = null
     private var queryReadingStateGeneration: Long = 0
-    private var assistantTurnGeneration: Long = 0
-    private var assistantInteractionActive: Boolean = false
+    private var assistantRequestGeneration: Long = 0
+    private var assistantRequestActive: Boolean = false
 
     //for delete confirmation when the task intent is 'delete'
     private var pendingDeleteTaskId: Long? = null
@@ -358,8 +368,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     override fun onAssistantCancelled() {
-        invalidateAssistantTurn()
-        clearConversationSessionContext(turnAlreadyInvalidated = true)
+        invalidateAssistantRequest(AssistantRequestInvalidationReason.USER_CANCELLED)
+        clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
         clearPendingDeleteState()
@@ -367,8 +377,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     override fun onAssistantSessionStopped() {
-        invalidateAssistantTurn()
-        clearConversationSessionContext(turnAlreadyInvalidated = true)
+        invalidateAssistantRequest(AssistantRequestInvalidationReason.SESSION_STOPPED)
+        clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         clearPendingTaskMatchState()
         clearPendingDeleteState()
@@ -631,9 +641,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun handleVoiceCommand(command: String) {
         val normalized = TextNormalizer.normalize(command)
-        val turnGeneration = beginAssistantTurn()
+        val requestToken = beginAssistantRequest()
         val localStyleAuthorization = SafeStyleTurnAuthorization(
-            turnGeneration = turnGeneration,
+            requestGeneration = requestToken.requestGeneration,
             styleCallAllowed = true
         )
 
@@ -660,7 +670,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
 
-        if (handleQueryReadingFollowUp(normalized, localStyleAuthorization)) {
+        if (handleQueryReadingFollowUp(
+                normalized,
+                requestToken,
+                localStyleAuthorization
+            )
+        ) {
             return
         }
 
@@ -932,7 +947,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
 
                 val routedStyleAuthorization = SafeStyleTurnAuthorization(
-                    turnGeneration = turnGeneration,
+                    requestGeneration = requestToken.requestGeneration,
                     styleCallAllowed =
                         conversationDecision.source == "conversation_agent" &&
                             !contextRepairEligible &&
@@ -1129,6 +1144,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
                         executeQueryReadingControl(
                             conversationDecision.queryReadingMove,
+                            requestToken,
                             routedStyleAuthorization
                         )
                         return@launch
@@ -1155,6 +1171,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             assistantSession.speak(conversationDecision.reply, listenAgain = false)
                         }
                         logQueryPageEndIfActive("USER_STOPPED")
+                        invalidateAssistantRequest(
+                            AssistantRequestInvalidationReason.CONVERSATION_ENDED
+                        )
                         clearConversationSessionContext()
                         homeFollowUpContext = HomeFollowUpContext.NONE
                         return@launch
@@ -1286,6 +1305,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             agentDateText = aiResult.targetDateText ?: aiResult.dateText,
                             agentTimeText = aiResult.targetTimeText ?: aiResult.timeText,
                             presentation = presentationResolution.effective,
+                            requestToken = requestToken,
                             authorization = routedStyleAuthorization
                         )
                     }
@@ -1631,6 +1651,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private suspend fun renderObservationResponse(
         observation: ExecutionObservation,
+        requestToken: AssistantRequestToken? = null,
         authorization: SafeStyleTurnAuthorization? = null
     ): ConversationResponse {
         val startedAt = System.currentTimeMillis()
@@ -1642,14 +1663,28 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         )
         val plan = AndroidObservationResponseRenderer.taskQueryPlanOrNull(observation)
         val response = if (plan != null) {
-            val budgetAvailable = authorization?.styleCallAllowed == true
+            val styleAuthorization = SafeStyleAuthorizationPolicy.evaluate(
+                requestToken,
+                authorization
+            )
+            if (styleAuthorization.status == SafeStyleAuthorizationStatus.STALE) {
+                Log.d(
+                    "SAFE_OBSERVATION_STYLE_FALLBACK",
+                    "reason=STYLE_AUTHORIZATION_STALE"
+                )
+            }
+            val budgetAvailable = styleAuthorization.styleCallAllowed
             Log.d(
                 "SAFE_OBSERVATION_STYLE",
                 "eligible=true pageRole=${plan.styleContext.pageRole} " +
                     "tone=${plan.styleContext.tone} budgetAvailable=$budgetAvailable"
             )
-            conversationOrchestrator.styleTaskQuerySpeech(plan, budgetAvailable)
-                .copy(hint = observation.fallbackHint)
+            if (styleAuthorization.status == SafeStyleAuthorizationStatus.STALE) {
+                AndroidObservationResponseRenderer.render(observation)
+            } else {
+                conversationOrchestrator.styleTaskQuerySpeech(plan, budgetAvailable)
+                    .copy(hint = observation.fallbackHint)
+            }
         } else {
             AndroidObservationResponseRenderer.render(observation)
         }
@@ -1696,17 +1731,22 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         kind: RepeatableSpeechKind,
         contextGeneration: Long?,
         pageIndex: Int?,
+        requestToken: AssistantRequestToken,
         authorization: SafeStyleTurnAuthorization
     ) {
         val capturedState = captureSafeObservationDeliveryState(
             kind = kind,
             contextGeneration = contextGeneration,
             pageIndex = pageIndex,
-            authorization = authorization
+            requestToken = requestToken
         )
         if (!isSafeObservationDeliveryCurrent(capturedState)) return
 
-        val response = renderObservationResponse(observation, authorization)
+        val response = renderObservationResponse(
+            observation,
+            requestToken,
+            authorization
+        )
         val staleReason = SafeObservationDeliveryGuard.runIfCurrent(
             captured = capturedState,
             current = currentSafeObservationDeliveryState(capturedState)
@@ -1737,9 +1777,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         kind: RepeatableSpeechKind,
         contextGeneration: Long?,
         pageIndex: Int?,
-        authorization: SafeStyleTurnAuthorization
+        requestToken: AssistantRequestToken
     ): SafeObservationDeliveryState = SafeObservationDeliveryState(
-        turnGeneration = authorization.turnGeneration,
+        requestGeneration = requestToken.requestGeneration,
         queryReadingStateGeneration = queryReadingStateGeneration,
         taskContextGeneration = contextGeneration,
         pageIndex = pageIndex,
@@ -1749,13 +1789,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             RepeatableSpeechKind.CONTEXT_READ -> SafeObservationInteraction.NONE
         },
         querySessionActive = accessibleTaskQuerySession != null,
-        assistantSessionActive = assistantInteractionActive
+        assistantRequestActive = assistantRequestActive
     )
 
     private fun currentSafeObservationDeliveryState(
         captured: SafeObservationDeliveryState
     ): SafeObservationDeliveryState = SafeObservationDeliveryState(
-        turnGeneration = assistantTurnGeneration,
+        requestGeneration = assistantRequestGeneration,
         queryReadingStateGeneration = queryReadingStateGeneration,
         taskContextGeneration = if (captured.taskContextGeneration == null) {
             null
@@ -1773,7 +1813,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             else -> SafeObservationInteraction.NONE
         },
         querySessionActive = accessibleTaskQuerySession != null,
-        assistantSessionActive = assistantInteractionActive
+        assistantRequestActive = assistantRequestActive
     )
 
     private fun isSafeObservationDeliveryCurrent(
@@ -1879,19 +1919,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         agentDateText: String?,
         agentTimeText: String?,
         presentation: TaskQueryPresentation,
+        requestToken: AssistantRequestToken,
         authorization: SafeStyleTurnAuthorization
     ) {
-        if (!isSafeStyleAuthorizationCurrent(authorization)) {
-            Log.d("SAFE_OBSERVATION_STYLE_STALE", "reason=TURN_CHANGED")
+        if (!isAssistantRequestCurrent(requestToken)) {
             return
         }
         val queryRequestGeneration =
             clearAccessibleTaskQuerySession(clearTaskContext = true)
-        assistantInteractionActive = true
-        val queryAuthorization = SafeStyleTurnAuthorization(
-            turnGeneration = assistantTurnGeneration,
-            styleCallAllowed = authorization.styleCallAllowed
-        )
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
             val taskData = withContext(Dispatchers.IO) {
@@ -1902,7 +1937,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val allTasks = taskData.first
             if (
                 queryRequestGeneration != queryReadingStateGeneration ||
-                !isSafeStyleAuthorizationCurrent(queryAuthorization)
+                !isAssistantRequestCurrent(requestToken)
             ) {
                 return@launch
             }
@@ -1984,11 +2019,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     kind = RepeatableSpeechKind.QUERY_COUNT,
                     contextGeneration = null,
                     pageIndex = null,
-                    authorization = queryAuthorization
+                    requestToken = requestToken,
+                    authorization = authorization
                 )
             } else {
                 homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
-                publishAndSpeakCurrentQueryPage(session, queryAuthorization)
+                publishAndSpeakCurrentQueryPage(
+                    session,
+                    requestToken,
+                    authorization
+                )
             }
         }
     }
@@ -2031,12 +2071,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private suspend fun publishAndSpeakCurrentQueryPage(
         session: AccessibleTaskQuerySession,
+        requestToken: AssistantRequestToken,
         authorization: SafeStyleTurnAuthorization
     ) {
-        if (
-            !isSafeStyleAuthorizationCurrent(authorization) ||
-            accessibleTaskQuerySession !== session
-        ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
+        if (accessibleTaskQuerySession !== session) {
             Log.d("SAFE_OBSERVATION_STYLE_STALE", "reason=QUERY_PAGE_CHANGED")
             return
         }
@@ -2060,6 +2099,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             kind = RepeatableSpeechKind.QUERY_PAGE,
             contextGeneration = contextGeneration,
             pageIndex = session.currentPageIndex,
+            requestToken = requestToken,
             authorization = authorization
         )
     }
@@ -2234,13 +2274,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun handleQueryReadingFollowUp(
         normalized: String,
+        requestToken: AssistantRequestToken,
         authorization: SafeStyleTurnAuthorization
     ): Boolean {
         val session = accessibleTaskQuerySession
         return when (homeFollowUpContext) {
             HomeFollowUpContext.QUERY_COUNT -> when {
                 session != null && isSimpleFollowUpAgreement(normalized) -> {
-                    startQueryOverviewFromCount(authorization)
+                    startQueryOverviewFromCount(requestToken, authorization)
                     true
                 }
 
@@ -2263,7 +2304,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     normalized == "yes" &&
                         session?.hasNextPage == true
                     ) -> {
-                    continueTaskQueryPage(authorization)
+                    continueTaskQueryPage(requestToken, authorization)
                     true
                 }
 
@@ -2299,13 +2340,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun executeQueryReadingControl(
         move: ConversationQueryReadingMove,
+        requestToken: AssistantRequestToken,
         authorization: SafeStyleTurnAuthorization
     ) {
         when (move) {
             ConversationQueryReadingMove.START_OVERVIEW ->
-                startQueryOverviewFromCount(authorization)
+                startQueryOverviewFromCount(requestToken, authorization)
             ConversationQueryReadingMove.CONTINUE ->
-                continueTaskQueryPage(authorization)
+                continueTaskQueryPage(requestToken, authorization)
             ConversationQueryReadingMove.REPEAT_LAST -> repeatLastAuthoritativeSpeech()
             ConversationQueryReadingMove.REPEAT_PAGE -> repeatCurrentTaskQueryPage()
             ConversationQueryReadingMove.STOP -> endAssistantConversation()
@@ -2320,19 +2362,29 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             else -> QueryReadingInteractionState.NONE
         }
 
-    private fun startQueryOverviewFromCount(authorization: SafeStyleTurnAuthorization) {
-        if (!isSafeStyleAuthorizationCurrent(authorization)) return
+    private fun startQueryOverviewFromCount(
+        requestToken: AssistantRequestToken,
+        authorization: SafeStyleTurnAuthorization
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
         val session = accessibleTaskQuerySession ?: return
         val overviewSession = session.beginOverview()
         accessibleTaskQuerySession = overviewSession
         homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
         lifecycleScope.launch {
-            publishAndSpeakCurrentQueryPage(overviewSession, authorization)
+            publishAndSpeakCurrentQueryPage(
+                overviewSession,
+                requestToken,
+                authorization
+            )
         }
     }
 
-    private fun continueTaskQueryPage(authorization: SafeStyleTurnAuthorization) {
-        if (!isSafeStyleAuthorizationCurrent(authorization)) return
+    private fun continueTaskQueryPage(
+        requestToken: AssistantRequestToken,
+        authorization: SafeStyleTurnAuthorization
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
         val currentSession = accessibleTaskQuerySession ?: return
         val nextSession = currentSession.advanceOnePage()
         if (nextSession == null) {
@@ -2348,7 +2400,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         accessibleTaskQuerySession = nextSession
         homeFollowUpContext = HomeFollowUpContext.QUERY_PAGE
         lifecycleScope.launch {
-            publishAndSpeakCurrentQueryPage(nextSession, authorization)
+            publishAndSpeakCurrentQueryPage(
+                nextSession,
+                requestToken,
+                authorization
+            )
         }
     }
 
@@ -2405,9 +2461,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun endAssistantConversation() {
-        invalidateAssistantTurn()
+        invalidateAssistantRequest(
+            AssistantRequestInvalidationReason.CONVERSATION_ENDED
+        )
         logQueryPageEndIfActive("USER_STOPPED")
-        clearConversationSessionContext(turnAlreadyInvalidated = true)
+        clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
         assistantSession.getBottomSheet()?.clearHint()
         clearPendingTaskMatchState()
@@ -2416,23 +2474,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         assistantSession.speakThenStop(responseManager.stopListening())
     }
 
-    private fun clearConversationSessionContext(
-        turnAlreadyInvalidated: Boolean = false
-    ) {
-        clearAccessibleTaskQuerySession(
-            clearTaskContext = true,
-            turnAlreadyInvalidated = turnAlreadyInvalidated
-        )
+    private fun clearConversationSessionContext() {
+        clearAccessibleTaskQuerySession(clearTaskContext = true)
         if (::conversationOrchestrator.isInitialized) {
             conversationOrchestrator.clearSessionMemory()
         }
     }
 
     private fun clearAccessibleTaskQuerySession(
-        clearTaskContext: Boolean,
-        turnAlreadyInvalidated: Boolean = false
+        clearTaskContext: Boolean
     ): Long {
-        if (!turnAlreadyInvalidated) invalidateAssistantTurn()
         queryReadingStateGeneration += 1
         accessibleTaskQuerySession = null
         authoritativeRepeatState = null
@@ -2444,22 +2495,45 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return queryReadingStateGeneration
     }
 
-    private fun beginAssistantTurn(): Long {
-        assistantTurnGeneration += 1
-        assistantInteractionActive = true
-        return assistantTurnGeneration
+    private fun beginAssistantRequest(): AssistantRequestToken {
+        if (assistantRequestActive) {
+            Log.d(
+                "ASSISTANT_REQUEST_INVALIDATE",
+                "reason=${AssistantRequestInvalidationReason.NEW_COMMAND}"
+            )
+        }
+        assistantRequestGeneration += 1
+        assistantRequestActive = true
+        Log.d(
+            "ASSISTANT_REQUEST_BEGIN",
+            "requestGeneration=$assistantRequestGeneration"
+        )
+        return AssistantRequestToken(assistantRequestGeneration)
     }
 
-    private fun invalidateAssistantTurn() {
-        assistantTurnGeneration += 1
-        assistantInteractionActive = false
+    private fun invalidateAssistantRequest(
+        reason: AssistantRequestInvalidationReason
+    ) {
+        assistantRequestGeneration += 1
+        assistantRequestActive = false
+        Log.d("ASSISTANT_REQUEST_INVALIDATE", "reason=$reason")
     }
 
-    private fun isSafeStyleAuthorizationCurrent(
-        authorization: SafeStyleTurnAuthorization
-    ): Boolean =
-        assistantInteractionActive &&
-            authorization.turnGeneration == assistantTurnGeneration
+    private fun isAssistantRequestCurrent(token: AssistantRequestToken): Boolean {
+        val current = AssistantRequestTokenPolicy.isCurrent(
+            token = token,
+            currentRequestGeneration = assistantRequestGeneration,
+            requestActive = assistantRequestActive
+        )
+        if (!current) {
+            Log.d(
+                "ASSISTANT_REQUEST_STALE",
+                "capturedGeneration=${token.requestGeneration} " +
+                    "currentGeneration=$assistantRequestGeneration reason=NEWER_REQUEST"
+            )
+        }
+        return current
+    }
 
     private fun logQueryPageEndIfActive(reason: String) {
         if (accessibleTaskQuerySession != null) {

@@ -370,6 +370,13 @@ Set use_style=false when a safe fragment cannot be written.
 Keep fragments short, natural, and suitable for text-to-speech.
 Return only the strict fields use_style, lead_in, bridge, and confidence.
 Do not return speech, hint, response_type, factual values, operation outcomes, task fields, page fields, control instructions, explanations, or markdown.
+
+Valid fact-free examples:
+{"use_style":true,"lead_in":"Certainly — here is the overview.","bridge":"","confidence":0.96}
+{"use_style":true,"lead_in":"Of course.","bridge":"I’m here with you.","confidence":0.95}
+
+If a proposed wrapper would contain a factual claim or an instruction such as "Please continue.", return:
+{"use_style":false,"lead_in":"","bridge":"","confidence":0.95}
 """.trimIndent()
         internal val CREATE_DRAFT_SYSTEM_PROMPT = """
 You interpret one utterance inside an existing create-task draft workflow.

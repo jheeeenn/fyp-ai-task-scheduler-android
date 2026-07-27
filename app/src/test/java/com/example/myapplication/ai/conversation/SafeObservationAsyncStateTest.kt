@@ -18,12 +18,12 @@ class SafeObservationAsyncStateTest {
 
     @Test
     fun styleAuthorizationIsImmutablePerTurnAndNoGlobalBudgetBooleanRemains() {
-        val first = SafeStyleTurnAuthorization(turnGeneration = 4, styleCallAllowed = true)
-        val second = SafeStyleTurnAuthorization(turnGeneration = 5, styleCallAllowed = false)
+        val first = SafeStyleTurnAuthorization(requestGeneration = 4, styleCallAllowed = true)
+        val second = SafeStyleTurnAuthorization(requestGeneration = 5, styleCallAllowed = false)
 
-        assertEquals(4, first.turnGeneration)
+        assertEquals(4, first.requestGeneration)
         assertTrue(first.styleCallAllowed)
-        assertEquals(5, second.turnGeneration)
+        assertEquals(5, second.requestGeneration)
         assertFalse(second.styleCallAllowed)
         assertFalse(homeSource.contains("safeObservationStyleBudgetAvailable"))
         assertTrue(homeSource.contains("val localStyleAuthorization = SafeStyleTurnAuthorization("))
@@ -31,22 +31,66 @@ class SafeObservationAsyncStateTest {
     }
 
     @Test
+    fun staleStyleAuthorizationDoesNotInvalidateCurrentRequestAndUsesDeterministicSpeech() =
+        runBlocking {
+            val requestToken = AssistantRequestToken(requestGeneration = 9)
+            val staleAuthorization = SafeStyleTurnAuthorization(
+                requestGeneration = 8,
+                styleCallAllowed = true
+            )
+            val evaluation = SafeStyleAuthorizationPolicy.evaluate(
+                requestToken,
+                staleAuthorization
+            )
+            val client = ImmediateStyleClient()
+            val response = ConversationOrchestrator(client, ConversationDecisionParser())
+                .styleTaskQuerySpeech(stylePlan(), evaluation.styleCallAllowed)
+
+            assertTrue(AssistantRequestTokenPolicy.isCurrent(requestToken, 9, true))
+            assertEquals(SafeStyleAuthorizationStatus.STALE, evaluation.status)
+            assertEquals("android_deterministic", response.source)
+            assertEquals(stylePlan().deterministicSpeech, response.speech)
+            assertEquals(0, client.calls)
+
+            val render = homeSource
+                .substringAfter("private suspend fun renderObservationResponse(")
+                .substringBefore("private fun recordObservationResponse(")
+            assertTrue(render.contains("reason=STYLE_AUTHORIZATION_STALE"))
+            assertTrue(render.contains("AndroidObservationResponseRenderer.render(observation)"))
+        }
+
+    @Test
+    fun staleRequestTokenCancelsTheOldRequestButQueryResetPreservesCurrentToken() {
+        val token = AssistantRequestToken(requestGeneration = 12)
+        assertFalse(AssistantRequestTokenPolicy.isCurrent(token, 13, true))
+        assertFalse(AssistantRequestTokenPolicy.isCurrent(token, 12, false))
+        assertTrue(AssistantRequestTokenPolicy.isCurrent(token, 12, true))
+
+        val clear = homeSource
+            .substringAfter("private fun clearAccessibleTaskQuerySession(")
+            .substringBefore("private fun beginAssistantRequest(")
+        assertFalse(clear.contains("assistantRequestGeneration"))
+        assertFalse(clear.contains("invalidateAssistantRequest("))
+        assertTrue(clear.contains("queryReadingStateGeneration += 1"))
+    }
+
+    @Test
     fun newCommandInvalidatesEarlierAuthorization() {
-        val captured = state(turn = 7)
-        val current = captured.copy(turnGeneration = 8)
+        val captured = state(request = 7)
+        val current = captured.copy(requestGeneration = 8)
 
         assertEquals(
-            SafeObservationStaleReason.TURN_CHANGED,
+            SafeObservationStaleReason.REQUEST_CHANGED,
             SafeObservationDeliveryGuard.staleReason(captured, current)
         )
     }
 
     @Test
     fun cancellationStopAndConversationEndInvalidateInflightDeliveryBeforeClear() {
-        val captured = state(turn = 10)
-        val inactive = captured.copy(turnGeneration = 11, assistantSessionActive = false)
+        val captured = state(request = 10)
+        val inactive = captured.copy(requestGeneration = 11, assistantRequestActive = false)
         assertEquals(
-            SafeObservationStaleReason.TURN_CHANGED,
+            SafeObservationStaleReason.REQUEST_CHANGED,
             SafeObservationDeliveryGuard.staleReason(captured, inactive)
         )
 
@@ -60,12 +104,15 @@ class SafeObservationAsyncStateTest {
             .substringAfter("private fun endAssistantConversation()")
             .substringBefore("private fun clearConversationSessionContext(")
         listOf(cancelled, stopped, ended).forEach { body ->
-            assertTrue(body.indexOf("invalidateAssistantTurn()") >= 0)
+            assertTrue(body.indexOf("invalidateAssistantRequest(") >= 0)
             assertTrue(
-                body.indexOf("invalidateAssistantTurn()") <
+                body.indexOf("invalidateAssistantRequest(") <
                     body.indexOf("clearConversationSessionContext(")
             )
         }
+        assertTrue(cancelled.contains("AssistantRequestInvalidationReason.USER_CANCELLED"))
+        assertTrue(stopped.contains("AssistantRequestInvalidationReason.SESSION_STOPPED"))
+        assertTrue(ended.contains("AssistantRequestInvalidationReason.CONVERSATION_ENDED"))
     }
 
     @Test
@@ -98,10 +145,10 @@ class SafeObservationAsyncStateTest {
     fun staleStyledTimeoutAndUnsafeResultsAllRemainSilent() {
         listOf("android_hybrid_safe", "timeout_fallback", "unsafe_fallback").forEach {
             val effects = DeliveryEffects()
-            val captured = state(turn = 1)
+            val captured = state(request = 1)
             val reason = SafeObservationDeliveryGuard.runIfCurrent(
                 captured,
-                captured.copy(turnGeneration = 2)
+                captured.copy(requestGeneration = 2)
             ) {
                 effects.recorded += 1
                 effects.authoritativeRepeatUpdates += 1
@@ -109,7 +156,7 @@ class SafeObservationAsyncStateTest {
                 effects.spoken += 1
             }
 
-            assertEquals(SafeObservationStaleReason.TURN_CHANGED, reason)
+            assertEquals(SafeObservationStaleReason.REQUEST_CHANGED, reason)
             assertEquals(DeliveryEffects(), effects)
         }
     }
@@ -129,7 +176,7 @@ class SafeObservationAsyncStateTest {
 
             outcomes.forEach { outcome ->
                 val result = completeStyleAfterInvalidation(outcome)
-                assertEquals(SafeObservationStaleReason.TURN_CHANGED, result.reason)
+                assertEquals(SafeObservationStaleReason.REQUEST_CHANGED, result.reason)
                 assertEquals(DeliveryEffects(), result.effects)
                 assertNull(result.memory.finalSpokenResponse)
                 assertEquals(1, result.styleCalls)
@@ -214,7 +261,10 @@ class SafeObservationAsyncStateTest {
 
         assertNull(delivery.await())
         assertEquals(1, client.calls)
-        assertEquals("Certainly. Core. Control.", memory.finalSpokenResponse)
+        assertEquals(
+            "Certainly. ${stylePlan().authoritativeCore} ${stylePlan().authoritativeControl}",
+            memory.finalSpokenResponse
+        )
         assertEquals(DeliveryEffects(1, 1, 1, 1), effects)
     }
 
@@ -230,10 +280,10 @@ class SafeObservationAsyncStateTest {
             .substringAfter("private fun repeatCurrentTaskQueryPage()")
             .substringBefore("private fun endAssistantConversation()")
 
-        assertTrue(handler.contains("startQueryOverviewFromCount(authorization)"))
-        assertTrue(handler.contains("continueTaskQueryPage(authorization)"))
-        assertTrue(executor.contains("startQueryOverviewFromCount(authorization)"))
-        assertTrue(executor.contains("continueTaskQueryPage(authorization)"))
+        assertTrue(handler.contains("startQueryOverviewFromCount(requestToken, authorization)"))
+        assertTrue(handler.contains("continueTaskQueryPage(requestToken, authorization)"))
+        assertTrue(executor.contains("startQueryOverviewFromCount(requestToken, authorization)"))
+        assertTrue(executor.contains("continueTaskQueryPage(requestToken, authorization)"))
         assertTrue(executor.contains("REPEAT_LAST -> repeatLastAuthoritativeSpeech()"))
         assertTrue(executor.contains("REPEAT_PAGE -> repeatCurrentTaskQueryPage()"))
         assertFalse(repeat.contains("styleTaskQuerySpeech("))
@@ -268,19 +318,33 @@ class SafeObservationAsyncStateTest {
         assertFalse(message.contains("{"))
     }
 
+    @Test
+    fun requestLifecycleDiagnosticsAreReasonBasedAndContainNoTaskData() {
+        val lifecycle = homeSource
+            .substringAfter("private fun beginAssistantRequest()")
+            .substringBefore("private fun logQueryPageEndIfActive(")
+
+        assertTrue(lifecycle.contains("\"ASSISTANT_REQUEST_BEGIN\""))
+        assertTrue(lifecycle.contains("\"ASSISTANT_REQUEST_INVALIDATE\""))
+        assertTrue(lifecycle.contains("\"ASSISTANT_REQUEST_STALE\""))
+        assertTrue(lifecycle.contains("reason=NEWER_REQUEST"))
+        assertFalse(lifecycle.contains("task.title"))
+        assertFalse(lifecycle.contains("normalized"))
+    }
+
     private fun state(
-        turn: Long = 1,
+        request: Long = 1,
         queryGeneration: Long = 2,
         contextGeneration: Long? = 3,
         pageIndex: Int? = 0
     ) = SafeObservationDeliveryState(
-        turnGeneration = turn,
+        requestGeneration = request,
         queryReadingStateGeneration = queryGeneration,
         taskContextGeneration = contextGeneration,
         pageIndex = pageIndex,
         interaction = SafeObservationInteraction.QUERY_PAGE,
         querySessionActive = true,
-        assistantSessionActive = true
+        assistantRequestActive = true
     )
 
     private data class DeliveryEffects(
@@ -312,15 +376,18 @@ class SafeObservationAsyncStateTest {
         }
 
         client.started.await()
-        current = captured.copy(turnGeneration = captured.turnGeneration + 1)
+        current = captured.copy(
+            requestGeneration = captured.requestGeneration + 1
+        )
         client.outcome.complete(outcome)
         completion.await()
     }
 
     private fun stylePlan() = TaskQuerySpeechPlan(
-        authoritativeCore = "Core.",
-        authoritativeControl = "Control.",
-        deterministicSpeech = "Core. Control.",
+        authoritativeCore = "First, Alpha on 20 July 2026 at 08:00.",
+        authoritativeControl = "You can ask for full details.",
+        deterministicSpeech =
+            "First, Alpha on 20 July 2026 at 08:00. You can ask for full details.",
         styleContext = TaskQueryStyleContext(
             operation = ExecutionOperation.QUERY_TASK,
             presentation = TaskQueryPresentationLevel.OVERVIEW,
@@ -340,6 +407,15 @@ class SafeObservationAsyncStateTest {
             calls += 1
             started.complete(Unit)
             return outcome.await().getOrThrow()
+        }
+    }
+
+    private class ImmediateStyleClient : ConversationAgentClient(null) {
+        var calls = 0
+
+        override suspend fun requestSafeObservationStyle(styleContextJson: String): String {
+            calls += 1
+            return """{"use_style":true,"lead_in":"Certainly.","bridge":"","confidence":0.95}"""
         }
     }
 

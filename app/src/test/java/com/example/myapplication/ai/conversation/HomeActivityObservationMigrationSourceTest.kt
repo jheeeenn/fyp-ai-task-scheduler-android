@@ -27,7 +27,9 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(body.contains("Offer to create a new task."))
         assertTrue(body.contains("tasks = emptyList()"))
         assertTrue(body.contains("buildCountOnlyQueryObservation(session)"))
-        assertTrue(body.contains("publishAndSpeakCurrentQueryPage(session, queryAuthorization)"))
+        assertTrue(body.contains("publishAndSpeakCurrentQueryPage("))
+        assertTrue(body.contains("requestToken"))
+        assertTrue(body.contains("authorization"))
         assertFalse(body.contains("facts = listOf(spokenReply)"))
     }
 

@@ -282,7 +282,10 @@ class HomeActivityTaskContextSourceTest {
             .substringBefore("private fun repeatCurrentTaskQueryPage()")
 
         assertTrue(handler.contains("advanceOnePage()"))
-        assertTrue(handler.contains("publishAndSpeakCurrentQueryPage(nextSession, authorization)"))
+        assertTrue(handler.contains("publishAndSpeakCurrentQueryPage("))
+        assertTrue(handler.contains("nextSession"))
+        assertTrue(handler.contains("requestToken"))
+        assertTrue(handler.contains("authorization"))
         assertTrue(handler.contains("agentOrchestrator").not())
         assertTrue(handler.contains("TaskMatcher").not())
         assertTrue(handler.contains("taskDao").not())

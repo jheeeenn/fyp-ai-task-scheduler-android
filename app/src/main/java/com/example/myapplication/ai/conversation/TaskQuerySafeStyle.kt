@@ -13,9 +13,58 @@ enum class TaskQueryControlCategory {
 }
 
 data class SafeStyleTurnAuthorization(
-    val turnGeneration: Long,
+    val requestGeneration: Long,
     val styleCallAllowed: Boolean
 )
+
+data class AssistantRequestToken(
+    val requestGeneration: Long
+)
+
+object AssistantRequestTokenPolicy {
+    fun isCurrent(
+        token: AssistantRequestToken,
+        currentRequestGeneration: Long,
+        requestActive: Boolean
+    ): Boolean =
+        requestActive && token.requestGeneration == currentRequestGeneration
+}
+
+enum class SafeStyleAuthorizationStatus {
+    ALLOWED,
+    DISALLOWED,
+    STALE
+}
+
+data class SafeStyleAuthorizationEvaluation(
+    val styleCallAllowed: Boolean,
+    val status: SafeStyleAuthorizationStatus
+)
+
+object SafeStyleAuthorizationPolicy {
+    fun evaluate(
+        requestToken: AssistantRequestToken?,
+        authorization: SafeStyleTurnAuthorization?
+    ): SafeStyleAuthorizationEvaluation = when {
+        requestToken == null ||
+            authorization == null ||
+            requestToken.requestGeneration != authorization.requestGeneration ->
+            SafeStyleAuthorizationEvaluation(
+                styleCallAllowed = false,
+                status = SafeStyleAuthorizationStatus.STALE
+            )
+        !authorization.styleCallAllowed ->
+            SafeStyleAuthorizationEvaluation(
+                styleCallAllowed = false,
+                status = SafeStyleAuthorizationStatus.DISALLOWED
+            )
+        else ->
+            SafeStyleAuthorizationEvaluation(
+                styleCallAllowed = true,
+                status = SafeStyleAuthorizationStatus.ALLOWED
+            )
+    }
+}
 
 enum class SafeObservationInteraction {
     NONE,
@@ -24,17 +73,17 @@ enum class SafeObservationInteraction {
 }
 
 data class SafeObservationDeliveryState(
-    val turnGeneration: Long,
+    val requestGeneration: Long,
     val queryReadingStateGeneration: Long,
     val taskContextGeneration: Long?,
     val pageIndex: Int?,
     val interaction: SafeObservationInteraction,
     val querySessionActive: Boolean,
-    val assistantSessionActive: Boolean
+    val assistantRequestActive: Boolean
 )
 
 enum class SafeObservationStaleReason {
-    TURN_CHANGED,
+    REQUEST_CHANGED,
     QUERY_CHANGED,
     TASK_CONTEXT_CHANGED,
     QUERY_PAGE_CHANGED,
@@ -47,11 +96,11 @@ object SafeObservationDeliveryGuard {
         captured: SafeObservationDeliveryState,
         current: SafeObservationDeliveryState
     ): SafeObservationStaleReason? = when {
-        captured.turnGeneration != current.turnGeneration ->
-            SafeObservationStaleReason.TURN_CHANGED
+        captured.requestGeneration != current.requestGeneration ->
+            SafeObservationStaleReason.REQUEST_CHANGED
         captured.queryReadingStateGeneration != current.queryReadingStateGeneration ->
             SafeObservationStaleReason.QUERY_CHANGED
-        !current.assistantSessionActive || !current.querySessionActive ->
+        !current.assistantRequestActive || !current.querySessionActive ->
             SafeObservationStaleReason.SESSION_INACTIVE
         captured.interaction != current.interaction ->
             SafeObservationStaleReason.INTERACTION_CHANGED
@@ -138,6 +187,23 @@ data class SafeObservationStyleEnvelope(
     val confidence: Double
 )
 
+enum class SafeStyleValidationReason {
+    ACCEPTED,
+    USE_STYLE_FALSE,
+    LOW_CONFIDENCE,
+    CONFIDENCE_OUT_OF_RANGE,
+    LEAD_IN_TOO_LONG,
+    BRIDGE_TOO_LONG,
+    LEAD_IN_UNSAFE,
+    BRIDGE_UNSAFE,
+    INVALID_FORMAT
+}
+
+data class SafeStyleValidationResult(
+    val accepted: Boolean,
+    val reason: SafeStyleValidationReason
+)
+
 class SafeObservationStyleParser {
     fun parse(raw: String): SafeObservationStyleEnvelope {
         val json = try {
@@ -193,26 +259,45 @@ object SafeObservationStyleValidator {
     private val jsonStructure = Regex("""[{}\[\]]""")
     private val quotes = Regex("""["“”]""")
 
-    fun isValid(envelope: SafeObservationStyleEnvelope): Boolean {
-        if (
-            !envelope.useStyle ||
-            !envelope.confidence.isFinite() ||
-            envelope.confidence < 0.85 ||
-            envelope.confidence > 1.0
-        ) {
-            return false
+    fun evaluate(envelope: SafeObservationStyleEnvelope): SafeStyleValidationResult {
+        if (!envelope.useStyle) {
+            return rejected(SafeStyleValidationReason.USE_STYLE_FALSE)
         }
-        return fragmentIsValid(envelope.leadIn, 12, 100) &&
-            fragmentIsValid(envelope.bridge, 8, 70)
+        if (!envelope.confidence.isFinite() || envelope.confidence !in 0.0..1.0) {
+            return rejected(SafeStyleValidationReason.CONFIDENCE_OUT_OF_RANGE)
+        }
+        if (envelope.confidence < 0.85) {
+            return rejected(SafeStyleValidationReason.LOW_CONFIDENCE)
+        }
+        if (fragmentIsTooLong(envelope.leadIn, 12, 100)) {
+            return rejected(SafeStyleValidationReason.LEAD_IN_TOO_LONG)
+        }
+        if (fragmentIsTooLong(envelope.bridge, 8, 70)) {
+            return rejected(SafeStyleValidationReason.BRIDGE_TOO_LONG)
+        }
+        if (!fragmentIsSafe(envelope.leadIn)) {
+            return rejected(SafeStyleValidationReason.LEAD_IN_UNSAFE)
+        }
+        if (!fragmentIsSafe(envelope.bridge)) {
+            return rejected(SafeStyleValidationReason.BRIDGE_UNSAFE)
+        }
+        return SafeStyleValidationResult(
+            accepted = true,
+            reason = SafeStyleValidationReason.ACCEPTED
+        )
     }
 
-    private fun fragmentIsValid(fragment: String, maxWords: Int, maxChars: Int): Boolean {
-        if (fragment.length > maxChars || fragment.contains('\n') || fragment.contains('\r')) {
-            return false
-        }
-        if (fragment.isBlank()) return true
+    fun isValid(envelope: SafeObservationStyleEnvelope): Boolean =
+        evaluate(envelope).accepted
+
+    private fun fragmentIsTooLong(fragment: String, maxWords: Int, maxChars: Int): Boolean {
         val wordCount = Regex("""\S+""").findAll(fragment.trim()).count()
-        if (wordCount > maxWords) return false
+        return fragment.length > maxChars || wordCount > maxWords
+    }
+
+    private fun fragmentIsSafe(fragment: String): Boolean {
+        if (fragment.contains('\n') || fragment.contains('\r')) return false
+        if (fragment.isBlank()) return true
         return !fragment.any(Char::isDigit) &&
             !url.containsMatchIn(fragment) &&
             !clockTime.containsMatchIn(fragment) &&
@@ -227,6 +312,9 @@ object SafeObservationStyleValidator {
             !forbiddenTerms.containsMatchIn(fragment.lowercase(Locale.ROOT)) &&
             !successOrMutationClaims.containsMatchIn(fragment)
     }
+
+    private fun rejected(reason: SafeStyleValidationReason) =
+        SafeStyleValidationResult(accepted = false, reason = reason)
 }
 
 object SafeTaskQuerySpeechComposer {

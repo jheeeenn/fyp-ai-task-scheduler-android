@@ -8,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.io.IOException
 
 class SafeObservationStyleTest {
@@ -72,6 +73,86 @@ class SafeObservationStyleTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun validationReasonsDistinguishUseStyleConfidenceAndUnsafeFields() {
+        assertEquals(
+            SafeStyleValidationReason.USE_STYLE_FALSE,
+            SafeObservationStyleValidator.evaluate(
+                SafeObservationStyleEnvelope(false, "", "", 0.99)
+            ).reason
+        )
+        assertEquals(
+            SafeStyleValidationReason.LOW_CONFIDENCE,
+            SafeObservationStyleValidator.evaluate(
+                SafeObservationStyleEnvelope(true, "Certainly.", "", 0.84)
+            ).reason
+        )
+        assertEquals(
+            SafeStyleValidationReason.LEAD_IN_UNSAFE,
+            SafeObservationStyleValidator.evaluate(
+                SafeObservationStyleEnvelope(true, "Please continue.", "", 0.95)
+            ).reason
+        )
+        assertEquals(
+            SafeStyleValidationReason.BRIDGE_UNSAFE,
+            SafeObservationStyleValidator.evaluate(
+                SafeObservationStyleEnvelope(true, "", "Please repeat.", 0.95)
+            ).reason
+        )
+        assertEquals(
+            SafeStyleValidationReason.ACCEPTED,
+            SafeObservationStyleValidator.evaluate(
+                SafeObservationStyleEnvelope(
+                    true,
+                    "Of course.",
+                    "I’m here with you.",
+                    0.95
+                )
+            ).reason
+        )
+    }
+
+    @Test
+    fun promptIncludesValidatorCompatibleFactFreeExamples() {
+        val prompt = ConversationAgentClient.SAFE_STYLE_SYSTEM_PROMPT
+
+        assertTrue(
+            prompt.contains(
+                """{"use_style":true,"lead_in":"Certainly — here is the overview.","bridge":"","confidence":0.96}"""
+            )
+        )
+        assertTrue(
+            prompt.contains(
+                """{"use_style":true,"lead_in":"Of course.","bridge":"I’m here with you.","confidence":0.95}"""
+            )
+        )
+        assertTrue(
+            prompt.contains(
+                """{"use_style":false,"lead_in":"","bridge":"","confidence":0.95}"""
+            )
+        )
+    }
+
+    @Test
+    fun styleResultLoggingUsesTypedReasonWithoutWrapperContent() {
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/conversation/ConversationOrchestrator.kt"
+        ).readText()
+        val styleMethod = source
+            .substringAfter("suspend fun styleTaskQuerySpeech(")
+            .substringBefore("private fun deterministicTaskQueryResponse(")
+
+        assertTrue(
+            styleMethod.contains(
+                "\"accepted=${'$'}{validation.accepted} reason=${'$'}{validation.reason}\""
+            )
+        )
+        assertTrue(styleMethod.contains("SafeStyleValidationReason.INVALID_FORMAT"))
+        assertFalse(styleMethod.contains("envelope.leadIn"))
+        assertFalse(styleMethod.contains("envelope.bridge"))
+        assertFalse(styleMethod.contains("raw="))
     }
 
     @Test
