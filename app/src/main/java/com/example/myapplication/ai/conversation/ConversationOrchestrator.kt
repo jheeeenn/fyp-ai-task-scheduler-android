@@ -16,6 +16,63 @@ class ConversationOrchestrator(
     private val responseParser: ConversationResponseParser = ConversationResponseParser(),
     private val memory: ConversationSessionMemory = ConversationSessionMemory()
 ) {
+    suspend fun styleTaskQuerySpeech(
+        plan: TaskQuerySpeechPlan,
+        budgetAvailable: Boolean
+    ): ConversationResponse {
+        if (!budgetAvailable) {
+            Log.d("SAFE_OBSERVATION_STYLE_FALLBACK", "reason=CALL_BUDGET")
+            return deterministicTaskQueryResponse(plan)
+        }
+        return try {
+            val raw = conversationAgentClient.requestSafeObservationStyle(
+                plan.styleContext.toSafeJson()
+            )
+            val envelope = SafeObservationStyleParser().parse(raw)
+            if (!SafeObservationStyleValidator.isValid(envelope)) {
+                Log.d("SAFE_OBSERVATION_STYLE_RESULT", "accepted=false source=MODEL_STYLE")
+                Log.d("SAFE_OBSERVATION_STYLE_FALLBACK", "reason=UNSAFE_OR_LOW_CONFIDENCE")
+                deterministicTaskQueryResponse(plan)
+            } else {
+                val speech = SafeTaskQuerySpeechComposer.compose(plan, envelope)
+                Log.d("SAFE_OBSERVATION_STYLE_RESULT", "accepted=true source=MODEL_STYLE")
+                Log.d(
+                    "SAFE_OBSERVATION_COMPOSE",
+                    "source=android_hybrid_safe coreLength=${plan.authoritativeCore.length} " +
+                        "controlLength=${plan.authoritativeControl.length}"
+                )
+                ConversationResponse(
+                    speech = speech,
+                    hint = "",
+                    responseType = ConversationResponseType.INFORMATION,
+                    source = "android_hybrid_safe"
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val reason = if (
+                e.message.orEmpty().contains("timed out", ignoreCase = true) ||
+                e.message.orEmpty().contains("timeout", ignoreCase = true)
+            ) {
+                "TIMEOUT"
+            } else {
+                "REQUEST_OR_SCHEMA_FAILURE"
+            }
+            Log.d("SAFE_OBSERVATION_STYLE_RESULT", "accepted=false source=MODEL_STYLE")
+            Log.d("SAFE_OBSERVATION_STYLE_FALLBACK", "reason=$reason")
+            deterministicTaskQueryResponse(plan)
+        }
+    }
+
+    private fun deterministicTaskQueryResponse(plan: TaskQuerySpeechPlan) =
+        ConversationResponse(
+            speech = plan.deterministicSpeech,
+            hint = "",
+            responseType = ConversationResponseType.INFORMATION,
+            source = "android_deterministic"
+        )
+
     /**
      * Retained for controlled future experiments with model-based observation verbalization.
      * HomeActivity renders authoritative production task responses deterministically for factual

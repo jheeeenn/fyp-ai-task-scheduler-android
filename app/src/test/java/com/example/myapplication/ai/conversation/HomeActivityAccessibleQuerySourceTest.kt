@@ -99,9 +99,12 @@ class HomeActivityAccessibleQuerySourceTest {
             .substringBefore("private fun repeatLastAuthoritativeSpeech()")
 
         assertTrue(body.contains("val contextGeneration = readOnlyTaskContextStore.currentGeneration()"))
-        assertTrue(body.contains("speakRepeatableObservation("))
+        assertTrue(body.contains("currentQueryPageRepeatState"))
+        assertTrue(body.contains("assistantSession.speak(pageState.speech"))
         assertTrue(body.contains("contextGenerationUnchanged=true"))
         assertTrue(body.contains("currentGeneration() == contextGeneration"))
+        assertFalse(body.contains("speakRepeatableObservation("))
+        assertFalse(body.contains("buildQueryPageObservation("))
         assertFalse(body.contains("replaceRecentQueryResults"))
         assertFalse(body.contains("advanceOnePage"))
     }

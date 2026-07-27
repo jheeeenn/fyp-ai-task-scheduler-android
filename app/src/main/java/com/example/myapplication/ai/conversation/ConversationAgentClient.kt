@@ -34,6 +34,12 @@ open class ConversationAgentClient(
         .writeTimeout(10, TimeUnit.SECONDS)
         .callTimeout(60, TimeUnit.SECONDS)
         .build()
+    private val safeStyleClient = client.newBuilder()
+        .connectTimeout(SAFE_STYLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(SAFE_STYLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(SAFE_STYLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .callTimeout(SAFE_STYLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
 
     open suspend fun process(userText: String, memorySnapshot: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
@@ -131,6 +137,14 @@ $observationJson
             executeConversationRequest(userPrompt, RequestKind.RESPONSE)
         }
 
+    open suspend fun requestSafeObservationStyle(styleContextJson: String): String =
+        withContext(Dispatchers.IO) {
+            executeConversationRequest(
+                userPrompt = styleContextJson,
+                kind = RequestKind.SAFE_OBSERVATION_STYLE
+            )
+        }
+
     override suspend fun interpretCreateDraftMove(userText: String, contextSummary: String): String =
         withContext(Dispatchers.IO) {
             val userPrompt = """
@@ -150,6 +164,7 @@ $userText
             RequestKind.CONTEXT_ACTION_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.RESPONSE -> RESPONSE_TEMPERATURE
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_TEMPERATURE
+            RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_TEMPERATURE
         }
         val maxTokens = when (kind) {
             RequestKind.ROUTING -> 256
@@ -157,6 +172,7 @@ $userText
             RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_MAX_TOKENS
             RequestKind.RESPONSE -> RESPONSE_MAX_TOKENS
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_MAX_TOKENS
+            RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_MAX_TOKENS
         }
         val responseFormat = when (kind) {
             RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
@@ -164,6 +180,7 @@ $userText
             RequestKind.CONTEXT_ACTION_REPAIR -> AgentResponseSchemas.contextActionRepairResponseFormat()
             RequestKind.RESPONSE -> AgentResponseSchemas.conversationResponseResponseFormat()
             RequestKind.CREATE_DRAFT_MOVE -> AgentResponseSchemas.createDraftMoveResponseFormat()
+            RequestKind.SAFE_OBSERVATION_STYLE -> AgentResponseSchemas.safeObservationStyleResponseFormat()
         }
         val systemPrompt = when (kind) {
             RequestKind.ROUTING -> ROUTING_SYSTEM_PROMPT
@@ -171,6 +188,7 @@ $userText
             RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT
             RequestKind.RESPONSE -> RESPONSE_SYSTEM_PROMPT
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_SYSTEM_PROMPT
+            RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_SYSTEM_PROMPT
         }
         val payload = JSONObject().apply {
             put("model", modelId)
@@ -190,7 +208,9 @@ $userText
             })
         }
 
-        if (kind == RequestKind.CREATE_DRAFT_MOVE) {
+        if (kind == RequestKind.SAFE_OBSERVATION_STYLE) {
+            Log.d("SAFE_OBSERVATION_STYLE_SCHEMA", "Strict fact-free wrapper schema enabled")
+        } else if (kind == RequestKind.CREATE_DRAFT_MOVE) {
             Log.d("CONVO_CREATE_DRAFT_SCHEMA", "Strict create-draft move schema enabled")
         } else if (kind == RequestKind.CONTEXT_READ_REPAIR || kind == RequestKind.CONTEXT_ACTION_REPAIR) {
             Log.d("CONVO_CONTEXT_REPAIR_SCHEMA", "Strict bounded context repair schema enabled")
@@ -216,16 +236,26 @@ $userText
             .build()
 
         return try {
-            client.newCall(request).execute().use { response ->
+            val requestClient = if (kind == RequestKind.SAFE_OBSERVATION_STYLE) {
+                safeStyleClient
+            } else {
+                client
+            }
+            requestClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                if (kind == RequestKind.CREATE_DRAFT_MOVE) {
+                if (kind == RequestKind.SAFE_OBSERVATION_STYLE) {
+                    Log.d("SAFE_OBSERVATION_STYLE_HTTP", "HTTP ${response.code}; responseChars=${body.length}")
+                } else if (kind == RequestKind.CREATE_DRAFT_MOVE) {
                     Log.d("CONVO_AGENT", "Create-draft HTTP ${response.code}; responseChars=${body.length}")
                 } else {
                     Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
                 }
 
                 if (!response.isSuccessful) {
-                    val message = if (kind == RequestKind.CREATE_DRAFT_MOVE) {
+                    val message = if (
+                        kind == RequestKind.CREATE_DRAFT_MOVE ||
+                        kind == RequestKind.SAFE_OBSERVATION_STYLE
+                    ) {
                         "LM Studio create-draft HTTP ${response.code}"
                     } else {
                         "LM Studio HTTP ${response.code}: $body"
@@ -309,7 +339,8 @@ $userText
         CONTEXT_READ_REPAIR,
         CONTEXT_ACTION_REPAIR,
         RESPONSE,
-        CREATE_DRAFT_MOVE
+        CREATE_DRAFT_MOVE,
+        SAFE_OBSERVATION_STYLE
     }
 
     companion object {
@@ -320,6 +351,24 @@ $userText
         const val CONTEXT_ACTION_REPAIR_MAX_TOKENS = 180
         const val CREATE_DRAFT_TEMPERATURE = 0.0
         const val CREATE_DRAFT_MAX_TOKENS = 112
+        const val SAFE_STYLE_TEMPERATURE = 0.25
+        const val SAFE_STYLE_MAX_TOKENS = 80
+        const val SAFE_STYLE_TIMEOUT_SECONDS = 4L
+        internal val SAFE_STYLE_SYSTEM_PROMPT = """
+You write optional conversational wrapper fragments only.
+Android owns every factual and operational statement.
+Do not mention a number, count, ordinal, date, time, task, period, or page.
+Do not state whether anything exists, is completed, is overdue, or was found.
+Do not claim that an action succeeded or failed.
+Do not instruct the user to continue, repeat, stop, confirm, or select.
+Do not mention app internals, models, Android, schemas, or databases.
+lead_in and bridge must remain generic and fact-free.
+Empty strings are valid.
+Set use_style=false when a safe fragment cannot be written.
+Keep fragments short, natural, and suitable for text-to-speech.
+Return only the strict fields use_style, lead_in, bridge, and confidence.
+Do not return speech, hint, response_type, factual values, operation outcomes, task fields, page fields, control instructions, explanations, or markdown.
+""".trimIndent()
         internal val CREATE_DRAFT_SYSTEM_PROMPT = """
 You interpret one utterance inside an existing create-task draft workflow.
 

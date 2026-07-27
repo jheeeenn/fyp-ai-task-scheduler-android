@@ -1,13 +1,19 @@
 package com.example.myapplication.ai.conversation
 
 object AndroidObservationResponseRenderer {
-    fun render(observation: ExecutionObservation): ConversationResponse {
-        val speech = if (
+    fun taskQueryPlanOrNull(observation: ExecutionObservation): TaskQuerySpeechPlan? =
+        if (
             observation.operation == ExecutionOperation.QUERY_TASK &&
+            observation.outcome == ExecutionOutcome.INFORMATION &&
             observation.queryPage != null
         ) {
-            AccessibleTaskQuerySpeechRenderer.render(observation)
+            AccessibleTaskQuerySpeechRenderer.plan(observation)
         } else {
+            null
+        }
+
+    fun render(observation: ExecutionObservation): ConversationResponse {
+        val speech = taskQueryPlanOrNull(observation)?.deterministicSpeech ?: run {
             observation.fallbackSpeech.trim().ifBlank {
                 emergencySpeech(observation.outcome)
             }

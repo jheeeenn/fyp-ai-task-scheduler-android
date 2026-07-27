@@ -4,6 +4,24 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object AgentResponseSchemas {
+    fun safeObservationStyleResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "safe_observation_style",
+            properties = JSONObject().apply {
+                put("use_style", booleanType())
+                put("lead_in", stringType())
+                put("bridge", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("use_style")
+                put("lead_in")
+                put("bridge")
+                put("confidence")
+            }
+        )
+    }
+
     fun createDraftMoveResponseFormat(): JSONObject {
         return responseFormat(
             name = "create_draft_move",

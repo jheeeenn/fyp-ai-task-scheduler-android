@@ -5,9 +5,13 @@ import java.util.Locale
 
 internal object AccessibleTaskQuerySpeechRenderer {
     fun render(observation: ExecutionObservation): String {
+        return plan(observation).deterministicSpeech
+    }
+
+    fun plan(observation: ExecutionObservation): TaskQuerySpeechPlan {
         val page = requireNotNull(observation.queryPage)
         if (page.presentation == TaskQueryPresentationLevel.COUNT_ONLY) {
-            return renderCountOnly(page)
+            return planCountOnly(page, observation.listenAgain)
         }
 
         val opening = buildOpening(page)
@@ -17,7 +21,7 @@ internal object AccessibleTaskQuerySpeechRenderer {
             val prefix = if (grouped) "$ordinal in this group," else "$ordinal,"
             "$prefix ${renderTask(task, page)}"
         }
-        val closing = when {
+        val control = when {
             page.hasNextPage -> "Say continue for the next group, repeat, or stop."
             page.pageCount > 1 ->
                 "That was the last group. You can ask about a task in this group, repeat, or stop."
@@ -26,12 +30,19 @@ internal object AccessibleTaskQuerySpeechRenderer {
             else ->
                 "You can ask about one of these tasks or ask for full details."
         }
-        return (listOf(opening) + taskSpeech + closing)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
+        val core = (listOf(opening) + taskSpeech).joinToString(" ")
+        return TaskQuerySpeechPlan(
+            authoritativeCore = core,
+            authoritativeControl = control,
+            deterministicSpeech = joinSpeech(core, control),
+            styleContext = TaskQueryStyleContext.from(page, observation.listenAgain)
+        )
     }
 
-    private fun renderCountOnly(page: TaskQueryPageObservation): String {
+    private fun planCountOnly(
+        page: TaskQueryPageObservation,
+        continuedInteractionExpected: Boolean
+    ): TaskQuerySpeechPlan {
         val count = spokenNumber(page.totalTaskCount)
         val noun = if (page.totalTaskCount == 1) "task" else "tasks"
         val label = page.temporalLabel.trim()
@@ -41,8 +52,21 @@ internal object AccessibleTaskQuerySpeechRenderer {
             TaskQuerySpeechTone.FRIENDLY,
             TaskQuerySpeechTone.NEUTRAL -> "Yes. You have $count $noun$schedule."
         }
-        return "$countSentence Would you like me to read them?"
+        val control = if (page.totalTaskCount == 1) {
+            "Would you like me to read it?"
+        } else {
+            "Would you like me to read them?"
+        }
+        return TaskQuerySpeechPlan(
+            authoritativeCore = countSentence,
+            authoritativeControl = control,
+            deterministicSpeech = joinSpeech(countSentence, control),
+            styleContext = TaskQueryStyleContext.from(page, continuedInteractionExpected)
+        )
     }
+
+    private fun joinSpeech(core: String, control: String): String =
+        listOf(core, control).filter { it.isNotBlank() }.joinToString(" ")
 
     private fun buildOpening(page: TaskQueryPageObservation): String {
         val total = spokenNumber(page.totalTaskCount)
