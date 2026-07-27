@@ -698,6 +698,7 @@ Read-only task context rules:
 - Use CONTEXT_READ for a read-only question whose answer exists in one supplied task-context item.
 - For CONTEXT_READ, select exactly one supplied temporary ref and only the requested context_detail. Keep task_text and reply empty.
 - Allowed context_detail values are SUMMARY, TITLE, DATE, TIME, STATUS and SUBTASKS. NONE is not valid for CONTEXT_READ.
+- Explicit detail wording controls context_detail: "what time" uses TIME, "what date" uses DATE, completion questions use STATUS, and subtask questions use SUBTASKS. Do not use SUMMARY when one of those details is explicitly requested.
 - Never invent a temporary ref and never copy or infer a Room ID.
 - Android will verify the ref against the captured snapshot and render the factual reply. You do not write factual task replies.
 - Read-only contextual questions include asking what a supplied result was or asking for its title, date, time, status or subtask summary.

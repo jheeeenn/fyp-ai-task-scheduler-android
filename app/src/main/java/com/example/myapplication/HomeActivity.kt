@@ -82,6 +82,8 @@ import com.example.myapplication.ai.conversation.SafeStyleAuthorizationStatus
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
 import com.example.myapplication.ai.conversation.taskcontext.ContextItemRestatementDisposition
 import com.example.myapplication.ai.conversation.taskcontext.ContextItemRestatementPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextItemReadDisposition
+import com.example.myapplication.ai.conversation.taskcontext.ContextItemReadPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
@@ -124,6 +126,7 @@ import com.example.myapplication.ai.temporal.TemporalQueryWindow
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 import com.example.myapplication.ai.temporal.PendingTemporalClarification
 import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
@@ -696,6 +699,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
 
+        if (handleContextItemRead(normalized)) {
+            return
+        }
+
         if (handleQueryReadingFollowUp(
                 normalized,
                 requestToken,
@@ -1089,6 +1096,43 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             )
                             return@launch
                         }
+                        val hasDateChange = !extractedChange.newDateText.isNullOrBlank()
+                        val hasTimeChange = !extractedChange.newTimeText.isNullOrBlank()
+                        val extractedTemporalResolution =
+                            if (
+                                validation.action == ConversationContextAction.RESCHEDULE &&
+                                (hasDateChange || hasTimeChange)
+                            ) {
+                                TemporalExpressionResolver().resolve(
+                                    agentDateText = extractedChange.newDateText,
+                                    agentTimeText = extractedChange.newTimeText,
+                                    originalText = listOfNotNull(
+                                        extractedChange.newDateText,
+                                        extractedChange.newTimeText
+                                    ).joinToString(" ")
+                                )
+                            } else {
+                                null
+                            }
+                        val extractedTemporalPolicy = extractedTemporalResolution?.let {
+                            TemporalActionPolicy.evaluate(it, TemporalUseCase.RESCHEDULE)
+                        }
+                        val clarificationRequired =
+                            validation.action == ConversationContextAction.RESCHEDULE &&
+                                (
+                                    !hasDateChange && !hasTimeChange ||
+                                        extractedTemporalPolicy is TemporalPolicyResult.Unresolved ||
+                                        extractedTemporalPolicy is TemporalPolicyResult.InvalidPastSchedule ||
+                                        extractedTemporalPolicy is TemporalPolicyResult.NeedsExactDate ||
+                                        extractedTemporalPolicy is TemporalPolicyResult.NeedsExactTime ||
+                                        extractedTemporalPolicy is TemporalPolicyResult.NeedsExactDateAndTime
+                                    )
+                        Log.d(
+                            "HOME_CONTEXT_RESCHEDULE_EXTRACTION",
+                            "hasDateChange=$hasDateChange " +
+                                "hasTimeChange=$hasTimeChange " +
+                                "clarificationRequired=$clarificationRequired"
+                        )
 
                         if (readOnlyTaskContextStore.currentGeneration() != capturedGeneration) {
                             rejectUnavailableContextAction()
@@ -1114,7 +1158,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         openContextActionEditScreen(
                             task = requireNotNull(authoritativeTask),
                             action = validation.action,
-                            extractedChange = extractedChange
+                            extractedChange = extractedChange,
+                            requiresTemporalCollection = clarificationRequired
                         )
                         return@launch
                     }
@@ -1957,14 +2002,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private suspend fun openContextActionEditScreen(
         task: TaskEntity,
         action: ConversationContextAction,
-        extractedChange: ContextActionChangeSet
+        extractedChange: ContextActionChangeSet,
+        requiresTemporalCollection: Boolean
     ) {
         val operation = if (action == ConversationContextAction.RESCHEDULE) {
             ExecutionOperation.RESCHEDULE_TASK
         } else {
             ExecutionOperation.UPDATE_TASK
         }
-        val reply = if (action == ConversationContextAction.RESCHEDULE) {
+        val reply = if (
+            action == ConversationContextAction.RESCHEDULE &&
+            requiresTemporalCollection
+        ) {
+            "Opening the task so you can choose a new date or time."
+        } else if (action == ConversationContextAction.RESCHEDULE) {
             responseManager.openReschedule()
         } else {
             responseManager.openEditTask()
@@ -1996,6 +2047,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
                 if (action == ConversationContextAction.RESCHEDULE) {
                     putExtra("assistant_mode", "reschedule")
+                    putExtra(
+                        "reschedule_collection_required",
+                        requiresTemporalCollection
+                    )
                 }
             }
             startActivity(editIntent)
@@ -2416,6 +2471,37 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 true
             }
         }
+    }
+
+    private fun handleContextItemRead(normalized: String): Boolean {
+        val isResultInteraction = homeFollowUpContext in setOf(
+            HomeFollowUpContext.AFTER_TASK_SUMMARY,
+            HomeFollowUpContext.AFTER_TASK_DETAILS,
+            HomeFollowUpContext.QUERY_PAGE,
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING
+        )
+        if (!isResultInteraction) return false
+
+        val taskContextCapture = readOnlyTaskContextStore.capture()
+        val resolution = ContextItemReadPolicy.resolve(
+            normalizedText = normalized,
+            capturedSnapshot = taskContextCapture.snapshot,
+            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+        )
+        Log.d(
+            "HOME_CONTEXT_ITEM_READ",
+            "disposition=${resolution.disposition} " +
+                "scope=${taskContextCapture.snapshot.scope} " +
+                "generation=${taskContextCapture.snapshot.generation}"
+        )
+        if (resolution.disposition != ContextItemReadDisposition.RESOLVED) return false
+
+        executeContextRead(
+            decision = requireNotNull(resolution.decision),
+            taskContextCapture = taskContextCapture,
+            validation = requireNotNull(resolution.validation)
+        )
+        return true
     }
 
     private fun executeContextRead(

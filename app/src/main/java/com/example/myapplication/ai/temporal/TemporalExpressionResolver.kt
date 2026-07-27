@@ -11,6 +11,15 @@ class TemporalExpressionResolver {
         "sunday" to Calendar.SUNDAY, "monday" to Calendar.MONDAY, "tuesday" to Calendar.TUESDAY,
         "wednesday" to Calendar.WEDNESDAY, "thursday" to Calendar.THURSDAY, "friday" to Calendar.FRIDAY, "saturday" to Calendar.SATURDAY
     )
+    private val relativeDayWords = mapOf(
+        "one" to 1,
+        "two" to 2,
+        "three" to 3,
+        "four" to 4,
+        "five" to 5,
+        "six" to 6,
+        "seven" to 7
+    )
 
     fun resolve(agentDateText: String?, agentTimeText: String?, originalText: String, baseCalendar: Calendar = Calendar.getInstance()): TemporalResolution {
         val dateSource = clean(agentDateText)
@@ -86,6 +95,7 @@ class TemporalExpressionResolver {
 
     private fun extractDatePhrase(text: String): String {
         Regex("""\b(overdue|upcoming)(?: tasks)?\b""").find(text)?.let { return it.value.trim() }
+        RELATIVE_DATE_EXPRESSION.find(text)?.let { return it.value.trim() }
         Regex("""\bfrom (.+?) onward\b""").find(text)?.let { match ->
             if (!looksLikeClockExpression(match.groupValues[1])) return match.value.trim()
         }
@@ -119,6 +129,7 @@ class TemporalExpressionResolver {
     private fun looksLikeDateExpression(text: String): Boolean {
         val t = text.trim()
         if (t in setOf("today", "tomorrow", "tonight", "day after tomorrow", "the day after tomorrow")) return true
+        if (parseRelativeDayOffset(t) != null) return true
         if (Regex("""^(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$""").matches(t)) return true
         if (Regex("""^\d{1,2}/\d{1,2}/\d{2,4}$""").matches(t) || Regex("""^\d{4}/\d{1,2}/\d{1,2}$""").matches(t)) return true
         if (Regex("""^\d{1,2} (?:$monthNames)(?: \d{4})?$""").matches(t)) return true
@@ -186,6 +197,9 @@ class TemporalExpressionResolver {
     private fun parseSingleDate(text: String, base: Calendar): Calendar? {
         val t = text.removePrefix("on ").trim(); val c = strip(base)
         when (t) { "today", "tonight" -> return c; "tomorrow" -> return add(c, Calendar.DAY_OF_MONTH, 1); "day after tomorrow", "the day after tomorrow" -> return add(c, Calendar.DAY_OF_MONTH, 2) }
+        parseRelativeDayOffset(t)?.let { offset ->
+            return add(c, Calendar.DAY_OF_MONTH, offset)
+        }
         val parts = t.split(" "); val prefix = if (parts.size == 2) parts[0] else ""; val weekday = parts.last(); weekdays[weekday]?.let { target ->
             val current = c.get(Calendar.DAY_OF_WEEK); var diff = target - current; if (diff < 0) diff += 7
             if (prefix == "this") diff = target - Calendar.MONDAY - (dayIndex(c) - 1) else if (prefix == "next") diff = (8 - dayIndex(c)) + (target - Calendar.MONDAY)
@@ -194,6 +208,15 @@ class TemporalExpressionResolver {
         val patterns = listOf("d/M/yyyy","dd/MM/yyyy","yyyy/M/d","yyyy/MM/dd","d MMM yyyy","d MMMM yyyy","MMM d yyyy","MMMM d yyyy","d MMM","d MMMM","MMM d","MMMM d")
         for (p in patterns) try { val f = SimpleDateFormat(p, Locale.UK).apply { isLenient = false }; val parsed = f.parse(t) ?: continue; val cal = Calendar.getInstance(base.timeZone); cal.time = parsed; if (!p.contains("y")) { cal.set(Calendar.YEAR, base.get(Calendar.YEAR)); if (strip(cal).before(strip(base))) cal.add(Calendar.YEAR, 1) }; return strip(cal) } catch (_: Exception) {}
         return null
+    }
+
+    private fun parseRelativeDayOffset(text: String): Int? {
+        val match = RELATIVE_DATE_EXPRESSION.matchEntire(text) ?: return null
+        val token = match.groupValues
+            .drop(1)
+            .firstOrNull { it.isNotBlank() }
+            ?: return null
+        return relativeDayWords[token] ?: token.toIntOrNull()?.takeIf { it in 1..7 }
     }
 
     private fun parseTimeWindow(text: String): TemporalResolution? {
@@ -232,4 +255,12 @@ class TemporalExpressionResolver {
     private fun strip(c: Calendar) = (c.clone() as Calendar).apply { set(Calendar.HOUR_OF_DAY,0); set(Calendar.MINUTE,0); set(Calendar.SECOND,0); set(Calendar.MILLISECOND,0) }
     private fun add(c: Calendar, field: Int, amount: Int) = (c.clone() as Calendar).apply { add(field, amount) }
     private fun dayIndex(c: Calendar) = if (c.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7 else c.get(Calendar.DAY_OF_WEEK) - 1
+
+    private companion object {
+        const val RELATIVE_DAY_TOKEN = """\d+|one|two|three|four|five|six|seven"""
+        val RELATIVE_DATE_EXPRESSION = Regex(
+            """\b(?:in\s+($RELATIVE_DAY_TOKEN)\s+days?|""" +
+                """($RELATIVE_DAY_TOKEN)\s+days?\s+(?:from now|after today))\b"""
+        )
+    }
 }

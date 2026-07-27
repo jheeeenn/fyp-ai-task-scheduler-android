@@ -33,6 +33,9 @@ import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
 import com.example.myapplication.ai.temporal.TemporalActionPolicy
+import com.example.myapplication.ai.temporal.EditTemporalCommandDisposition
+import com.example.myapplication.ai.temporal.EditTemporalCommandPolicy
+import com.example.myapplication.ai.temporal.EditTemporalTarget
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalResolution
 import com.example.myapplication.ai.temporal.PendingTemporalClarification
@@ -40,7 +43,7 @@ import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
 
 private enum class EditFieldTarget {
-    NONE, TITLE, DATE, TIME
+    NONE, TITLE, DATE, TIME, DATE_OR_TIME
 }
 
 
@@ -138,6 +141,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val prefillTitle = intent.getStringExtra("prefill_title")
         val prefillNewDateText = intent.getStringExtra("prefill_new_date_text")
         val prefillNewTimeText = intent.getStringExtra("prefill_new_time_text")
+        val rescheduleCollectionRequired =
+            intent.getBooleanExtra("reschedule_collection_required", false)
 
         if (!prefillTitle.isNullOrBlank()) {
             etTaskTitle.setText(prefillTitle)
@@ -200,12 +205,9 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 when {
                     pendingTemporalClarification != null -> advanceTemporalClarification()
                     changed -> askToSaveChanges()
-                    assistantMode == "reschedule" -> {
+                    assistantMode == "reschedule" || rescheduleCollectionRequired -> {
                         waitingForSaveConfirmation = false
-                        assistantSession.speak(
-                            text = responseManager.editIntro(etTaskTitle.text.toString()),
-                            listenAgain = true
-                        )
+                        enterTemporalCollection(EditTemporalTarget.DATE_OR_TIME)
                     }
                     else -> assistantSession.speak(
                         text = responseManager.editIntro(etTaskTitle.text.toString()),
@@ -402,6 +404,10 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
 
+        if (handleOneSentenceTemporalCommand(normalized)) {
+            return
+        }
+
         if (waitingForSaveConfirmation) {
             when {
                 isYes(normalized) -> {
@@ -511,6 +517,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             EditFieldTarget.DATE -> speak("Please provide the exact date first.")
             EditFieldTarget.TIME -> speak("Please provide the exact time first.")
             EditFieldTarget.TITLE -> speak(responseManager.askChangeTitle())
+            EditFieldTarget.DATE_OR_TIME -> speak("What date or time would you like to use?")
             EditFieldTarget.NONE -> Unit
         }
     }
@@ -520,6 +527,14 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val resolution = temporalResolver.resolve(dateText, timeText, listOfNotNull(dateText, timeText).joinToString(" "))
         val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.RESCHEDULE)
         if (policy is TemporalPolicyResult.Unresolved || policy is TemporalPolicyResult.InvalidPastSchedule) return false
+        return applyTemporalResolution(resolution, policy, askForMissing)
+    }
+
+    private fun applyTemporalResolution(
+        resolution: TemporalResolution,
+        policy: TemporalPolicyResult,
+        askForMissing: Boolean
+    ): Boolean {
         val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
         val needsTime = policy is TemporalPolicyResult.NeedsExactTime || policy is TemporalPolicyResult.NeedsExactDateAndTime
         var updated = false
@@ -545,6 +560,65 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             advanceTemporalClarification()
         }
         return updated || needsDate || needsTime
+    }
+
+    private fun handleOneSentenceTemporalCommand(normalized: String): Boolean {
+        if (
+            pendingFieldTarget != EditFieldTarget.NONE ||
+            pendingTemporalClarification != null
+        ) {
+            return false
+        }
+        val command = EditTemporalCommandPolicy.resolve(
+            normalizedText = normalized,
+            resolver = temporalResolver
+        )
+        return when (command.disposition) {
+            EditTemporalCommandDisposition.NOT_APPLICABLE -> false
+            EditTemporalCommandDisposition.READY -> {
+                waitingForSaveConfirmation = false
+                val changed = applyTemporalResolution(
+                    resolution = command.temporal,
+                    policy = command.policy,
+                    askForMissing = false
+                )
+                if (changed) {
+                    pendingFieldTarget = EditFieldTarget.NONE
+                    askToSaveChanges()
+                } else {
+                    enterTemporalCollection(command.target)
+                }
+                true
+            }
+            EditTemporalCommandDisposition.NEEDS_CLARIFICATION -> {
+                waitingForSaveConfirmation = false
+                applyTemporalResolution(
+                    resolution = command.temporal,
+                    policy = command.policy,
+                    askForMissing = true
+                )
+                true
+            }
+            EditTemporalCommandDisposition.UNRESOLVED -> {
+                waitingForSaveConfirmation = false
+                enterTemporalCollection(command.target)
+                true
+            }
+        }
+    }
+
+    private fun enterTemporalCollection(target: EditTemporalTarget) {
+        pendingFieldTarget = when (target) {
+            EditTemporalTarget.DATE -> EditFieldTarget.DATE
+            EditTemporalTarget.TIME -> EditFieldTarget.TIME
+            EditTemporalTarget.DATE_OR_TIME -> EditFieldTarget.DATE_OR_TIME
+        }
+        val prompt = when (target) {
+            EditTemporalTarget.DATE -> "What exact date would you like to use?"
+            EditTemporalTarget.TIME -> "What exact time would you like to use?"
+            EditTemporalTarget.DATE_OR_TIME -> "What date or time would you like to use?"
+        }
+        speak(prompt)
     }
 
     private fun processEditCommand(cmd: AiParsedCommand) {
@@ -812,6 +886,21 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     }
                 } else {
                     speak(responseManager.invalidEditTime())
+                }
+                true
+            }
+
+            EditFieldTarget.DATE_OR_TIME -> {
+                val changed = applyProposedTemporalChange(
+                    dateText = normalized,
+                    timeText = null,
+                    askForMissing = true
+                )
+                if (changed && pendingTemporalClarification == null) {
+                    pendingFieldTarget = EditFieldTarget.NONE
+                    askToSaveChanges()
+                } else if (!changed) {
+                    speak("Please provide an exact date, an exact time, or both.")
                 }
                 true
             }
