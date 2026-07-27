@@ -3,6 +3,8 @@ package com.example.myapplication.ai.agent
 import android.util.Log
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.conversation.ConversationContextAction
+import com.example.myapplication.ai.routine.RoutineExtractionResponse
+import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
 
 class TaskAgentProcessingException(message: String, cause: Throwable) : Exception(message, cause)
 
@@ -14,7 +16,9 @@ class AgentOrchestrator(
     private val contextActionExtractionParser: ContextActionExtractionResponseParser =
         ContextActionExtractionResponseParser(),
     private val contextActionExtractionValidator: ContextActionExtractionValidator =
-        ContextActionExtractionValidator()
+        ContextActionExtractionValidator(),
+    private val routineExtractionParser: RoutineExtractionResponseParser =
+        RoutineExtractionResponseParser()
 ) {
     suspend fun process(normalizedText: String): AiParsedCommand {
         return try {
@@ -43,6 +47,26 @@ class AgentOrchestrator(
         } catch (e: Exception) {
             Log.e("AGENT_ORCHESTRATOR", "Context-action extraction failed closed", e)
             throw TaskAgentProcessingException("Task agent failed to extract context action", e)
+        }
+    }
+
+    suspend fun processRoutine(normalizedText: String): RoutineExtractionResponse {
+        return try {
+            Log.d("ROUTINE_EXTRACTION", "Starting bounded routine extraction")
+            val rawContent = laptopAgentClient.processRoutine(normalizedText)
+            val response = routineExtractionParser.parse(rawContent)
+            Log.d(
+                "ROUTINE_EXTRACTION",
+                "stepCount=${response.steps.size} " +
+                    "needClarification=${response.needClarification}"
+            )
+            response
+        } catch (e: Exception) {
+            Log.e("ROUTINE_EXTRACTION", "Routine extraction failed closed", e)
+            throw TaskAgentProcessingException(
+                "Task agent failed to extract a routine",
+                e
+            )
         }
     }
 }

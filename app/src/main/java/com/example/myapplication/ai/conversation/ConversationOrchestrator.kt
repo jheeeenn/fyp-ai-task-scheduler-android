@@ -201,6 +201,10 @@ class ConversationOrchestrator(
             ConversationRoute.TASK_COMMAND -> decision.copy(
                 taskText = decision.taskText.ifBlank { normalizedText }
             )
+            ConversationRoute.SMART_ROUTINE_BUILDER -> decision.copy(
+                taskText = normalizedText,
+                reply = ""
+            )
             ConversationRoute.DAILY_BRIEFING -> decision
             ConversationRoute.CONTEXT_READ -> decision
             ConversationRoute.CONTEXT_ACTION -> decision

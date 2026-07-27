@@ -4,6 +4,52 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object AgentResponseSchemas {
+    fun routineExtractionResponseFormat(): JSONObject {
+        val stepSchema = JSONObject().apply {
+            put("type", "object")
+            put(
+                "properties",
+                JSONObject().apply {
+                    put("title", stringType())
+                    put("date_text", stringType())
+                    put("time_text", stringType())
+                }
+            )
+            put(
+                "required",
+                JSONArray().apply {
+                    put("title")
+                    put("date_text")
+                    put("time_text")
+                }
+            )
+            put("additionalProperties", false)
+        }
+        return responseFormat(
+            name = "routine_extraction_response",
+            properties = JSONObject().apply {
+                put("routine_title", stringType())
+                put(
+                    "steps",
+                    JSONObject().apply {
+                        put("type", "array")
+                        put("items", stepSchema)
+                        put("minItems", 2)
+                        put("maxItems", 5)
+                    }
+                )
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+                put("need_clarification", booleanType())
+            },
+            required = JSONArray().apply {
+                put("routine_title")
+                put("steps")
+                put("confidence")
+                put("need_clarification")
+            }
+        )
+    }
+
     fun safeObservationStyleResponseFormat(): JSONObject {
         return responseFormat(
             name = "safe_observation_style",
@@ -56,7 +102,7 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "DAILY_BRIEFING", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "DAILY_BRIEFING", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())

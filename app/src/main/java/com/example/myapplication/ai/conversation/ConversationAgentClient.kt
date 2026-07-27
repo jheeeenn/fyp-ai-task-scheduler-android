@@ -252,7 +252,10 @@ $userText
                 } else if (kind == RequestKind.CREATE_DRAFT_MOVE) {
                     Log.d("CONVO_AGENT", "Create-draft HTTP ${response.code}; responseChars=${body.length}")
                 } else {
-                    Log.d("CONVO_AGENT", "HTTP ${response.code}: $body")
+                    Log.d(
+                        "CONVO_AGENT",
+                        "HTTP ${response.code}; responseChars=${body.length}"
+                    )
                 }
 
                 if (!response.isSuccessful) {
@@ -261,7 +264,7 @@ $userText
                             "LM Studio create-draft HTTP ${response.code}"
                         RequestKind.SAFE_OBSERVATION_STYLE ->
                             safeStyleHttpErrorMessage(response.code)
-                        else -> "LM Studio HTTP ${response.code}: $body"
+                        else -> "LM Studio HTTP ${response.code}"
                     }
                     throw IOException(message)
                 }
@@ -610,6 +613,7 @@ route, task_text, reply, context_ref, context_detail, context_action, query_read
 
 Allowed route values:
 TASK_COMMAND
+SMART_ROUTINE_BUILDER
 DAILY_BRIEFING
 CONTEXT_READ
 CONTEXT_ACTION
@@ -625,6 +629,19 @@ Route rules:
 - Use TASK_COMMAND only for a reasonably clear request to perform one supported task operation: create, query, update, reschedule, delete, mark done or undone, or break down a task.
 - Actual operation requests such as "Create a task called buy medicine tomorrow", "Show my tasks next week", "Delete my dentist task", "Move the meeting to Friday", "Mark assignment complete", and "Break down my project task" are TASK_COMMAND.
 - Do not use TASK_COMMAND merely because the utterance contains task-related words such as "task", "schedule", "class", or a date.
+- Use SMART_ROUTINE_BUILDER only for an operational request to create or set up one
+  one-time routine containing 2 to 5 ordered scheduled tasks.
+- Illustrative SMART_ROUTINE_BUILDER requests include "Create my morning routine.",
+  "Set up a routine for tomorrow.", "Plan these tasks for my evening routine.", and
+  "Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9."
+- Do not use SMART_ROUTINE_BUILDER for one ordinary task, task breakdown, task queries,
+  daily briefing, editing an existing task, or general discussion or guidance about routines.
+- SMART_ROUTINE_BUILDER is routing only. Copy the request into task_text, keep reply empty,
+  and keep all context and query fields at NONE. Do not extract steps, write a proposal,
+  access task data, schedule reminders, claim success, or create final factual speech.
+- Android sends the original normalized request to the bounded routine extractor and remains
+  the authority for validation, clarification, proposal speech, confirmation, persistence,
+  reminders, and final results.
 - Use DAILY_BRIEFING only for a semantic request for the app's on-demand daily briefing.
 - DAILY_BRIEFING is a structured route only. Android determines the device-local date, queries authoritative task data, identifies overdue, today, and upcoming tasks within seven days, selects one deterministic suggested focus, selects and orders records, calculates counts, publishes temporary context, and writes the factual speech.
 - For DAILY_BRIEFING, do not choose a focus task, calculate task status or date windows, select task records, call a task-operation agent, or claim that the briefing succeeded.
@@ -797,6 +814,9 @@ User: How do I create a task?
 User: Create a task called revision
 {"route":"TASK_COMMAND","task_text":"Create a task called revision","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
+User: Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9
+{"route":"SMART_ROUTINE_BUILDER","task_text":"Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
 User: Give me my daily briefing.
 {"route":"DAILY_BRIEFING","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
@@ -867,6 +887,9 @@ User: bye
 
 Rules:
 - For TASK_COMMAND, copy the user's task-related request into task_text and keep reply empty.
+- For SMART_ROUTINE_BUILDER, copy the routine-building request into task_text, keep reply
+  empty, use NONE for all context and query fields, use confidence at least 0.80, and set
+  listen_again true.
 - For DAILY_BRIEFING, keep task_text, reply, and context_ref empty; use NONE for all context and query fields; use confidence at least 0.80; and set listen_again true.
 - For CONTEXT_READ, keep task_text and reply empty, use one supplied context_ref, and select a non-NONE context_detail.
 - For CONTEXT_ACTION, keep task_text and reply empty, use one supplied context_ref, context_detail NONE, and context_action UPDATE or RESCHEDULE.

@@ -112,6 +112,34 @@ class ConversationDecisionParser {
         confidence: Double,
         listenAgain: Boolean
     ) {
+        if (route == ConversationRoute.SMART_ROUTINE_BUILDER) {
+            if (taskText.isBlank() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
+                throw ConversationSchemaException(
+                    "SMART_ROUTINE_BUILDER requires non-empty task_text and empty reply and context_ref"
+                )
+            }
+            if (contextDetail != ConversationContextDetail.NONE ||
+                contextAction != ConversationContextAction.NONE ||
+                queryReadingMove != ConversationQueryReadingMove.NONE ||
+                queryPresentationHint != TaskQueryPresentation.NONE
+            ) {
+                throw ConversationSchemaException(
+                    "SMART_ROUTINE_BUILDER requires NONE context and query fields"
+                )
+            }
+            if (confidence < MIN_ACCEPTED_ROUTING_CONFIDENCE) {
+                throw ConversationSchemaException(
+                    "SMART_ROUTINE_BUILDER confidence is below the accepted routing threshold"
+                )
+            }
+            if (!listenAgain) {
+                throw ConversationSchemaException(
+                    "SMART_ROUTINE_BUILDER requires listen_again true"
+                )
+            }
+            return
+        }
+
         if (route == ConversationRoute.DAILY_BRIEFING) {
             if (taskText.isNotEmpty() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
                 throw ConversationSchemaException(

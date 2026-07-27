@@ -3,6 +3,7 @@ package com.example.myapplication.data
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 
 @Dao // data access object
 interface TaskDao {
@@ -12,6 +13,15 @@ interface TaskDao {
 
     @Insert
     suspend fun insert(task: TaskEntity): Long
+
+    @Insert
+    suspend fun insertAll(tasks: List<TaskEntity>): List<Long>
+
+    @Transaction
+    suspend fun insertRootTasksAtomically(tasks: List<TaskEntity>): List<Long> {
+        require(tasks.all { it.parentTaskId == null })
+        return insertAll(tasks)
+    }
 
     @Query("UPDATE tasks SET isDone = :isDone WHERE id = :id")
     suspend fun updateDoneStatus(id: Long, isDone: Boolean)
