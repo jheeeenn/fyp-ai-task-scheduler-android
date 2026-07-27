@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.routine
 
 import com.example.myapplication.data.TaskEntity
+import kotlinx.coroutines.CancellationException
 
 enum class RoutineCreationResultCategory {
     SUCCESS,
@@ -61,6 +62,8 @@ class RoutineTaskBatchCreator(
         }
         val insertedIds = try {
             store.insertRootTasksAtomically(tasks)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             return RoutineCreationResult(
                 category = RoutineCreationResultCategory.DATABASE_FAILURE,
@@ -81,6 +84,8 @@ class RoutineTaskBatchCreator(
         val reminderSuccessCount = tasks.zip(insertedIds).count { (task, id) ->
             try {
                 reminderScheduler.schedule(task.copy(id = id))
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 false
             }

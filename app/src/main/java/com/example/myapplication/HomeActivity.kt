@@ -395,7 +395,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
-        routineDraftController.clear()
+        if (routineDraftController.state != RoutineDraftState.SAVING) {
+            routineDraftController.clear()
+        }
     }
 
     override fun onAssistantSessionStopped() {
@@ -405,7 +407,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
-        routineDraftController.clear()
+        if (routineDraftController.state != RoutineDraftState.SAVING) {
+            routineDraftController.clear()
+        }
     }
 
     override fun onResume(){
@@ -740,7 +744,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
 
         if (routineDraftController.state != RoutineDraftState.NONE &&
-            handleRoutineFollowUp(normalized)
+            handleRoutineFollowUp(normalized, requestToken)
         ) {
             return
         }
@@ -1054,8 +1058,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 val taskAgentInput: String
                 when (conversationDecision.route) {
                     ConversationRoute.SMART_ROUTINE_BUILDER -> {
+                        if (!isAssistantRequestCurrent(requestToken)) return@launch
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
-                        handleSmartRoutineBuilder(normalized)
+                        handleSmartRoutineBuilder(normalized, requestToken)
                         return@launch
                     }
                     ConversationRoute.DAILY_BRIEFING -> {
@@ -1718,6 +1723,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         assistantSession.speak(reply, listenAgain = false)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: TaskAgentProcessingException) {
                 Log.e("TASK_PIPELINE", "Task agent failed closed", e)
                 assistantSession.speak("I could not process that task command safely. Please try again.", listenAgain = true)
@@ -2831,7 +2838,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
-        routineDraftController.clear()
+        if (routineDraftController.state != RoutineDraftState.SAVING) {
+            routineDraftController.clear()
+        }
         assistantSession.speakThenStop(responseManager.stopListening())
     }
 
@@ -2856,15 +2865,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return queryReadingStateGeneration
     }
 
-    private suspend fun handleSmartRoutineBuilder(normalizedRequest: String) {
+    private suspend fun handleSmartRoutineBuilder(
+        normalizedRequest: String,
+        requestToken: AssistantRequestToken
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
         homeFollowUpContext = HomeFollowUpContext.NONE
+        if (!isAssistantRequestCurrent(requestToken)) return
         val generation = routineDraftController.beginExtraction()
         logRoutineDraftState()
         val extraction = try {
             agentOrchestrator.processRoutine(normalizedRequest)
         } catch (_: TaskAgentProcessingException) {
-            if (routineDraftController.state == RoutineDraftState.EXTRACTING) {
-                routineDraftController.clear()
+            val discarded = routineDraftController.discardExtraction(generation)
+            if (discarded && isAssistantRequestCurrent(requestToken)) {
                 conversationOrchestrator.clearSessionMemory()
                 assistantSession.speak(
                     "I could not extract that routine safely. Please describe 2 to 5 ordered tasks again.",
@@ -2873,13 +2887,39 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
             return
         }
+        if (!isAssistantRequestCurrent(requestToken)) {
+            routineDraftController.discardExtraction(generation)
+            return
+        }
+        val extractionGeneration = generation
+        if (!isAssistantRequestCurrent(requestToken)) {
+            routineDraftController.discardExtraction(extractionGeneration)
+            return
+        }
+        val update = routineDraftController.applyExtraction(
+            extractionGeneration,
+            extraction
+        )
         handleRoutineDraftUpdate(
-            routineDraftController.applyExtraction(generation, extraction),
-            invalidSpeech = "I could not extract that routine safely. Please describe 2 to 5 ordered tasks again."
+            update,
+            invalidSpeech = "I could not extract that routine safely. Please describe 2 to 5 ordered tasks again.",
+            requestToken = requestToken
         )
     }
 
-    private fun handleRoutineFollowUp(normalized: String): Boolean {
+    private fun handleRoutineFollowUp(
+        normalized: String,
+        requestToken: AssistantRequestToken
+    ): Boolean {
+        if (routineDraftController.state == RoutineDraftState.SAVING) {
+            if (isAssistantRequestCurrent(requestToken)) {
+                assistantSession.speak(
+                    "The confirmed routine is already being saved.",
+                    listenAgain = false
+                )
+            }
+            return true
+        }
         val move = RoutineFollowUpInterpreter.interpret(normalized)
         if (move is RoutineFollowUpMove.Cancel || move is RoutineFollowUpMove.Reject) {
             cancelPendingRoutine()
@@ -2897,14 +2937,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             RoutineDraftState.COLLECTING_SHARED_DATE -> {
                 handleRoutineDraftUpdate(
                     routineDraftController.provideSharedDate(normalized),
-                    invalidSpeech = "Please provide one exact date for this routine."
+                    invalidSpeech = "Please provide one exact date that satisfies the routine's date constraints.",
+                    requestToken = requestToken
                 )
                 true
             }
             RoutineDraftState.COLLECTING_STEP_TIME -> {
                 handleRoutineDraftUpdate(
                     routineDraftController.provideNextStepTime(normalized),
-                    invalidSpeech = "Please provide one exact clock time for that step."
+                    invalidSpeech = "Please provide one exact clock time for that step.",
+                    requestToken = requestToken
                 )
                 true
             }
@@ -2923,7 +2965,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 move.stepIndex,
                                 move.value
                             ),
-                            invalidSpeech = "Please select a valid routine step and give one exact time."
+                            invalidSpeech = "Please select a valid routine step and give one exact time.",
+                            requestToken = requestToken
                         )
                     }
                     is RoutineFollowUpMove.ChangeStepTitle -> {
@@ -2932,13 +2975,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 move.stepIndex,
                                 move.value
                             ),
-                            invalidSpeech = "Please select a valid routine step and give a non-empty title."
+                            invalidSpeech = "Please select a valid routine step and give a non-empty title.",
+                            requestToken = requestToken
                         )
                     }
                     is RoutineFollowUpMove.ChangeSharedDate -> {
                         handleRoutineDraftUpdate(
                             routineDraftController.changeSharedDate(move.value),
-                            invalidSpeech = "Please provide one exact future date for the routine."
+                            invalidSpeech = "Please provide one exact future date for the routine.",
+                            requestToken = requestToken
                         )
                     }
                     RoutineFollowUpMove.StructuralChange -> {
@@ -2956,20 +3001,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
                 true
             }
-            RoutineDraftState.SAVING -> {
-                assistantSession.speak(
-                    "I am still saving the confirmed routine.",
-                    listenAgain = false
-                )
-                true
-            }
+            RoutineDraftState.SAVING -> true
         }
     }
 
     private fun handleRoutineDraftUpdate(
         update: RoutineDraftUpdate,
-        invalidSpeech: String
+        invalidSpeech: String,
+        requestToken: AssistantRequestToken
     ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
         when (update) {
             is RoutineDraftUpdate.Ask -> {
                 logRoutineDraftState()
@@ -3020,6 +3061,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun cancelPendingRoutine() {
+        if (routineDraftController.state == RoutineDraftState.SAVING) return
         val count = routineDraftController.draft?.steps?.size ?: 0
         routineDraftController.clear()
         if (::conversationOrchestrator.isInitialized) {
@@ -3036,12 +3078,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private fun savePendingRoutine() {
-        val confirmedDraft = routineDraftController.markSaving()
-        if (confirmedDraft == null) {
-            assistantSession.speak(
-                "That routine is not ready to save.",
-                listenAgain = true
-            )
+        val pendingSave = routineDraftController.markSaving()
+        if (pendingSave == null) {
+            if (routineDraftController.state == RoutineDraftState.SAVING) {
+                assistantSession.speak(
+                    "The confirmed routine is already being saved.",
+                    listenAgain = false
+                )
+            } else {
+                assistantSession.speak(
+                    "That routine is not ready to save.",
+                    listenAgain = true
+                )
+            }
             return
         }
         logRoutineDraftState()
@@ -3055,21 +3104,33 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     ReminderHelper.scheduleReminderFromTask(this@HomeActivity, task)
                 }
             )
-            val result = creator.create(confirmedDraft)
+            val result = creator.create(pendingSave.draft)
+            if (!routineDraftController.completeSaving(pendingSave.generation)) {
+                Log.d(
+                    "ROUTINE_SAVE_STALE",
+                    "saveGeneration=${pendingSave.generation} accepted=false"
+                )
+                return@launch
+            }
             Log.d(
                 "ROUTINE_SAVE",
                 "taskCount=${result.taskCount} insertedCount=${result.insertedCount} " +
                     "reminderSuccessCount=${result.reminderSuccessCount} " +
                     "result=${result.category.name}"
             )
-            routineDraftController.clear()
             conversationOrchestrator.clearSessionMemory()
             homeFollowUpContext = HomeFollowUpContext.NONE
-            refreshOverview()
-            assistantSession.speak(
-                RoutineResultSpeechRenderer.render(result),
-                listenAgain = false
-            )
+            if (result.insertedCount == result.taskCount &&
+                result.insertedCount > 0
+            ) {
+                refreshOverview()
+            }
+            if (assistantSession.assistantSessionActive) {
+                assistantSession.speak(
+                    RoutineResultSpeechRenderer.render(result),
+                    listenAgain = false
+                )
+            }
         }
     }
 

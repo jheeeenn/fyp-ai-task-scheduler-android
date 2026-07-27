@@ -37,6 +37,18 @@ class RoutineDraftControllerTest {
                 validResponse(needClarification = true)
             ) as RoutineDraftUpdate.Rejected).reason
         )
+
+        listOf(Double.NaN, Double.POSITIVE_INFINITY, 1.01).forEach { confidence ->
+            val hardened = controller()
+            val token = hardened.beginExtraction()
+            assertEquals(
+                RoutineDraftIssue.LOW_CONFIDENCE,
+                (hardened.applyExtraction(
+                    token,
+                    validResponse(confidence = confidence)
+                ) as RoutineDraftUpdate.Rejected).reason
+            )
+        }
     }
 
     @Test
@@ -82,6 +94,148 @@ class RoutineDraftControllerTest {
             listOf("28/07/2026", "28/07/2026", "28/07/2026"),
             controller.draft!!.steps.map(PendingRoutineStep::resolvedDate)
         )
+        assertEquals(
+            listOf(
+                RoutineDateClassification.EXACT,
+                RoutineDateClassification.MISSING,
+                RoutineDateClassification.MISSING
+            ),
+            controller.draft!!.steps.map(PendingRoutineStep::dateClassification)
+        )
+    }
+
+    @Test
+    fun constrainedDateDoesNotInheritAnotherStepsExactDate() {
+        val controller = controller()
+        val token = controller.beginExtraction()
+        val update = controller.applyExtraction(
+            token,
+            validResponse(
+                steps = listOf(
+                    step("medicine", "tomorrow", "8 AM"),
+                    step("study", "next week", "9 AM")
+                )
+            )
+        )
+
+        assertTrue(update is RoutineDraftUpdate.Ask)
+        assertEquals("28/07/2026", controller.draft!!.steps[0].resolvedDate)
+        assertNull(controller.draft!!.steps[1].resolvedDate)
+        assertEquals(
+            RoutineDateClassification.CONSTRAINED,
+            controller.draft!!.steps[1].dateClassification
+        )
+    }
+
+    @Test
+    fun constrainedDateAcceptsOnlyClarificationInsideOriginalWindow() {
+        val accepted = controller()
+        val acceptedToken = accepted.beginExtraction()
+        accepted.applyExtraction(
+            acceptedToken,
+            validResponse(
+                steps = listOf(
+                    step("one", "next week", "8 AM"),
+                    step("two", "next week", "9 AM")
+                )
+            )
+        )
+        assertTrue(
+            accepted.provideSharedDate("4 August 2026") is RoutineDraftUpdate.Review
+        )
+        assertEquals(
+            listOf("04/08/2026", "04/08/2026"),
+            accepted.draft!!.steps.map(PendingRoutineStep::resolvedDate)
+        )
+
+        val rejected = controller()
+        val rejectedToken = rejected.beginExtraction()
+        rejected.applyExtraction(
+            rejectedToken,
+            validResponse(
+                steps = listOf(
+                    step("one", "next week", "8 AM"),
+                    step("two", "next week", "9 AM")
+                )
+            )
+        )
+        assertEquals(
+            RoutineDraftIssue.INVALID_DATE,
+            (rejected.provideSharedDate("tomorrow")
+                as RoutineDraftUpdate.Rejected).reason
+        )
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, rejected.state)
+        assertTrue(rejected.draft!!.steps.all { it.resolvedDate == null })
+    }
+
+    @Test
+    fun multipleCompatibleConstraintsAcceptOneSharedExactDate() {
+        val controller = controller()
+        val token = controller.beginExtraction()
+        controller.applyExtraction(
+            token,
+            validResponse(
+                steps = listOf(
+                    step("one", "next week", "8 AM"),
+                    step("two", "between 3 August and 7 August", "9 AM")
+                )
+            )
+        )
+
+        assertTrue(
+            controller.provideSharedDate("4 August 2026") is RoutineDraftUpdate.Review
+        )
+        assertEquals(
+            listOf("04/08/2026", "04/08/2026"),
+            controller.draft!!.steps.map(PendingRoutineStep::resolvedDate)
+        )
+    }
+
+    @Test
+    fun incompatibleConstraintsNeverSilentlySelectOneDate() {
+        val controller = controller()
+        val token = controller.beginExtraction()
+        val update = controller.applyExtraction(
+            token,
+            validResponse(
+                steps = listOf(
+                    step("one", "this week", "8 AM"),
+                    step("two", "next week", "9 AM")
+                )
+            )
+        )
+
+        assertTrue(update is RoutineDraftUpdate.Ask)
+        assertTrue(controller.draft!!.steps.all { it.resolvedDate == null })
+        assertEquals(
+            RoutineDraftIssue.INVALID_DATE,
+            (controller.provideSharedDate("3 August 2026")
+                as RoutineDraftUpdate.Rejected).reason
+        )
+        assertTrue(controller.draft!!.steps.all { it.resolvedDate == null })
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, controller.state)
+    }
+
+    @Test
+    fun malformedNonEmptyDateFailsClosedAndNeverInheritsExactDate() {
+        val controller = controller()
+        val token = controller.beginExtraction()
+        val update = controller.applyExtraction(
+            token,
+            validResponse(
+                steps = listOf(
+                    step("one", "tomorrow", "8 AM"),
+                    step("two", "not a date", "9 AM")
+                )
+            )
+        )
+
+        assertEquals(
+            RoutineDraftIssue.INVALID_DATE,
+            (update as RoutineDraftUpdate.Rejected).reason
+        )
+        assertEquals(RoutineDraftState.NONE, controller.state)
+        assertNull(controller.draft)
     }
 
     @Test
@@ -143,7 +297,7 @@ class RoutineDraftControllerTest {
     fun malformedDatesAndTimesAreRejectedAsUnresolved() {
         val dateController = controller()
         val dateToken = dateController.beginExtraction()
-        dateController.applyExtraction(
+        val invalidDate = dateController.applyExtraction(
             dateToken,
             validResponse(
                 steps = listOf(
@@ -152,11 +306,11 @@ class RoutineDraftControllerTest {
                 )
             )
         )
-        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, dateController.state)
         assertEquals(
             RoutineDraftIssue.INVALID_DATE,
-            (dateController.provideSharedDate("also invalid") as RoutineDraftUpdate.Rejected).reason
+            (invalidDate as RoutineDraftUpdate.Rejected).reason
         )
+        assertEquals(RoutineDraftState.NONE, dateController.state)
 
         val timeController = controller()
         val timeToken = timeController.beginExtraction()
@@ -265,6 +419,27 @@ class RoutineDraftControllerTest {
         assertEquals(RoutineDraftState.NONE, controller.state)
         assertNull(controller.draft)
         assertNull(controller.authoritativeProposal)
+    }
+
+    @Test
+    fun confirmedSaveIsTerminalGenerationBoundAndAcceptedOnlyOnce() {
+        val controller = reviewedController()
+        val pendingSave = requireNotNull(controller.markSaving())
+
+        assertEquals(RoutineDraftState.SAVING, controller.state)
+        assertFalse(controller.clear())
+        assertEquals(RoutineDraftState.SAVING, controller.state)
+        assertNull(controller.markSaving())
+        assertFalse(controller.completeSaving(pendingSave.generation + 1))
+        assertEquals(RoutineDraftState.SAVING, controller.state)
+        assertTrue(controller.completeSaving(pendingSave.generation))
+        assertEquals(RoutineDraftState.NONE, controller.state)
+        assertFalse(controller.completeSaving(pendingSave.generation))
+
+        val newerExtraction = controller.beginExtraction()
+        assertFalse(controller.completeSaving(pendingSave.generation))
+        assertEquals(RoutineDraftState.EXTRACTING, controller.state)
+        assertTrue(controller.discardExtraction(newerExtraction))
     }
 
     private fun reviewedController(): RoutineDraftController {

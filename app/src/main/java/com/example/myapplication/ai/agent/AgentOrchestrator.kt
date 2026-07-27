@@ -5,6 +5,7 @@ import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
+import kotlinx.coroutines.CancellationException
 
 class TaskAgentProcessingException(message: String, cause: Throwable) : Exception(message, cause)
 
@@ -61,6 +62,8 @@ class AgentOrchestrator(
                     "needClarification=${response.needClarification}"
             )
             response
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("ROUTINE_EXTRACTION", "Routine extraction failed closed", e)
             throw TaskAgentProcessingException(

@@ -5,6 +5,7 @@ import com.example.myapplication.ai.temporal.TemporalActionPolicy
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalResolution
+import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 import com.example.myapplication.ai.temporal.TemporalUseCase
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -19,6 +20,13 @@ enum class RoutineDraftState {
     SAVING
 }
 
+enum class RoutineDateClassification {
+    MISSING,
+    EXACT,
+    CONSTRAINED,
+    INVALID
+}
+
 data class PendingRoutineDraft(
     val title: String,
     val steps: List<PendingRoutineStep>,
@@ -30,7 +38,19 @@ data class PendingRoutineStep(
     val originalDateText: String?,
     val originalTimeText: String?,
     val resolvedDate: String?,
-    val resolvedTime: String?
+    val resolvedTime: String?,
+    val dateClassification: RoutineDateClassification =
+        if (resolvedDate.isNullOrBlank()) {
+            RoutineDateClassification.MISSING
+        } else {
+            RoutineDateClassification.EXACT
+        },
+    val originalDateConstraint: TemporalResolution? = null
+)
+
+data class PendingRoutineSave(
+    val generation: Long,
+    val draft: PendingRoutineDraft
 )
 
 sealed class RoutineDraftUpdate {
@@ -66,8 +86,13 @@ class RoutineDraftController(
         private set
 
     private var extractionGeneration: Long = 0
+    private var saveGeneration: Long = 0
+    private var activeSaveGeneration: Long? = null
 
     fun beginExtraction(): Long {
+        check(state != RoutineDraftState.SAVING) {
+            "A confirmed routine save is already in progress"
+        }
         extractionGeneration += 1
         draft = null
         authoritativeProposal = null
@@ -83,6 +108,7 @@ class RoutineDraftController(
             return RoutineDraftUpdate.Stale
         }
         if (!extraction.confidence.isFinite() ||
+            extraction.confidence !in 0.0..1.0 ||
             extraction.confidence < MIN_EXTRACTION_CONFIDENCE
         ) {
             clear()
@@ -105,19 +131,39 @@ class RoutineDraftController(
 
         val base = baseCalendarProvider()
         val parsedSteps = extraction.steps.map { step ->
-            val date = resolveDate(step.dateText, base)
+            val dateResult = classifyDate(step.dateText, base)
             val time = resolveTime(step.timeText, base)
             PendingRoutineStep(
                 title = step.title.trim(),
                 originalDateText = step.dateText.trim().takeIf(String::isNotEmpty),
                 originalTimeText = step.timeText.trim().takeIf(String::isNotEmpty),
-                resolvedDate = date,
-                resolvedTime = time
+                resolvedDate = dateResult.resolvedDate,
+                resolvedTime = time,
+                dateClassification = dateResult.classification,
+                originalDateConstraint = dateResult.constraint
             )
         }
-        val suppliedDates = parsedSteps.mapNotNull(PendingRoutineStep::resolvedDate).distinct()
+        if (parsedSteps.any {
+                it.dateClassification == RoutineDateClassification.INVALID
+            }
+        ) {
+            clear()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        }
+        val suppliedDates = parsedSteps
+            .filter { it.dateClassification == RoutineDateClassification.EXACT }
+            .mapNotNull(PendingRoutineStep::resolvedDate)
+            .distinct()
         val stepsWithSharedDate = if (suppliedDates.size == 1) {
-            parsedSteps.map { it.copy(resolvedDate = it.resolvedDate ?: suppliedDates.single()) }
+            parsedSteps.map { step ->
+                if (step.dateClassification == RoutineDateClassification.MISSING) {
+                    step.copy(
+                        resolvedDate = suppliedDates.single()
+                    )
+                } else {
+                    step
+                }
+            }
         } else {
             parsedSteps
         }
@@ -135,13 +181,28 @@ class RoutineDraftController(
         }
         val current = draft
             ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_STATE)
-        val resolved = resolveDate(dateText, baseCalendarProvider())
+        val base = baseCalendarProvider()
+        val resolved = resolveDate(dateText, base)
             ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        val constrainedSteps = current.steps.filter {
+            it.resolvedDate == null &&
+                it.dateClassification == RoutineDateClassification.CONSTRAINED
+        }
+        val satisfiesEveryConstraint = constrainedSteps.all { step ->
+            val constraint = step.originalDateConstraint ?: return@all false
+            TemporalActionPolicy.validateClarification(
+                original = constraint,
+                exactDate = resolved,
+                exactMinute = null
+            )
+        }
+        if (!satisfiesEveryConstraint) {
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        }
         draft = current.copy(
             steps = current.steps.map { step ->
                 if (step.resolvedDate == null) {
                     step.copy(
-                        originalDateText = dateText.trim(),
                         resolvedDate = resolved
                     )
                 } else {
@@ -228,24 +289,58 @@ class RoutineDraftController(
             ?: return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
         draft = current.copy(
             steps = current.steps.map {
-                it.copy(originalDateText = dateText.trim(), resolvedDate = resolved)
+                it.copy(
+                    originalDateText = dateText.trim(),
+                    resolvedDate = resolved,
+                    dateClassification = RoutineDateClassification.EXACT,
+                    originalDateConstraint = null
+                )
             },
             revision = current.revision + 1
         )
         return advance()
     }
 
-    fun markSaving(): PendingRoutineDraft? {
+    fun markSaving(): PendingRoutineSave? {
         val current = requireReviewDraft() ?: return null
+        saveGeneration += 1
+        activeSaveGeneration = saveGeneration
         state = RoutineDraftState.SAVING
-        return current
+        return PendingRoutineSave(saveGeneration, current)
     }
 
-    fun clear() {
+    fun completeSaving(generation: Long): Boolean {
+        if (state != RoutineDraftState.SAVING ||
+            activeSaveGeneration != generation
+        ) {
+            return false
+        }
+        reset()
+        return true
+    }
+
+    fun discardExtraction(generation: Long): Boolean {
+        if (state != RoutineDraftState.EXTRACTING ||
+            extractionGeneration != generation
+        ) {
+            return false
+        }
+        reset()
+        return true
+    }
+
+    fun clear(): Boolean {
+        if (state == RoutineDraftState.SAVING) return false
+        reset()
+        return true
+    }
+
+    private fun reset() {
         extractionGeneration += 1
         state = RoutineDraftState.NONE
         draft = null
         authoritativeProposal = null
+        activeSaveGeneration = null
     }
 
     private fun requireReviewDraft(): PendingRoutineDraft? =
@@ -307,6 +402,27 @@ class RoutineDraftController(
         return rejectedByPolicy || scheduledAt == null || scheduledAt <= base.timeInMillis
     }
 
+    private fun classifyDate(text: String, base: Calendar): DateClassificationResult {
+        if (text.isBlank()) {
+            return DateClassificationResult(RoutineDateClassification.MISSING)
+        }
+        val resolution = resolver.resolve(text, null, text, base)
+        return when {
+            resolution.isExactDate -> DateClassificationResult(
+                classification = RoutineDateClassification.EXACT,
+                resolvedDate = resolution.startDateInclusive,
+                constraint = resolution
+            )
+            resolution.hasDateConstraint &&
+                resolution.status == TemporalResolutionStatus.RESOLVED ->
+                DateClassificationResult(
+                    classification = RoutineDateClassification.CONSTRAINED,
+                    constraint = resolution
+                )
+            else -> DateClassificationResult(RoutineDateClassification.INVALID)
+        }
+    }
+
     private fun resolveDate(text: String, base: Calendar): String? {
         if (text.isBlank()) return null
         val resolution = resolver.resolve(text, null, text, base)
@@ -331,6 +447,12 @@ class RoutineDraftController(
         listOf("first", "second", "third", "fourth", "fifth").getOrElse(index) {
             "${index + 1}th"
         }
+
+    private data class DateClassificationResult(
+        val classification: RoutineDateClassification,
+        val resolvedDate: String? = null,
+        val constraint: TemporalResolution? = null
+    )
 
     private companion object {
         const val MIN_STEPS = 2

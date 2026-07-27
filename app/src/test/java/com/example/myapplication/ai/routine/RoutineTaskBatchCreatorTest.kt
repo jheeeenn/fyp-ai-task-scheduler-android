@@ -1,8 +1,11 @@
 package com.example.myapplication.ai.routine
 
 import com.example.myapplication.data.TaskEntity
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -47,6 +50,27 @@ class RoutineTaskBatchCreatorTest {
         assertEquals(RoutineCreationResultCategory.DATABASE_FAILURE, result.category)
         assertEquals(0, result.insertedCount)
         assertEquals(0, reminderCalls)
+    }
+
+    @Test
+    fun coroutineCancellationIsRethrownInsteadOfBecomingDatabaseFailure() {
+        val storeCancellation = RoutineTaskBatchCreator(
+            store = RoutineTaskStore { throw CancellationException("cancel store") },
+            reminderScheduler = RoutineReminderScheduler { true }
+        )
+        assertThrows(CancellationException::class.java) {
+            runBlocking { storeCancellation.create(draft()) }
+        }
+
+        val reminderCancellation = RoutineTaskBatchCreator(
+            store = RoutineTaskStore { listOf(1L, 2L, 3L) },
+            reminderScheduler = RoutineReminderScheduler {
+                throw CancellationException("cancel reminder")
+            }
+        )
+        assertThrows(CancellationException::class.java) {
+            runBlocking { reminderCancellation.create(draft()) }
+        }
     }
 
     @Test

@@ -96,6 +96,94 @@ class SmartRoutineIntegrationContractTest {
     }
 
     @Test
+    fun routineRoutingAndExtractionAreBoundToTheAssistantRequestToken() {
+        val source = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val route = source
+            .substringAfter("ConversationRoute.SMART_ROUTINE_BUILDER ->")
+            .substringBefore("ConversationRoute.DAILY_BRIEFING ->")
+        val extraction = source
+            .substringAfter("private suspend fun handleSmartRoutineBuilder")
+            .substringBefore("private fun handleRoutineFollowUp")
+        val delivery = source
+            .substringAfter("private fun handleRoutineDraftUpdate")
+            .substringBefore("private fun logRoutineDraftState")
+
+        assertTrue(
+            route.indexOf("isAssistantRequestCurrent(requestToken)") in
+                0 until route.indexOf("commitFinalDecision")
+        )
+        assertTrue(route.contains("handleSmartRoutineBuilder(normalized, requestToken)"))
+        assertTrue(extraction.contains("requestToken: AssistantRequestToken"))
+        assertTrue(
+            extraction.indexOf("isAssistantRequestCurrent(requestToken)") <
+                extraction.indexOf("routineDraftController.beginExtraction()")
+        )
+        assertTrue(
+            extraction.indexOf(
+                "isAssistantRequestCurrent(requestToken)",
+                extraction.indexOf("agentOrchestrator.processRoutine")
+            ) > extraction.indexOf("agentOrchestrator.processRoutine")
+        )
+        assertTrue(extraction.contains("routineDraftController.discardExtraction(generation)"))
+        assertTrue(extraction.contains("routineDraftController.applyExtraction("))
+        assertTrue(delivery.contains("if (!isAssistantRequestCurrent(requestToken)) return"))
+    }
+
+    @Test
+    fun savingIsTerminalSingleResultAndSessionStopCannotReportCancellation() {
+        val source = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val followUp = source
+            .substringAfter("private fun handleRoutineFollowUp")
+            .substringBefore("private fun handleRoutineDraftUpdate")
+        val cancelled = source
+            .substringAfter("override fun onAssistantCancelled()")
+            .substringBefore("override fun onAssistantSessionStopped()")
+        val stopped = source
+            .substringAfter("override fun onAssistantSessionStopped()")
+            .substringBefore("override fun onResume()")
+        val save = source
+            .substringAfter("private fun savePendingRoutine")
+            .substringBefore("private fun beginAssistantRequest")
+
+        assertTrue(
+            followUp.indexOf("RoutineDraftState.SAVING") <
+                followUp.indexOf("RoutineFollowUpInterpreter.interpret")
+        )
+        assertTrue(followUp.contains("The confirmed routine is already being saved."))
+        assertTrue(
+            cancelled.contains(
+                "routineDraftController.state != RoutineDraftState.SAVING"
+            )
+        )
+        assertTrue(
+            stopped.contains(
+                "routineDraftController.state != RoutineDraftState.SAVING"
+            )
+        )
+        assertTrue(save.contains("routineDraftController.completeSaving(pendingSave.generation)"))
+        assertTrue(save.contains("ROUTINE_SAVE_STALE"))
+        assertTrue(save.contains("assistantSession.assistantSessionActive"))
+        assertTrue(save.contains("result.insertedCount == result.taskCount"))
+        assertTrue(save.indexOf("completeSaving") < save.indexOf("\"ROUTINE_SAVE\""))
+    }
+
+    @Test
+    fun cancelAndRejectBeforeSavingNeverReachPersistence() {
+        val source = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val followUp = source
+            .substringAfter("private fun handleRoutineFollowUp")
+            .substringBefore("private fun handleRoutineDraftUpdate")
+        val cancellationBranch = followUp
+            .substringAfter("RoutineFollowUpMove.Cancel")
+            .substringBefore("return when")
+
+        assertTrue(cancellationBranch.contains("RoutineFollowUpMove.Reject"))
+        assertTrue(cancellationBranch.contains("cancelPendingRoutine()"))
+        assertFalse(cancellationBranch.contains("savePendingRoutine()"))
+        assertFalse(cancellationBranch.contains("insertRootTasksAtomically"))
+    }
+
+    @Test
     fun daoAddsOnlyAtomicListInsertionWhileEntityAndDatabaseSchemaStayUnchanged() {
         val dao = File("src/main/java/com/example/myapplication/data/TaskDao.kt").readText()
         val entity = File("src/main/java/com/example/myapplication/data/TaskEntity.kt").readText()
