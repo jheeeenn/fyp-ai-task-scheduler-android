@@ -67,6 +67,10 @@ User text:
 $userText
 
 Return the routing decision using only the required ConversationDecision schema. Do not output task-agent fields. Do not explain your reasoning.
+QUERY_READING_CONTROL always requires an empty context_ref. Never combine query-reading control
+with T1, T2, an ordinal, or another contextual selector. A repeat, read-again, or say-again
+request with exactly one supplied task selector is CONTEXT_READ with context_detail SUMMARY,
+not QUERY_READING_CONTROL.
 """.trimIndent()
 
             executeConversationRequest(repairPrompt, RequestKind.ROUTING)
@@ -646,6 +650,15 @@ Query-reading control rules:
 - Stopping query reading such as "that is enough", "stop reading", "I don't need any more", or "finish the list" maps to STOP.
 - In AFTER_DAILY_BRIEFING, a natural request to repeat the briefing maps to REPEAT_LAST. Do not reconstruct, paraphrase, or copy the briefing into reply.
 
+Targeted-restatement precedence:
+- A repeat, read-again, say-again, tell-me-again, or "what was" request with exactly one supplied task selector is CONTEXT_READ with context_detail SUMMARY.
+- A valid explicit supplied selector takes priority over generic repeat wording.
+- Generic response repetition without a task selector is QUERY_READING_CONTROL with REPEAT_LAST.
+- Explicit page, group, or task-list repetition without an item selector is QUERY_READING_CONTROL with REPEAT_PAGE when a query page is active.
+- QUERY_READING_CONTROL must always have an empty context_ref.
+- Never combine QUERY_READING_CONTROL with T1, T2, an ordinal, or another contextual ref.
+- A targeted task restatement must never become REPEAT_LAST or REPEAT_PAGE.
+
 Query-presentation hint rules:
 - query_presentation_hint is an advisory semantic classification for TASK_COMMAND only.
 - Use COUNT_ONLY for existence or count questions, including omitted-noun phrasing.
@@ -812,6 +825,26 @@ App context:
 Interaction state:
 QUERY_PAGE
 User: can you say that again
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+
+App context:
+Interaction state:
+QUERY_PAGE
+Supplied context includes T1 through T5.
+User: Can you repeat the fourth one?
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T4","context_detail":"SUMMARY","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+
+App context:
+Interaction state:
+AFTER_DAILY_BRIEFING
+Supplied context includes T1 through T5.
+User: Say the first task again.
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"SUMMARY","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+
+App context:
+Interaction state:
+AFTER_DAILY_BRIEFING
+User: Can you say that again?
 {"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:

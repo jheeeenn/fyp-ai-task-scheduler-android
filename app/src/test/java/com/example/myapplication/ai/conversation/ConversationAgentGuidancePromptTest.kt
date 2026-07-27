@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class ConversationAgentGuidancePromptTest {
     private val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
@@ -108,6 +109,74 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("maps to START_OVERVIEW"))
         assertTrue(prompt.contains("Never use factual DIRECT_REPLY"))
         assertTrue(prompt.contains("Never copy task titles, times, dates, counts, task data, or text to be repeated into reply"))
+    }
+
+    @Test
+    fun targetedTaskRestatementTakesPrecedenceOverGenericRepeat() {
+        assertTrue(prompt.contains("Targeted-restatement precedence"))
+        assertTrue(prompt.contains("valid explicit supplied selector takes priority"))
+        assertTrue(
+            prompt.contains(
+                "request with exactly one supplied task selector is CONTEXT_READ with context_detail SUMMARY"
+            )
+        )
+        assertTrue(
+            prompt.contains(
+                "Generic response repetition without a task selector is QUERY_READING_CONTROL with REPEAT_LAST"
+            )
+        )
+        assertTrue(
+            prompt.contains(
+                "Explicit page, group, or task-list repetition without an item selector is QUERY_READING_CONTROL with REPEAT_PAGE"
+            )
+        )
+        assertTrue(prompt.contains("QUERY_READING_CONTROL must always have an empty context_ref"))
+        assertTrue(
+            prompt.contains(
+                "Never combine QUERY_READING_CONTROL with T1, T2, an ordinal, or another contextual ref"
+            )
+        )
+        assertTrue(prompt.contains("User: Can you repeat the fourth one?"))
+        assertTrue(
+            prompt.contains(
+                "\"context_ref\":\"T4\",\"context_detail\":\"SUMMARY\""
+            )
+        )
+        assertTrue(prompt.contains("User: Say the first task again."))
+        assertTrue(
+            prompt.contains(
+                "\"context_ref\":\"T1\",\"context_detail\":\"SUMMARY\""
+            )
+        )
+        assertTrue(prompt.contains("Interaction state:\nAFTER_DAILY_BRIEFING"))
+    }
+
+    @Test
+    fun genericSchemaRepairForbidsQueryControlWithContextSelector() {
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/conversation/" +
+                "ConversationAgentClient.kt"
+        ).readText()
+        val repairInstruction = source
+            .substringAfter("open suspend fun processRepair(")
+            .substringBefore("open suspend fun processContextReadRepair(")
+
+        assertTrue(
+            repairInstruction.contains(
+                "QUERY_READING_CONTROL always requires an empty context_ref"
+            )
+        )
+        assertTrue(
+            repairInstruction.contains(
+                "Never combine query-reading control"
+            )
+        )
+        assertTrue(repairInstruction.contains("with T1, T2, an ordinal"))
+        assertTrue(
+            repairInstruction.contains(
+                "is CONTEXT_READ with context_detail SUMMARY"
+            )
+        )
     }
 
     @Test

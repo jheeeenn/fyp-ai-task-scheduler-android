@@ -171,8 +171,8 @@ class HomeActivityAccessibleQuerySourceTest {
             .substringAfter("private suspend fun speakRepeatableObservation(")
             .substringBefore("private suspend fun speakObservationThenRun(")
         val contextRead = source
-            .substringAfter("ConversationRoute.CONTEXT_READ ->")
-            .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
+            .substringAfter("private fun executeContextRead(")
+            .substringBefore("private fun handleQueryReadingFollowUp(")
 
         assertTrue(repeatableObservation.contains("val response = renderObservationResponse("))
         assertTrue(repeatableObservation.contains("requestToken"))

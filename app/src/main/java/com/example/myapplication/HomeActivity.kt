@@ -80,6 +80,8 @@ import com.example.myapplication.ai.conversation.AssistantRequestTokenPolicy
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationPolicy
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationStatus
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
+import com.example.myapplication.ai.conversation.taskcontext.ContextItemRestatementDisposition
+import com.example.myapplication.ai.conversation.taskcontext.ContextItemRestatementPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
@@ -90,8 +92,10 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDi
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextFocusCarryForwardPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextCapture
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
+import com.example.myapplication.ai.conversation.taskcontext.ValidatedContextRead
 import com.example.myapplication.ai.conversation.query.AccessibleTaskQuerySession
 import com.example.myapplication.ai.conversation.query.AuthoritativeRepeatState
 import com.example.myapplication.ai.conversation.query.QueryReadingControlPolicy
@@ -687,6 +691,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
 
+        if (handleContextItemRestatement(normalized)) {
+            return
+        }
+
         if (handleQueryReadingFollowUp(
                 normalized,
                 requestToken,
@@ -987,53 +995,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             capturedSnapshot = taskContextCapture.snapshot,
                             currentGeneration = readOnlyTaskContextStore.currentGeneration()
                         )
-                        Log.d(
-                            "HOME_CONTEXT_READ",
-                            "route=${conversationDecision.route} " +
-                                "ref=${conversationDecision.contextRef} " +
-                                "detail=${conversationDecision.contextDetail} " +
-                                "capturedGeneration=${taskContextCapture.snapshot.generation} " +
-                                "validation=${validation.result}"
-                        )
-                        if (!validation.isValid) {
-                            val clarification = if (
-                                validation.result == ContextReadValidationResult.STALE_GENERATION
-                            ) {
-                                "Those task results changed. Please repeat your task query."
-                            } else {
-                                "Please ask again using one of the supplied task results."
-                            }
-                            conversationOrchestrator.commitFinalDecision(
-                                ConversationDecision(
-                                    route = ConversationRoute.ASK_CLARIFICATION,
-                                    reply = clarification,
-                                    listenAgain = true,
-                                    source = "android_context_validation"
-                                )
-                            )
-                            assistantSession.speak(clarification, listenAgain = true)
-                            return@launch
-                        }
-
-                        val speech = ReadOnlyTaskContextResponseRenderer.render(
-                            item = requireNotNull(validation.item),
-                            detail = validation.detail
-                        )
-                        conversationOrchestrator.recordAuthoritativeContextRead(
-                            item = requireNotNull(validation.item),
-                            selectedRef = conversationDecision.contextRef,
-                            selectedDetail = validation.detail,
-                            capturedGeneration = taskContextCapture.snapshot.generation,
-                            finalSpeech = speech
-                        )
-                        authoritativeRepeatState = AuthoritativeRepeatState(
-                            speech = speech,
-                            kind = RepeatableSpeechKind.CONTEXT_READ,
-                            contextGeneration = taskContextCapture.snapshot.generation
-                        )
-                        assistantSession.speak(
-                            speech,
-                            listenAgain = conversationDecision.listenAgain
+                        executeContextRead(
+                            decision = conversationDecision,
+                            taskContextCapture = taskContextCapture,
+                            validation = validation
                         )
                         return@launch
                     }
@@ -2395,6 +2360,111 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         "please do",
         "read them"
     )
+
+    private fun handleContextItemRestatement(normalized: String): Boolean {
+        val isResultInteraction = homeFollowUpContext in setOf(
+            HomeFollowUpContext.AFTER_TASK_SUMMARY,
+            HomeFollowUpContext.AFTER_TASK_DETAILS,
+            HomeFollowUpContext.QUERY_PAGE,
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING
+        )
+        if (!isResultInteraction) return false
+
+        val taskContextCapture = readOnlyTaskContextStore.capture()
+        val resolution = ContextItemRestatementPolicy.resolve(
+            normalizedText = normalized,
+            capturedSnapshot = taskContextCapture.snapshot,
+            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+        )
+        Log.d(
+            "HOME_CONTEXT_RESTATEMENT",
+            "disposition=${resolution.disposition} " +
+                "scope=${taskContextCapture.snapshot.scope} " +
+                "generation=${taskContextCapture.snapshot.generation}"
+        )
+        return when (resolution.disposition) {
+            ContextItemRestatementDisposition.NOT_APPLICABLE -> false
+            ContextItemRestatementDisposition.RESOLVED -> {
+                executeContextRead(
+                    decision = requireNotNull(resolution.decision),
+                    taskContextCapture = taskContextCapture,
+                    validation = requireNotNull(resolution.validation)
+                )
+                true
+            }
+            ContextItemRestatementDisposition.UNAVAILABLE_SELECTOR,
+            ContextItemRestatementDisposition.AMBIGUOUS_SELECTOR -> {
+                val clarificationDecision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = resolution.clarification,
+                    listenAgain = true,
+                    source = "android_context_item_restatement"
+                )
+                conversationOrchestrator.commitFinalDecision(clarificationDecision)
+                assistantSession.speak(
+                    resolution.clarification,
+                    listenAgain = true
+                )
+                true
+            }
+        }
+    }
+
+    private fun executeContextRead(
+        decision: ConversationDecision,
+        taskContextCapture: ReadOnlyTaskContextCapture,
+        validation: ValidatedContextRead
+    ) {
+        Log.d(
+            "HOME_CONTEXT_READ",
+            "route=${decision.route} " +
+                "ref=${decision.contextRef} " +
+                "detail=${decision.contextDetail} " +
+                "capturedGeneration=${taskContextCapture.snapshot.generation} " +
+                "validation=${validation.result}"
+        )
+        if (!validation.isValid) {
+            val clarification = if (
+                validation.result == ContextReadValidationResult.STALE_GENERATION
+            ) {
+                "Those task results changed. Please repeat your task query."
+            } else {
+                "Please ask again using one of the supplied task results."
+            }
+            conversationOrchestrator.commitFinalDecision(
+                ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = clarification,
+                    listenAgain = true,
+                    source = "android_context_validation"
+                )
+            )
+            assistantSession.speak(clarification, listenAgain = true)
+            return
+        }
+
+        val item = requireNotNull(validation.item)
+        val speech = ReadOnlyTaskContextResponseRenderer.render(
+            item = item,
+            detail = validation.detail
+        )
+        conversationOrchestrator.recordAuthoritativeContextRead(
+            item = item,
+            selectedRef = decision.contextRef,
+            selectedDetail = validation.detail,
+            capturedGeneration = taskContextCapture.snapshot.generation,
+            finalSpeech = speech
+        )
+        authoritativeRepeatState = AuthoritativeRepeatState(
+            speech = speech,
+            kind = RepeatableSpeechKind.CONTEXT_READ,
+            contextGeneration = taskContextCapture.snapshot.generation
+        )
+        assistantSession.speak(
+            speech,
+            listenAgain = decision.listenAgain
+        )
+    }
 
     private fun handleQueryReadingFollowUp(
         normalized: String,

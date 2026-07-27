@@ -71,9 +71,12 @@ object ContextReferenceMutationGuard {
     }
 
     fun hasExplicitContextSelector(text: String): Boolean =
-        TEMPORARY_REF.containsMatchIn(text) ||
-            SUPPLIED_RESULT_ORDINAL.containsMatchIn(text) ||
-            STANDALONE_SUPPLIED_ORDINAL.containsMatchIn(text)
+        explicitContextSelectorCount(text) > 0
+
+    fun explicitContextSelectorCount(text: String): Int =
+        TEMPORARY_REF.findAll(text).count() +
+            SUPPLIED_RESULT_ORDINAL.findAll(text).count() +
+            STANDALONE_SUPPLIED_ORDINAL.findAll(text).count()
 
     fun hasFocusReference(text: String): Boolean =
         DEICTIC_TASK_REFERENCE.containsMatchIn(text) ||

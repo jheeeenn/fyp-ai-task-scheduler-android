@@ -85,28 +85,34 @@ class HomeActivityTaskContextSourceTest {
         val contextReadBranch = source
             .substringAfter("ConversationRoute.CONTEXT_READ ->")
             .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
+        val contextReadExecutor = source
+            .substringAfter("private fun executeContextRead(")
+            .substringBefore("private fun handleQueryReadingFollowUp(")
         val contextBranchStart = source.indexOf("ConversationRoute.CONTEXT_READ ->")
         val taskAgentCall = source.indexOf("agentOrchestrator.process(taskAgentInput)")
 
         assertTrue(contextReadBranch.contains("ReadOnlyTaskContextReadValidator.validate("))
         assertTrue(contextReadBranch.contains("capturedSnapshot = taskContextCapture.snapshot"))
-        assertTrue(contextReadBranch.contains("ReadOnlyTaskContextResponseRenderer.render("))
-        assertTrue(contextReadBranch.contains("recordAuthoritativeContextRead("))
+        assertTrue(contextReadBranch.contains("executeContextRead("))
+        assertTrue(contextReadExecutor.contains("ReadOnlyTaskContextResponseRenderer.render("))
+        assertTrue(contextReadExecutor.contains("recordAuthoritativeContextRead("))
         assertTrue(contextReadBranch.contains("return@launch"))
         assertTrue(contextBranchStart < taskAgentCall)
-        assertTrue(contextReadBranch.contains("agentOrchestrator").not())
-        assertTrue(contextReadBranch.contains("AppDatabase").not())
-        assertTrue(contextReadBranch.contains("taskDao()").not())
-        assertTrue(contextReadBranch.contains("resolveRef(").not())
-        assertTrue(contextReadBranch.contains(".id").not())
+        listOf(contextReadBranch, contextReadExecutor).forEach { body ->
+            assertTrue(body.contains("agentOrchestrator").not())
+            assertTrue(body.contains("AppDatabase").not())
+            assertTrue(body.contains("taskDao()").not())
+            assertTrue(body.contains("resolveRef(").not())
+            assertTrue(body.contains(".id").not())
+        }
     }
 
     @Test
     fun contextReadLogContainsOnlyNonSensitiveValidationMetadata() {
-        val contextReadBranch = source
-            .substringAfter("ConversationRoute.CONTEXT_READ ->")
-            .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
-        val log = contextReadBranch
+        val contextReadExecutor = source
+            .substringAfter("private fun executeContextRead(")
+            .substringBefore("private fun handleQueryReadingFollowUp(")
+        val log = contextReadExecutor
             .substringAfter("Log.d(")
             .substringBefore(")\n")
 
@@ -321,7 +327,8 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(requestFlow.contains("ConversationRoute.DIRECT_REPLY ->"))
         assertTrue(requestFlow.contains("conversationOrchestrator.commitFinalDecision(conversationDecision)"))
         assertTrue(requestFlow.contains("ConversationRoute.CONTEXT_READ ->"))
-        assertTrue(requestFlow.contains("recordAuthoritativeContextRead("))
+        assertTrue(requestFlow.contains("executeContextRead("))
+        assertTrue(source.contains("recordAuthoritativeContextRead("))
     }
 
     @Test
