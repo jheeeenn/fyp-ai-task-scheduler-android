@@ -252,13 +252,12 @@ $userText
                 }
 
                 if (!response.isSuccessful) {
-                    val message = if (
-                        kind == RequestKind.CREATE_DRAFT_MOVE ||
-                        kind == RequestKind.SAFE_OBSERVATION_STYLE
-                    ) {
-                        "LM Studio create-draft HTTP ${response.code}"
-                    } else {
-                        "LM Studio HTTP ${response.code}: $body"
+                    val message = when (kind) {
+                        RequestKind.CREATE_DRAFT_MOVE ->
+                            "LM Studio create-draft HTTP ${response.code}"
+                        RequestKind.SAFE_OBSERVATION_STYLE ->
+                            safeStyleHttpErrorMessage(response.code)
+                        else -> "LM Studio HTTP ${response.code}: $body"
                     }
                     throw IOException(message)
                 }
@@ -354,6 +353,9 @@ $userText
         const val SAFE_STYLE_TEMPERATURE = 0.25
         const val SAFE_STYLE_MAX_TOKENS = 80
         const val SAFE_STYLE_TIMEOUT_SECONDS = 4L
+        internal fun safeStyleHttpErrorMessage(code: Int): String =
+            "LM Studio safe-style HTTP $code"
+
         internal val SAFE_STYLE_SYSTEM_PROMPT = """
 You write optional conversational wrapper fragments only.
 Android owns every factual and operational statement.

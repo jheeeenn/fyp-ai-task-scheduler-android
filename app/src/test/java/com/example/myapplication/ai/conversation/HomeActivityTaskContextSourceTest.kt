@@ -51,12 +51,12 @@ class HomeActivityTaskContextSourceTest {
     fun cancellationStopAndExplicitEndClearSessionContext() {
         val cancelled = source.substringAfter("override fun onAssistantCancelled()").substringBefore("override fun onAssistantSessionStopped()")
         val stopped = source.substringAfter("override fun onAssistantSessionStopped()").substringBefore("override fun onResume()")
-        val explicitEnd = source.substringAfter("private fun endAssistantConversation()").substringBefore("private fun clearConversationSessionContext()")
-        val clearHelper = source.substringAfter("private fun clearConversationSessionContext()").substringBefore("private fun handleHomeFollowUp")
+        val explicitEnd = source.substringAfter("private fun endAssistantConversation()").substringBefore("private fun clearConversationSessionContext(")
+        val clearHelper = source.substringAfter("private fun clearConversationSessionContext(").substringBefore("private fun handleHomeFollowUp")
 
-        assertTrue(cancelled.contains("clearConversationSessionContext()"))
-        assertTrue(stopped.contains("clearConversationSessionContext()"))
-        assertTrue(explicitEnd.contains("clearConversationSessionContext()"))
+        assertTrue(cancelled.contains("clearConversationSessionContext("))
+        assertTrue(stopped.contains("clearConversationSessionContext("))
+        assertTrue(explicitEnd.contains("clearConversationSessionContext("))
         assertTrue(clearHelper.contains("readOnlyTaskContextStore.clear()"))
         assertTrue(clearHelper.contains("conversationOrchestrator.clearSessionMemory()"))
     }
@@ -278,11 +278,11 @@ class HomeActivityTaskContextSourceTest {
     @Test
     fun queryPageContinuationUsesPrivateSessionWithoutTaskAgent() {
         val handler = source
-            .substringAfter("private fun continueTaskQueryPage()")
+            .substringAfter("private fun continueTaskQueryPage(")
             .substringBefore("private fun repeatCurrentTaskQueryPage()")
 
         assertTrue(handler.contains("advanceOnePage()"))
-        assertTrue(handler.contains("publishAndSpeakCurrentQueryPage(nextSession)"))
+        assertTrue(handler.contains("publishAndSpeakCurrentQueryPage(nextSession, authorization)"))
         assertTrue(handler.contains("agentOrchestrator").not())
         assertTrue(handler.contains("TaskMatcher").not())
         assertTrue(handler.contains("taskDao").not())

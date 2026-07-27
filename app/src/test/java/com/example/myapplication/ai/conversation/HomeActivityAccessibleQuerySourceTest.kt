@@ -73,11 +73,11 @@ class HomeActivityAccessibleQuerySourceTest {
     @Test
     fun continueReplacesOnceWithoutMatcherRoomQueryOrMutation() {
         val body = source
-            .substringAfter("private fun continueTaskQueryPage()")
+            .substringAfter("private fun continueTaskQueryPage(")
             .substringBefore("private fun repeatCurrentTaskQueryPage()")
 
         assertTrue(body.contains("advanceOnePage()"))
-        assertTrue(body.countOccurrences("publishAndSpeakCurrentQueryPage(nextSession)") == 1)
+        assertTrue(body.countOccurrences("publishAndSpeakCurrentQueryPage(nextSession, authorization)") == 1)
         assertTrue(body.contains("\"HOME_QUERY_PAGE_CONTINUE\""))
         assertTrue(body.contains("\"That was the last group.\""))
         listOf(
@@ -113,10 +113,10 @@ class HomeActivityAccessibleQuerySourceTest {
     fun countAgreementStartsFirstOverviewPageAndStopPathsClearSession() {
         val followUp = source
             .substringAfter("private fun handleQueryReadingFollowUp(")
-            .substringBefore("private fun startQueryOverviewFromCount()")
+            .substringBefore("private fun startQueryOverviewFromCount(")
         val start = source
-            .substringAfter("private fun startQueryOverviewFromCount()")
-            .substringBefore("private fun continueTaskQueryPage()")
+            .substringAfter("private fun startQueryOverviewFromCount(")
+            .substringBefore("private fun continueTaskQueryPage(")
         val clear = source
             .substringAfter("private fun clearAccessibleTaskQuerySession(")
             .substringBefore("private fun handleHomeFollowUp")
@@ -124,12 +124,12 @@ class HomeActivityAccessibleQuerySourceTest {
         assertTrue(followUp.contains("HomeFollowUpContext.QUERY_COUNT"))
         assertTrue(followUp.contains("isSimpleFollowUpAgreement(normalized)"))
         assertTrue(start.contains("session.beginOverview()"))
-        assertTrue(start.contains("publishAndSpeakCurrentQueryPage(overviewSession)"))
+        assertTrue(start.contains("publishAndSpeakCurrentQueryPage(overviewSession, authorization)"))
         assertTrue(clear.contains("accessibleTaskQuerySession = null"))
         assertTrue(clear.contains("authoritativeRepeatState = null"))
         assertTrue(clear.contains("readOnlyTaskContextStore.clear()"))
-        assertTrue(source.substringAfter("override fun onAssistantCancelled()").substringBefore("override fun onAssistantSessionStopped()").contains("clearConversationSessionContext()"))
-        assertTrue(source.substringAfter("override fun onAssistantSessionStopped()").substringBefore("override fun onResume()").contains("clearConversationSessionContext()"))
+        assertTrue(source.substringAfter("override fun onAssistantCancelled()").substringBefore("override fun onAssistantSessionStopped()").contains("clearConversationSessionContext("))
+        assertTrue(source.substringAfter("override fun onAssistantSessionStopped()").substringBefore("override fun onResume()").contains("clearConversationSessionContext("))
     }
 
     @Test
@@ -168,7 +168,8 @@ class HomeActivityAccessibleQuerySourceTest {
             .substringAfter("ConversationRoute.CONTEXT_READ ->")
             .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
 
-        assertTrue(repeatableObservation.contains("val response = renderObservationResponse(observation)"))
+        assertTrue(repeatableObservation.contains("val response = renderObservationResponse(observation, authorization)"))
+        assertTrue(repeatableObservation.contains("SafeObservationDeliveryGuard.runIfCurrent("))
         assertTrue(repeatableObservation.contains("speech = response.speech"))
         assertTrue(contextRead.indexOf("if (!validation.isValid)") < contextRead.indexOf("authoritativeRepeatState = AuthoritativeRepeatState("))
         assertTrue(contextRead.contains("kind = RepeatableSpeechKind.CONTEXT_READ"))
@@ -191,7 +192,8 @@ class HomeActivityAccessibleQuerySourceTest {
         assertFalse(exact.contains("repeat the group"))
         assertFalse(exact.contains("read the next group"))
         assertTrue(routes.contains("ConversationRoute.QUERY_READING_CONTROL"))
-        assertTrue(routes.contains("executeQueryReadingControl(conversationDecision.queryReadingMove)"))
+        assertTrue(routes.contains("executeQueryReadingControl("))
+        assertTrue(routes.contains("routedStyleAuthorization"))
     }
 
     @Test

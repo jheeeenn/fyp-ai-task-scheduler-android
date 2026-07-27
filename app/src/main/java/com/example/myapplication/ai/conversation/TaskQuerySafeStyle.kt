@@ -12,6 +12,67 @@ enum class TaskQueryControlCategory {
     ASK_TASK_OR_DETAILS
 }
 
+data class SafeStyleTurnAuthorization(
+    val turnGeneration: Long,
+    val styleCallAllowed: Boolean
+)
+
+enum class SafeObservationInteraction {
+    NONE,
+    QUERY_COUNT,
+    QUERY_PAGE
+}
+
+data class SafeObservationDeliveryState(
+    val turnGeneration: Long,
+    val queryReadingStateGeneration: Long,
+    val taskContextGeneration: Long?,
+    val pageIndex: Int?,
+    val interaction: SafeObservationInteraction,
+    val querySessionActive: Boolean,
+    val assistantSessionActive: Boolean
+)
+
+enum class SafeObservationStaleReason {
+    TURN_CHANGED,
+    QUERY_CHANGED,
+    TASK_CONTEXT_CHANGED,
+    QUERY_PAGE_CHANGED,
+    INTERACTION_CHANGED,
+    SESSION_INACTIVE
+}
+
+object SafeObservationDeliveryGuard {
+    fun staleReason(
+        captured: SafeObservationDeliveryState,
+        current: SafeObservationDeliveryState
+    ): SafeObservationStaleReason? = when {
+        captured.turnGeneration != current.turnGeneration ->
+            SafeObservationStaleReason.TURN_CHANGED
+        captured.queryReadingStateGeneration != current.queryReadingStateGeneration ->
+            SafeObservationStaleReason.QUERY_CHANGED
+        !current.assistantSessionActive || !current.querySessionActive ->
+            SafeObservationStaleReason.SESSION_INACTIVE
+        captured.interaction != current.interaction ->
+            SafeObservationStaleReason.INTERACTION_CHANGED
+        captured.taskContextGeneration != current.taskContextGeneration ->
+            SafeObservationStaleReason.TASK_CONTEXT_CHANGED
+        captured.pageIndex != current.pageIndex ->
+            SafeObservationStaleReason.QUERY_PAGE_CHANGED
+        else -> null
+    }
+
+    fun runIfCurrent(
+        captured: SafeObservationDeliveryState,
+        current: SafeObservationDeliveryState,
+        deliver: () -> Unit
+    ): SafeObservationStaleReason? {
+        val reason = staleReason(captured, current)
+        if (reason == null) deliver()
+        return reason
+    }
+}
+
 data class TaskQueryStyleContext(
     val operation: ExecutionOperation,
     val presentation: TaskQueryPresentationLevel,

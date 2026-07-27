@@ -27,7 +27,7 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(body.contains("Offer to create a new task."))
         assertTrue(body.contains("tasks = emptyList()"))
         assertTrue(body.contains("buildCountOnlyQueryObservation(session)"))
-        assertTrue(body.contains("publishAndSpeakCurrentQueryPage(session)"))
+        assertTrue(body.contains("publishAndSpeakCurrentQueryPage(session, queryAuthorization)"))
         assertFalse(body.contains("facts = listOf(spokenReply)"))
     }
 
@@ -72,8 +72,10 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(deliveryBody.contains("response.hint.ifBlank { observation.fallbackHint }"))
         assertTrue(deliveryBody.contains("observation.listenAgain"))
         assertTrue(deliveryBody.contains("assistantSession.speakThenRun(response.speech) { afterSpeech() }"))
-        assertTrue(speakBody.contains("deliverObservationResponse(observation, renderObservationResponse(observation))"))
-        assertTrue(speakBody.contains("deliverObservationResponse(observation, renderObservationResponse(observation), action)"))
+        assertTrue(speakBody.contains("val response = renderObservationResponse(observation)"))
+        assertTrue(speakBody.contains("recordObservationResponse(observation, response)"))
+        assertTrue(speakBody.contains("deliverObservationResponse(observation, response)"))
+        assertTrue(speakBody.contains("deliverObservationResponse(observation, response, action)"))
     }
 
     @Test fun naturalConversationAndLocalFollowUpInfrastructureRemainPresent() {
