@@ -115,24 +115,84 @@ class SafeObservationStyleTest {
     }
 
     @Test
-    fun promptIncludesValidatorCompatibleFactFreeExamples() {
+    fun promptPrefersSafeStyleAndReservesAbstentionForInvalidMetadata() {
         val prompt = ConversationAgentClient.SAFE_STYLE_SYSTEM_PROMPT
 
+        assertTrue(prompt.contains("For every supported metadata input, prefer use_style=true."))
+        assertTrue(prompt.contains("A safe generic wrapper is always possible"))
         assertTrue(
             prompt.contains(
-                """{"use_style":true,"lead_in":"Certainly — here is the overview.","bridge":"","confidence":0.96}"""
+                "Use use_style=false only for malformed, unsupported, or genuinely unsafe metadata"
             )
         )
-        assertTrue(
-            prompt.contains(
-                """{"use_style":true,"lead_in":"Of course.","bridge":"I’m here with you.","confidence":0.95}"""
-            )
-        )
+        assertTrue(prompt.contains("Do not abstain merely because the input contains classifications"))
+        assertTrue(prompt.contains("Those classifications describe style context only"))
+        assertTrue(prompt.contains("Before returning JSON, silently verify"))
+        assertTrue(prompt.contains("verify the output contains exactly four fields"))
+        assertTrue(prompt.contains("Do not include this self-check in the returned JSON."))
         assertTrue(
             prompt.contains(
                 """{"use_style":false,"lead_in":"","bridge":"","confidence":0.95}"""
             )
         )
+    }
+
+    @Test
+    fun promptExamplesUseExactSafeContextShapeAndPassParserAndValidator() {
+        val prompt = ConversationAgentClient.SAFE_STYLE_SYSTEM_PROMPT
+        val expectedInputFields = setOf(
+            "operation",
+            "presentation",
+            "page_role",
+            "tone",
+            "continued_interaction_expected",
+            "control_category"
+        )
+
+        safePromptExamples().forEach { example ->
+            val input = JSONObject(example.inputJson)
+            val envelope = parser.parse(example.outputJson)
+
+            assertEquals(expectedInputFields, input.keys().asSequence().toSet())
+            assertTrue(prompt.contains(example.inputJson.trimIndent()))
+            assertTrue(prompt.contains(example.outputJson))
+            assertTrue(SafeObservationStyleValidator.isValid(envelope))
+        }
+    }
+
+    @Test
+    fun promptExamplesContainNoFactsIdentifiersOrReadingControls() {
+        val forbiddenInputFields = setOf(
+            "tasks",
+            "task_title",
+            "title",
+            "count",
+            "date",
+            "time",
+            "temporal_label",
+            "page_number",
+            "room_id",
+            "authoritative_core",
+            "authoritative_control",
+            "deterministic_speech"
+        )
+        val readingControls = Regex(
+            """\b(continue|repeat|stop|confirm|select|first|second|next|last)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        safePromptExamples().forEach { example ->
+            val input = JSONObject(example.inputJson)
+            val envelope = parser.parse(example.outputJson)
+            val fragments = "${envelope.leadIn} ${envelope.bridge}"
+
+            assertTrue(input.keys().asSequence().none { it.lowercase() in forbiddenInputFields })
+            assertFalse(fragments.any(Char::isDigit))
+            assertFalse(readingControls.containsMatchIn(fragments))
+            assertFalse(Regex("""\b\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}\b""").containsMatchIn(fragments))
+            assertFalse(Regex("""(?i)\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b""").containsMatchIn(fragments))
+            assertFalse(fragments.contains("Room", ignoreCase = true))
+        }
     }
 
     @Test
@@ -433,6 +493,70 @@ class SafeObservationStyleTest {
 
     private fun occurrences(text: String, value: String): Int =
         text.windowed(value.length).count { it == value }
+
+    private fun safePromptExamples() = listOf(
+        SafePromptExample(
+            inputJson = """
+{
+  "operation": "QUERY_TASK",
+  "presentation": "OVERVIEW",
+  "page_role": "FIRST",
+  "tone": "NEUTRAL",
+  "continued_interaction_expected": true,
+  "control_category": "CONTINUE_REPEAT_STOP"
+}
+""".trimIndent(),
+            outputJson =
+                """{"use_style":true,"lead_in":"Certainly — here is the overview.","bridge":"","confidence":0.96}"""
+        ),
+        SafePromptExample(
+            inputJson = """
+{
+  "operation": "QUERY_TASK",
+  "presentation": "OVERVIEW",
+  "page_role": "SINGLE",
+  "tone": "FRIENDLY",
+  "continued_interaction_expected": true,
+  "control_category": "ASK_TASK_OR_DETAILS"
+}
+""".trimIndent(),
+            outputJson =
+                """{"use_style":true,"lead_in":"Of course.","bridge":"Take your time.","confidence":0.95}"""
+        ),
+        SafePromptExample(
+            inputJson = """
+{
+  "operation": "QUERY_TASK",
+  "presentation": "COUNT_ONLY",
+  "page_role": "COUNT_ONLY",
+  "tone": "PROFESSIONAL",
+  "continued_interaction_expected": true,
+  "control_category": "OFFER_START"
+}
+""".trimIndent(),
+            outputJson =
+                """{"use_style":true,"lead_in":"Certainly.","bridge":"","confidence":0.96}"""
+        ),
+        SafePromptExample(
+            inputJson = """
+{
+  "operation": "QUERY_TASK",
+  "presentation": "DETAILS",
+  "page_role": "LAST",
+  "tone": "NEUTRAL",
+  "continued_interaction_expected": true,
+  "control_category": "REPEAT_OR_STOP"
+}
+""".trimIndent(),
+            outputJson =
+                """{"use_style":true,"lead_in":"Here is the detailed overview.","bridge":"Take your time.","confidence":0.95}"""
+        )
+    )
+
+    private data class SafePromptExample(
+        val inputJson: String,
+        val outputJson: String
+    )
 
     private fun orchestrator(client: FakeStyleClient) =
         ConversationOrchestrator(client, ConversationDecisionParser())
