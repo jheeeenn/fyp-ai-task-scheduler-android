@@ -1,5 +1,6 @@
 package com.example.myapplication.ai.routine
 
+import android.util.Log
 import com.example.myapplication.ScheduleTextParser
 import com.example.myapplication.ai.temporal.TemporalActionPolicy
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
@@ -105,31 +106,58 @@ class RoutineDraftController(
         generation: Long,
         extraction: RoutineExtractionResponse
     ): RoutineDraftUpdate {
+        val structurallyValid =
+            extraction.steps.size in MIN_STEPS..MAX_STEPS &&
+                extraction.steps.all { it.title.trim().isNotEmpty() }
         if (generation != extractionGeneration || state != RoutineDraftState.EXTRACTING) {
+            logExtractionPolicy(
+                extraction = extraction,
+                structurallyValid = structurallyValid,
+                action = "REJECT",
+                reason = "STALE_EXTRACTION"
+            )
             return RoutineDraftUpdate.Stale
         }
-        if (!extraction.confidence.isFinite() ||
-            extraction.confidence !in 0.0..1.0 ||
-            extraction.confidence < MIN_EXTRACTION_CONFIDENCE
-        ) {
+        if (!extraction.confidence.isFinite() || extraction.confidence !in 0.0..1.0) {
+            logExtractionPolicy(
+                extraction = extraction,
+                structurallyValid = structurallyValid,
+                action = "REJECT",
+                reason = "INVALID_CONFIDENCE"
+            )
             clear()
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.LOW_CONFIDENCE)
         }
-        if (extraction.needClarification) {
-            clear()
-            return RoutineDraftUpdate.Rejected(
-                RoutineDraftIssue.EXTRACTION_NEEDS_CLARIFICATION
+        if (extraction.confidence < MIN_EXTRACTION_CONFIDENCE) {
+            logExtractionPolicy(
+                extraction = extraction,
+                structurallyValid = structurallyValid,
+                action = "REJECT",
+                reason = "LOW_CONFIDENCE"
             )
+            clear()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.LOW_CONFIDENCE)
         }
         if (extraction.steps.size !in MIN_STEPS..MAX_STEPS) {
+            logExtractionPolicy(
+                extraction = extraction,
+                structurallyValid = false,
+                action = "REJECT",
+                reason = "INVALID_STEP_COUNT"
+            )
             clear()
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_STEP_COUNT)
         }
         if (extraction.steps.any { it.title.trim().isEmpty() }) {
+            logExtractionPolicy(
+                extraction = extraction,
+                structurallyValid = false,
+                action = "REJECT",
+                reason = "EMPTY_STEP_TITLE"
+            )
             clear()
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.EMPTY_STEP_TITLE)
         }
-
         val base = baseCalendarProvider()
         val parsedSteps = extraction.steps.mapIndexed { index, step ->
             val dateResult = classifyDate(step.dateText, base)
@@ -160,9 +188,25 @@ class RoutineDraftController(
                 it.dateClassification == RoutineDateClassification.INVALID
             }
         ) {
+            logExtractionPolicy(
+                extraction = extraction,
+                structurallyValid = true,
+                action = "REJECT",
+                reason = "INVALID_DATE"
+            )
             clear()
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
         }
+        logExtractionPolicy(
+            extraction = extraction,
+            structurallyValid = true,
+            action = "CONTINUE_ANDROID_COLLECTION",
+            reason = if (extraction.needClarification) {
+                "MODEL_FLAG_ADVISORY"
+            } else {
+                "STRUCTURE_VALID"
+            }
+        )
         val suppliedDates = parsedSteps
             .filter { it.dateClassification == RoutineDateClassification.EXACT }
             .mapNotNull(PendingRoutineStep::resolvedDate)
@@ -186,6 +230,19 @@ class RoutineDraftController(
             revision = 1L
         )
         return advance()
+    }
+
+    private fun logExtractionPolicy(
+        extraction: RoutineExtractionResponse,
+        structurallyValid: Boolean,
+        action: String,
+        reason: String
+    ) {
+        Log.d(
+            "ROUTINE_EXTRACTION_POLICY",
+            "modelNeedClarification=${extraction.needClarification} " +
+                "structurallyValid=$structurallyValid action=$action reason=$reason"
+        )
     }
 
     fun provideSharedDate(dateText: String): RoutineDraftUpdate {

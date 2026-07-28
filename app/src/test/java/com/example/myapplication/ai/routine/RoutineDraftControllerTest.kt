@@ -17,7 +17,7 @@ class RoutineDraftControllerTest {
     private fun controller() = RoutineDraftController(baseCalendarProvider = ::base)
 
     @Test
-    fun lowConfidenceAndClarificationFailClosed() {
+    fun lowAndInvalidConfidenceStillFailClosed() {
         val low = controller()
         val lowToken = low.beginExtraction()
         assertEquals(
@@ -27,16 +27,6 @@ class RoutineDraftControllerTest {
         )
         assertEquals(RoutineDraftState.NONE, low.state)
         assertNull(low.draft)
-
-        val unclear = controller()
-        val unclearToken = unclear.beginExtraction()
-        assertEquals(
-            RoutineDraftIssue.EXTRACTION_NEEDS_CLARIFICATION,
-            (unclear.applyExtraction(
-                unclearToken,
-                validResponse(needClarification = true)
-            ) as RoutineDraftUpdate.Rejected).reason
-        )
 
         listOf(Double.NaN, Double.POSITIVE_INFINITY, 1.01).forEach { confidence ->
             val hardened = controller()
@@ -49,6 +39,76 @@ class RoutineDraftControllerTest {
                 ) as RoutineDraftUpdate.Rejected).reason
             )
         }
+    }
+
+    @Test
+    fun invalidStepCountStillFailsClosed() {
+        listOf(
+            listOf(step("only step", "tomorrow", "8 AM")),
+            (1..6).map { step("step $it", "tomorrow", "$it:00 PM") }
+        ).forEach { steps ->
+            val controller = controller()
+            val token = controller.beginExtraction()
+
+            val result = controller.applyExtraction(
+                token,
+                validResponse(steps = steps)
+            )
+
+            assertEquals(
+                RoutineDraftIssue.INVALID_STEP_COUNT,
+                (result as RoutineDraftUpdate.Rejected).reason
+            )
+            assertEquals(RoutineDraftState.NONE, controller.state)
+            assertNull(controller.draft)
+        }
+    }
+
+    @Test
+    fun advisoryModelClarificationContinuesThroughAndroidTemporalCollection() {
+        var insertionCalls = 0
+        RoutineTaskBatchCreator(
+            store = RoutineTaskStore {
+                insertionCalls += 1
+                emptyList()
+            },
+            reminderScheduler = RoutineReminderScheduler { true }
+        )
+        val controller = controller()
+        val token = controller.beginExtraction()
+
+        val initial = controller.applyExtraction(
+            token,
+            validResponse(
+                needClarification = true,
+                steps = listOf(
+                    step("take medicine", "", "8 AM"),
+                    step("prepare breakfast", "", ""),
+                    step("leave home", "", "9 AM")
+                )
+            )
+        )
+
+        assertTrue(initial is RoutineDraftUpdate.Ask)
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, controller.state)
+        assertNull(controller.markSaving())
+        assertEquals(0, insertionCalls)
+
+        val afterDate = controller.provideSharedDate("tomorrow")
+        assertTrue(afterDate is RoutineDraftUpdate.Ask)
+        assertEquals(RoutineDraftState.COLLECTING_STEP_TIME, controller.state)
+        assertNull(controller.markSaving())
+        assertEquals(0, insertionCalls)
+
+        val afterTime = controller.provideNextStepTime("8:15 AM")
+        assertTrue(afterTime is RoutineDraftUpdate.Review)
+        assertEquals(RoutineDraftState.WAITING_FOR_CONFIRMATION, controller.state)
+        assertEquals(0, insertionCalls)
+
+        val confirmedSave = controller.markSaving()
+        assertTrue(confirmedSave != null)
+        assertEquals(RoutineDraftState.SAVING, controller.state)
+        assertEquals(0, insertionCalls)
     }
 
     @Test

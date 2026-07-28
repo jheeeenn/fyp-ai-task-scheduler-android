@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.routine
 
 import com.example.myapplication.ai.schema.AgentResponseSchemas
+import com.example.myapplication.ai.agent.LaptopAgentClient
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -102,6 +103,32 @@ class RoutineExtractionContractTest {
         assertThrows(RoutineExtractionParseException::class.java) {
             parser.parse(validJson(2).replace("\"date_text\":\"tomorrow\"", "\"date_text\":7"))
         }
+    }
+
+    @Test
+    fun promptMakesTemporalCollectionAndroidOwnedAndIncludesRegressionExample() {
+        val prompt = LaptopAgentClient.ROUTINE_EXTRACTION_SYSTEM_PROMPT
+
+        assertTrue(
+            prompt.contains(
+                "Missing date or time does not require\nmodel clarification"
+            )
+        )
+        assertTrue(prompt.contains("\"in the morning\" must remain \"in the morning\""))
+        assertTrue(prompt.contains("Never replace a supplied broad temporal phrase"))
+        assertTrue(prompt.contains("Missing dates are expected"))
+        assertTrue(prompt.contains("Missing or broad\ntimes are expected"))
+        assertTrue(
+            prompt.contains(
+                "Create my morning routine: take medicine at 8 AM, prepare breakfast in the\n" +
+                    "morning, and leave home at 9 AM."
+            )
+        )
+        assertTrue(prompt.contains("\"time_text\":\"in the morning\""))
+        val regressionExample = prompt.substringAfter(
+            "Create my morning routine: take medicine at 8 AM, prepare breakfast in the"
+        )
+        assertTrue(regressionExample.contains("\"need_clarification\":false"))
     }
 
     private fun validJson(count: Int): String {

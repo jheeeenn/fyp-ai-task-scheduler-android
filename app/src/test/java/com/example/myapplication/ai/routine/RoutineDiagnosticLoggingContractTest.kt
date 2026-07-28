@@ -85,6 +85,27 @@ class RoutineDiagnosticLoggingContractTest {
     }
 
     @Test
+    fun extractionAdmissionPolicyLogsAdvisoryFlagStructureActionAndReason() {
+        assertTrue(controller.contains("\"ROUTINE_EXTRACTION_POLICY\""))
+        assertTrue(
+            controller.contains(
+                "modelNeedClarification=\${extraction.needClarification}"
+            )
+        )
+        assertTrue(controller.contains("structurallyValid=\$structurallyValid"))
+        assertTrue(controller.contains("action=\$action"))
+        assertTrue(controller.contains("reason=\$reason"))
+        assertTrue(controller.contains("\"CONTINUE_ANDROID_COLLECTION\""))
+        assertTrue(controller.contains("\"REJECT\""))
+        assertTrue(controller.contains("\"MODEL_FLAG_ADVISORY\""))
+        assertTrue(controller.contains("\"STRUCTURE_VALID\""))
+        assertTrue(controller.contains("\"LOW_CONFIDENCE\""))
+        assertTrue(controller.contains("\"INVALID_STEP_COUNT\""))
+        assertTrue(controller.contains("\"EMPTY_STEP_TITLE\""))
+        assertTrue(controller.contains("\"INVALID_DATE\""))
+    }
+
+    @Test
     fun temporalValidationLogsClassificationAndAcceptedOrRejectedClarifications() {
         assertTrue(controller.contains("\"ROUTINE_STEP_VALIDATION\""))
         assertTrue(controller.contains("dateClassification=\${pendingStep.dateClassification.name}"))

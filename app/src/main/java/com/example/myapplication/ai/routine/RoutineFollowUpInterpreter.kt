@@ -14,7 +14,17 @@ sealed class RoutineFollowUpMove {
 
 object RoutineFollowUpInterpreter {
     fun interpret(normalizedText: String): RoutineFollowUpMove {
-        val text = normalizedText.trim().lowercase()
+        val normalized = normalizedText.trim().lowercase()
+        val tokens = normalized.split(Regex("""\s+"""))
+        val text = if (
+            tokens.size >= 2 &&
+            tokens.all { it == tokens.first() } &&
+            tokens.first() in REPEATABLE_SIMPLE_CONTROLS
+        ) {
+            tokens.first()
+        } else {
+            normalized
+        }
         if (text in CONFIRMATIONS) return RoutineFollowUpMove.Confirm
         if (text in REJECTIONS) return RoutineFollowUpMove.Reject
         if (text in CANCELLATIONS) return RoutineFollowUpMove.Cancel
@@ -56,6 +66,7 @@ object RoutineFollowUpInterpreter {
     )
     private val REJECTIONS = setOf("no", "reject", "do not create it", "don't create it")
     private val CANCELLATIONS = setOf("cancel", "stop", "never mind", "nevermind")
+    private val REPEATABLE_SIMPLE_CONTROLS = setOf("yes", "no", "cancel", "repeat")
     private val REPEATS = setOf(
         "repeat",
         "repeat the routine",
