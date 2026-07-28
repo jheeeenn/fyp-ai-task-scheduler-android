@@ -55,11 +55,32 @@ class TemporalSpokenOrdinalDateTest {
     }
 
     @Test
+    fun monthFirstOrdinalsAcceptTheOnlyInsideTheDateStructure() {
+        mapOf(
+            "August the first" to "01/08/2026",
+            "August the first 2026" to "01/08/2026",
+            "August the 1st" to "01/08/2026",
+            "August the 1st 2026" to "01/08/2026",
+            "August the twenty-first 2026" to "21/08/2026",
+            "August first 2026" to "01/08/2026",
+            "August 1st 2026" to "01/08/2026",
+            "first of August 2026" to "01/08/2026",
+            "the first of August 2026" to "01/08/2026"
+        ).forEach { (phrase, expected) ->
+            assertExact(phrase, expected)
+        }
+    }
+
+    @Test
     fun invalidOrIncompleteOrdinalStructuresRemainUnresolved() {
         listOf(
             "August 2026",
             "off of August 2026",
             "31st February 2026",
+            "February the thirty-first 2026",
+            "February the 31st 2026",
+            "August the 0th 2026",
+            "August the 32nd 2026",
             "0th August 2026",
             "32nd August 2026"
         ).forEach { phrase ->

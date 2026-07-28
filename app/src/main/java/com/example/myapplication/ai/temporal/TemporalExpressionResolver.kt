@@ -235,7 +235,7 @@ class TemporalExpressionResolver {
             """\b(?:the\s+)?(?:$numericOrdinal|$wordOrdinal)(?:\s+of)?\s+(?:$monthNames)(?:\s+\d{4})?\b"""
         )
         val monthFirst = Regex(
-            """\b(?:$monthNames)\s+(?:$numericOrdinal|$wordOrdinal)(?:\s+\d{4})?\b"""
+            """\b(?:$monthNames)\s+(?:the\s+)?(?:$numericOrdinal|$wordOrdinal)(?:\s+\d{4})?\b"""
         )
         return dayFirst.find(text)?.value?.trim()
             ?: monthFirst.find(text)?.value?.trim()
@@ -257,7 +257,7 @@ class TemporalExpressionResolver {
             )
         }
         val numericMonthFirst = Regex(
-            """^($monthNames)\s+(\d{1,2})(st|nd|rd|th)(?:\s+(\d{4}))?$"""
+            """^($monthNames)\s+(?:the\s+)?(\d{1,2})(st|nd|rd|th)(?:\s+(\d{4}))?$"""
         )
         numericMonthFirst.matchEntire(text)?.let { match ->
             val day = validatedNumericOrdinal(
@@ -285,7 +285,7 @@ class TemporalExpressionResolver {
             )
         }
         val wordMonthFirst = Regex(
-            """^($monthNames)\s+($wordOrdinal)(?:\s+(\d{4}))?$"""
+            """^($monthNames)\s+(?:the\s+)?($wordOrdinal)(?:\s+(\d{4}))?$"""
         )
         wordMonthFirst.matchEntire(text)?.let { match ->
             return canonicalCalendarDate(
