@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.myapplication.SettingsActivity
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticClient
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticClient
+import com.example.myapplication.ai.routine.saved.SavedRoutineSemanticClient
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +29,7 @@ open class ConversationAgentClient(
     context: Context? = null,
     private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
-) : CreateDraftSemanticClient, RoutineFollowUpSemanticClient {
+) : CreateDraftSemanticClient, RoutineFollowUpSemanticClient, SavedRoutineSemanticClient {
     private val appContext = context?.applicationContext
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -177,6 +178,14 @@ $userText
         executeConversationRequest(userPrompt, RequestKind.ROUTINE_FOLLOW_UP_MOVE)
     }
 
+    override suspend fun interpretSavedRoutineAction(userText: String): String =
+        withContext(Dispatchers.IO) {
+            executeConversationRequest(
+                userPrompt = "User text:\n$userText",
+                kind = RequestKind.SAVED_ROUTINE_ACTION
+            )
+        }
+
     private fun executeConversationRequest(userPrompt: String, kind: RequestKind): String {
         val temperature = when (kind) {
             RequestKind.ROUTING -> ROUTING_TEMPERATURE
@@ -185,6 +194,7 @@ $userText
             RequestKind.RESPONSE -> RESPONSE_TEMPERATURE
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_TEMPERATURE
             RequestKind.ROUTINE_FOLLOW_UP_MOVE -> ROUTINE_FOLLOW_UP_TEMPERATURE
+            RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_TEMPERATURE
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_TEMPERATURE
         }
         val maxTokens = when (kind) {
@@ -194,6 +204,7 @@ $userText
             RequestKind.RESPONSE -> RESPONSE_MAX_TOKENS
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_MAX_TOKENS
             RequestKind.ROUTINE_FOLLOW_UP_MOVE -> ROUTINE_FOLLOW_UP_MAX_TOKENS
+            RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_MAX_TOKENS
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_MAX_TOKENS
         }
         val responseFormat = when (kind) {
@@ -204,6 +215,8 @@ $userText
             RequestKind.CREATE_DRAFT_MOVE -> AgentResponseSchemas.createDraftMoveResponseFormat()
             RequestKind.ROUTINE_FOLLOW_UP_MOVE ->
                 AgentResponseSchemas.routineFollowUpMoveResponseFormat()
+            RequestKind.SAVED_ROUTINE_ACTION ->
+                AgentResponseSchemas.savedRoutineActionResponseFormat()
             RequestKind.SAFE_OBSERVATION_STYLE -> AgentResponseSchemas.safeObservationStyleResponseFormat()
         }
         val systemPrompt = when (kind) {
@@ -213,6 +226,7 @@ $userText
             RequestKind.RESPONSE -> RESPONSE_SYSTEM_PROMPT
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_SYSTEM_PROMPT
             RequestKind.ROUTINE_FOLLOW_UP_MOVE -> ROUTINE_FOLLOW_UP_SYSTEM_PROMPT
+            RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_SYSTEM_PROMPT
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_SYSTEM_PROMPT
         }
         val payload = JSONObject().apply {
@@ -242,6 +256,8 @@ $userText
                 "ROUTINE_MOVE_AGENT_SCHEMA",
                 "Strict routine follow-up move schema enabled"
             )
+        } else if (kind == RequestKind.SAVED_ROUTINE_ACTION) {
+            Log.d("SAVED_ROUTINE_ACTION_SCHEMA", "Strict saved-routine action schema enabled")
         } else if (kind == RequestKind.CONTEXT_READ_REPAIR || kind == RequestKind.CONTEXT_ACTION_REPAIR) {
             Log.d("CONVO_CONTEXT_REPAIR_SCHEMA", "Strict bounded context repair schema enabled")
         } else {
@@ -295,6 +311,8 @@ $userText
                             "LM Studio create-draft HTTP ${response.code}"
                         RequestKind.ROUTINE_FOLLOW_UP_MOVE ->
                             "LM Studio routine follow-up HTTP ${response.code}"
+                        RequestKind.SAVED_ROUTINE_ACTION ->
+                            "LM Studio saved-routine action HTTP ${response.code}"
                         RequestKind.SAFE_OBSERVATION_STYLE ->
                             safeStyleHttpErrorMessage(response.code)
                         else -> "LM Studio HTTP ${response.code}"
@@ -384,6 +402,7 @@ $userText
         RESPONSE,
         CREATE_DRAFT_MOVE,
         ROUTINE_FOLLOW_UP_MOVE,
+        SAVED_ROUTINE_ACTION,
         SAFE_OBSERVATION_STYLE
     }
 
@@ -397,6 +416,8 @@ $userText
         const val CREATE_DRAFT_MAX_TOKENS = 112
         const val ROUTINE_FOLLOW_UP_TEMPERATURE = 0.0
         const val ROUTINE_FOLLOW_UP_MAX_TOKENS = 128
+        const val SAVED_ROUTINE_ACTION_TEMPERATURE = 0.0
+        const val SAVED_ROUTINE_ACTION_MAX_TOKENS = 96
         const val SAFE_STYLE_TEMPERATURE = 0.25
         const val SAFE_STYLE_MAX_TOKENS = 80
         const val SAFE_STYLE_TIMEOUT_SECONDS = 4L
@@ -631,6 +652,40 @@ Result:
 Do not output speech, task fields, Room IDs, success fields, reasoning, plans,
 markdown, explanations, or text outside the strict JSON object.
 """.trimIndent()
+        internal val SAVED_ROUTINE_ACTION_SYSTEM_PROMPT = """
+You interpret one top-level request about reusable routines.
+
+You do not access Room, routine records, task records, or database IDs.
+You do not select a stored routine and do not claim that a routine exists.
+You do not create tasks, save templates, delete data, schedule reminders, or confirm execution.
+Android performs all matching, querying, date resolution, confirmation, and execution.
+Perform exactly one bounded interpretation. There is no repair request.
+
+Return exactly these fields: action, routine_title, date_text, confidence.
+Allowed action values: LIST, READ_DETAILS, RUN, DELETE, UNKNOWN.
+LIST requires empty routine_title and date_text.
+READ_DETAILS and DELETE require the literal requested routine title and an empty date_text.
+RUN requires the literal requested routine title and may include the literal supplied date phrase.
+UNKNOWN requires empty routine_title and date_text.
+Preserve literal date phrases such as "tomorrow", "4 August", and "next Tuesday".
+Do not calculate a final date, invent a title, invent a date, or add the word routine unless the
+user used it as part of the title.
+
+Illustrative examples:
+User: use my morning routine tomorrow
+{"action":"RUN","routine_title":"morning routine","date_text":"tomorrow","confidence":0.98}
+User: start the study routine next Tuesday
+{"action":"RUN","routine_title":"study routine","date_text":"next Tuesday","confidence":0.98}
+User: what routines do I have
+{"action":"LIST","routine_title":"","date_text":"","confidence":0.98}
+User: read my bedtime routine
+{"action":"READ_DETAILS","routine_title":"bedtime routine","date_text":"","confidence":0.98}
+User: delete my medicine routine
+{"action":"DELETE","routine_title":"medicine routine","date_text":"","confidence":0.98}
+
+Do not output Room IDs, task fields, database claims, speech, explanations, markdown, or fields
+other than the required four-field JSON object.
+""".trimIndent()
         internal val CONTEXT_READ_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded semantic repair after the primary routing interpretation abstained.
 
@@ -738,6 +793,7 @@ route, task_text, reply, context_ref, context_detail, context_action, query_read
 Allowed route values:
 TASK_COMMAND
 SMART_ROUTINE_BUILDER
+SAVED_ROUTINE_ACTION
 DAILY_BRIEFING
 CONTEXT_READ
 CONTEXT_ACTION
@@ -766,6 +822,17 @@ Route rules:
 - Android sends the original normalized request to the bounded routine extractor and remains
   the authority for validation, clarification, proposal speech, confirmation, persistence,
   reminders, and final results.
+- Use SAVED_ROUTINE_ACTION for a request to list reusable routines, read one reusable routine,
+  run or use a previously saved routine, or delete a reusable routine.
+- Illustrative SAVED_ROUTINE_ACTION requests include "Use my morning routine tomorrow.",
+  "Run my bedtime routine.", "What routines have I saved?", "Read my study routine.", and
+  "Delete my medication routine."
+- Do not use SAVED_ROUTINE_ACTION when the user asks to create or build a new routine; use
+  SMART_ROUTINE_BUILDER for that.
+- SAVED_ROUTINE_ACTION is routing only. Copy the original normalized request into task_text,
+  keep reply empty, and keep context and query fields at NONE. A dedicated bounded semantic
+  action call will interpret LIST, READ_DETAILS, RUN, DELETE, or UNKNOWN. Android alone queries
+  Room, matches records, resolves dates, confirms deletion, creates tasks, and writes speech.
 - Use DAILY_BRIEFING only for a semantic request for the app's on-demand daily briefing.
 - DAILY_BRIEFING is a structured route only. Android determines the device-local date, queries authoritative task data, identifies overdue, today, and upcoming tasks within seven days, selects one deterministic suggested focus, selects and orders records, calculates counts, publishes temporary context, and writes the factual speech.
 - For DAILY_BRIEFING, do not choose a focus task, calculate task status or date windows, select task records, call a task-operation agent, or claim that the briefing succeeded.
@@ -941,6 +1008,9 @@ User: Create a task called revision
 User: Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9
 {"route":"SMART_ROUTINE_BUILDER","task_text":"Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
+User: Use my morning routine tomorrow.
+{"route":"SAVED_ROUTINE_ACTION","task_text":"Use my morning routine tomorrow.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
 User: Give me my daily briefing.
 {"route":"DAILY_BRIEFING","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
@@ -1013,6 +1083,9 @@ Rules:
 - For TASK_COMMAND, copy the user's task-related request into task_text and keep reply empty.
 - For SMART_ROUTINE_BUILDER, copy the routine-building request into task_text, keep reply
   empty, use NONE for all context and query fields, use confidence at least 0.80, and set
+  listen_again true.
+- For SAVED_ROUTINE_ACTION, copy the saved-routine request into task_text, keep reply empty,
+  use NONE for all context and query fields, use confidence at least 0.80, and set
   listen_again true.
 - For DAILY_BRIEFING, keep task_text, reply, and context_ref empty; use NONE for all context and query fields; use confidence at least 0.80; and set listen_again true.
 - For CONTEXT_READ, keep task_text and reply empty, use one supplied context_ref, and select a non-NONE context_detail.

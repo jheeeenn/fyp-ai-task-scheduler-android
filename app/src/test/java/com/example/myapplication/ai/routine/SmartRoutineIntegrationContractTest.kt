@@ -45,6 +45,33 @@ class SmartRoutineIntegrationContractTest {
     }
 
     @Test
+    fun savedRoutineRequestsUseSeparateStrictTopLevelRoute() {
+        val decision = parser.parse(
+            decisionJson(
+                route = "SAVED_ROUTINE_ACTION",
+                taskText = "use my morning routine tomorrow"
+            )
+        )
+
+        assertEquals(ConversationRoute.SAVED_ROUTINE_ACTION, decision.route)
+        assertEquals("use my morning routine tomorrow", decision.taskText)
+        listOf(
+            decisionJson("SAVED_ROUTINE_ACTION", ""),
+            decisionJson("SAVED_ROUTINE_ACTION", "list routines", reply = "You have two"),
+            decisionJson("SAVED_ROUTINE_ACTION", "run routine", confidence = 0.79),
+            decisionJson("SAVED_ROUTINE_ACTION", "run routine", listenAgain = false)
+        ).forEach {
+            assertThrows(Exception::class.java) { parser.parse(it) }
+        }
+
+        val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
+        assertTrue(prompt.contains("SAVED_ROUTINE_ACTION"))
+        assertTrue(prompt.contains("\"Use my morning routine tomorrow.\""))
+        assertTrue(prompt.contains("SMART_ROUTINE_BUILDER for that"))
+        assertTrue(prompt.contains("Android alone queries"))
+    }
+
+    @Test
     fun routingPromptSeparatesRoutineSingleTaskBreakdownAndDiscussion() {
         val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
         assertTrue(prompt.contains("SMART_ROUTINE_BUILDER"))
@@ -77,7 +104,7 @@ class SmartRoutineIntegrationContractTest {
     }
 
     @Test
-    fun homeDispatchRequiresConfirmationBeforeTheOnlyRoutineSaveCall() {
+    fun homeDispatchRequiresConfirmationBeforeRoutinePersistence() {
         val source = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
         val followUp = source
             .substringAfter("private fun handleRoutineFollowUp")
@@ -90,9 +117,11 @@ class SmartRoutineIntegrationContractTest {
         assertTrue(source.contains("agentOrchestrator.processRoutine(normalizedRequest)"))
         assertTrue(followUp.contains("RoutineFollowUpMove.Confirm ->"))
         assertTrue(followUp.contains("savePendingRoutine()"))
-        assertFalse(followUp.substringBefore("RoutineFollowUpMove.Confirm").contains("insertRootTasksAtomically"))
+        assertFalse(followUp.substringBefore("RoutineFollowUpMove.Confirm").contains("coordinator.persist"))
         assertTrue(save.contains("routineDraftController.markSaving()"))
-        assertTrue(save.contains("dao.insertRootTasksAtomically(tasks)"))
+        assertTrue(save.contains("RoutinePersistenceCoordinator"))
+        assertTrue(save.contains("routineDao.insertRoutineWithFirstOccurrence"))
+        assertTrue(save.contains("routineDao.insertSavedRoutineOccurrence"))
         assertTrue(save.contains("ReminderHelper.scheduleReminderFromTask"))
     }
 
@@ -185,7 +214,7 @@ class SmartRoutineIntegrationContractTest {
     }
 
     @Test
-    fun daoAddsOnlyAtomicListInsertionWhileEntityAndDatabaseSchemaStayUnchanged() {
+    fun taskSchemaStaysUnchangedWhileDatabaseAddsRoutineVersionSeven() {
         val dao = File("src/main/java/com/example/myapplication/data/TaskDao.kt").readText()
         val entity = File("src/main/java/com/example/myapplication/data/TaskEntity.kt").readText()
         val database = File("src/main/java/com/example/myapplication/data/AppDatabase.kt").readText()
@@ -196,8 +225,9 @@ class SmartRoutineIntegrationContractTest {
         assertTrue(dao.contains("return insertAll(tasks)"))
         assertEquals(7, Regex("""^\s*val\s+\w+:""", RegexOption.MULTILINE).findAll(entity).count())
         assertFalse(entity.contains("routine"))
-        assertTrue(database.contains("version = 6"))
-        assertFalse(database.contains("version = 7"))
+        assertTrue(database.contains("version = 7"))
+        assertTrue(database.contains("MIGRATION_6_7"))
+        assertFalse(database.contains("fallbackToDestructiveMigration"))
     }
 
     @Test
@@ -225,12 +255,12 @@ class SmartRoutineIntegrationContractTest {
     @Test
     fun guidanceStatesReviewExactScheduleConfirmationAndNoAutomaticRecurrence() {
         val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
-        assertTrue(home.contains("one-time routine containing 2 to 5 scheduled tasks"))
+        assertTrue(home.contains("reusable routine containing 2 to 5 timed steps"))
         assertTrue(home.contains("Every routine task requires an exact future date and time"))
-        assertTrue(home.contains("reviews the complete routine before creation"))
-        assertTrue(home.contains("save only after explicit confirmation"))
-        assertTrue(home.contains("does not permanently recur routines"))
-        assertTrue(home.contains("automatically generate future routine instances"))
+        assertTrue(home.contains("Android reviews the complete routine before creation"))
+        assertTrue(home.contains("only after explicit confirmation"))
+        assertTrue(home.contains("do not recur automatically"))
+        assertTrue(home.contains("do not generate future occurrences"))
     }
 
     private fun decisionJson(

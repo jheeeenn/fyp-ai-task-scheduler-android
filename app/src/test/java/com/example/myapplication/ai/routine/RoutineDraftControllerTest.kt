@@ -1,5 +1,9 @@
 package com.example.myapplication.ai.routine
 
+import com.example.myapplication.ai.routine.followup.RoutineFollowUpAgentContext
+import com.example.myapplication.data.RoutineEntity
+import com.example.myapplication.data.RoutineStepEntity
+import com.example.myapplication.data.RoutineWithSteps
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -423,7 +427,78 @@ class RoutineDraftControllerTest {
         assertTrue(proposal.contains("Third, leave at 9 AM."))
         assertTrue(proposal.indexOf("medicine") < proposal.indexOf("breakfast"))
         assertTrue(proposal.indexOf("breakfast") < proposal.indexOf("leave"))
-        assertTrue(proposal.endsWith("create these 3 tasks?"))
+        assertTrue(proposal.contains("save this routine for reuse"))
+        assertTrue(proposal.endsWith("Would you like me to continue?"))
+    }
+
+    @Test
+    fun newExtractionHasNewOriginAndSavedTemplateHasSavedOriginWithoutPromptId() {
+        val extracted = controller()
+        val token = extracted.beginExtraction()
+        extracted.applyExtraction(token, validResponse())
+        assertEquals(RoutineDraftOrigin.NEW_ROUTINE, extracted.draft!!.origin)
+        assertNull(extracted.draft!!.savedRoutineId)
+
+        val saved = controller()
+        val update = saved.startFromSavedRoutine(savedRoutine(), "tomorrow")
+        assertTrue(update is RoutineDraftUpdate.Review)
+        assertEquals(RoutineDraftOrigin.SAVED_ROUTINE, saved.draft!!.origin)
+        assertEquals(42L, saved.draft!!.savedRoutineId)
+        assertFalse(saved.draft.toString().contains("42"))
+        assertTrue((update as RoutineDraftUpdate.Review).proposal.contains("Tuesday, 28 July"))
+        assertFalse(update.proposal.contains("save this routine for reuse"))
+        val prompt = RoutineFollowUpAgentContext.capture(
+            saved.state,
+            saved.draft,
+            RoutineFollowUpMove.Unknown
+        ).toPromptText()
+        assertFalse(prompt.contains("42"))
+        assertFalse(prompt.contains("routineId", ignoreCase = true))
+    }
+
+    @Test
+    fun savedRoutineWithoutDateCollectsSharedDateAndStillSupportsRevisions() {
+        val controller = controller()
+        val initial = controller.startFromSavedRoutine(savedRoutine(), "")
+
+        assertTrue(initial is RoutineDraftUpdate.Ask)
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, controller.state)
+        val review = controller.provideSharedDate("tomorrow")
+        assertTrue(review is RoutineDraftUpdate.Review)
+        val revised = controller.changeStepTime(1, "8:30 AM")
+        assertTrue(revised is RoutineDraftUpdate.Review)
+        assertEquals("8:30 AM", controller.draft!!.steps[1].resolvedTime)
+        assertEquals(RoutineDraftOrigin.SAVED_ROUTINE, controller.draft!!.origin)
+        assertEquals(42L, controller.draft!!.savedRoutineId)
+        assertTrue(controller.markSaving() != null)
+    }
+
+    @Test
+    fun corruptedSavedRoutineIsRejectedBeforeConfirmation() {
+        val missingTime = savedRoutine().copy(
+            steps = savedRoutine().steps.mapIndexed { index, step ->
+                if (index == 1) step.copy(dueTime = "") else step
+            }
+        )
+        val invalidOrder = savedRoutine().copy(
+            steps = savedRoutine().steps.map { it.copy(stepOrder = 1) }
+        )
+
+        val timeController = controller()
+        assertEquals(
+            RoutineDraftIssue.INVALID_TIME,
+            (timeController.startFromSavedRoutine(missingTime, "tomorrow")
+                as RoutineDraftUpdate.Rejected).reason
+        )
+        assertEquals(RoutineDraftState.NONE, timeController.state)
+
+        val orderController = controller()
+        assertEquals(
+            RoutineDraftIssue.INVALID_STEP_COUNT,
+            (orderController.startFromSavedRoutine(invalidOrder, "tomorrow")
+                as RoutineDraftUpdate.Rejected).reason
+        )
+        assertEquals(RoutineDraftState.NONE, orderController.state)
     }
 
     @Test
@@ -517,6 +592,34 @@ class RoutineDraftControllerTest {
         )
         return controller
     }
+
+    private fun savedRoutine() = RoutineWithSteps(
+        routine = RoutineEntity(
+            id = 42,
+            title = "Morning routine",
+            normalizedTitle = "morning routine",
+            createdAtEpochMillis = 1,
+            updatedAtEpochMillis = 1
+        ),
+        steps = listOf(
+            storedStep(1, "medicine", "8:00 AM", 0),
+            storedStep(2, "breakfast", "8:15 AM", 1),
+            storedStep(3, "leave", "9:00 AM", 2)
+        )
+    )
+
+    private fun storedStep(
+        id: Long,
+        title: String,
+        time: String,
+        order: Int
+    ) = RoutineStepEntity(
+        id = id,
+        routineId = 42,
+        title = title,
+        dueTime = time,
+        stepOrder = order
+    )
 
     private fun validResponse(
         title: String = "Morning routine",

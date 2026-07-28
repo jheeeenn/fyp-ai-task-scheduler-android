@@ -220,6 +220,10 @@ class ConversationOrchestrator(
                 taskText = normalizedText,
                 reply = ""
             )
+            ConversationRoute.SAVED_ROUTINE_ACTION -> decision.copy(
+                taskText = normalizedText,
+                reply = ""
+            )
             ConversationRoute.DAILY_BRIEFING -> decision
             ConversationRoute.CONTEXT_READ -> decision
             ConversationRoute.CONTEXT_ACTION -> decision

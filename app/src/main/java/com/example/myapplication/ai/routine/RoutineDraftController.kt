@@ -9,6 +9,7 @@ import com.example.myapplication.ai.temporal.TemporalResolution
 import com.example.myapplication.ai.temporal.TemporalResolutionStatus
 import com.example.myapplication.ai.temporal.TemporalUseCase
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
+import com.example.myapplication.data.RoutineWithSteps
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -29,11 +30,22 @@ enum class RoutineDateClassification {
     INVALID
 }
 
+enum class RoutineDraftOrigin {
+    NEW_ROUTINE,
+    SAVED_ROUTINE
+}
+
 data class PendingRoutineDraft(
     val title: String,
     val steps: List<PendingRoutineStep>,
-    val revision: Long
-)
+    val revision: Long,
+    val origin: RoutineDraftOrigin = RoutineDraftOrigin.NEW_ROUTINE,
+    internal val savedRoutineId: Long? = null
+) {
+    override fun toString(): String =
+        "PendingRoutineDraft(title=$title, steps=$steps, revision=$revision, " +
+            "origin=$origin, savedRoutineId=<redacted>)"
+}
 
 data class PendingRoutineStep(
     val title: String,
@@ -227,7 +239,79 @@ class RoutineDraftController(
         draft = PendingRoutineDraft(
             title = extraction.routineTitle.trim().ifEmpty { DEFAULT_ROUTINE_TITLE },
             steps = stepsWithSharedDate,
-            revision = 1L
+            revision = 1L,
+            origin = RoutineDraftOrigin.NEW_ROUTINE
+        )
+        DebugDiagnosticLog.event("ROUTINE_DRAFT_ORIGIN", "origin=NEW_ROUTINE")
+        return advance()
+    }
+
+    fun startFromSavedRoutine(
+        routine: RoutineWithSteps,
+        suppliedDateText: String
+    ): RoutineDraftUpdate {
+        check(state != RoutineDraftState.SAVING) {
+            "A confirmed routine save is already in progress"
+        }
+        extractionGeneration += 1
+        authoritativeProposal = null
+
+        val orderedSteps = routine.steps.sortedWith(
+            compareBy(
+                com.example.myapplication.data.RoutineStepEntity::stepOrder,
+                com.example.myapplication.data.RoutineStepEntity::id
+            )
+        )
+        val title = routine.routine.title.trim()
+        if (title.isEmpty()) {
+            reset()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.EMPTY_STEP_TITLE)
+        }
+        if (orderedSteps.size !in MIN_STEPS..MAX_STEPS ||
+            orderedSteps.map { it.stepOrder } != orderedSteps.indices.toList()
+        ) {
+            reset()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_STEP_COUNT)
+        }
+        if (orderedSteps.any { it.title.trim().isEmpty() }) {
+            reset()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.EMPTY_STEP_TITLE)
+        }
+        val base = baseCalendarProvider()
+        val resolvedTimes = orderedSteps.map { resolveTime(it.dueTime, base) }
+        if (resolvedTimes.any { it == null }) {
+            reset()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_TIME)
+        }
+        val suppliedDate = suppliedDateText.trim()
+        val resolvedDate = if (suppliedDate.isEmpty()) null else resolveDate(suppliedDate, base)
+        if (suppliedDate.isNotEmpty() && resolvedDate == null) {
+            reset()
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        }
+        draft = PendingRoutineDraft(
+            title = title,
+            steps = orderedSteps.mapIndexed { index, step ->
+                PendingRoutineStep(
+                    title = step.title.trim(),
+                    originalDateText = suppliedDate.takeIf(String::isNotEmpty),
+                    originalTimeText = step.dueTime,
+                    resolvedDate = resolvedDate,
+                    resolvedTime = requireNotNull(resolvedTimes[index]),
+                    dateClassification = if (resolvedDate == null) {
+                        RoutineDateClassification.MISSING
+                    } else {
+                        RoutineDateClassification.EXACT
+                    }
+                )
+            },
+            revision = 1L,
+            origin = RoutineDraftOrigin.SAVED_ROUTINE,
+            savedRoutineId = routine.routine.id
+        )
+        DebugDiagnosticLog.event(
+            "ROUTINE_DRAFT_ORIGIN",
+            "origin=SAVED_ROUTINE\nloadedStepCount=${orderedSteps.size}"
         )
         return advance()
     }
@@ -626,7 +710,13 @@ object RoutineProposalRenderer {
         }.joinToString(" ")
         val count = draft.steps.size
         val noun = if (count == 1) "task" else "tasks"
-        return "$introduction $steps Would you like me to create these $count $noun?"
+        val confirmation = when (draft.origin) {
+            RoutineDraftOrigin.NEW_ROUTINE ->
+                "If you confirm, I will save this routine for reuse and create these $count $noun for this occurrence. Would you like me to continue?"
+            RoutineDraftOrigin.SAVED_ROUTINE ->
+                "Would you like me to create these $count $noun for this occurrence?"
+        }
+        return "$introduction $steps $confirmation"
     }
 
     private fun speakDate(value: String): String {

@@ -116,6 +116,9 @@ class ConversationSessionMemory {
             ConversationRoute.SMART_ROUTINE_BUILDER -> {
                 pendingAction = "SMART_ROUTINE_BUILDER"
             }
+            ConversationRoute.SAVED_ROUTINE_ACTION -> {
+                pendingAction = "SAVED_ROUTINE_ACTION"
+            }
             ConversationRoute.DAILY_BRIEFING -> {
                 pendingAction = "DAILY_BRIEFING"
             }

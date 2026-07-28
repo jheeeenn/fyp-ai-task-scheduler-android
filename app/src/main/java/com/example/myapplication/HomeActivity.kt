@@ -137,12 +137,25 @@ import com.example.myapplication.ai.routine.RoutineFollowUpInterpreter
 import com.example.myapplication.ai.routine.RoutineFollowUpMove
 import com.example.myapplication.ai.routine.RoutineReminderScheduler
 import com.example.myapplication.ai.routine.RoutineResultSpeechRenderer
-import com.example.myapplication.ai.routine.RoutineTaskBatchCreator
-import com.example.myapplication.ai.routine.RoutineTaskStore
+import com.example.myapplication.ai.routine.RoutinePersistenceCoordinator
+import com.example.myapplication.ai.routine.RoutinePersistenceStore
+import com.example.myapplication.ai.routine.RoutineMatcher
+import com.example.myapplication.ai.routine.RoutineMatchResult
+import com.example.myapplication.ai.routine.RoutineDraftOrigin
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpAgentContext
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpDeliveryGuard
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticFallbackPolicy
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticOrchestrator
+import com.example.myapplication.ai.routine.saved.SavedRoutineAction
+import com.example.myapplication.ai.routine.saved.SavedRoutineActionDecision
+import com.example.myapplication.ai.routine.saved.SavedRoutineActionSchemaException
+import com.example.myapplication.ai.routine.saved.SavedRoutineCandidate
+import com.example.myapplication.ai.routine.saved.SavedRoutineChoice
+import com.example.myapplication.ai.routine.saved.SavedRoutineInteractionController
+import com.example.myapplication.ai.routine.saved.SavedRoutineInteractionState
+import com.example.myapplication.ai.routine.saved.SavedRoutineSemanticOrchestrator
+import com.example.myapplication.data.RoutineOccurrenceInsertResult
+import com.example.myapplication.data.RoutineWithSteps
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
@@ -153,6 +166,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var conversationOrchestrator: ConversationOrchestrator
     private lateinit var routineFollowUpSemanticOrchestrator:
         RoutineFollowUpSemanticOrchestrator
+    private lateinit var savedRoutineSemanticOrchestrator:
+        SavedRoutineSemanticOrchestrator
     private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()
 
 
@@ -204,6 +219,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var assistantRequestGeneration: Long = 0
     private var assistantRequestActive: Boolean = false
     private val routineDraftController = RoutineDraftController()
+    private val savedRoutineInteractionController = SavedRoutineInteractionController()
     private val routineStepTimeClarification =
         "Please provide one exact clock time for that step."
 
@@ -262,6 +278,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             ConversationDecisionParser()
         )
         routineFollowUpSemanticOrchestrator = RoutineFollowUpSemanticOrchestrator(
+            conversationAgentClient
+        )
+        savedRoutineSemanticOrchestrator = SavedRoutineSemanticOrchestrator(
             conversationAgentClient
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
@@ -425,6 +444,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
+        savedRoutineInteractionController.clear()
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
@@ -438,6 +458,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
+        savedRoutineInteractionController.clear()
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
@@ -656,15 +677,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val routineInteraction = when (routineDraftController.state) {
             RoutineDraftState.NONE -> null
             RoutineDraftState.EXTRACTING -> Pair(
-                "The bounded Task Agent is extracting a one-time routine proposal.",
+                "The bounded Task Agent is extracting a new reusable routine proposal.",
                 listOf("Wait for the proposal or cancel the routine request.")
             )
             RoutineDraftState.COLLECTING_SHARED_DATE -> Pair(
-                "A one-time routine draft needs one exact shared date.",
+                "A routine occurrence draft needs one exact shared date.",
                 listOf("Provide an exact date or cancel the routine.")
             )
             RoutineDraftState.COLLECTING_STEP_TIME -> Pair(
-                "A one-time routine draft needs an exact time for the next missing step.",
+                "A routine draft needs an exact time for the next missing step.",
                 listOf("Provide one exact time or cancel the routine.")
             )
             RoutineDraftState.WAITING_FOR_CONFIRMATION -> Pair(
@@ -676,7 +697,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
             )
             RoutineDraftState.SAVING -> Pair(
-                "Android is saving a confirmed one-time routine batch.",
+                "Android is persisting a confirmed routine occurrence.",
                 listOf("Wait for the authoritative save and reminder result.")
             )
         }
@@ -694,7 +715,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "Mark a task complete.",
                 "Mark a completed task incomplete.",
                 "Break a large task into subtasks.",
-                "Build a one-time routine containing 2 to 5 scheduled tasks, review every exact date and time, and save only after explicit confirmation."
+                "Build and save a reusable routine containing 2 to 5 timed steps, and create its first occurrence only after explicit confirmation.",
+                "List, read, run, or delete saved routines through the assistant. Running creates independent occurrence tasks only."
             ),
             screenActions = listOf(
                 "Open today's tasks.",
@@ -715,6 +737,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "Say, 'Show my tasks tomorrow.'",
                 "Say, 'Give me my daily briefing.'",
                 "Say, 'Create a task called revision tomorrow at 4 PM.'",
+                "Say, 'Use my morning routine tomorrow.'",
                 "Say, 'How do I reschedule a task?' for app guidance."
             ),
             limitations = listOf(
@@ -727,9 +750,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "The daily briefing's suggested focus uses deterministic due-date and time ordering, not behavioural learning, habit-based recommendations, priority fields, or calendar integration.",
                 "After a daily briefing, the user may ask about one of the spoken tasks.",
                 "Task breakdown requires plan approval and any missing scheduling information.",
-                "A Smart Routine Builder routine is one confirmed batch of 2 to 5 independent root tasks, not a recurring template.",
+                "A saved routine is a reusable template of 2 to 5 ordered titles and default times; occurrence dates are stored only on generated tasks.",
                 "Every routine task requires an exact future date and time, and Android reviews the complete routine before creation.",
-                "The app does not permanently recur routines, automatically generate future routine instances, learn routine behaviour, or integrate routine creation with calendars.",
+                "Saved routines do not recur automatically and do not generate future occurrences. The app does not learn routine behaviour or integrate routine creation with calendars.",
                 "App guidance must not claim that an operation occurred unless the app successfully completed it."
             )
         )
@@ -769,14 +792,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
 
-        if (isConversationExitCommand(normalized)) {
-            endAssistantConversation()
-            return
-        }
-
         if (routineDraftController.state != RoutineDraftState.NONE &&
             handleRoutineFollowUp(normalized, requestToken)
         ) {
+            return
+        }
+
+        if (savedRoutineInteractionController.state != SavedRoutineInteractionState.NONE) {
+            handleSavedRoutineInteractionFollowUp(normalized, requestToken)
+            return
+        }
+
+        if (isConversationExitCommand(normalized)) {
+            endAssistantConversation()
             return
         }
 
@@ -1098,6 +1126,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         handleSmartRoutineBuilder(normalized, requestToken)
                         return@launch
                     }
+                    ConversationRoute.SAVED_ROUTINE_ACTION -> {
+                        if (!isAssistantRequestCurrent(requestToken)) return@launch
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        handleSavedRoutineAction(normalized, requestToken)
+                        return@launch
+                    }
                     ConversationRoute.DAILY_BRIEFING -> {
                         executeDailyBriefing(
                             requestToken = requestToken,
@@ -1321,6 +1355,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         )
                         clearConversationSessionContext()
                         routineDraftController.clear()
+                        savedRoutineInteractionController.clear()
                         homeFollowUpContext = HomeFollowUpContext.NONE
                         return@launch
                     }
@@ -2881,6 +2916,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
+        savedRoutineInteractionController.clear()
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
@@ -2907,6 +2943,473 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         return queryReadingStateGeneration
     }
+
+    private suspend fun handleSavedRoutineAction(
+        normalizedRequest: String,
+        requestToken: AssistantRequestToken
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
+        val semanticSnapshot = savedRoutineInteractionController.begin(
+            SavedRoutineAction.UNKNOWN,
+            ""
+        )
+        val decision = try {
+            savedRoutineSemanticOrchestrator.interpret(normalizedRequest)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SavedRoutineActionSchemaException) {
+            if (savedRoutineInteractionController.isCurrent(semanticSnapshot.generation) &&
+                isAssistantRequestCurrent(requestToken)
+            ) {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I could not safely interpret that saved-routine request. Please try again.",
+                    listenAgain = true
+                )
+            }
+            return
+        } catch (_: Exception) {
+            if (savedRoutineInteractionController.isCurrent(semanticSnapshot.generation) &&
+                isAssistantRequestCurrent(requestToken)
+            ) {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I could not check saved routines right now. Please try again.",
+                    listenAgain = true
+                )
+            }
+            return
+        }
+        if (!savedRoutineInteractionController.isCurrent(semanticSnapshot.generation) ||
+            !isAssistantRequestCurrent(requestToken)
+        ) {
+            DebugDiagnosticLog.event(
+                "SAVED_ROUTINE_STALE",
+                "phase=SEMANTIC_DELIVERY\nreason=NEWER_INTERACTION"
+            )
+            return
+        }
+        DebugDiagnosticLog.event(
+            "SAVED_ROUTINE_ACTION_DECISION",
+            "action=${decision.action.name}\n" +
+                "routineTitle=${decision.routineTitle}\n" +
+                "dateText=${decision.dateText}\nconfidence=${decision.confidence}"
+        )
+        val interaction = savedRoutineInteractionController.begin(
+            decision.action,
+            decision.dateText
+        )
+        when (decision.action) {
+            SavedRoutineAction.LIST -> listSavedRoutines(interaction.generation, requestToken)
+            SavedRoutineAction.READ_DETAILS,
+            SavedRoutineAction.RUN,
+            SavedRoutineAction.DELETE ->
+                resolveSavedRoutineTarget(decision, interaction.generation, requestToken)
+            SavedRoutineAction.UNKNOWN -> {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I can list, read, run, or delete a saved routine. Please say which one you want.",
+                    listenAgain = true
+                )
+            }
+        }
+    }
+
+    private suspend fun listSavedRoutines(
+        interactionGeneration: Long,
+        requestToken: AssistantRequestToken
+    ) {
+        val routines = try {
+            withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(this@HomeActivity).routineDao().listAll()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            if (savedRoutineInteractionController.isCurrent(interactionGeneration) &&
+                isAssistantRequestCurrent(requestToken)
+            ) {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I could not read saved routines right now. Nothing was changed.",
+                    listenAgain = true
+                )
+            }
+            return
+        }
+        if (!savedRoutineInteractionController.isCurrent(interactionGeneration) ||
+            !isAssistantRequestCurrent(requestToken)
+        ) {
+            DebugDiagnosticLog.event(
+                "SAVED_ROUTINE_STALE",
+                "phase=LIST_DELIVERY\nreason=NEWER_INTERACTION"
+            )
+            return
+        }
+        savedRoutineInteractionController.clear()
+        val count = routines.size
+        val speech = if (count == 0) {
+            "You have no saved routines."
+        } else {
+            val spoken = routines.take(5).mapIndexed { index, routine ->
+                "${savedRoutineOrdinal(index)}, ${routine.routine.title}."
+            }.joinToString(" ")
+            val additional = count - minOf(count, 5)
+            val suffix = if (additional > 0) {
+                " There ${if (additional == 1) "is" else "are"} $additional more saved " +
+                    "${if (additional == 1) "routine" else "routines"}."
+            } else {
+                ""
+            }
+            "You have $count saved ${if (count == 1) "routine" else "routines"}. $spoken$suffix"
+        }
+        assistantSession.speak(speech, listenAgain = true)
+    }
+
+    private suspend fun resolveSavedRoutineTarget(
+        decision: SavedRoutineActionDecision,
+        interactionGeneration: Long,
+        requestToken: AssistantRequestToken
+    ) {
+        val routines = try {
+            withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(this@HomeActivity).routineDao().listAll()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            if (savedRoutineInteractionController.isCurrent(interactionGeneration) &&
+                isAssistantRequestCurrent(requestToken)
+            ) {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I could not read saved routines right now. Nothing was changed.",
+                    listenAgain = true
+                )
+            }
+            return
+        }
+        if (!savedRoutineInteractionController.isCurrent(interactionGeneration) ||
+            !isAssistantRequestCurrent(requestToken)
+        ) {
+            DebugDiagnosticLog.event(
+                "SAVED_ROUTINE_STALE",
+                "phase=MATCH_DELIVERY\nreason=NEWER_INTERACTION"
+            )
+            return
+        }
+        val match = RoutineMatcher.match(
+            decision.routineTitle,
+            routines.map(RoutineWithSteps::routine)
+        )
+        val matchCount = when (match) {
+            RoutineMatchResult.NoMatch -> 0
+            is RoutineMatchResult.One -> 1
+            is RoutineMatchResult.Ambiguous -> match.routines.size
+        }
+        DebugDiagnosticLog.event(
+            "SAVED_ROUTINE_MATCH",
+            "matchCount=$matchCount\nambiguous=${match is RoutineMatchResult.Ambiguous}"
+        )
+        when (match) {
+            RoutineMatchResult.NoMatch -> {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I could not find a saved routine matching ${decision.routineTitle}.",
+                    listenAgain = true
+                )
+            }
+            is RoutineMatchResult.One -> {
+                if (!savedRoutineInteractionController.selectSingle(
+                        interactionGeneration,
+                        match.routine.id
+                    )
+                ) {
+                    DebugDiagnosticLog.event(
+                        "SAVED_ROUTINE_STALE",
+                        "phase=SINGLE_MATCH\nreason=CONTROLLER_CHANGED"
+                    )
+                    return
+                }
+                executeSelectedSavedRoutine(
+                    routineId = match.routine.id,
+                    interactionGeneration = interactionGeneration,
+                    requestToken = requestToken
+                )
+            }
+            is RoutineMatchResult.Ambiguous -> {
+                val candidates = match.routines.take(5).map {
+                    SavedRoutineCandidate(it.id, it.title)
+                }
+                if (!savedRoutineInteractionController.chooseCandidates(
+                        interactionGeneration,
+                        candidates
+                    )
+                ) {
+                    return
+                }
+                val choices = candidates.mapIndexed { index, candidate ->
+                    "${savedRoutineOrdinal(index)}, ${candidate.displayTitle}."
+                }.joinToString(" ")
+                assistantSession.speak(
+                    "I found ${match.routines.size} possible routines. $choices " +
+                        "Please choose an option, or say cancel.",
+                    listenAgain = true
+                )
+            }
+        }
+    }
+
+    private fun handleSavedRoutineInteractionFollowUp(
+        normalized: String,
+        requestToken: AssistantRequestToken
+    ) {
+        when (savedRoutineInteractionController.state) {
+            SavedRoutineInteractionState.CHOOSING_MATCH -> {
+                when (val choice = savedRoutineInteractionController.choose(normalized)) {
+                    is SavedRoutineChoice.Selected -> {
+                        val generation = savedRoutineInteractionController.snapshot().generation
+                        lifecycleScope.launch {
+                            executeSelectedSavedRoutine(
+                                choice.routineId,
+                                generation,
+                                requestToken
+                            )
+                        }
+                    }
+                    SavedRoutineChoice.Cancelled -> assistantSession.speak(
+                        "Cancelled. No routine was selected and nothing was changed.",
+                        listenAgain = false
+                    )
+                    SavedRoutineChoice.Invalid -> assistantSession.speak(
+                        "Please say first, second, a unique routine title, or cancel.",
+                        listenAgain = true
+                    )
+                }
+            }
+            SavedRoutineInteractionState.CONFIRMING_DELETE -> {
+                when {
+                    isSavedRoutineConfirmation(normalized) -> deleteConfirmedSavedRoutine()
+                    isSavedRoutineRejection(normalized) -> {
+                        savedRoutineInteractionController.clear()
+                        assistantSession.speak(
+                            "Okay, I did not delete the saved routine. Existing tasks are unchanged.",
+                            listenAgain = false
+                        )
+                    }
+                    else -> assistantSession.speak(
+                        "Please say yes to delete the saved routine, or no to keep it.",
+                        listenAgain = true
+                    )
+                }
+            }
+            SavedRoutineInteractionState.RESOLVING -> {
+                if (isSavedRoutineRejection(normalized)) {
+                    savedRoutineInteractionController.clear()
+                    assistantSession.speak(
+                        "Cancelled. Nothing was changed.",
+                        listenAgain = false
+                    )
+                } else {
+                    savedRoutineInteractionController.clear()
+                    handleVoiceCommand(normalized)
+                }
+            }
+            SavedRoutineInteractionState.NONE -> Unit
+        }
+    }
+
+    private suspend fun executeSelectedSavedRoutine(
+        routineId: Long,
+        interactionGeneration: Long,
+        requestToken: AssistantRequestToken
+    ) {
+        if (!savedRoutineInteractionController.isCurrent(interactionGeneration) ||
+            !isAssistantRequestCurrent(requestToken)
+        ) {
+            DebugDiagnosticLog.event(
+                "SAVED_ROUTINE_STALE",
+                "phase=SELECTION\nreason=NEWER_INTERACTION"
+            )
+            return
+        }
+        DebugDiagnosticLog.event(
+            "SAVED_ROUTINE_SELECTED",
+            "internalRoutineId=$routineId"
+        )
+        val routine = try {
+            withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(this@HomeActivity).routineDao().getById(routineId)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            if (savedRoutineInteractionController.isCurrent(interactionGeneration) &&
+                isAssistantRequestCurrent(requestToken)
+            ) {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "I could not load that saved routine. Nothing was changed.",
+                    listenAgain = true
+                )
+            }
+            return
+        }
+        if (!savedRoutineInteractionController.isCurrent(interactionGeneration) ||
+            !isAssistantRequestCurrent(requestToken)
+        ) {
+            DebugDiagnosticLog.event(
+                "SAVED_ROUTINE_STALE",
+                "phase=LOAD_DELIVERY\nreason=NEWER_INTERACTION"
+            )
+            return
+        }
+        if (routine == null) {
+            savedRoutineInteractionController.clear()
+            assistantSession.speak(
+                "That saved routine is no longer available.",
+                listenAgain = true
+            )
+            return
+        }
+        DebugDiagnosticLog.event(
+            "SAVED_ROUTINE_LOAD",
+            "loadedStepCount=${routine.steps.size}"
+        )
+        when (savedRoutineInteractionController.intendedAction) {
+            SavedRoutineAction.READ_DETAILS -> {
+                savedRoutineInteractionController.clear()
+                val speech = renderSavedRoutineDetails(routine)
+                assistantSession.speak(
+                    speech ?: "That saved routine is incomplete or corrupted and cannot be read safely.",
+                    listenAgain = true
+                )
+            }
+            SavedRoutineAction.RUN -> {
+                val datePhrase = savedRoutineInteractionController.suppliedDatePhrase
+                savedRoutineInteractionController.clear()
+                val update = routineDraftController.startFromSavedRoutine(routine, datePhrase)
+                handleRoutineDraftUpdate(
+                    update = update,
+                    invalidSpeech =
+                        "That saved routine is incomplete or has an invalid time, so I cannot run it safely.",
+                    requestToken = requestToken
+                )
+            }
+            SavedRoutineAction.DELETE -> {
+                if (savedRoutineInteractionController.beginDeleteConfirmation(
+                        interactionGeneration,
+                        routineId
+                    )
+                ) {
+                    DebugDiagnosticLog.event(
+                        "SAVED_ROUTINE_DELETE",
+                        "phase=CONFIRMATION_REQUESTED"
+                    )
+                    assistantSession.speak(
+                        "Do you want me to delete the saved routine ${routine.routine.title}? " +
+                            "Tasks already created from it will remain unchanged.",
+                        listenAgain = true
+                    )
+                }
+            }
+            else -> {
+                savedRoutineInteractionController.clear()
+                assistantSession.speak(
+                    "Please repeat the saved-routine request.",
+                    listenAgain = true
+                )
+            }
+        }
+    }
+
+    private fun deleteConfirmedSavedRoutine() {
+        val routineId = savedRoutineInteractionController.claimDelete()
+        if (routineId == null) {
+            assistantSession.speak(
+                "That deletion is already being processed.",
+                listenAgain = false
+            )
+            return
+        }
+        val generation = savedRoutineInteractionController.snapshot().generation
+        lifecycleScope.launch {
+            val deleted = try {
+                withContext(Dispatchers.IO) {
+                    AppDatabase.getInstance(this@HomeActivity)
+                        .routineDao()
+                        .deleteRoutineAndSteps(routineId)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            if (!savedRoutineInteractionController.isCurrent(generation)) {
+                DebugDiagnosticLog.event(
+                    "SAVED_ROUTINE_STALE",
+                    "phase=DELETE_RESULT\nreason=CONTROLLER_CHANGED"
+                )
+                return@launch
+            }
+            savedRoutineInteractionController.clear()
+            DebugDiagnosticLog.event(
+                "SAVED_ROUTINE_DELETE",
+                "phase=COMPLETE\nsuccess=$deleted"
+            )
+            assistantSession.speak(
+                if (deleted) {
+                    "The saved routine was deleted. Tasks already created from it remain unchanged."
+                } else {
+                    "I could not delete that saved routine. Nothing was changed."
+                },
+                listenAgain = false
+            )
+        }
+    }
+
+    private fun renderSavedRoutineDetails(routine: RoutineWithSteps): String? {
+        val steps = routine.steps.sortedBy { it.stepOrder }
+        if (routine.routine.title.isBlank() ||
+            steps.size !in 2..5 ||
+            steps.map { it.stepOrder } != steps.indices.toList() ||
+            steps.any { it.title.isBlank() || !isStoredRoutineTimeValid(it.dueTime) }
+        ) {
+            return null
+        }
+        val details = steps.mapIndexed { index, step ->
+            "${savedRoutineOrdinal(index)}, ${step.title} at ${step.dueTime.replace(":00 ", " ")}."
+        }.joinToString(" ")
+        return "${routine.routine.title} has ${steps.size} steps. $details"
+    }
+
+    private fun isStoredRoutineTimeValid(value: String): Boolean {
+        val formatter = SimpleDateFormat("h:mm a", Locale.UK).apply {
+            isLenient = false
+        }
+        val normalized = value.trim()
+        val position = java.text.ParsePosition(0)
+        return formatter.parse(normalized, position) != null &&
+            position.index == normalized.length
+    }
+
+    private fun savedRoutineOrdinal(index: Int): String =
+        listOf("First", "Second", "Third", "Fourth", "Fifth").getOrElse(index) {
+            "${index + 1}."
+        }
+
+    private fun isSavedRoutineConfirmation(normalized: String): Boolean =
+        normalized in setOf("yes", "yes yes", "yeah", "yep", "confirm", "delete it")
+
+    private fun isSavedRoutineRejection(normalized: String): Boolean =
+        normalized in setOf(
+            "no",
+            "no thanks",
+            "cancel",
+            "stop",
+            "never mind",
+            "nevermind"
+        )
 
     private suspend fun handleSmartRoutineBuilder(
         normalizedRequest: String,
@@ -3224,7 +3727,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 RoutineResponseKind.INVALID_TIME to routineStepTimeClarification
             RoutineDraftState.WAITING_FOR_CONFIRMATION ->
                 RoutineResponseKind.REVISION_HELP to
-                    "Say yes to create these tasks, no to reject them, repeat the routine, or change one step's time or title."
+                    if (routineDraftController.draft?.origin == RoutineDraftOrigin.NEW_ROUTINE) {
+                        "Say yes to save the routine for reuse and create this occurrence, no to reject it, repeat the routine, or change one step."
+                    } else {
+                        "Say yes to create this occurrence, no to reject it, repeat the routine, or change one step."
+                    }
             RoutineDraftState.SAVING ->
                 RoutineResponseKind.ALREADY_SAVING to
                     "The confirmed routine is already being saved."
@@ -3351,11 +3858,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         Log.d(
             "ROUTINE_SAVE",
-            "taskCount=$count insertedCount=0 reminderSuccessCount=0 result=CANCELLED"
+            "routineSavedCount=0 taskCount=$count insertedCount=0 " +
+                "reminderSuccessCount=0 result=CANCELLED"
         )
         speakRoutineResponse(
             RoutineResponseKind.CANCELLED,
-            "Okay, I will not create that routine.",
+            "Cancelled. Zero new routines were saved, zero new tasks were inserted, and zero reminders were scheduled.",
             listenAgain = false
         )
     }
@@ -3380,16 +3888,26 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         logRoutineDraftState()
         lifecycleScope.launch {
-            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-            val creator = RoutineTaskBatchCreator(
-                store = RoutineTaskStore { tasks ->
-                    dao.insertRootTasksAtomically(tasks)
+            val routineDao = AppDatabase.getInstance(this@HomeActivity).routineDao()
+            val coordinator = RoutinePersistenceCoordinator(
+                store = object : RoutinePersistenceStore {
+                    override suspend fun insertNewRoutineWithFirstOccurrence(
+                        routine: com.example.myapplication.data.RoutineEntity,
+                        steps: List<com.example.myapplication.data.RoutineStepEntity>,
+                        tasks: List<TaskEntity>
+                    ): RoutineOccurrenceInsertResult =
+                        routineDao.insertRoutineWithFirstOccurrence(routine, steps, tasks)
+
+                    override suspend fun insertSavedRoutineOccurrence(
+                        tasks: List<TaskEntity>
+                    ): RoutineOccurrenceInsertResult =
+                        routineDao.insertSavedRoutineOccurrence(tasks)
                 },
                 reminderScheduler = RoutineReminderScheduler { task ->
                     ReminderHelper.scheduleReminderFromTask(this@HomeActivity, task)
                 }
             )
-            val result = creator.create(
+            val result = coordinator.persist(
                 draft = pendingSave.draft,
                 saveGeneration = pendingSave.generation
             )

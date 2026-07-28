@@ -15,23 +15,35 @@ data class RoutineCreationResult(
     val category: RoutineCreationResultCategory,
     val taskCount: Int,
     val insertedCount: Int,
-    val reminderSuccessCount: Int
+    val reminderSuccessCount: Int,
+    val origin: RoutineDraftOrigin = RoutineDraftOrigin.SAVED_ROUTINE,
+    val routineSaved: Boolean = false
 ) {
     val reminderFailureCount: Int get() = insertedCount - reminderSuccessCount
 }
 
 object RoutineResultSpeechRenderer {
     fun render(result: RoutineCreationResult): String = when (result.category) {
-        RoutineCreationResultCategory.SUCCESS ->
-            "I created all ${counted(result.insertedCount, "task")} in the routine and scheduled every reminder."
-        RoutineCreationResultCategory.PARTIAL_REMINDER_FAILURE ->
-            "I created all ${counted(result.insertedCount, "task")}, but " +
-                "${counted(result.reminderFailureCount, "reminder")} could not be scheduled."
+        RoutineCreationResultCategory.SUCCESS -> successPrefix(result) +
+            " I scheduled every reminder."
+        RoutineCreationResultCategory.PARTIAL_REMINDER_FAILURE -> successPrefix(result) +
+            " However, ${counted(result.reminderFailureCount, "reminder")} could not be scheduled."
         RoutineCreationResultCategory.DATABASE_FAILURE ->
-            "I could not create the routine tasks. Nothing was saved."
+            if (result.origin == RoutineDraftOrigin.NEW_ROUTINE) {
+                "I could not save the routine or create its tasks. Nothing was saved."
+            } else {
+                "I could not create the occurrence tasks. Nothing was inserted, and the saved routine was unchanged."
+            }
         RoutineCreationResultCategory.CANCELLED ->
-            "Okay, I did not create the routine."
+            "Cancelled. Zero new routines were saved, zero new tasks were inserted, and zero reminders were scheduled."
     }
+
+    private fun successPrefix(result: RoutineCreationResult): String =
+        if (result.origin == RoutineDraftOrigin.NEW_ROUTINE) {
+            "I saved the routine and created ${counted(result.insertedCount, "occurrence task")}."
+        } else {
+            "I created ${counted(result.insertedCount, "occurrence task")} from the saved routine."
+        }
 
     internal fun counted(count: Int, singular: String): String =
         "$count ${if (count == 1) singular else "${singular}s"}"

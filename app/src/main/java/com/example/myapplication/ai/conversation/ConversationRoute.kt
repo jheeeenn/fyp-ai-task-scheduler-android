@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation
 enum class ConversationRoute {
     TASK_COMMAND,
     SMART_ROUTINE_BUILDER,
+    SAVED_ROUTINE_ACTION,
     DAILY_BRIEFING,
     CONTEXT_READ,
     CONTEXT_ACTION,

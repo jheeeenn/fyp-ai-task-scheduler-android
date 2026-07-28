@@ -139,11 +139,29 @@ object AgentResponseSchemas {
         )
     }
 
+    fun savedRoutineActionResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "saved_routine_action",
+            properties = JSONObject().apply {
+                put("action", stringEnum("LIST", "READ_DETAILS", "RUN", "DELETE", "UNKNOWN"))
+                put("routine_title", stringType())
+                put("date_text", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("action")
+                put("routine_title")
+                put("date_text")
+                put("confidence")
+            }
+        )
+    }
+
     fun conversationDecisionResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "DAILY_BRIEFING", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())
