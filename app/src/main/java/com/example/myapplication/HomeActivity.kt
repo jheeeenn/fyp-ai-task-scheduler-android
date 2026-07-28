@@ -147,6 +147,7 @@ import com.example.myapplication.ai.routine.followup.RoutineFollowUpDeliveryGuar
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticFallbackPolicy
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticOrchestrator
 import com.example.myapplication.ai.routine.saved.SavedRoutineAction
+import com.example.myapplication.ai.routine.saved.SavedRoutineActionConsistencyPolicy
 import com.example.myapplication.ai.routine.saved.SavedRoutineActionDecision
 import com.example.myapplication.ai.routine.saved.SavedRoutineActionSchemaException
 import com.example.myapplication.ai.routine.saved.SavedRoutineCandidate
@@ -2953,7 +2954,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             SavedRoutineAction.UNKNOWN,
             ""
         )
-        val decision = try {
+        val modelDecision = try {
             savedRoutineSemanticOrchestrator.interpret(normalizedRequest)
         } catch (e: CancellationException) {
             throw e
@@ -2989,6 +2990,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             )
             return
         }
+        val consistency = SavedRoutineActionConsistencyPolicy.reconcile(
+            userText = normalizedRequest,
+            modelDecision = modelDecision
+        )
+        val decision = consistency.decision
+        DebugDiagnosticLog.event(
+            "SAVED_ROUTINE_ACTION_CONSISTENCY",
+            "originalAction=${modelDecision.action.name}\n" +
+                "reconciledAction=${decision.action.name}\n" +
+                "reason=${consistency.reason}\n" +
+                "titleRecoveredFromLiteralText=" +
+                consistency.titleRecoveredFromLiteralText
+        )
         DebugDiagnosticLog.event(
             "SAVED_ROUTINE_ACTION_DECISION",
             "action=${decision.action.name}\n" +

@@ -64,11 +64,42 @@ class SavedRoutineActionParserTest {
         assertTrue(schema.contains("\"confidence\""))
         assertTrue(prompt.contains("use my morning routine tomorrow"))
         assertTrue(prompt.contains("start the study routine next Tuesday"))
-        assertTrue(prompt.contains("what routines do I have"))
+        assertTrue(prompt.contains("what routines have I saved"))
+        assertTrue(prompt.contains("list my routines"))
         assertTrue(prompt.contains("read my bedtime routine"))
+        assertTrue(prompt.contains("read my routine"))
+        assertTrue(prompt.contains("what is in my routine"))
+        assertTrue(prompt.contains("read the routine"))
+        assertTrue(prompt.contains("use my routine tomorrow"))
+        assertTrue(prompt.contains("delete my routine"))
+        assertTrue(prompt.contains("\"routine_title\":\"routine\""))
+        assertTrue(prompt.contains("semantic guidance, not an exhaustive phrase dictionary"))
+        assertTrue(prompt.contains("Do not convert an explicit singular read request into LIST"))
         assertTrue(prompt.contains("delete my medicine routine"))
         assertTrue(prompt.contains("Do not output Room IDs"))
         assertTrue(prompt.contains("There is no repair request"))
+        mapOf(
+            "what routines have I saved" to
+                """{"action":"LIST","routine_title":"","date_text":"","confidence":0.98}""",
+            "list my routines" to
+                """{"action":"LIST","routine_title":"","date_text":"","confidence":0.98}""",
+            "read my bedtime routine" to
+                """{"action":"READ_DETAILS","routine_title":"bedtime routine","date_text":"","confidence":0.98}""",
+            "read my routine" to
+                """{"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.98}""",
+            "what is in my routine" to
+                """{"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.98}""",
+            "read the routine" to
+                """{"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.97}""",
+            "use my routine tomorrow" to
+                """{"action":"RUN","routine_title":"routine","date_text":"tomorrow","confidence":0.98}""",
+            "delete my routine" to
+                """{"action":"DELETE","routine_title":"routine","date_text":"","confidence":0.98}"""
+        ).forEach { (userText, expectedJson) ->
+            assertTrue(
+                prompt.contains("User: $userText\n$expectedJson")
+            )
+        }
     }
 
     private fun json(

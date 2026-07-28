@@ -663,7 +663,13 @@ Perform exactly one bounded interpretation. There is no repair request.
 
 Return exactly these fields: action, routine_title, date_text, confidence.
 Allowed action values: LIST, READ_DETAILS, RUN, DELETE, UNKNOWN.
-LIST requires empty routine_title and date_text.
+LIST asks what routines exist, how many routines are saved, or asks to list or name all saved
+routines. LIST does not request the contents or steps of one routine. LIST requires empty
+routine_title and date_text.
+READ_DETAILS asks to read, describe, explain, or state the contents or steps of one saved
+routine. It remains READ_DETAILS when the literal requested title is only "routine".
+A singular possessive phrase such as "my routine" may supply the literal title "routine".
+Do not convert an explicit singular read request into LIST merely because its title is generic.
 READ_DETAILS and DELETE require the literal requested routine title and an empty date_text.
 RUN requires the literal requested routine title and may include the literal supplied date phrase.
 UNKNOWN requires empty routine_title and date_text.
@@ -671,17 +677,29 @@ Preserve literal date phrases such as "tomorrow", "4 August", and "next Tuesday"
 Do not calculate a final date, invent a title, invent a date, or add the word routine unless the
 user used it as part of the title.
 
-Illustrative examples:
+The following contrasts are semantic guidance, not an exhaustive phrase dictionary:
 User: use my morning routine tomorrow
 {"action":"RUN","routine_title":"morning routine","date_text":"tomorrow","confidence":0.98}
 User: start the study routine next Tuesday
 {"action":"RUN","routine_title":"study routine","date_text":"next Tuesday","confidence":0.98}
-User: what routines do I have
+User: use my routine tomorrow
+{"action":"RUN","routine_title":"routine","date_text":"tomorrow","confidence":0.98}
+User: what routines have I saved
+{"action":"LIST","routine_title":"","date_text":"","confidence":0.98}
+User: list my routines
 {"action":"LIST","routine_title":"","date_text":"","confidence":0.98}
 User: read my bedtime routine
 {"action":"READ_DETAILS","routine_title":"bedtime routine","date_text":"","confidence":0.98}
+User: read my routine
+{"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.98}
+User: what is in my routine
+{"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.98}
+User: read the routine
+{"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.97}
 User: delete my medicine routine
 {"action":"DELETE","routine_title":"medicine routine","date_text":"","confidence":0.98}
+User: delete my routine
+{"action":"DELETE","routine_title":"routine","date_text":"","confidence":0.98}
 
 Do not output Room IDs, task fields, database claims, speech, explanations, markdown, or fields
 other than the required four-field JSON object.

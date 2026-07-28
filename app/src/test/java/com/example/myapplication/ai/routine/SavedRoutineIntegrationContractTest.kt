@@ -1,5 +1,6 @@
 package com.example.myapplication.ai.routine
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,11 +84,37 @@ class SavedRoutineIntegrationContractTest {
             .substringBefore("private suspend fun listSavedRoutines")
 
         assertTrue(actionFlow.contains("savedRoutineSemanticOrchestrator.interpret(normalizedRequest)"))
+        assertEquals(
+            1,
+            Regex("savedRoutineSemanticOrchestrator\\.interpret").findAll(actionFlow).count()
+        )
         assertFalse(actionFlow.contains("processRepair"))
         assertFalse(actionFlow.contains("contains(\"list"))
         assertFalse(actionFlow.contains("contains(\"read"))
         assertFalse(actionFlow.contains("contains(\"run"))
         assertFalse(actionFlow.contains("contains(\"delete"))
+    }
+
+    @Test
+    fun consistencyPolicyRunsBeforeListDispatchAndDatabaseAccess() {
+        val actionFlow = home
+            .substringAfter("private suspend fun handleSavedRoutineAction")
+            .substringBefore("private suspend fun listSavedRoutines")
+        val reconcileIndex = actionFlow.indexOf(
+            "SavedRoutineActionConsistencyPolicy.reconcile"
+        )
+        val listBranchIndex = actionFlow.indexOf(
+            "SavedRoutineAction.LIST -> listSavedRoutines"
+        )
+
+        assertTrue(reconcileIndex >= 0)
+        assertTrue(listBranchIndex > reconcileIndex)
+        assertTrue(actionFlow.contains("\"SAVED_ROUTINE_ACTION_CONSISTENCY\""))
+        assertTrue(actionFlow.contains("originalAction="))
+        assertTrue(actionFlow.contains("reconciledAction="))
+        assertTrue(actionFlow.contains("reason="))
+        assertTrue(actionFlow.contains("titleRecoveredFromLiteralText="))
+        assertFalse(actionFlow.substring(0, listBranchIndex).contains("routineDao()"))
     }
 
     @Test
