@@ -119,6 +119,7 @@ class TaskQueryPresentationContractTest {
         put("recurrence", "")
         put("priority", "")
         put("query_presentation", "OVERVIEW")
+        put("breakdown_target_preference", "AUTO")
         put("confidence", 0.95)
         put("need_clarification", false)
         put("missing_fields", org.json.JSONArray())

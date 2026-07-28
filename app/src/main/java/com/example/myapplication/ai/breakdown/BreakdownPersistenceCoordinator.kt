@@ -24,6 +24,7 @@ fun interface BreakdownReminderScheduler {
 
 enum class BreakdownSaveResultCategory {
     SUCCESS,
+    PARTIAL_REMINDER_FAILURE,
     PARENT_CHANGED,
     ALREADY_HAS_SUBTASKS,
     FAILURE
@@ -122,8 +123,14 @@ class BreakdownPersistenceCoordinator(
             } else {
                 false
             }
+        val finalCategory =
+            if (mode == BreakdownDraftMode.NEW_ROOT && !reminderScheduled) {
+                BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE
+            } else {
+                BreakdownSaveResultCategory.SUCCESS
+            }
         return result(
-            BreakdownSaveResultCategory.SUCCESS,
+            finalCategory,
             mode,
             titles.size,
             transaction.insertedCount,
@@ -145,6 +152,8 @@ class BreakdownPersistenceCoordinator(
         )
         val diagnostic = when (category) {
             BreakdownSaveResultCategory.SUCCESS -> "SUCCESS"
+            BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE ->
+                "PARTIAL_REMINDER_FAILURE"
             BreakdownSaveResultCategory.PARENT_CHANGED -> "PARENT_CHANGED"
             BreakdownSaveResultCategory.ALREADY_HAS_SUBTASKS ->
                 "ALREADY_HAS_SUBTASKS"

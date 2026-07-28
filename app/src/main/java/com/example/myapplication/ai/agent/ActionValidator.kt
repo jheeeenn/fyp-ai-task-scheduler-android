@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 
 class TaskAgentValidationException(message: String) : Exception(message)
 
@@ -63,6 +64,12 @@ class ActionValidator {
             command.queryPresentation != TaskQueryPresentation.NONE
         ) {
             fail("${command.intent} requires queryPresentation=NONE")
+        }
+        if (
+            command.intent != AiIntent.BREAKDOWN_TASK.name &&
+            command.breakdownTargetPreference != BreakdownTargetPreference.AUTO
+        ) {
+            fail("${command.intent} requires breakdownTargetPreference=AUTO")
         }
 
         Log.d("TASK_AGENT_VALIDATE", "Accepted action=${command.intent}, confidence=${command.confidence}")

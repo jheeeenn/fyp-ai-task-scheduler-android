@@ -20,9 +20,13 @@ sealed class BreakdownTargetResolution {
 }
 object BreakdownTargetResolver {
     fun resolve(
+        preference: BreakdownTargetPreference,
         proposedParentTitle: String,
         storedTasks: List<TaskEntity>
     ): BreakdownTargetResolution {
+        if (preference == BreakdownTargetPreference.NEW_ROOT) {
+            return BreakdownTargetResolution.NewRoot
+        }
         val eligibleRoots = storedTasks.filter {
             it.parentTaskId == null && !it.isDone
         }

@@ -1,5 +1,7 @@
 package com.example.myapplication.ai
 
+import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
+
 data class AiParsedCommand(
     val intent: String,
     val taskTitle: String? = null,          // for create / breakdown / new title if needed
@@ -13,6 +15,7 @@ data class AiParsedCommand(
     val recurrence: String? = null,
     val priority: String? = null,
     val queryPresentation: TaskQueryPresentation = TaskQueryPresentation.NONE,
+    val breakdownTargetPreference: BreakdownTargetPreference = BreakdownTargetPreference.AUTO,
     val confidence: Float = 0f,
     val source: String = "local",
     val needsClarification: Boolean = false,

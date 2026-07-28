@@ -5,6 +5,7 @@ import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 
 class TaskActionNormalizer {
     fun normalize(response: TaskAgentResponse): AiParsedCommand {
@@ -17,6 +18,12 @@ class TaskActionNormalizer {
             ?: throw TaskAgentValidationException(
                 "Unsupported query_presentation '${response.query_presentation}'"
             )
+        val breakdownTargetPreference =
+            BreakdownTargetPreference.fromWireValue(response.breakdown_target_preference)
+                ?: throw TaskAgentValidationException(
+                    "Unsupported breakdown_target_preference " +
+                        "'${response.breakdown_target_preference}'"
+                )
         val queryPresentation = if (
             normalizedAction == AiIntent.QUERY_TASK.name &&
             parsedQueryPresentation == TaskQueryPresentation.NONE
@@ -80,6 +87,7 @@ class TaskActionNormalizer {
             recurrence = recurrence.takeIf { it.isNotBlank() },
             priority = priority.takeIf { it.isNotBlank() },
             queryPresentation = queryPresentation,
+            breakdownTargetPreference = breakdownTargetPreference,
             confidence = response.confidence.coerceIn(0f, 1f),
             source = "laptop_agent",
             needsClarification = response.need_clarification,
@@ -95,6 +103,7 @@ class TaskActionNormalizer {
             "intent=${command.intent}, title=${command.taskTitle}, target=${command.targetTaskTitle}, " +
                 "recurrence=${command.recurrence}, priority=${command.priority}, " +
                 "queryPresentation=${command.queryPresentation}, " +
+                "breakdownTargetPreference=${command.breakdownTargetPreference}, " +
                 "needsClarification=${command.needsClarification}, missingFields=${command.missingFields}, " +
                 "requiresConfirmation=$requiresConfirmation"
         )

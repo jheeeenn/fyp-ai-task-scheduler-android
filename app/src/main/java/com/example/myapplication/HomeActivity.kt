@@ -169,6 +169,7 @@ import com.example.myapplication.ai.breakdown.BreakdownPersistenceCoordinator
 import com.example.myapplication.ai.breakdown.BreakdownPersistenceStore
 import com.example.myapplication.ai.breakdown.BreakdownReminderScheduler
 import com.example.myapplication.ai.breakdown.BreakdownSaveResultCategory
+import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 import com.example.myapplication.ai.breakdown.BreakdownTargetResolution
 import com.example.myapplication.ai.breakdown.BreakdownTargetResolver
 import com.example.myapplication.ai.breakdown.PendingBreakdownDraft
@@ -1789,6 +1790,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             originalRequest = normalized,
                             dateText = aiResult.newDateText ?: aiResult.dateText,
                             timeText = aiResult.newTimeText ?: aiResult.timeText,
+                            targetPreference = aiResult.breakdownTargetPreference,
                             requestToken = requestToken
                         )
                     }
@@ -4292,6 +4294,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         originalRequest: String,
         dateText: String?,
         timeText: String?,
+        targetPreference: BreakdownTargetPreference,
         requestToken: AssistantRequestToken
     ) {
         if (!isAssistantRequestCurrent(requestToken)) return
@@ -4308,6 +4311,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
         val draft = (initial as BreakdownDraftUpdate.Resolving).draft
+        if (targetPreference == BreakdownTargetPreference.NEW_ROOT) {
+            logBreakdownTargetResolution(0, false, BreakdownDraftMode.NEW_ROOT)
+            when (val update = breakdownDraftController.applyNewRoot(draft.generation)) {
+                is BreakdownDraftUpdate.Review -> presentBreakdownReview(update.draft)
+                else -> handleBreakdownDraftFailure(update)
+            }
+            return
+        }
         val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
         val activeRoots = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
         if (!isAssistantRequestCurrent(requestToken) ||
@@ -4316,7 +4327,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
 
-        when (val resolution = BreakdownTargetResolver.resolve(title, activeRoots)) {
+        when (
+            val resolution = BreakdownTargetResolver.resolve(
+                targetPreference,
+                title,
+                activeRoots
+            )
+        ) {
             is BreakdownTargetResolution.ExistingRoot -> {
                 logBreakdownTargetResolution(1, false, BreakdownDraftMode.EXISTING_ROOT)
                 val hasSubtasks = withContext(Dispatchers.IO) {
@@ -4968,7 +4985,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 return@launch
             }
             homeFollowUpContext = HomeFollowUpContext.NONE
-            if (result.category == BreakdownSaveResultCategory.SUCCESS) {
+            if (
+                result.category == BreakdownSaveResultCategory.SUCCESS ||
+                result.category == BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE
+            ) {
                 refreshOverview()
             }
             if (!assistantSession.assistantSessionActive) return@launch
@@ -4981,6 +5001,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             "${result.insertedCount} subtasks for " +
                             "${pendingSave.draft.dateText} at ${pendingSave.draft.timeText}."
                     }
+                BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE ->
+                    "I created ${pendingSave.draft.parentTitle} with " +
+                        "${result.insertedCount} subtasks, but I could not schedule its reminder."
                 BreakdownSaveResultCategory.PARENT_CHANGED ->
                     "That task changed before I could save the breakdown, so I inserted nothing."
                 BreakdownSaveResultCategory.ALREADY_HAS_SUBTASKS ->
@@ -4991,10 +5014,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             speakObservation(
                 ExecutionObservation(
                     operation = ExecutionOperation.BREAKDOWN_TASK,
-                    outcome = if (result.category == BreakdownSaveResultCategory.SUCCESS) {
-                        ExecutionOutcome.SUCCESS
-                    } else {
-                        ExecutionOutcome.FAILURE
+                    outcome = when (result.category) {
+                        BreakdownSaveResultCategory.SUCCESS -> ExecutionOutcome.SUCCESS
+                        BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE ->
+                            ExecutionOutcome.PARTIAL_SUCCESS
+                        else -> ExecutionOutcome.FAILURE
                     },
                     taskTitle = pendingSave.draft.parentTitle,
                     taskCount = result.insertedCount,

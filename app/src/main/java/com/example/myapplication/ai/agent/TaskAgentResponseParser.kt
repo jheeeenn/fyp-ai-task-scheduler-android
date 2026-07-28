@@ -27,8 +27,8 @@ class TaskAgentResponseParser {
         listOf(
             "natural_response", "action", "task_title", "target_task_title", "date", "time",
             "target_date", "target_time", "new_date", "new_time", "recurrence", "priority",
-            "query_presentation", "confidence", "need_clarification", "missing_fields",
-            "requires_confirmation", "plan"
+            "query_presentation", "breakdown_target_preference", "confidence",
+            "need_clarification", "missing_fields", "requires_confirmation", "plan"
         ).forEach { requireField(json, it) }
 
         val response = TaskAgentResponse(
@@ -45,6 +45,8 @@ class TaskAgentResponseParser {
             recurrence = json.optString("recurrence", ""),
             priority = json.optString("priority", ""),
             query_presentation = json.optString("query_presentation", ""),
+            breakdown_target_preference =
+                json.optString("breakdown_target_preference", ""),
             confidence = json.optDouble("confidence", 0.0).toFloat(),
             need_clarification = json.optBoolean("need_clarification", false),
             missing_fields = json.optJSONArray("missing_fields").toStringList(),

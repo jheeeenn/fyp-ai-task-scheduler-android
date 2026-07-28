@@ -100,6 +100,38 @@ class BreakdownPersistenceCoordinatorTest {
         }
 
     @Test
+    fun committedNewRootWithFailedReminderReturnsPartialSuccess() =
+        runBlocking {
+            val insertedParent = TaskEntity(
+                id = 88,
+                title = "Prepare presentation",
+                dueDate = "31/07/2026",
+                dueTime = "3:00 PM"
+            )
+            val coordinator = BreakdownPersistenceCoordinator(
+                store = fakeStore(
+                    newRoot = { _, titles ->
+                        BreakdownTransactionResult(
+                            BreakdownTransactionStatus.SUCCESS,
+                            insertedParent,
+                            titles.size
+                        )
+                    }
+                ),
+                reminderScheduler = BreakdownReminderScheduler { false }
+            )
+
+            val result = coordinator.persist(newSave())
+
+            assertEquals(
+                BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE,
+                result.category
+            )
+            assertEquals(2, result.insertedCount)
+            assertFalse(result.reminderScheduled)
+        }
+
+    @Test
     fun parentChangeAndExistingChildrenReportZeroInsertionsAndNoReminder() =
         runBlocking {
             listOf(

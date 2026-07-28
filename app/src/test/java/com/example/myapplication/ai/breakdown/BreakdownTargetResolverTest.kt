@@ -12,6 +12,7 @@ class BreakdownTargetResolverTest {
         val root = task(10, "Final year project")
 
         val result = BreakdownTargetResolver.resolve(
+            BreakdownTargetPreference.AUTO,
             "final year project",
             listOf(root)
         )
@@ -27,6 +28,7 @@ class BreakdownTargetResolverTest {
         assertEquals(
             BreakdownTargetResolution.NewRoot,
             BreakdownTargetResolver.resolve(
+                BreakdownTargetPreference.AUTO,
                 "final year project",
                 listOf(child, completedRoot)
             )
@@ -38,6 +40,7 @@ class BreakdownTargetResolverTest {
         val report = task(1, "Final year project report")
         val presentation = task(2, "Final year project presentation")
         val result = BreakdownTargetResolver.resolve(
+            BreakdownTargetPreference.AUTO,
             "final year project",
             listOf(report, presentation)
         )
@@ -59,6 +62,30 @@ class BreakdownTargetResolverTest {
                 "final year project",
                 listOf(report, presentation)
             )
+        )
+    }
+
+    @Test
+    fun explicitNewRootPreferenceBypassesAnExactExistingTitleMatch() {
+        val existing = task(10, "Presentation")
+
+        assertEquals(
+            BreakdownTargetResolution.NewRoot,
+            BreakdownTargetResolver.resolve(
+                BreakdownTargetPreference.NEW_ROOT,
+                "Presentation",
+                listOf(existing)
+            )
+        )
+        assertEquals(
+            existing,
+            (
+                BreakdownTargetResolver.resolve(
+                    BreakdownTargetPreference.AUTO,
+                    "Presentation",
+                    listOf(existing)
+                ) as BreakdownTargetResolution.ExistingRoot
+                ).task
         )
     }
 

@@ -22,6 +22,10 @@ class BreakdownIntegrationContractTest {
         assertTrue(resolution.contains("dao.getRootActiveTasks()"))
         assertTrue(resolution.contains("BreakdownTargetResolver.resolve"))
         assertTrue(resolution.contains("dao.getSubtasks"))
+        assertTrue(
+            resolution.indexOf("targetPreference == BreakdownTargetPreference.NEW_ROOT") <
+                resolution.indexOf("dao.getRootActiveTasks()")
+        )
         assertFalse(source.contains("pendingBreakdownTitle"))
         assertFalse(source.contains("pendingBreakdownPlan"))
         assertFalse(source.contains("private fun startBreakdownConfirmation"))
@@ -74,6 +78,9 @@ class BreakdownIntegrationContractTest {
         assertFalse(save.contains("plan.forEach"))
         assertTrue(save.contains("completeSaving"))
         assertTrue(save.contains("assistantSession.assistantSessionActive"))
+        assertTrue(save.contains("BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE"))
+        assertTrue(save.contains("but I could not schedule its reminder."))
+        assertTrue(save.contains("ExecutionOutcome.PARTIAL_SUCCESS"))
     }
 
     @Test
@@ -102,6 +109,8 @@ class BreakdownIntegrationContractTest {
         assertFalse(followUp.contains("contains("))
         assertFalse(source.contains("normalized.contains(\"create them\")"))
         assertFalse(source.contains("normalized.contains(\"add them\")"))
+        assertFalse(source.contains("normalized.contains(\"create new\")"))
+        assertFalse(source.contains("Regex(\"create"))
     }
 
     @Test

@@ -7,6 +7,16 @@ enum class BreakdownDraftMode {
     NEW_ROOT
 }
 
+enum class BreakdownTargetPreference {
+    AUTO,
+    NEW_ROOT;
+
+    companion object {
+        fun fromWireValue(value: String): BreakdownTargetPreference? =
+            entries.firstOrNull { it.name == value.trim() }
+    }
+}
+
 enum class BreakdownDraftState {
     NONE,
     RESOLVING_TARGET,
