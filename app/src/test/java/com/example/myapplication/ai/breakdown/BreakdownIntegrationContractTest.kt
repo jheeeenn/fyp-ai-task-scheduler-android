@@ -84,6 +84,23 @@ class BreakdownIntegrationContractTest {
     }
 
     @Test
+    fun newRootProposalIsNeutralAboutExistingTaskSearch() {
+        val proposalBuilder = homeSource()
+            .substringAfter("private fun buildBreakdownProposalSpeech")
+            .substringBefore("private fun")
+        val newRootSpeech = proposalBuilder
+            .substringAfter("BreakdownDraftMode.NEW_ROOT ->")
+            .substringBefore("null ->")
+            .lowercase()
+
+        assertTrue(newRootSpeech.contains("i propose creating"))
+        assertFalse(newRootSpeech.contains("did not find"))
+        assertFalse(newRootSpeech.contains("existing task"))
+        assertFalse(newRootSpeech.contains("searched"))
+        assertFalse(newRootSpeech.contains("queried"))
+    }
+
+    @Test
     fun modelContractsContainNoPrivateTaskIdentityAndNoPhraseDictionaryParsing() {
         val prompt = LaptopAgentClient.BREAKDOWN_FOLLOW_UP_SYSTEM_PROMPT
         val context = BreakdownFollowUpContext(

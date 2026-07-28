@@ -4455,7 +4455,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             BreakdownDraftMode.EXISTING_ROOT ->
                 "I found your existing task ${draft.parentTitle}. I propose adding these subtasks."
             BreakdownDraftMode.NEW_ROOT ->
-                "I did not find an existing task, so I propose creating ${draft.parentTitle} with these subtasks."
+                "I propose creating ${draft.parentTitle} with these subtasks."
             null -> "I prepared a breakdown for ${draft.parentTitle}."
         }
         val planSpeech = draft.proposedSubtasks.mapIndexed { index, item ->
