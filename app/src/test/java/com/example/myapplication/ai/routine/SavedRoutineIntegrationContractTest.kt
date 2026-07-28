@@ -30,6 +30,32 @@ class SavedRoutineIntegrationContractTest {
     }
 
     @Test
+    fun savedRoutineDateOnlyRecoveryStaysInDraftFlowUntilExplicitConfirmation() {
+        val followUp = home
+            .substringAfter("private fun handleRoutineFollowUp")
+            .substringBefore("private fun launchRoutineSemanticFollowUp")
+        val sharedDate = followUp
+            .substringAfter("RoutineDraftState.COLLECTING_SHARED_DATE ->")
+            .substringBefore("RoutineDraftState.COLLECTING_STEP_TIME ->")
+        val resolvedMove = home
+            .substringAfter("private fun applyResolvedRoutineMove")
+            .substringBefore("private fun speakStateAppropriateRoutineClarification")
+        val confirm = resolvedMove
+            .substringAfter("RoutineFollowUpMove.Confirm ->")
+            .substringBefore("RoutineFollowUpMove.Reject")
+        val provideDate = resolvedMove
+            .substringAfter("is RoutineFollowUpMove.ProvideSharedDate ->")
+            .substringBefore("is RoutineFollowUpMove.ProvideStepTime ->")
+
+        assertTrue(sharedDate.contains("routineDraftController.provideSharedDate(normalized)"))
+        assertFalse(followUp.contains("savedRoutineSemanticOrchestrator.interpret"))
+        assertTrue(confirm.contains("RoutineDraftState.WAITING_FOR_CONFIRMATION"))
+        assertTrue(confirm.contains("savePendingRoutine()"))
+        assertFalse(provideDate.contains("savePendingRoutine()"))
+        assertFalse(provideDate.contains("insertSavedRoutineOccurrence"))
+    }
+
+    @Test
     fun deleteIsExplicitlyConfirmedAndRepeatedConfirmationCannotDeleteTwice() {
         val selected = home
             .substringAfter("private suspend fun executeSelectedSavedRoutine")

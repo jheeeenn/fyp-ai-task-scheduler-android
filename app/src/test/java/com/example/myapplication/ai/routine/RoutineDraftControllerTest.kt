@@ -510,6 +510,59 @@ class RoutineDraftControllerTest {
     }
 
     @Test
+    fun invalidInitialSavedRoutineDateRetainsTrustedDraftAndRecoversWithDateOnlyReply() {
+        val savedRoutine = savedRoutine()
+        val controller = controller()
+
+        val rejected = controller.startFromSavedRoutine(
+            savedRoutine,
+            "next tueday"
+        )
+
+        assertEquals(
+            RoutineDraftIssue.INVALID_DATE,
+            (rejected as RoutineDraftUpdate.Rejected).reason
+        )
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, controller.state)
+        val retained = requireNotNull(controller.draft)
+        assertEquals(RoutineDraftOrigin.SAVED_ROUTINE, retained.origin)
+        assertEquals(savedRoutine.routine.id, retained.savedRoutineId)
+        assertEquals(savedRoutine.routine.title, retained.title)
+        assertEquals(
+            savedRoutine.steps.map(RoutineStepEntity::title),
+            retained.steps.map(PendingRoutineStep::title)
+        )
+        assertEquals(
+            listOf("8:00 AM", "8:15 AM", "9:00 AM"),
+            retained.steps.map(PendingRoutineStep::resolvedTime)
+        )
+        assertTrue(retained.steps.all {
+            it.originalDateText == null &&
+                it.resolvedDate == null &&
+                it.dateClassification == RoutineDateClassification.MISSING &&
+                it.originalDateConstraint == null
+        })
+        assertNull(controller.markSaving())
+
+        val review = controller.provideSharedDate("next Tuesday")
+
+        assertTrue(review is RoutineDraftUpdate.Review)
+        assertEquals(RoutineDraftState.WAITING_FOR_CONFIRMATION, controller.state)
+        val recovered = requireNotNull(controller.draft)
+        assertEquals(RoutineDraftOrigin.SAVED_ROUTINE, recovered.origin)
+        assertEquals(savedRoutine.routine.id, recovered.savedRoutineId)
+        assertEquals(retained.title, recovered.title)
+        assertEquals(
+            retained.steps.map(PendingRoutineStep::title),
+            recovered.steps.map(PendingRoutineStep::title)
+        )
+        assertEquals(
+            retained.steps.map(PendingRoutineStep::resolvedTime),
+            recovered.steps.map(PendingRoutineStep::resolvedTime)
+        )
+    }
+
+    @Test
     fun malformedSavedRoutineDateReportsInvalidDateSeparatelyFromStoredTime() {
         val invalidDateController = controller()
         assertEquals(
@@ -533,6 +586,8 @@ class RoutineDraftControllerTest {
                 "tomorrow"
             ) as RoutineDraftUpdate.Rejected).reason
         )
+        assertEquals(RoutineDraftState.NONE, corruptTimeController.state)
+        assertNull(corruptTimeController.draft)
     }
 
     @Test

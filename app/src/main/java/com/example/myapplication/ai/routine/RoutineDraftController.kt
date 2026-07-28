@@ -285,21 +285,22 @@ class RoutineDraftController(
         }
         val suppliedDate = suppliedDateText.trim()
         val dateResult = classifyDate(suppliedDate, base)
-        if (dateResult.classification == RoutineDateClassification.INVALID) {
-            reset()
-            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
-        }
+        val initialDateIsInvalid =
+            dateResult.classification == RoutineDateClassification.INVALID
+        val retainedDateResult = dateResult.takeUnless { initialDateIsInvalid }
         draft = PendingRoutineDraft(
             title = title,
             steps = orderedSteps.mapIndexed { index, step ->
                 PendingRoutineStep(
                     title = step.title.trim(),
-                    originalDateText = suppliedDate.takeIf(String::isNotEmpty),
+                    originalDateText = suppliedDate
+                        .takeIf { retainedDateResult != null && it.isNotEmpty() },
                     originalTimeText = step.dueTime,
-                    resolvedDate = dateResult.resolvedDate,
+                    resolvedDate = retainedDateResult?.resolvedDate,
                     resolvedTime = requireNotNull(resolvedTimes[index]),
-                    dateClassification = dateResult.classification,
-                    originalDateConstraint = dateResult.constraint
+                    dateClassification = retainedDateResult?.classification
+                        ?: RoutineDateClassification.MISSING,
+                    originalDateConstraint = retainedDateResult?.constraint
                 )
             },
             revision = 1L,
@@ -310,6 +311,10 @@ class RoutineDraftController(
             "ROUTINE_DRAFT_ORIGIN",
             "origin=SAVED_ROUTINE\nloadedStepCount=${orderedSteps.size}"
         )
+        if (initialDateIsInvalid) {
+            state = RoutineDraftState.COLLECTING_SHARED_DATE
+            return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
+        }
         return advance()
     }
 
