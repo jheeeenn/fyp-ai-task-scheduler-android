@@ -139,6 +139,10 @@ import com.example.myapplication.ai.routine.RoutineReminderScheduler
 import com.example.myapplication.ai.routine.RoutineResultSpeechRenderer
 import com.example.myapplication.ai.routine.RoutineTaskBatchCreator
 import com.example.myapplication.ai.routine.RoutineTaskStore
+import com.example.myapplication.ai.routine.followup.RoutineFollowUpAgentContext
+import com.example.myapplication.ai.routine.followup.RoutineFollowUpDeliveryGuard
+import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticFallbackPolicy
+import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticOrchestrator
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
@@ -147,6 +151,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var conversationOrchestrator: ConversationOrchestrator
+    private lateinit var routineFollowUpSemanticOrchestrator:
+        RoutineFollowUpSemanticOrchestrator
     private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()
 
 
@@ -198,6 +204,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var assistantRequestGeneration: Long = 0
     private var assistantRequestActive: Boolean = false
     private val routineDraftController = RoutineDraftController()
+    private val routineStepTimeClarification =
+        "Please provide one exact clock time for that step."
 
     //for delete confirmation when the task intent is 'delete'
     private var pendingDeleteTaskId: Long? = null
@@ -248,9 +256,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             TaskActionNormalizer(),
             ActionValidator()
         )
+        val conversationAgentClient = ConversationAgentClient(this)
         conversationOrchestrator = ConversationOrchestrator(
-            ConversationAgentClient(this),
+            conversationAgentClient,
             ConversationDecisionParser()
+        )
+        routineFollowUpSemanticOrchestrator = RoutineFollowUpSemanticOrchestrator(
+            conversationAgentClient
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
 
@@ -2944,9 +2956,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         requestToken: AssistantRequestToken
     ): Boolean {
         val stateBefore = routineDraftController.state
-        if (routineDraftController.state == RoutineDraftState.SAVING) {
-            val savingMove = RoutineFollowUpInterpreter.interpret(normalized)
-            logRoutineFollowUpDebug(stateBefore, normalized, savingMove)
+        if (stateBefore == RoutineDraftState.NONE) return false
+        val localMove = routineFollowUpSemanticOrchestrator.proposeLocal(normalized)
+        if (stateBefore == RoutineDraftState.SAVING) {
+            logRoutineMoveLocal(stateBefore, localMove, "NOT_APPLICABLE_SAVING")
+            logRoutineFollowUpDebug(stateBefore, normalized, localMove)
             if (isAssistantRequestCurrent(requestToken)) {
                 speakRoutineResponse(
                     RoutineResponseKind.ALREADY_SAVING,
@@ -2957,107 +2971,294 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             logRoutineFollowUpResult("SAVING")
             return true
         }
-        val move = RoutineFollowUpInterpreter.interpret(normalized)
-        logRoutineFollowUpDebug(stateBefore, normalized, move)
-        if (move is RoutineFollowUpMove.Cancel || move is RoutineFollowUpMove.Reject) {
+
+        logRoutineFollowUpDebug(stateBefore, normalized, localMove)
+        if (localMove is RoutineFollowUpMove.Cancel ||
+            localMove is RoutineFollowUpMove.Reject
+        ) {
+            logRoutineMoveLocal(stateBefore, localMove, "CONTROL_ACCEPTED")
             cancelPendingRoutine()
             logRoutineFollowUpResult("CANCELLED")
             return true
         }
-        return when (routineDraftController.state) {
+
+        val immediate = routineFollowUpSemanticOrchestrator.resolveImmediate(
+            localMove = localMove,
+            state = stateBefore,
+            draft = routineDraftController.draft
+        )
+        return when (stateBefore) {
             RoutineDraftState.NONE -> false
             RoutineDraftState.EXTRACTING -> {
-                speakRoutineResponse(
-                    RoutineResponseKind.REVISION_HELP,
-                    "I am still preparing that routine. You can cancel it if needed.",
-                    listenAgain = true
-                )
-                logRoutineFollowUpResult("UNKNOWN")
+                if (immediate != null) {
+                    logRoutineMoveLocal(stateBefore, localMove, "CONTROL_ACCEPTED")
+                    applyResolvedRoutineMove(immediate.move, requestToken)
+                } else {
+                    logRoutineMoveLocal(stateBefore, localMove, "SEMANTIC_REQUIRED")
+                    launchRoutineSemanticFollowUp(
+                        normalized,
+                        requestToken,
+                        stateBefore,
+                        localMove
+                    )
+                }
                 true
             }
             RoutineDraftState.COLLECTING_SHARED_DATE -> {
-                val outcome = handleRoutineDraftUpdate(
-                    routineDraftController.provideSharedDate(normalized),
-                    invalidSpeech = "Please provide one exact date that satisfies the routine's date constraints.",
-                    requestToken = requestToken
-                )
-                logRoutineFollowUpResult(outcome.result, outcome.issue)
+                if (immediate != null) {
+                    logRoutineMoveLocal(stateBefore, localMove, "CONTROL_ACCEPTED")
+                    applyResolvedRoutineMove(immediate.move, requestToken)
+                    return true
+                }
+                val rawUpdate = routineDraftController.provideSharedDate(normalized)
+                val shouldUseSemantic =
+                    RoutineFollowUpSemanticFallbackPolicy.afterRawSharedDate(
+                        rawUpdate,
+                        routineDraftController.state
+                    )
+                if (shouldUseSemantic) {
+                    logRoutineMoveLocal(stateBefore, localMove, "INVALID_DATE")
+                    launchRoutineSemanticFollowUp(
+                        normalized,
+                        requestToken,
+                        stateBefore,
+                        localMove
+                    )
+                } else {
+                    logRoutineMoveLocal(stateBefore, localMove, "RAW_DATE_ACCEPTED")
+                    val outcome = handleRoutineDraftUpdate(
+                        rawUpdate,
+                        invalidSpeech = sharedDateInvalidSpeech(),
+                        requestToken = requestToken
+                    )
+                    logRoutineFollowUpResult(outcome.result, outcome.issue)
+                }
                 true
             }
             RoutineDraftState.COLLECTING_STEP_TIME -> {
-                val outcome = handleRoutineDraftUpdate(
-                    routineDraftController.provideNextStepTime(normalized),
-                    invalidSpeech = "Please provide one exact clock time for that step.",
-                    requestToken = requestToken
-                )
-                logRoutineFollowUpResult(outcome.result, outcome.issue)
+                if (immediate != null) {
+                    logRoutineMoveLocal(stateBefore, localMove, "CONTROL_ACCEPTED")
+                    applyResolvedRoutineMove(immediate.move, requestToken)
+                    return true
+                }
+                val rawUpdate = routineDraftController.provideNextStepTime(normalized)
+                val shouldUseSemantic =
+                    RoutineFollowUpSemanticFallbackPolicy.afterRawStepTime(
+                        rawUpdate,
+                        routineDraftController.state
+                    )
+                if (shouldUseSemantic) {
+                    logRoutineMoveLocal(stateBefore, localMove, "INVALID_TIME")
+                    launchRoutineSemanticFollowUp(
+                        normalized,
+                        requestToken,
+                        stateBefore,
+                        localMove
+                    )
+                } else {
+                    logRoutineMoveLocal(stateBefore, localMove, "RAW_TIME_ACCEPTED")
+                    val outcome = handleRoutineDraftUpdate(
+                        rawUpdate,
+                        invalidSpeech = routineStepTimeClarification,
+                        requestToken = requestToken
+                    )
+                    logRoutineFollowUpResult(outcome.result, outcome.issue)
+                }
                 true
             }
             RoutineDraftState.WAITING_FOR_CONFIRMATION -> {
-                val outcome = when (move) {
-                    RoutineFollowUpMove.Confirm -> savePendingRoutine().let {
-                        RoutineFollowUpOutcome("SAVING")
-                    }
-                    RoutineFollowUpMove.Repeat -> {
-                        val proposal = routineDraftController.authoritativeProposal
-                        if (proposal != null) {
-                            speakRoutineResponse(
-                                RoutineResponseKind.PROPOSAL,
-                                proposal,
-                                listenAgain = true
-                            )
-                        }
-                        RoutineFollowUpOutcome("ACCEPTED")
-                    }
-                    is RoutineFollowUpMove.ChangeStepTime -> {
-                        handleRoutineDraftUpdate(
-                            routineDraftController.changeStepTime(
-                                move.stepIndex,
-                                move.value
-                            ),
-                            invalidSpeech = "Please select a valid routine step and give one exact time.",
-                            requestToken = requestToken
-                        )
-                    }
-                    is RoutineFollowUpMove.ChangeStepTitle -> {
-                        handleRoutineDraftUpdate(
-                            routineDraftController.changeStepTitle(
-                                move.stepIndex,
-                                move.value
-                            ),
-                            invalidSpeech = "Please select a valid routine step and give a non-empty title.",
-                            requestToken = requestToken
-                        )
-                    }
-                    is RoutineFollowUpMove.ChangeSharedDate -> {
-                        handleRoutineDraftUpdate(
-                            routineDraftController.changeSharedDate(move.value),
-                            invalidSpeech = "Please provide one exact future date for the routine.",
-                            requestToken = requestToken
-                        )
-                    }
-                    RoutineFollowUpMove.StructuralChange -> {
-                        speakRoutineResponse(
-                            RoutineResponseKind.REVISION_HELP,
-                            "To add or remove routine steps, cancel this draft and start a new routine request.",
-                            listenAgain = true
-                        )
-                        RoutineFollowUpOutcome("REJECTED")
-                    }
-                    else -> {
-                        speakRoutineResponse(
-                            RoutineResponseKind.REVISION_HELP,
-                            "Say yes to create these tasks, no to reject them, repeat the routine, or change one step's time or title.",
-                            listenAgain = true
-                        )
-                        RoutineFollowUpOutcome("UNKNOWN")
-                    }
+                if (immediate != null) {
+                    logRoutineMoveLocal(stateBefore, localMove, "CONTROL_ACCEPTED")
+                    applyResolvedRoutineMove(immediate.move, requestToken)
+                } else {
+                    logRoutineMoveLocal(stateBefore, localMove, "SEMANTIC_REQUIRED")
+                    launchRoutineSemanticFollowUp(
+                        normalized,
+                        requestToken,
+                        stateBefore,
+                        localMove
+                    )
                 }
-                logRoutineFollowUpResult(outcome.result, outcome.issue)
                 true
             }
             RoutineDraftState.SAVING -> true
         }
+    }
+
+    private fun launchRoutineSemanticFollowUp(
+        normalized: String,
+        requestToken: AssistantRequestToken,
+        capturedState: RoutineDraftState,
+        localMove: RoutineFollowUpMove
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
+        val context = RoutineFollowUpAgentContext.capture(
+            state = capturedState,
+            draft = routineDraftController.draft,
+            localMove = localMove
+        )
+        val capturedRevision = context.revision
+        lifecycleScope.launch {
+            if (!isAssistantRequestCurrent(requestToken)) return@launch
+            val resolution = try {
+                routineFollowUpSemanticOrchestrator.resolveSemantic(
+                    userText = normalized,
+                    context = context,
+                    localMove = localMove
+                )
+            } catch (e: CancellationException) {
+                throw e
+            }
+            val requestCurrent = isAssistantRequestCurrent(requestToken)
+            val currentState = routineDraftController.state
+            val currentRevision = routineDraftController.draft?.revision ?: 0L
+            val deliver = RoutineFollowUpDeliveryGuard.shouldDeliver(
+                capturedState = capturedState,
+                currentState = currentState,
+                capturedRevision = capturedRevision,
+                currentRevision = currentRevision,
+                requestCurrent = requestCurrent
+            )
+            DebugDiagnosticLog.event(
+                "ROUTINE_MOVE_DELIVERY_GUARD",
+                "capturedState=${capturedState.name}\n" +
+                    "currentState=${currentState.name}\n" +
+                    "capturedRevision=$capturedRevision\n" +
+                    "currentRevision=$currentRevision\n" +
+                    "requestCurrent=$requestCurrent\n" +
+                    "action=${if (deliver) "DELIVER" else "DROP_STALE"}"
+            )
+            if (!deliver) return@launch
+            applyResolvedRoutineMove(resolution.move, requestToken)
+        }
+    }
+
+    private fun applyResolvedRoutineMove(
+        move: RoutineFollowUpMove,
+        requestToken: AssistantRequestToken
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
+        val outcome = when (move) {
+            RoutineFollowUpMove.Confirm -> {
+                if (routineDraftController.state == RoutineDraftState.WAITING_FOR_CONFIRMATION) {
+                    savePendingRoutine()
+                    RoutineFollowUpOutcome("SAVING")
+                } else {
+                    speakStateAppropriateRoutineClarification()
+                    RoutineFollowUpOutcome("UNKNOWN")
+                }
+            }
+            RoutineFollowUpMove.Reject,
+            RoutineFollowUpMove.Cancel -> {
+                cancelPendingRoutine()
+                RoutineFollowUpOutcome("CANCELLED")
+            }
+            RoutineFollowUpMove.Repeat -> {
+                val proposal = routineDraftController.authoritativeProposal
+                if (proposal != null &&
+                    routineDraftController.state == RoutineDraftState.WAITING_FOR_CONFIRMATION
+                ) {
+                    speakRoutineResponse(
+                        RoutineResponseKind.PROPOSAL,
+                        proposal,
+                        listenAgain = true
+                    )
+                    RoutineFollowUpOutcome("ACCEPTED")
+                } else {
+                    speakStateAppropriateRoutineClarification()
+                    RoutineFollowUpOutcome("UNKNOWN")
+                }
+            }
+            is RoutineFollowUpMove.ProvideSharedDate -> handleRoutineDraftUpdate(
+                routineDraftController.provideSharedDate(move.value),
+                invalidSpeech = sharedDateInvalidSpeech(),
+                requestToken = requestToken
+            )
+            is RoutineFollowUpMove.ProvideStepTime -> handleRoutineDraftUpdate(
+                routineDraftController.provideNextStepTime(move.value),
+                invalidSpeech = routineStepTimeClarification,
+                requestToken = requestToken
+            )
+            is RoutineFollowUpMove.ChangeStepTime -> handleRoutineDraftUpdate(
+                routineDraftController.changeStepTime(move.stepIndex, move.value),
+                invalidSpeech =
+                    "Please select a valid routine step and give one exact time.",
+                requestToken = requestToken
+            )
+            is RoutineFollowUpMove.ChangeStepTitle -> handleRoutineDraftUpdate(
+                routineDraftController.changeStepTitle(move.stepIndex, move.value),
+                invalidSpeech =
+                    "Please select a valid routine step and give a non-empty title.",
+                requestToken = requestToken
+            )
+            is RoutineFollowUpMove.ChangeSharedDate -> handleRoutineDraftUpdate(
+                routineDraftController.changeSharedDate(move.value),
+                invalidSpeech = "Please provide one exact future date for the routine.",
+                requestToken = requestToken
+            )
+            RoutineFollowUpMove.StructuralChange -> {
+                speakRoutineResponse(
+                    RoutineResponseKind.REVISION_HELP,
+                    "To add or remove routine steps, cancel this draft and start a new routine request.",
+                    listenAgain = true
+                )
+                RoutineFollowUpOutcome("REJECTED")
+            }
+            RoutineFollowUpMove.RequestHelp,
+            RoutineFollowUpMove.Unknown -> {
+                speakStateAppropriateRoutineClarification()
+                RoutineFollowUpOutcome("UNKNOWN")
+            }
+        }
+        logRoutineFollowUpResult(outcome.result, outcome.issue)
+    }
+
+    private fun speakStateAppropriateRoutineClarification() {
+        val (kind, speech) = when (routineDraftController.state) {
+            RoutineDraftState.EXTRACTING ->
+                RoutineResponseKind.REVISION_HELP to
+                    "I am still preparing that routine. You can cancel it if needed."
+            RoutineDraftState.COLLECTING_SHARED_DATE ->
+                RoutineResponseKind.INVALID_DATE to sharedDateInvalidSpeech()
+            RoutineDraftState.COLLECTING_STEP_TIME ->
+                RoutineResponseKind.INVALID_TIME to routineStepTimeClarification
+            RoutineDraftState.WAITING_FOR_CONFIRMATION ->
+                RoutineResponseKind.REVISION_HELP to
+                    "Say yes to create these tasks, no to reject them, repeat the routine, or change one step's time or title."
+            RoutineDraftState.SAVING ->
+                RoutineResponseKind.ALREADY_SAVING to
+                    "The confirmed routine is already being saved."
+            RoutineDraftState.NONE ->
+                RoutineResponseKind.REVISION_HELP to
+                    "Please start the routine request again."
+        }
+        speakRoutineResponse(kind, speech, listenAgain = true)
+    }
+
+    private fun sharedDateInvalidSpeech(): String {
+        val hasConstrainedDate = routineDraftController.draft?.steps.orEmpty().any {
+            it.resolvedDate == null &&
+                it.dateClassification ==
+                com.example.myapplication.ai.routine.RoutineDateClassification.CONSTRAINED
+        }
+        return if (hasConstrainedDate) {
+            "Please provide one exact date that satisfies the routine's date constraints."
+        } else {
+            "Please provide one exact future date, such as 4 August 2026."
+        }
+    }
+
+    private fun logRoutineMoveLocal(
+        state: RoutineDraftState,
+        localMove: RoutineFollowUpMove,
+        rawValidationResult: String
+    ) {
+        DebugDiagnosticLog.event(
+            "ROUTINE_MOVE_LOCAL",
+            "state=${state.name}\n" +
+                "localMove=${routineMoveName(localMove)}\n" +
+                "rawValidationResult=$rawValidationResult"
+        )
     }
 
     private fun handleRoutineDraftUpdate(
@@ -3244,6 +3445,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             RoutineFollowUpMove.Reject -> Triple("REJECT", "", "")
             RoutineFollowUpMove.Cancel -> Triple("CANCEL", "", "")
             RoutineFollowUpMove.Repeat -> Triple("REPEAT", "", "")
+            is RoutineFollowUpMove.ProvideSharedDate ->
+                Triple("PROVIDE_SHARED_DATE", "", move.value)
+            is RoutineFollowUpMove.ProvideStepTime ->
+                Triple("PROVIDE_STEP_TIME", "", move.value)
             is RoutineFollowUpMove.ChangeStepTime ->
                 Triple("CHANGE_STEP_TIME", (move.stepIndex + 1).toString(), move.value)
             is RoutineFollowUpMove.ChangeStepTitle ->
@@ -3251,6 +3456,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             is RoutineFollowUpMove.ChangeSharedDate ->
                 Triple("CHANGE_SHARED_DATE", "", move.value)
             RoutineFollowUpMove.StructuralChange -> Triple("STRUCTURAL_CHANGE", "", "")
+            RoutineFollowUpMove.RequestHelp -> Triple("REQUEST_HELP", "", "")
             RoutineFollowUpMove.Unknown -> Triple("UNKNOWN", "", "")
         }
         DebugDiagnosticLog.event(
@@ -3261,6 +3467,21 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "stepIndex=$stepIndex\n" +
                 "value=$value"
         )
+    }
+
+    private fun routineMoveName(move: RoutineFollowUpMove): String = when (move) {
+        RoutineFollowUpMove.Confirm -> "CONFIRM"
+        RoutineFollowUpMove.Reject -> "REJECT"
+        RoutineFollowUpMove.Cancel -> "CANCEL"
+        RoutineFollowUpMove.Repeat -> "REPEAT"
+        is RoutineFollowUpMove.ProvideSharedDate -> "PROVIDE_SHARED_DATE"
+        is RoutineFollowUpMove.ProvideStepTime -> "PROVIDE_STEP_TIME"
+        is RoutineFollowUpMove.ChangeSharedDate -> "CHANGE_SHARED_DATE"
+        is RoutineFollowUpMove.ChangeStepTime -> "CHANGE_STEP_TIME"
+        is RoutineFollowUpMove.ChangeStepTitle -> "CHANGE_STEP_TITLE"
+        RoutineFollowUpMove.StructuralChange -> "STRUCTURAL_CHANGE"
+        RoutineFollowUpMove.RequestHelp -> "REQUEST_HELP"
+        RoutineFollowUpMove.Unknown -> "UNKNOWN"
     }
 
     private fun logRoutineFollowUpResult(

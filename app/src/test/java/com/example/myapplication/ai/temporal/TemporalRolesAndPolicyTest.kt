@@ -124,7 +124,7 @@ class TemporalRolesAndPolicyTest {
 
     @Test fun explicitReplacementCanUseNewConstraint() {
         val original = resolver.resolve("tomorrow", "9 AM", "", base())
-        val replacement = resolver.resolve("friday", null, "friday", base())
+        val replacement = resolver.resolve("next friday", null, "next friday", base())
         assertTrue(original.isExactDate)
         assertTrue(replacement.isExactDate)
         assertNotEquals(original.startDateInclusive, replacement.startDateInclusive)

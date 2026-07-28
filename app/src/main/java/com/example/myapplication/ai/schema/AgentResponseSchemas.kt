@@ -98,6 +98,47 @@ object AgentResponseSchemas {
         )
     }
 
+    fun routineFollowUpMoveResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "routine_follow_up_move",
+            properties = JSONObject().apply {
+                put(
+                    "move",
+                    stringEnum(
+                        "CONFIRM",
+                        "REJECT",
+                        "CANCEL",
+                        "REPEAT",
+                        "PROVIDE_SHARED_DATE",
+                        "PROVIDE_STEP_TIME",
+                        "CHANGE_SHARED_DATE",
+                        "CHANGE_STEP_TIME",
+                        "CHANGE_STEP_TITLE",
+                        "STRUCTURAL_CHANGE",
+                        "REQUEST_HELP",
+                        "UNKNOWN"
+                    )
+                )
+                put(
+                    "step_index",
+                    JSONObject().apply {
+                        put("type", "integer")
+                        put("minimum", 0)
+                        put("maximum", 5)
+                    }
+                )
+                put("value", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("move")
+                put("step_index")
+                put("value")
+                put("confidence")
+            }
+        )
+    }
+
     fun conversationDecisionResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_decision",

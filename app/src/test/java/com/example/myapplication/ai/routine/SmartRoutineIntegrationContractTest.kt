@@ -88,7 +88,8 @@ class SmartRoutineIntegrationContractTest {
 
         assertTrue(source.contains("ConversationRoute.SMART_ROUTINE_BUILDER ->"))
         assertTrue(source.contains("agentOrchestrator.processRoutine(normalizedRequest)"))
-        assertTrue(followUp.contains("RoutineFollowUpMove.Confirm -> savePendingRoutine()"))
+        assertTrue(followUp.contains("RoutineFollowUpMove.Confirm ->"))
+        assertTrue(followUp.contains("savePendingRoutine()"))
         assertFalse(followUp.substringBefore("RoutineFollowUpMove.Confirm").contains("insertRootTasksAtomically"))
         assertTrue(save.contains("routineDraftController.markSaving()"))
         assertTrue(save.contains("dao.insertRootTasksAtomically(tasks)"))
@@ -147,7 +148,7 @@ class SmartRoutineIntegrationContractTest {
 
         assertTrue(
             followUp.indexOf("RoutineDraftState.SAVING") <
-                followUp.indexOf("RoutineFollowUpInterpreter.interpret")
+                followUp.indexOf("launchRoutineSemanticFollowUp")
         )
         assertTrue(followUp.contains("The confirmed routine is already being saved."))
         assertTrue(

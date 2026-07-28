@@ -5,7 +5,6 @@ import java.util.Calendar
 import java.util.Locale
 
 class TemporalExpressionResolver {
-    private val out = SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }
     private val monthNames = "jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december"
     private val weekdays = mapOf(
         "sunday" to Calendar.SUNDAY, "monday" to Calendar.MONDAY, "tuesday" to Calendar.TUESDAY,
@@ -96,6 +95,7 @@ class TemporalExpressionResolver {
     private fun extractDatePhrase(text: String): String {
         Regex("""\b(overdue|upcoming)(?: tasks)?\b""").find(text)?.let { return it.value.trim() }
         RELATIVE_DATE_EXPRESSION.find(text)?.let { return it.value.trim() }
+        extractSpokenOrdinalCalendarDate(text)?.let { return it }
         Regex("""\bfrom (.+?) onward\b""").find(text)?.let { match ->
             if (!looksLikeClockExpression(match.groupValues[1])) return match.value.trim()
         }
@@ -127,7 +127,7 @@ class TemporalExpressionResolver {
     }
 
     private fun looksLikeDateExpression(text: String): Boolean {
-        val t = text.trim()
+        val t = canonicalizeSpokenOrdinalCalendarDate(text.trim()) ?: text.trim()
         if (t in setOf("today", "tomorrow", "tonight", "day after tomorrow", "the day after tomorrow")) return true
         if (parseRelativeDayOffset(t) != null) return true
         if (Regex("""^(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$""").matches(t)) return true
@@ -195,7 +195,9 @@ class TemporalExpressionResolver {
     }
 
     private fun parseSingleDate(text: String, base: Calendar): Calendar? {
-        val t = text.removePrefix("on ").trim(); val c = strip(base)
+        val raw = text.removePrefix("on ").trim()
+        val t = canonicalizeSpokenOrdinalCalendarDate(raw) ?: raw
+        val c = strip(base)
         when (t) { "today", "tonight" -> return c; "tomorrow" -> return add(c, Calendar.DAY_OF_MONTH, 1); "day after tomorrow", "the day after tomorrow" -> return add(c, Calendar.DAY_OF_MONTH, 2) }
         parseRelativeDayOffset(t)?.let { offset ->
             return add(c, Calendar.DAY_OF_MONTH, offset)
@@ -206,9 +208,114 @@ class TemporalExpressionResolver {
             return add(c, Calendar.DAY_OF_MONTH, diff)
         }
         val patterns = listOf("d/M/yyyy","dd/MM/yyyy","yyyy/M/d","yyyy/MM/dd","d MMM yyyy","d MMMM yyyy","MMM d yyyy","MMMM d yyyy","d MMM","d MMMM","MMM d","MMMM d")
-        for (p in patterns) try { val f = SimpleDateFormat(p, Locale.UK).apply { isLenient = false }; val parsed = f.parse(t) ?: continue; val cal = Calendar.getInstance(base.timeZone); cal.time = parsed; if (!p.contains("y")) { cal.set(Calendar.YEAR, base.get(Calendar.YEAR)); if (strip(cal).before(strip(base))) cal.add(Calendar.YEAR, 1) }; return strip(cal) } catch (_: Exception) {}
+        for (p in patterns) try {
+            val f = SimpleDateFormat(p, Locale.UK).apply {
+                isLenient = false
+                timeZone = base.timeZone
+            }
+            val parsed = f.parse(t) ?: continue
+            val cal = Calendar.getInstance(base.timeZone)
+            cal.time = parsed
+            if (!p.contains("y")) {
+                cal.set(Calendar.YEAR, base.get(Calendar.YEAR))
+                if (strip(cal).before(strip(base))) cal.add(Calendar.YEAR, 1)
+            }
+            return strip(cal)
+        } catch (_: Exception) {
+        }
         return null
     }
+
+    private fun extractSpokenOrdinalCalendarDate(text: String): String? {
+        val numericOrdinal = """\d{1,2}(?:st|nd|rd|th)"""
+        val wordOrdinal = ordinalWords.keys
+            .sortedByDescending(String::length)
+            .joinToString("|", transform = Regex::escape)
+        val dayFirst = Regex(
+            """\b(?:the\s+)?(?:$numericOrdinal|$wordOrdinal)(?:\s+of)?\s+(?:$monthNames)(?:\s+\d{4})?\b"""
+        )
+        val monthFirst = Regex(
+            """\b(?:$monthNames)\s+(?:$numericOrdinal|$wordOrdinal)(?:\s+\d{4})?\b"""
+        )
+        return dayFirst.find(text)?.value?.trim()
+            ?: monthFirst.find(text)?.value?.trim()
+    }
+
+    private fun canonicalizeSpokenOrdinalCalendarDate(text: String): String? {
+        val numericDayFirst = Regex(
+            """^(?:the\s+)?(\d{1,2})(st|nd|rd|th)(?:\s+of)?\s+($monthNames)(?:\s+(\d{4}))?$"""
+        )
+        numericDayFirst.matchEntire(text)?.let { match ->
+            val day = validatedNumericOrdinal(
+                match.groupValues[1],
+                match.groupValues[2]
+            ) ?: return null
+            return canonicalCalendarDate(
+                day,
+                match.groupValues[3],
+                match.groupValues[4]
+            )
+        }
+        val numericMonthFirst = Regex(
+            """^($monthNames)\s+(\d{1,2})(st|nd|rd|th)(?:\s+(\d{4}))?$"""
+        )
+        numericMonthFirst.matchEntire(text)?.let { match ->
+            val day = validatedNumericOrdinal(
+                match.groupValues[2],
+                match.groupValues[3]
+            ) ?: return null
+            return canonicalCalendarDate(
+                day,
+                match.groupValues[1],
+                match.groupValues[4]
+            )
+        }
+
+        val wordOrdinal = ordinalWords.keys
+            .sortedByDescending(String::length)
+            .joinToString("|", transform = Regex::escape)
+        val wordDayFirst = Regex(
+            """^(?:the\s+)?($wordOrdinal)(?:\s+of)\s+($monthNames)(?:\s+(\d{4}))?$"""
+        )
+        wordDayFirst.matchEntire(text)?.let { match ->
+            return canonicalCalendarDate(
+                requireNotNull(ordinalWords[match.groupValues[1]]),
+                match.groupValues[2],
+                match.groupValues[3]
+            )
+        }
+        val wordMonthFirst = Regex(
+            """^($monthNames)\s+($wordOrdinal)(?:\s+(\d{4}))?$"""
+        )
+        wordMonthFirst.matchEntire(text)?.let { match ->
+            return canonicalCalendarDate(
+                requireNotNull(ordinalWords[match.groupValues[2]]),
+                match.groupValues[1],
+                match.groupValues[3]
+            )
+        }
+        return null
+    }
+
+    private fun validatedNumericOrdinal(number: String, suffix: String): Int? {
+        val day = number.toIntOrNull()?.takeIf { it in 1..31 } ?: return null
+        val expectedSuffix = if (day % 100 in 11..13) {
+            "th"
+        } else {
+            when (day % 10) {
+                1 -> "st"
+                2 -> "nd"
+                3 -> "rd"
+                else -> "th"
+            }
+        }
+        return day.takeIf { suffix == expectedSuffix }
+    }
+
+    private fun canonicalCalendarDate(day: Int, month: String, year: String): String =
+        listOf(day.toString(), month, year)
+            .filter(String::isNotBlank)
+            .joinToString(" ")
 
     private fun parseRelativeDayOffset(text: String): Int? {
         val match = RELATIVE_DATE_EXPRESSION.matchEntire(text) ?: return null
@@ -251,7 +358,12 @@ class TemporalExpressionResolver {
     private fun parseMinute(s: String): Int? { val t = s.trim(); if (t == "noon") return 720; if (t == "midnight") return 0; val m = Regex("(\\d{1,2})(?::(\\d{2}))? ?(am|pm)?").matchEntire(t) ?: return null; var h = m.groupValues[1].toInt(); val min = m.groupValues[2].ifBlank { "0" }.toInt(); val ap = m.groupValues[3]; if (min !in 0..59) return null; if (ap.isNotBlank() && h !in 1..12) return null; if (ap.isBlank() && h !in 0..23) return null; if (ap == "am" && h == 12) h = 0; else if (ap == "pm" && h < 12) h += 12; return h * 60 + min }
     private fun time(s: Int, e: Int, wrap: Boolean = false) = TemporalResolution(if (s == e) TemporalResolutionType.EXACT_TIME else TemporalResolutionType.TIME_RANGE, startMinuteInclusive = s, endMinuteInclusive = e, wrapsMidnight = wrap)
     private fun range(scope: TemporalDateScope, s: Calendar?, e: Calendar?) = TemporalResolution(if (scope == TemporalDateScope.EXACT_DATE) TemporalResolutionType.EXACT_DATE else TemporalResolutionType.DATE_RANGE, scope, s?.let { fmt(it) }, e?.let { fmt(it) })
-    private fun fmt(c: Calendar) = out.format(c.time)
+    private fun fmt(c: Calendar) = SimpleDateFormat("dd/MM/yyyy", Locale.UK)
+        .apply {
+            isLenient = false
+            timeZone = c.timeZone
+        }
+        .format(c.time)
     private fun strip(c: Calendar) = (c.clone() as Calendar).apply { set(Calendar.HOUR_OF_DAY,0); set(Calendar.MINUTE,0); set(Calendar.SECOND,0); set(Calendar.MILLISECOND,0) }
     private fun add(c: Calendar, field: Int, amount: Int) = (c.clone() as Calendar).apply { add(field, amount) }
     private fun dayIndex(c: Calendar) = if (c.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7 else c.get(Calendar.DAY_OF_WEEK) - 1
@@ -261,6 +373,39 @@ class TemporalExpressionResolver {
         val RELATIVE_DATE_EXPRESSION = Regex(
             """\b(?:in\s+($RELATIVE_DAY_TOKEN)\s+days?|""" +
                 """($RELATIVE_DAY_TOKEN)\s+days?\s+(?:from now|after today))\b"""
+        )
+        val ordinalWords = mapOf(
+            "first" to 1,
+            "second" to 2,
+            "third" to 3,
+            "fourth" to 4,
+            "fifth" to 5,
+            "sixth" to 6,
+            "seventh" to 7,
+            "eighth" to 8,
+            "ninth" to 9,
+            "tenth" to 10,
+            "eleventh" to 11,
+            "twelfth" to 12,
+            "thirteenth" to 13,
+            "fourteenth" to 14,
+            "fifteenth" to 15,
+            "sixteenth" to 16,
+            "seventeenth" to 17,
+            "eighteenth" to 18,
+            "nineteenth" to 19,
+            "twentieth" to 20,
+            "twenty-first" to 21,
+            "twenty-second" to 22,
+            "twenty-third" to 23,
+            "twenty-fourth" to 24,
+            "twenty-fifth" to 25,
+            "twenty-sixth" to 26,
+            "twenty-seventh" to 27,
+            "twenty-eighth" to 28,
+            "twenty-ninth" to 29,
+            "thirtieth" to 30,
+            "thirty-first" to 31
         )
     }
 }

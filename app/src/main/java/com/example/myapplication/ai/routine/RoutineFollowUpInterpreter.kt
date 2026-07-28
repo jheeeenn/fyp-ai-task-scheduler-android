@@ -5,10 +5,13 @@ sealed class RoutineFollowUpMove {
     data object Reject : RoutineFollowUpMove()
     data object Cancel : RoutineFollowUpMove()
     data object Repeat : RoutineFollowUpMove()
+    data class ProvideSharedDate(val value: String) : RoutineFollowUpMove()
+    data class ProvideStepTime(val value: String) : RoutineFollowUpMove()
     data class ChangeStepTime(val stepIndex: Int, val value: String) : RoutineFollowUpMove()
     data class ChangeStepTitle(val stepIndex: Int, val value: String) : RoutineFollowUpMove()
     data class ChangeSharedDate(val value: String) : RoutineFollowUpMove()
     data object StructuralChange : RoutineFollowUpMove()
+    data object RequestHelp : RoutineFollowUpMove()
     data object Unknown : RoutineFollowUpMove()
 }
 
@@ -29,7 +32,7 @@ object RoutineFollowUpInterpreter {
         if (text in REJECTIONS) return RoutineFollowUpMove.Reject
         if (text in CANCELLATIONS) return RoutineFollowUpMove.Cancel
         if (text in REPEATS) return RoutineFollowUpMove.Repeat
-        if (STRUCTURAL_HINTS.any(text::contains)) return RoutineFollowUpMove.StructuralChange
+        if (text in STRUCTURAL_COMMANDS) return RoutineFollowUpMove.StructuralChange
 
         CHANGE_TIME.matchEntire(text)?.let { match ->
             val index = ordinalIndex(match.groupValues[1])
@@ -73,12 +76,17 @@ object RoutineFollowUpInterpreter {
         "say that again",
         "read it again"
     )
-    private val STRUCTURAL_HINTS = listOf(
+    private val STRUCTURAL_COMMANDS = setOf(
         "add a step",
         "add another",
+        "add another step",
         "remove a step",
-        "remove the",
-        "delete a step"
+        "delete a step",
+        "remove the first step",
+        "remove the second step",
+        "remove the third step",
+        "remove the fourth step",
+        "remove the fifth step"
     )
     private val CHANGE_TIME = Regex(
         """change the (first|second|third|fourth|fifth|[1-5](?:st|nd|rd|th)?) (?:step(?:'s)? )?time to (.+)"""
