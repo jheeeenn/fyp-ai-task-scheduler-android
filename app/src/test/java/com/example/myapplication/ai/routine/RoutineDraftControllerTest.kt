@@ -474,6 +474,68 @@ class RoutineDraftControllerTest {
     }
 
     @Test
+    fun constrainedSavedRoutineDateCollectsAnExactDateInsideOriginalWindow() {
+        val controller = controller()
+        val initial = controller.startFromSavedRoutine(savedRoutine(), "next week")
+
+        assertTrue(initial is RoutineDraftUpdate.Ask)
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, controller.state)
+        assertTrue(controller.draft!!.steps.all {
+            it.dateClassification == RoutineDateClassification.CONSTRAINED &&
+                it.resolvedDate == null &&
+                it.originalDateConstraint != null
+        })
+
+        val accepted = controller.provideSharedDate("4 August 2026")
+        assertTrue(accepted is RoutineDraftUpdate.Review)
+        assertEquals(
+            listOf("04/08/2026", "04/08/2026", "04/08/2026"),
+            controller.draft!!.steps.map(PendingRoutineStep::resolvedDate)
+        )
+    }
+
+    @Test
+    fun constrainedSavedRoutineDateRejectsExactDateOutsideOriginalWindow() {
+        val controller = controller()
+        controller.startFromSavedRoutine(savedRoutine(), "next week")
+
+        val rejected = controller.provideSharedDate("tomorrow")
+
+        assertEquals(
+            RoutineDraftIssue.INVALID_DATE,
+            (rejected as RoutineDraftUpdate.Rejected).reason
+        )
+        assertEquals(RoutineDraftState.COLLECTING_SHARED_DATE, controller.state)
+        assertTrue(controller.draft!!.steps.all { it.resolvedDate == null })
+    }
+
+    @Test
+    fun malformedSavedRoutineDateReportsInvalidDateSeparatelyFromStoredTime() {
+        val invalidDateController = controller()
+        assertEquals(
+            RoutineDraftIssue.INVALID_DATE,
+            (invalidDateController.startFromSavedRoutine(
+                savedRoutine(),
+                "not a real date"
+            ) as RoutineDraftUpdate.Rejected).reason
+        )
+
+        val corruptTimeController = controller()
+        val corruptTime = savedRoutine().copy(
+            steps = savedRoutine().steps.mapIndexed { index, step ->
+                if (index == 0) step.copy(dueTime = "sometime") else step
+            }
+        )
+        assertEquals(
+            RoutineDraftIssue.INVALID_TIME,
+            (corruptTimeController.startFromSavedRoutine(
+                corruptTime,
+                "tomorrow"
+            ) as RoutineDraftUpdate.Rejected).reason
+        )
+    }
+
+    @Test
     fun corruptedSavedRoutineIsRejectedBeforeConfirmation() {
         val missingTime = savedRoutine().copy(
             steps = savedRoutine().steps.mapIndexed { index, step ->

@@ -284,8 +284,8 @@ class RoutineDraftController(
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_TIME)
         }
         val suppliedDate = suppliedDateText.trim()
-        val resolvedDate = if (suppliedDate.isEmpty()) null else resolveDate(suppliedDate, base)
-        if (suppliedDate.isNotEmpty() && resolvedDate == null) {
+        val dateResult = classifyDate(suppliedDate, base)
+        if (dateResult.classification == RoutineDateClassification.INVALID) {
             reset()
             return RoutineDraftUpdate.Rejected(RoutineDraftIssue.INVALID_DATE)
         }
@@ -296,13 +296,10 @@ class RoutineDraftController(
                     title = step.title.trim(),
                     originalDateText = suppliedDate.takeIf(String::isNotEmpty),
                     originalTimeText = step.dueTime,
-                    resolvedDate = resolvedDate,
+                    resolvedDate = dateResult.resolvedDate,
                     resolvedTime = requireNotNull(resolvedTimes[index]),
-                    dateClassification = if (resolvedDate == null) {
-                        RoutineDateClassification.MISSING
-                    } else {
-                        RoutineDateClassification.EXACT
-                    }
+                    dateClassification = dateResult.classification,
+                    originalDateConstraint = dateResult.constraint
                 )
             },
             revision = 1L,

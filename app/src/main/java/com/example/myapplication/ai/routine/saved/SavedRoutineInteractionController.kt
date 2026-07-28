@@ -6,7 +6,8 @@ enum class SavedRoutineInteractionState {
     NONE,
     RESOLVING,
     CHOOSING_MATCH,
-    CONFIRMING_DELETE
+    CONFIRMING_DELETE,
+    DELETING
 }
 
 data class SavedRoutineCandidate(
@@ -40,16 +41,15 @@ class SavedRoutineInteractionController {
 
     private var generation: Long = 0
     private var internalCandidates: List<SavedRoutineCandidate> = emptyList()
-    private var deleteCommitted = false
 
     fun begin(action: SavedRoutineAction, suppliedDatePhrase: String): SavedRoutineInteractionSnapshot {
+        if (state == SavedRoutineInteractionState.DELETING) return snapshot()
         generation += 1
         state = SavedRoutineInteractionState.RESOLVING
         intendedAction = action
         this.suppliedDatePhrase = suppliedDatePhrase
         selectedRoutineId = null
         internalCandidates = emptyList()
-        deleteCommitted = false
         return snapshot()
     }
 
@@ -116,9 +116,10 @@ class SavedRoutineInteractionController {
     }
 
     fun claimDelete(): Long? {
-        if (state != SavedRoutineInteractionState.CONFIRMING_DELETE || deleteCommitted) return null
-        deleteCommitted = true
-        return selectedRoutineId
+        if (state != SavedRoutineInteractionState.CONFIRMING_DELETE) return null
+        val routineId = selectedRoutineId ?: return null
+        state = SavedRoutineInteractionState.DELETING
+        return routineId
     }
 
     fun isCurrent(capturedGeneration: Long): Boolean =
@@ -127,14 +128,33 @@ class SavedRoutineInteractionController {
     fun snapshot(): SavedRoutineInteractionSnapshot =
         SavedRoutineInteractionSnapshot(generation, intendedAction, suppliedDatePhrase)
 
-    fun clear() {
+    fun completeDelete(capturedGeneration: Long): Boolean {
+        if (!isCurrent(capturedGeneration) ||
+            state != SavedRoutineInteractionState.DELETING
+        ) {
+            return false
+        }
+        reset()
+        return true
+    }
+
+    fun clear(): Boolean {
+        if (state == SavedRoutineInteractionState.DELETING) return false
+        reset()
+        return true
+    }
+
+    fun clearForActivityDestruction() {
+        reset()
+    }
+
+    private fun reset() {
         generation += 1
         state = SavedRoutineInteractionState.NONE
         intendedAction = SavedRoutineAction.UNKNOWN
         suppliedDatePhrase = ""
         selectedRoutineId = null
         internalCandidates = emptyList()
-        deleteCommitted = false
     }
 
     private companion object {

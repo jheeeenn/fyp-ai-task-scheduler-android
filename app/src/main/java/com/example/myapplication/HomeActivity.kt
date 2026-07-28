@@ -3203,6 +3203,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     )
                 }
             }
+            SavedRoutineInteractionState.DELETING -> {
+                assistantSession.speak(
+                    "That saved-routine deletion is already being processed.",
+                    listenAgain = false
+                )
+            }
             SavedRoutineInteractionState.RESOLVING -> {
                 if (isSavedRoutineRejection(normalized)) {
                     savedRoutineInteractionController.clear()
@@ -3292,8 +3298,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 handleRoutineDraftUpdate(
                     update = update,
                     invalidSpeech =
-                        "That saved routine is incomplete or has an invalid time, so I cannot run it safely.",
-                    requestToken = requestToken
+                        "That saved routine is incomplete or corrupted, so I cannot run it safely.",
+                    requestToken = requestToken,
+                    invalidDateSpeech =
+                        "I could not understand that date. Please provide a valid date for the saved routine.",
+                    invalidTimeSpeech =
+                        "That saved routine has an invalid stored step time, so I cannot run it safely."
                 )
             }
             SavedRoutineAction.DELETE -> {
@@ -3333,6 +3343,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
         val generation = savedRoutineInteractionController.snapshot().generation
+        DebugDiagnosticLog.event(
+            "SAVED_ROUTINE_DELETE",
+            "phase=COMMITTED\nstate=${savedRoutineInteractionController.state.name}"
+        )
         lifecycleScope.launch {
             val deleted = try {
                 withContext(Dispatchers.IO) {
@@ -3345,26 +3359,27 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             } catch (_: Exception) {
                 false
             }
-            if (!savedRoutineInteractionController.isCurrent(generation)) {
+            if (!savedRoutineInteractionController.completeDelete(generation)) {
                 DebugDiagnosticLog.event(
                     "SAVED_ROUTINE_STALE",
-                    "phase=DELETE_RESULT\nreason=CONTROLLER_CHANGED"
+                    "phase=DELETE_RESULT\nreason=COMMITTED_STATE_CHANGED"
                 )
                 return@launch
             }
-            savedRoutineInteractionController.clear()
             DebugDiagnosticLog.event(
                 "SAVED_ROUTINE_DELETE",
                 "phase=COMPLETE\nsuccess=$deleted"
             )
-            assistantSession.speak(
-                if (deleted) {
-                    "The saved routine was deleted. Tasks already created from it remain unchanged."
-                } else {
-                    "I could not delete that saved routine. Nothing was changed."
-                },
-                listenAgain = false
-            )
+            if (assistantSession.assistantSessionActive) {
+                assistantSession.speak(
+                    if (deleted) {
+                        "The saved routine was deleted. Tasks already created from it remain unchanged."
+                    } else {
+                        "I could not delete that saved routine. Nothing was changed."
+                    },
+                    listenAgain = false
+                )
+            }
         }
     }
 
@@ -3771,7 +3786,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun handleRoutineDraftUpdate(
         update: RoutineDraftUpdate,
         invalidSpeech: String,
-        requestToken: AssistantRequestToken
+        requestToken: AssistantRequestToken,
+        invalidDateSpeech: String? = null,
+        invalidTimeSpeech: String? = null
     ): RoutineFollowUpOutcome {
         if (!isAssistantRequestCurrent(requestToken)) return RoutineFollowUpOutcome("UNKNOWN")
         return when (update) {
@@ -3812,9 +3829,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     RoutineDraftIssue.EXTRACTION_NEEDS_CLARIFICATION,
                     RoutineDraftIssue.INVALID_STEP_COUNT,
                     RoutineDraftIssue.EMPTY_STEP_TITLE -> invalidSpeech
+                    RoutineDraftIssue.INVALID_DATE ->
+                        invalidDateSpeech ?: invalidSpeech
+                    RoutineDraftIssue.INVALID_TIME ->
+                        invalidTimeSpeech ?: invalidSpeech
                     RoutineDraftIssue.PAST_SCHEDULE ->
                         "Please provide a future exact date and time."
-                    else -> invalidSpeech
+                    RoutineDraftIssue.INVALID_STATE -> invalidSpeech
                 }
                 val kind = when (update.reason) {
                     RoutineDraftIssue.LOW_CONFIDENCE,
@@ -4992,6 +5013,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
     override fun onDestroy() {
+        savedRoutineInteractionController.clearForActivityDestruction()
         super.onDestroy()
         assistantSession.destroy()
         voiceHelper.shutdown()

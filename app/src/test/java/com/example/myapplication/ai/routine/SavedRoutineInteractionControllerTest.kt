@@ -77,13 +77,73 @@ class SavedRoutineInteractionControllerTest {
     }
 
     @Test
-    fun deleteRequiresConfirmationAndCanBeClaimedOnlyOnce() {
+    fun deleteConfirmationTransitionsToDeletingAndCanBeClaimedOnlyOnce() {
         val controller = SavedRoutineInteractionController()
         val interaction = controller.begin(SavedRoutineAction.DELETE, "")
         assertTrue(controller.selectSingle(interaction.generation, 91))
         assertTrue(controller.beginDeleteConfirmation(interaction.generation, 91))
 
         assertEquals(91L, controller.claimDelete())
+        assertEquals(SavedRoutineInteractionState.DELETING, controller.state)
         assertNull(controller.claimDelete())
+    }
+
+    @Test
+    fun rejectionAndLifecycleCleanupCannotCancelCommittedDeletion() {
+        val controller = committedDeleteController()
+        val generation = controller.snapshot().generation
+
+        assertFalse(controller.clear())
+        assertEquals(SavedRoutineInteractionState.DELETING, controller.state)
+        assertTrue(controller.isCurrent(generation))
+
+        // Panel cancellation and session-stop cleanup both call the same bounded clear.
+        assertFalse(controller.clear())
+        assertEquals(SavedRoutineInteractionState.DELETING, controller.state)
+        assertEquals(91L, controller.selectedRoutineId)
+    }
+
+    @Test
+    fun unrelatedBeginCannotReplaceCommittedDeletion() {
+        val controller = committedDeleteController()
+        val committed = controller.snapshot()
+
+        val attempted = controller.begin(SavedRoutineAction.LIST, "")
+
+        assertEquals(committed, attempted)
+        assertEquals(SavedRoutineInteractionState.DELETING, controller.state)
+        assertEquals(SavedRoutineAction.DELETE, controller.intendedAction)
+    }
+
+    @Test
+    fun finalSuccessAndFailureEachClearExactlyOnce() {
+        listOf(true, false).forEach { databaseDeleteSucceeded ->
+            val controller = committedDeleteController()
+            val generation = controller.snapshot().generation
+
+            assertTrue(
+                "Database result $databaseDeleteSucceeded should complete the same committed state",
+                controller.completeDelete(generation)
+            )
+            assertEquals(SavedRoutineInteractionState.NONE, controller.state)
+            assertFalse(controller.completeDelete(generation))
+        }
+    }
+
+    @Test
+    fun permanentActivityDestructionMayClearCommittedDeletion() {
+        val controller = committedDeleteController()
+
+        controller.clearForActivityDestruction()
+
+        assertEquals(SavedRoutineInteractionState.NONE, controller.state)
+        assertNull(controller.selectedRoutineId)
+    }
+
+    private fun committedDeleteController() = SavedRoutineInteractionController().apply {
+        val interaction = begin(SavedRoutineAction.DELETE, "")
+        selectSingle(interaction.generation, 91)
+        beginDeleteConfirmation(interaction.generation, 91)
+        claimDelete()
     }
 }
