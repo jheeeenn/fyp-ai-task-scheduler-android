@@ -344,6 +344,25 @@ object AgentResponseSchemas {
         )
     }
 
+    fun breakdownFollowUpResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "breakdown_follow_up_response",
+            properties = JSONObject().apply {
+                put(
+                    "move",
+                    stringEnum("CONFIRM", "REJECT", "CANCEL", "REVISE", "UNKNOWN")
+                )
+                put("plan", stringArrayType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("move")
+                put("plan")
+                put("confidence")
+            }
+        )
+    }
+
     private fun responseFormat(name: String, properties: JSONObject, required: JSONArray): JSONObject {
         return JSONObject().apply {
             put("type", "json_schema")

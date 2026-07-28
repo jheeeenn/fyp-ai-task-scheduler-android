@@ -155,8 +155,26 @@ import com.example.myapplication.ai.routine.saved.SavedRoutineChoice
 import com.example.myapplication.ai.routine.saved.SavedRoutineInteractionController
 import com.example.myapplication.ai.routine.saved.SavedRoutineInteractionState
 import com.example.myapplication.ai.routine.saved.SavedRoutineSemanticOrchestrator
+import com.example.myapplication.ai.breakdown.BreakdownControlInterpreter
+import com.example.myapplication.ai.breakdown.BreakdownDraftController
+import com.example.myapplication.ai.breakdown.BreakdownDraftMode
+import com.example.myapplication.ai.breakdown.BreakdownDraftState
+import com.example.myapplication.ai.breakdown.BreakdownDraftUpdate
+import com.example.myapplication.ai.breakdown.BreakdownFollowUpContext
+import com.example.myapplication.ai.breakdown.BreakdownFollowUpException
+import com.example.myapplication.ai.breakdown.BreakdownFollowUpMove
+import com.example.myapplication.ai.breakdown.BreakdownFollowUpSemanticClient
+import com.example.myapplication.ai.breakdown.BreakdownFollowUpSemanticOrchestrator
+import com.example.myapplication.ai.breakdown.BreakdownPersistenceCoordinator
+import com.example.myapplication.ai.breakdown.BreakdownPersistenceStore
+import com.example.myapplication.ai.breakdown.BreakdownReminderScheduler
+import com.example.myapplication.ai.breakdown.BreakdownSaveResultCategory
+import com.example.myapplication.ai.breakdown.BreakdownTargetResolution
+import com.example.myapplication.ai.breakdown.BreakdownTargetResolver
+import com.example.myapplication.ai.breakdown.PendingBreakdownDraft
 import com.example.myapplication.data.RoutineOccurrenceInsertResult
 import com.example.myapplication.data.RoutineWithSteps
+import com.example.myapplication.data.BreakdownTransactionResult
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
@@ -169,6 +187,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         RoutineFollowUpSemanticOrchestrator
     private lateinit var savedRoutineSemanticOrchestrator:
         SavedRoutineSemanticOrchestrator
+    private lateinit var breakdownFollowUpSemanticOrchestrator:
+        BreakdownFollowUpSemanticOrchestrator
     private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()
 
 
@@ -220,6 +240,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var assistantRequestGeneration: Long = 0
     private var assistantRequestActive: Boolean = false
     private val routineDraftController = RoutineDraftController()
+    private val breakdownDraftController = BreakdownDraftController()
     private val savedRoutineInteractionController = SavedRoutineInteractionController()
     private val routineStepTimeClarification =
         "Please provide one exact clock time for that step."
@@ -228,13 +249,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var pendingDeleteTaskId: Long? = null
     private var pendingDeleteTaskTitle: String? = null
 
-    // for AI breakdown planning
-    private var pendingBreakdownTitle: String? = null
-    private var pendingBreakdownPlan: List<String> = emptyList()
-    private var pendingBreakdownOriginalRequest: String? = null
-    private var pendingBreakdownDateText: String? = null
-    private var pendingBreakdownTimeText: String? = null
-    private var pendingBreakdownTemporalClarification: PendingTemporalClarification? = null
     private var currentSubtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
 
     private val audioPermissionLauncher =
@@ -267,12 +281,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
 
+        val taskAgentClient = LaptopAgentClient(this)
         agentOrchestrator = AgentOrchestrator(
-            LaptopAgentClient(this),
+            taskAgentClient,
             TaskAgentResponseParser(),
             TaskActionNormalizer(),
             ActionValidator()
         )
+        breakdownFollowUpSemanticOrchestrator =
+            BreakdownFollowUpSemanticOrchestrator(
+                client = BreakdownFollowUpSemanticClient { userText, contextSummary ->
+                    taskAgentClient.processBreakdownFollowUp(userText, contextSummary)
+                }
+            )
         val conversationAgentClient = ConversationAgentClient(this)
         conversationOrchestrator = ConversationOrchestrator(
             conversationAgentClient,
@@ -814,10 +835,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
 
-        if (homeFollowUpContext == HomeFollowUpContext.BREAKDOWN_CONFIRMATION ||
-            homeFollowUpContext == HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
-        ) {
-            if (handleBreakdownFollowUp(normalized)) {
+        if (breakdownDraftController.state != BreakdownDraftState.NONE) {
+            if (handleBreakdownFollowUp(normalized, requestToken)) {
                 return
             }
         }
@@ -1414,6 +1433,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     Log.d("HOME_ROUTING", "falling through to AgentOrchestrator with text='$taskAgentInput'")
                 }
                 val aiResult = agentOrchestrator.process(taskAgentInput)
+                if (!isAssistantRequestCurrent(requestToken)) return@launch
                 val presentationResolution = TaskQueryPresentationReconciler.reconcile(
                     taskAgentIntent = aiResult.intent,
                     conversationHint = conversationDecision.queryPresentationHint,
@@ -1762,34 +1782,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                     // for breakdown tasks
                     AiIntent.BREAKDOWN_TASK.name -> {
-                        Log.d("HOME_ACTION", "BREAKDOWN_TASK -> start breakdown confirmation")
-
-                        val title = aiResult.taskTitle ?: normalized
-                        val plan = aiResult.plan
-                            .map { it.trim() }
-                            .filter { it.isNotBlank() }
-                            .take(4)
-
-                        if (plan.size < 2) {
-                            speakObservation(
-                                ExecutionObservation(
-                                    operation = ExecutionOperation.BREAKDOWN_TASK,
-                                    outcome = ExecutionOutcome.FAILURE,
-                                    requiredInput = RequiredInput.RETRY,
-                                    allowedUserMoves = listOf(AllowedUserMove.RETRY, AllowedUserMove.CANCEL, AllowedUserMove.REQUEST_HELP),
-                                    listenAgain = true,
-                                    fallbackSpeech = "I could not create a clear breakdown yet. Please describe the large task again."
-                                )
-                            )
-                        } else {
-                            startBreakdownConfirmation(
-                                title = title,
-                                plan = plan,
-                                originalRequest = normalized,
-                                dateText = aiResult.newDateText ?: aiResult.dateText,
-                                timeText = aiResult.newTimeText ?: aiResult.timeText
-                            )
-                        }
+                        Log.d("HOME_ACTION", "BREAKDOWN_TASK -> validate and resolve target")
+                        beginBreakdownTargetResolution(
+                            title = aiResult.taskTitle ?: normalized,
+                            plan = aiResult.plan,
+                            originalRequest = normalized,
+                            dateText = aiResult.newDateText ?: aiResult.dateText,
+                            timeText = aiResult.newTimeText ?: aiResult.timeText,
+                            requestToken = requestToken
+                        )
                     }
 
                     else -> {
@@ -4285,124 +4286,460 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             speakObservation(ExecutionObservation(ExecutionOperation.DELETE_TASK, ExecutionOutcome.SUCCESS, taskTitle = title, listenAgain = false, fallbackSpeech = responseManager.deleteSuccess(title)))
         }
     }
-    private fun startBreakdownConfirmation(
+    private suspend fun beginBreakdownTargetResolution(
         title: String,
         plan: List<String>,
         originalRequest: String,
-        dateText: String? = null,
-        timeText: String? = null
+        dateText: String?,
+        timeText: String?,
+        requestToken: AssistantRequestToken
     ) {
-        pendingBreakdownTitle = title
-        pendingBreakdownPlan = plan.take(4)
-        pendingBreakdownOriginalRequest = originalRequest
-        pendingBreakdownDateText = dateText
-        pendingBreakdownTimeText = timeText
-        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
-
-        val fallback = buildBreakdownProposalSpeech(
-            title = title,
-            plan = pendingBreakdownPlan
+        if (!isAssistantRequestCurrent(requestToken)) return
+        val initial = breakdownDraftController.beginDraft(
+            parentTitle = title,
+            proposedSubtasks = plan,
+            originalRequest = originalRequest,
+            dateText = dateText,
+            timeText = timeText
         )
+        if (initial is BreakdownDraftUpdate.Rejected) {
+            homeFollowUpContext = HomeFollowUpContext.NONE
+            speakBreakdownValidationFailure()
+            return
+        }
+        val draft = (initial as BreakdownDraftUpdate.Resolving).draft
+        val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+        val activeRoots = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+        if (!isAssistantRequestCurrent(requestToken) ||
+            !breakdownDraftController.isCurrent(draft.generation, draft.revision)
+        ) {
+            return
+        }
+
+        when (val resolution = BreakdownTargetResolver.resolve(title, activeRoots)) {
+            is BreakdownTargetResolution.ExistingRoot -> {
+                logBreakdownTargetResolution(1, false, BreakdownDraftMode.EXISTING_ROOT)
+                val hasSubtasks = withContext(Dispatchers.IO) {
+                    dao.getSubtasks(resolution.task.id).isNotEmpty()
+                }
+                if (!isAssistantRequestCurrent(requestToken)) return
+                handleExistingBreakdownTarget(
+                    generation = draft.generation,
+                    parent = resolution.task,
+                    hasSubtasks = hasSubtasks
+                )
+            }
+            is BreakdownTargetResolution.Ambiguous -> {
+                logBreakdownTargetResolution(
+                    resolution.matchCount,
+                    true,
+                    selectedMode = null
+                )
+                when (
+                    val update = breakdownDraftController.applyAmbiguousTargets(
+                        draft.generation,
+                        resolution.tasks
+                    )
+                ) {
+                    is BreakdownDraftUpdate.ChoosingTarget ->
+                        askBreakdownTargetClarification(update.choices)
+                    else -> handleBreakdownDraftFailure(update)
+                }
+            }
+            BreakdownTargetResolution.NewRoot -> {
+                logBreakdownTargetResolution(0, false, BreakdownDraftMode.NEW_ROOT)
+                when (val update = breakdownDraftController.applyNewRoot(draft.generation)) {
+                    is BreakdownDraftUpdate.Review -> presentBreakdownReview(update.draft)
+                    else -> handleBreakdownDraftFailure(update)
+                }
+            }
+        }
+    }
+
+    private fun handleExistingBreakdownTarget(
+        generation: Long,
+        parent: TaskEntity,
+        hasSubtasks: Boolean
+    ) {
+        when (
+            val update = breakdownDraftController.applyExistingRoot(
+                generation,
+                parent,
+                hasSubtasks
+            )
+        ) {
+            is BreakdownDraftUpdate.Review -> presentBreakdownReview(update.draft)
+            BreakdownDraftUpdate.AlreadyHasSubtasks -> {
+                homeFollowUpContext = HomeFollowUpContext.NONE
+                assistantSession.speakThenStop(
+                    "${parent.title} already has subtasks, so I did not add or change anything."
+                )
+            }
+            else -> handleBreakdownDraftFailure(update)
+        }
+    }
+
+    private fun askBreakdownTargetClarification(choices: List<String>) {
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
         lifecycleScope.launch {
             speakObservation(
                 ExecutionObservation(
                     operation = ExecutionOperation.BREAKDOWN_TASK,
-                    outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
-                    taskTitle = title,
-                    planItems = pendingBreakdownPlan,
-                    requiredInput = RequiredInput.CONFIRMATION,
-                    allowedUserMoves = listOf(AllowedUserMove.CONFIRM, AllowedUserMove.REJECT, AllowedUserMove.CANCEL, AllowedUserMove.CHANGE_FIELD),
+                    outcome = ExecutionOutcome.AMBIGUOUS,
+                    taskCount = choices.size,
+                    choices = choices,
+                    requiredInput = RequiredInput.TASK_CHOICE,
+                    allowedUserMoves = listOf(
+                        AllowedUserMove.SELECT_OPTION,
+                        AllowedUserMove.CANCEL,
+                        AllowedUserMove.REQUEST_HELP
+                    ),
                     listenAgain = true,
-                    fallbackSpeech = fallback,
-                    fallbackHint = "Say yes to create these subtasks, no to cancel, or describe how to change the plan."
+                    fallbackSpeech =
+                        "I found more than one matching task: " +
+                            choices.mapIndexed { index, value ->
+                                "${index + 1}, $value"
+                            }.joinToString(". ") +
+                            ". Which one should I use?",
+                    fallbackHint = "Say first, second, or the unique task title."
                 )
             )
         }
     }
 
-    private fun buildBreakdownProposalSpeech(
-        title: String,
-        plan: List<String>
-    ): String {
-        // Task Agent natural_response is intentionally not used for final task speech;
-        // Android's deterministic observation renderer speaks this authoritative response.
-        val intro = "I prepared a breakdown for $title."
+    private fun presentBreakdownReview(draft: PendingBreakdownDraft) {
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
+        val fallback = buildBreakdownProposalSpeech(draft)
+        lifecycleScope.launch {
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.BREAKDOWN_TASK,
+                    outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
+                    taskTitle = draft.parentTitle,
+                    planItems = draft.proposedSubtasks,
+                    requiredInput = RequiredInput.CONFIRMATION,
+                    allowedUserMoves = listOf(
+                        AllowedUserMove.CONFIRM,
+                        AllowedUserMove.REJECT,
+                        AllowedUserMove.CANCEL,
+                        AllowedUserMove.CHANGE_FIELD
+                    ),
+                    listenAgain = true,
+                    fallbackSpeech = fallback,
+                    fallbackHint =
+                        "Say yes to continue, no to cancel, or describe how to revise the plan."
+                )
+            )
+        }
+    }
 
-        val planSpeech = plan.mapIndexed { index, item ->
+    private fun buildBreakdownProposalSpeech(draft: PendingBreakdownDraft): String {
+        val intro = when (draft.mode) {
+            BreakdownDraftMode.EXISTING_ROOT ->
+                "I found your existing task ${draft.parentTitle}. I propose adding these subtasks."
+            BreakdownDraftMode.NEW_ROOT ->
+                "I did not find an existing task, so I propose creating ${draft.parentTitle} with these subtasks."
+            null -> "I prepared a breakdown for ${draft.parentTitle}."
+        }
+        val planSpeech = draft.proposedSubtasks.mapIndexed { index, item ->
             "${index + 1}. $item."
         }.joinToString(" ")
-
-        return "$intro $planSpeech Do you want me to create this scheduled task with these subtasks?"
+        val schedule = if (
+            draft.mode == BreakdownDraftMode.NEW_ROOT &&
+            !draft.dateText.isNullOrBlank() &&
+            !draft.timeText.isNullOrBlank()
+        ) {
+            " The proposed schedule is ${draft.dateText} at ${draft.timeText}."
+        } else {
+            ""
+        }
+        val question = if (draft.mode == BreakdownDraftMode.EXISTING_ROOT) {
+            "Do you want me to add these subtasks to the existing task?"
+        } else {
+            "Do you want me to continue with this task and subtask plan?"
+        }
+        return "$intro $planSpeech$schedule $question"
     }
 
     private fun clearPendingBreakdownState() {
-        pendingBreakdownTitle = null
-        pendingBreakdownPlan = emptyList()
-        pendingBreakdownOriginalRequest = null
-        pendingBreakdownDateText = null
-        pendingBreakdownTimeText = null
-        pendingBreakdownTemporalClarification = null
+        breakdownDraftController.clear()
     }
 
-    private fun handleBreakdownFollowUp(normalized: String): Boolean {
-        return when (homeFollowUpContext) {
-            HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> handleBreakdownConfirmationFollowUp(normalized)
-            HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION -> handleBreakdownScheduleFollowUp(normalized)
-            else -> false
+    private fun handleBreakdownFollowUp(
+        normalized: String,
+        requestToken: AssistantRequestToken
+    ): Boolean = when (breakdownDraftController.state) {
+        BreakdownDraftState.NONE -> false
+        BreakdownDraftState.RESOLVING_TARGET -> {
+            when (BreakdownControlInterpreter.interpret(normalized)) {
+                BreakdownFollowUpMove.CANCEL,
+                BreakdownFollowUpMove.REJECT -> {
+                    cancelPendingBreakdown()
+                    true
+                }
+                else -> {
+                    breakdownDraftController.clear()
+                    homeFollowUpContext = HomeFollowUpContext.NONE
+                    false
+                }
+            }
+        }
+        BreakdownDraftState.CHOOSING_TARGET -> {
+            handleBreakdownTargetChoice(normalized, requestToken)
+            true
+        }
+        BreakdownDraftState.WAITING_FOR_CONFIRMATION ->
+            handleBreakdownConfirmationFollowUp(normalized, requestToken)
+        BreakdownDraftState.COLLECTING_SCHEDULE ->
+            handleBreakdownScheduleFollowUp(normalized)
+        BreakdownDraftState.SAVING -> {
+            assistantSession.speak(
+                "The confirmed task breakdown is already being saved.",
+                listenAgain = false
+            )
+            true
         }
     }
 
-    private fun handleBreakdownConfirmationFollowUp(normalized: String): Boolean {
-        return when {
-            isBreakdownAccept(normalized) -> {
+    private fun handleBreakdownTargetChoice(
+        normalized: String,
+        requestToken: AssistantRequestToken
+    ) {
+        when (BreakdownControlInterpreter.interpret(normalized)) {
+            BreakdownFollowUpMove.CANCEL,
+            BreakdownFollowUpMove.REJECT -> {
+                cancelPendingBreakdown()
+                return
+            }
+            else -> Unit
+        }
+        val captured = breakdownDraftController.draft ?: return
+        lifecycleScope.launch {
+            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+            val activeRoots = withContext(Dispatchers.IO) { dao.getRootActiveTasks() }
+            if (!isAssistantRequestCurrent(requestToken) ||
+                !breakdownDraftController.isCurrent(
+                    captured.generation,
+                    captured.revision
+                )
+            ) {
+                return@launch
+            }
+            val selected = breakdownDraftController.resolveTargetChoice(
+                normalized,
+                activeRoots
+            )
+            if (selected == null) {
+                assistantSession.speakThenListenAgain(
+                    "Please choose the first task, the second task, or say one unique task title."
+                )
+                return@launch
+            }
+            val hasSubtasks = withContext(Dispatchers.IO) {
+                dao.getSubtasks(selected.id).isNotEmpty()
+            }
+            if (!isAssistantRequestCurrent(requestToken)) return@launch
+            logBreakdownTargetResolution(1, false, BreakdownDraftMode.EXISTING_ROOT)
+            handleExistingBreakdownTarget(
+                captured.generation,
+                selected,
+                hasSubtasks
+            )
+        }
+    }
+
+    private fun handleBreakdownConfirmationFollowUp(
+        normalized: String,
+        requestToken: AssistantRequestToken
+    ): Boolean {
+        return when (BreakdownControlInterpreter.interpret(normalized)) {
+            BreakdownFollowUpMove.CONFIRM -> {
                 proceedAfterBreakdownApproval()
                 true
             }
-
-            isBreakdownCancel(normalized) -> {
-                val title = pendingBreakdownTitle
-                clearPendingBreakdownState()
-                homeFollowUpContext = HomeFollowUpContext.NONE
-
-                assistantSession.speakThenStop(
-                    if (title != null) {
-                        "Okay, I will not create subtasks for $title."
-                    } else {
-                        "Okay, I will not create those subtasks."
-                    }
-                )
+            BreakdownFollowUpMove.REJECT,
+            BreakdownFollowUpMove.CANCEL -> {
+                cancelPendingBreakdown()
                 true
             }
-
             else -> {
-                regenerateBreakdownWithFeedback(normalized)
+                interpretBreakdownFeedbackSemantically(normalized, requestToken)
                 true
             }
         }
     }
 
+    private fun interpretBreakdownFeedbackSemantically(
+        feedback: String,
+        requestToken: AssistantRequestToken
+    ) {
+        val captured = breakdownDraftController.draft ?: return
+        val context = BreakdownFollowUpContext.capture(
+            breakdownDraftController.state,
+            captured
+        )
+        assistantSession.getBottomSheet()?.showAssistantHint("Reviewing your feedback...")
+        lifecycleScope.launch {
+            val decision = try {
+                breakdownFollowUpSemanticOrchestrator.interpret(feedback, context)
+            } catch (e: BreakdownFollowUpException) {
+                if (isAssistantRequestCurrent(requestToken) &&
+                    breakdownDraftController.isCurrent(
+                        captured.generation,
+                        captured.revision
+                    )
+                ) {
+                    assistantSession.speakThenListenAgain(
+                        "I could not interpret that safely. Please confirm, cancel, or describe the plan change another way."
+                    )
+                }
+                return@launch
+            }
+            if (!isAssistantRequestCurrent(requestToken) ||
+                !breakdownDraftController.isCurrent(
+                    captured.generation,
+                    captured.revision
+                )
+            ) {
+                DebugDiagnosticLog.event("BREAKDOWN_SAVE_RESULT", "result=STALE")
+                return@launch
+            }
+
+            when (decision.move) {
+                BreakdownFollowUpMove.CONFIRM -> proceedAfterBreakdownApproval()
+                BreakdownFollowUpMove.REJECT,
+                BreakdownFollowUpMove.CANCEL -> cancelPendingBreakdown()
+                BreakdownFollowUpMove.REVISE -> {
+                    when (
+                        val update = breakdownDraftController.applyRevision(
+                            expectedGeneration = captured.generation,
+                            expectedRevision = captured.revision,
+                            proposedSubtasks = decision.plan
+                        )
+                    ) {
+                        is BreakdownDraftUpdate.Review ->
+                            presentBreakdownReview(update.draft)
+                        is BreakdownDraftUpdate.Rejected ->
+                            assistantSession.speakThenListenAgain(
+                                "That revised plan was not structurally safe. Please describe a different revision."
+                            )
+                        else -> Unit
+                    }
+                }
+                BreakdownFollowUpMove.UNKNOWN ->
+                    assistantSession.speakThenListenAgain(
+                        "Please confirm, cancel, or tell me how the proposed subtasks should change."
+                    )
+            }
+        }
+    }
+
+    private fun cancelPendingBreakdown() {
+        val title = breakdownDraftController.draft?.parentTitle
+        if (!breakdownDraftController.clear()) {
+            assistantSession.speak(
+                "The confirmed task breakdown is already being saved.",
+                listenAgain = false
+            )
+            return
+        }
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        assistantSession.speakThenStop(
+            if (title.isNullOrBlank()) {
+                "Okay, I did not create those subtasks."
+            } else {
+                "Okay, I did not create or add subtasks for $title."
+            }
+        )
+    }
+
     private fun proceedAfterBreakdownApproval() {
-        val resolution = temporalQueryResolver.resolve(pendingBreakdownDateText, pendingBreakdownTimeText, "")
-        val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.BREAKDOWN)
-        when (policy) {
-            is TemporalPolicyResult.Ready -> createPendingBreakdownIfFuture(resolution.startDateInclusive!!, ScheduleTextParser.formatTime(resolution.startMinuteInclusive!! / 60, resolution.startMinuteInclusive!! % 60))
-            is TemporalPolicyResult.InvalidPastSchedule -> enterBreakdownFutureCorrection(resolution)
-            is TemporalPolicyResult.Unresolved -> assistantSession.speakThenListenAgain("I could not understand that schedule. Please say an exact date and time.")
+        val draft = breakdownDraftController.draft ?: return
+        if (draft.mode == BreakdownDraftMode.EXISTING_ROOT) {
+            savePendingBreakdown()
+            return
+        }
+
+        val resolution = temporalQueryResolver.resolve(
+            draft.dateText,
+            draft.timeText,
+            ""
+        )
+        when (val policy = TemporalActionPolicy.evaluate(
+            resolution,
+            TemporalUseCase.BREAKDOWN
+        )) {
+            is TemporalPolicyResult.Ready -> createPendingBreakdownIfFuture(
+                requireNotNull(resolution.startDateInclusive),
+                ScheduleTextParser.formatTime(
+                    requireNotNull(resolution.startMinuteInclusive) / 60,
+                    requireNotNull(resolution.startMinuteInclusive) % 60
+                )
+            )
+            is TemporalPolicyResult.InvalidPastSchedule ->
+                enterBreakdownFutureCorrection(resolution)
+            is TemporalPolicyResult.Unresolved -> {
+                val replacement = TemporalQueryWindow(
+                    TemporalResolutionStatus.NONE,
+                    spokenLabel = "a future schedule"
+                )
+                beginOrUpdateBreakdownScheduleCollection(
+                    PendingTemporalClarification(
+                        original = replacement,
+                        needsExactDate = true,
+                        needsExactTime = true,
+                        replacingOriginalConstraint = true
+                    )
+                )
+                promptNextBreakdownTemporalClarification()
+            }
             else -> {
-                val needsDate = policy is TemporalPolicyResult.NeedsExactDate || policy is TemporalPolicyResult.NeedsExactDateAndTime
-                val needsTime = policy is TemporalPolicyResult.NeedsExactTime || policy is TemporalPolicyResult.NeedsExactDateAndTime
-                pendingBreakdownTemporalClarification = PendingTemporalClarification(resolution, needsExactDate = needsDate, needsExactTime = needsTime)
-                homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+                val needsDate =
+                    policy is TemporalPolicyResult.NeedsExactDate ||
+                        policy is TemporalPolicyResult.NeedsExactDateAndTime
+                val needsTime =
+                    policy is TemporalPolicyResult.NeedsExactTime ||
+                        policy is TemporalPolicyResult.NeedsExactDateAndTime
+                beginOrUpdateBreakdownScheduleCollection(
+                    PendingTemporalClarification(
+                        resolution,
+                        needsExactDate = needsDate,
+                        needsExactTime = needsTime
+                    )
+                )
                 promptNextBreakdownTemporalClarification()
             }
         }
     }
 
+    private fun beginOrUpdateBreakdownScheduleCollection(
+        clarification: PendingTemporalClarification
+    ) {
+        if (breakdownDraftController.state == BreakdownDraftState.WAITING_FOR_CONFIRMATION) {
+            breakdownDraftController.startScheduleCollection(clarification)
+        } else {
+            breakdownDraftController.updateTemporalClarification(clarification)
+        }
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
+    }
+
     private fun promptNextBreakdownTemporalClarification() {
-        val pending = pendingBreakdownTemporalClarification ?: return
+        val pending = breakdownDraftController.draft?.temporalClarification ?: return
         val prompt = when {
-            pending.needsExactDate && pending.exactDate == null -> "Which exact date ${pending.original.originalDatePhrase.ifBlank { pending.original.spokenLabel }}?"
-            pending.needsExactTime && pending.exactMinute == null -> "What exact time ${pending.original.originalTimePhrase.ifBlank { pending.original.spokenLabel }}?"
+            pending.needsExactDate && pending.exactDate == null ->
+                pending.original.originalDatePhrase
+                    .ifBlank { pending.original.spokenLabel }
+                    .trim()
+                    .takeIf(String::isNotEmpty)
+                    ?.let { "Which exact date within $it should I use?" }
+                    ?: "Which exact date should I use?"
+            pending.needsExactTime && pending.exactMinute == null ->
+                pending.original.originalTimePhrase
+                    .ifBlank { pending.original.spokenLabel }
+                    .trim()
+                    .takeIf(String::isNotEmpty)
+                    ?.let { "What exact time within $it should I use?" }
+                    ?: "What exact time should I use?"
             else -> null
         }
         if (prompt != null) {
@@ -4412,62 +4749,99 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val date = pending.exactDate ?: pending.original.startDateInclusive
             val minute = pending.exactMinute ?: pending.original.startMinuteInclusive
             if (date != null && minute != null) {
-                pendingBreakdownTemporalClarification = null
-                createPendingBreakdownIfFuture(date, ScheduleTextParser.formatTime(minute / 60, minute % 60))
+                breakdownDraftController.updateTemporalClarification(null)
+                createPendingBreakdownIfFuture(
+                    date,
+                    ScheduleTextParser.formatTime(minute / 60, minute % 60)
+                )
             }
         }
     }
 
     private fun handleBreakdownScheduleFollowUp(normalized: String): Boolean {
-        if (isBreakdownCancel(normalized)) {
-            val title = pendingBreakdownTitle
-            clearPendingBreakdownState()
-            homeFollowUpContext = HomeFollowUpContext.NONE
-            assistantSession.speakThenStop(
-                if (title != null) "Okay, I will not create subtasks for $title." else "Okay, I will not create those subtasks."
-            )
-            return true
+        when (BreakdownControlInterpreter.interpret(normalized)) {
+            BreakdownFollowUpMove.CANCEL,
+            BreakdownFollowUpMove.REJECT -> {
+                cancelPendingBreakdown()
+                return true
+            }
+            else -> Unit
         }
 
-        val pending = pendingBreakdownTemporalClarification
+        val pending = breakdownDraftController.draft?.temporalClarification
         if (pending != null) {
             if (pending.needsExactDate && pending.exactDate == null) {
-                val r = temporalQueryResolver.resolve(normalized, null, normalized)
-                if (!r.isExactDate || r.startDateInclusive == null || !TemporalActionPolicy.validateClarification(pending.original, r.startDateInclusive, null)) {
-                    assistantSession.speakThenListenAgain("That date is outside the requested range. Please choose a valid date.")
+                val resolution = temporalQueryResolver.resolve(normalized, null, normalized)
+                if (!resolution.isExactDate ||
+                    resolution.startDateInclusive == null ||
+                    !TemporalActionPolicy.validateClarification(
+                        pending.original,
+                        resolution.startDateInclusive,
+                        null
+                    )
+                ) {
+                    assistantSession.speakThenListenAgain(
+                        "That date is outside the requested range. Please choose a valid exact date."
+                    )
                     return true
                 }
-                pendingBreakdownTemporalClarification = pending.copy(exactDate = r.startDateInclusive)
+                breakdownDraftController.updateTemporalClarification(
+                    pending.copy(exactDate = resolution.startDateInclusive)
+                )
                 promptNextBreakdownTemporalClarification()
                 return true
             }
             if (pending.needsExactTime && pending.exactMinute == null) {
-                val r = temporalQueryResolver.resolve(null, normalized, normalized)
-                val minute = r.startMinuteInclusive
-                if (!r.isExactTime || minute == null || !TemporalActionPolicy.validateClarification(pending.original, null, minute)) {
-                    assistantSession.speakThenListenAgain("That time is outside the requested range. Please choose a valid time.")
+                val resolution = temporalQueryResolver.resolve(null, normalized, normalized)
+                val minute = resolution.startMinuteInclusive
+                if (!resolution.isExactTime ||
+                    minute == null ||
+                    !TemporalActionPolicy.validateClarification(
+                        pending.original,
+                        null,
+                        minute
+                    )
+                ) {
+                    assistantSession.speakThenListenAgain(
+                        "That time is outside the requested range. Please choose a valid exact time."
+                    )
                     return true
                 }
-                pendingBreakdownTemporalClarification = pending.copy(exactMinute = minute)
+                breakdownDraftController.updateTemporalClarification(
+                    pending.copy(exactMinute = minute)
+                )
                 promptNextBreakdownTemporalClarification()
                 return true
             }
         }
 
         val incoming = temporalQueryResolver.resolve(null, null, normalized)
-        pendingBreakdownDateText = incoming.takeIf { it.isExactDate }?.startDateInclusive ?: pendingBreakdownDateText
-        pendingBreakdownTimeText = incoming.takeIf { it.isExactTime }?.startMinuteInclusive?.let { ScheduleTextParser.formatTime(it / 60, it % 60) } ?: pendingBreakdownTimeText
+        breakdownDraftController.updateProposedSchedule(
+            dateText = incoming.takeIf { it.isExactDate }?.startDateInclusive,
+            timeText = incoming.takeIf { it.isExactTime }
+                ?.startMinuteInclusive
+                ?.let { ScheduleTextParser.formatTime(it / 60, it % 60) }
+        )
         proceedAfterBreakdownApproval()
         return true
     }
 
     private fun createPendingBreakdownIfFuture(dueDate: String, dueTime: String) {
-        val finalResolution = temporalQueryResolver.resolve(dueDate, dueTime, listOf(dueDate, dueTime).joinToString(" "))
-        if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.BREAKDOWN) is TemporalPolicyResult.InvalidPastSchedule) {
+        val finalResolution = temporalQueryResolver.resolve(
+            dueDate,
+            dueTime,
+            "$dueDate $dueTime"
+        )
+        if (
+            TemporalActionPolicy.evaluate(
+                finalResolution,
+                TemporalUseCase.BREAKDOWN
+            ) is TemporalPolicyResult.InvalidPastSchedule
+        ) {
             enterBreakdownFutureCorrection(finalResolution)
             return
         }
-        createPendingBreakdown(dueDate, dueTime)
+        savePendingBreakdown(dueDate, dueTime)
     }
 
     private fun enterBreakdownFutureCorrection(rejectedResolution: TemporalQueryWindow) {
@@ -4478,11 +4852,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             spokenLabel = "a future schedule"
         )
         val calendar = Calendar.getInstance()
-        val currentMinute = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
-        val dateIsPast = isDateBeforeToday(rejectedDate)
-        val timeIsPastToday = isToday(rejectedDate) && rejectedMinute != null && rejectedMinute <= currentMinute
-
-        pendingBreakdownTemporalClarification = when {
+        val currentMinute =
+            calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        val dateIsPast = isBreakdownDateBeforeToday(rejectedDate)
+        val timeIsPastToday =
+            isBreakdownDateToday(rejectedDate) &&
+                rejectedMinute != null &&
+                rejectedMinute <= currentMinute
+        val clarification = when {
             dateIsPast -> PendingTemporalClarification(
                 original = replacementOriginal,
                 exactMinute = rejectedMinute,
@@ -4504,185 +4881,178 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 replacingOriginalConstraint = true
             )
         }
-        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_SCHEDULE_COLLECTION
-        val pending = pendingBreakdownTemporalClarification
+        beginOrUpdateBreakdownScheduleCollection(clarification)
         val prompt = when {
-            pending?.needsExactDate == true && pending.exactDate == null -> "Please provide a future exact date."
-            pending?.needsExactTime == true && pending.exactMinute == null -> "Please provide a later exact time."
+            clarification.needsExactDate && clarification.exactDate == null ->
+                "Please provide a future exact date."
+            clarification.needsExactTime && clarification.exactMinute == null ->
+                "Please provide a later exact time."
             else -> "Please provide a future date and time."
         }
         assistantSession.getBottomSheet()?.showAssistantHint(prompt)
         assistantSession.speakThenListenAgain("${responseManager.pastDateTime()} $prompt")
     }
 
-    private fun isDateBeforeToday(date: String?): Boolean {
-        val parsed = parseDateMillis(date) ?: return false
-        val today = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        return parsed < today
+    private fun isBreakdownDateBeforeToday(date: String?): Boolean {
+        val parsed = parseBreakdownDateMillis(date) ?: return false
+        return parsed < breakdownTodayStartMillis()
     }
 
-    private fun isToday(date: String?): Boolean {
-        val parsed = parseDateMillis(date) ?: return false
-        val today = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        return parsed == today
+    private fun isBreakdownDateToday(date: String?): Boolean {
+        val parsed = parseBreakdownDateMillis(date) ?: return false
+        return parsed == breakdownTodayStartMillis()
     }
 
-    private fun parseDateMillis(date: String?): Long? = try {
-        if (date.isNullOrBlank()) null else SimpleDateFormat("dd/MM/yyyy", Locale.UK).parse(date)?.time
+    private fun breakdownTodayStartMillis(): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    private fun parseBreakdownDateMillis(date: String?): Long? = try {
+        if (date.isNullOrBlank()) {
+            null
+        } else {
+            SimpleDateFormat("dd/MM/yyyy", Locale.UK).parse(date)?.time
+        }
     } catch (_: Exception) {
         null
     }
 
-    private fun createPendingBreakdown(dueDate: String, dueTime: String) {
-        val title = pendingBreakdownTitle
-        val plan = pendingBreakdownPlan
-
-        if (title.isNullOrBlank() || plan.isEmpty()) {
-            clearPendingBreakdownState()
-            homeFollowUpContext = HomeFollowUpContext.NONE
-            assistantSession.speakThenStop(responseManager.unknownCommand())
+    private fun savePendingBreakdown(
+        exactDate: String? = null,
+        exactTime: String? = null
+    ) {
+        val pendingSave = breakdownDraftController.markSaving(exactDate, exactTime)
+        if (pendingSave == null) {
+            val message = if (
+                breakdownDraftController.state == BreakdownDraftState.SAVING
+            ) {
+                "The confirmed task breakdown is already being saved."
+            } else {
+                "That task breakdown is not ready to save."
+            }
+            assistantSession.speak(message, listenAgain = false)
             return
         }
-
+        homeFollowUpContext = HomeFollowUpContext.BREAKDOWN_CONFIRMATION
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
-            val mainTask = TaskEntity(
-                title = title,
-                dueDate = dueDate,
-                dueTime = dueTime
-            )
-
-            val insertedParentId = withContext(Dispatchers.IO) {
-                val parentId = dao.insert(mainTask)
-                if (BuildConfig.DEBUG) {
-                    Log.d("HOME_BREAKDOWN", "main task inserted id=$parentId")
-                }
-
-                plan.forEachIndexed { index, subtaskTitle ->
-                    dao.insert(
-                        TaskEntity(
-                            title = subtaskTitle,
-                            dueDate = dueDate,
-                            dueTime = dueTime,
-                            parentTaskId = parentId,
-                            subtaskOrder = index
+            val coordinator = BreakdownPersistenceCoordinator(
+                store = object : BreakdownPersistenceStore {
+                    override suspend fun insertSubtasksIntoExistingRootAtomically(
+                        parentTaskId: Long,
+                        subtaskTitles: List<String>
+                    ): BreakdownTransactionResult =
+                        dao.insertSubtasksIntoExistingRootAtomically(
+                            parentTaskId,
+                            subtaskTitles
                         )
-                    )
-                    if (BuildConfig.DEBUG) {
-                        Log.d("HOME_BREAKDOWN", "inserted subtask title=$subtaskTitle parentId=$parentId")
-                    }
+
+                    override suspend fun insertNewRootWithSubtasksAtomically(
+                        parent: TaskEntity,
+                        subtaskTitles: List<String>
+                    ): BreakdownTransactionResult =
+                        dao.insertNewRootWithSubtasksAtomically(parent, subtaskTitles)
+                },
+                reminderScheduler = BreakdownReminderScheduler { task ->
+                    ReminderHelper.scheduleReminderFromTask(this@HomeActivity, task)
                 }
-                parentId
-            }
-
-            ReminderHelper.scheduleReminderFromTask(
-                this@HomeActivity,
-                mainTask.copy(id = insertedParentId)
             )
-            refreshOverview()
-
-            val count = plan.size
-            clearPendingBreakdownState()
+            val result = coordinator.persist(pendingSave)
+            if (!breakdownDraftController.completeSaving(
+                    pendingSave.saveGeneration
+                )
+            ) {
+                return@launch
+            }
             homeFollowUpContext = HomeFollowUpContext.NONE
-
+            if (result.category == BreakdownSaveResultCategory.SUCCESS) {
+                refreshOverview()
+            }
+            if (!assistantSession.assistantSessionActive) return@launch
+            val speech = when (result.category) {
+                BreakdownSaveResultCategory.SUCCESS ->
+                    if (result.mode == BreakdownDraftMode.EXISTING_ROOT) {
+                        "I added ${result.insertedCount} subtasks to ${pendingSave.draft.parentTitle}."
+                    } else {
+                        "I created ${pendingSave.draft.parentTitle} with " +
+                            "${result.insertedCount} subtasks for " +
+                            "${pendingSave.draft.dateText} at ${pendingSave.draft.timeText}."
+                    }
+                BreakdownSaveResultCategory.PARENT_CHANGED ->
+                    "That task changed before I could save the breakdown, so I inserted nothing."
+                BreakdownSaveResultCategory.ALREADY_HAS_SUBTASKS ->
+                    "${pendingSave.draft.parentTitle} already has subtasks, so I inserted nothing."
+                BreakdownSaveResultCategory.FAILURE ->
+                    "I could not save the task breakdown. Nothing was inserted."
+            }
             speakObservation(
                 ExecutionObservation(
                     operation = ExecutionOperation.BREAKDOWN_TASK,
-                    outcome = ExecutionOutcome.SUCCESS,
-                    taskTitle = title,
-                    taskCount = 1,
-                    dateText = dueDate,
-                    timeText = dueTime,
-                    planItems = plan,
+                    outcome = if (result.category == BreakdownSaveResultCategory.SUCCESS) {
+                        ExecutionOutcome.SUCCESS
+                    } else {
+                        ExecutionOutcome.FAILURE
+                    },
+                    taskTitle = pendingSave.draft.parentTitle,
+                    taskCount = result.insertedCount,
+                    dateText = pendingSave.draft.dateText.orEmpty(),
+                    timeText = pendingSave.draft.timeText.orEmpty(),
+                    planItems = pendingSave.draft.proposedSubtasks,
                     listenAgain = false,
-                    fallbackSpeech = "I created $title with $count subtasks for $dueDate at $dueTime."
+                    fallbackSpeech = speech
                 )
             )
         }
     }
 
-    private fun isBreakdownAccept(normalized: String): Boolean {
-        return normalized == "yes" ||
-                normalized == "yes yes" ||
-                normalized == "yeah" ||
-                normalized == "yep" ||
-                normalized == "sure" ||
-                normalized.contains("create them") ||
-                normalized.contains("add them") ||
-                normalized.contains("save them")
-    }
-
-    private fun isBreakdownCancel(normalized: String): Boolean {
-        return normalized == "no" ||
-                normalized == "no thanks" ||
-                normalized == "cancel" ||
-                normalized == "stop" ||
-                normalized == "nevermind" ||
-                normalized == "never mind"
-    }
-
-    private fun regenerateBreakdownWithFeedback(feedback: String) {
-        val title = pendingBreakdownTitle
-        val oldPlan = pendingBreakdownPlan
-
-        if (title.isNullOrBlank()) {
-            clearPendingBreakdownState()
-            homeFollowUpContext = HomeFollowUpContext.NONE
-            assistantSession.speakThenStop(responseManager.unknownCommand())
-            return
-        }
-
-        lifecycleScope.launch {
-            try {
-                assistantSession.getBottomSheet()?.showAssistantHint(
-                    "Updating the plan..."
-                )
-
-                val oldPlanText = oldPlan.joinToString("; ")
-
-                val refinementRequest = """
-                Break down this task into 2 to 4 short actionable subtasks.
-                Task: $title
-                Previous subtasks: $oldPlanText
-                User feedback: $feedback
-            """.trimIndent()
-
-                if (BuildConfig.DEBUG) {
-                    Log.d("HOME_BREAKDOWN", "regenerating breakdown with feedback='$feedback'")
-                }
-
-                val result = agentOrchestrator.process(refinementRequest)
-
-                if (result.intent == AiIntent.BREAKDOWN_TASK.name && result.plan.size >= 2) {
-                    startBreakdownConfirmation(
-                        title = result.taskTitle ?: title,
-                        plan = result.plan.take(4),
-                        originalRequest = pendingBreakdownOriginalRequest ?: refinementRequest,
-                        dateText = pendingBreakdownDateText,
-                        timeText = pendingBreakdownTimeText
-                    )
-                } else {
-                    assistantSession.speakThenListenAgain(
-                        "I could not revise the breakdown clearly. Please describe how you want to change it."
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e("HOME_BREAKDOWN", "Failed to regenerate breakdown", e)
-                assistantSession.speakThenListenAgain(
-                    "I could not revise the breakdown. Please try again."
-                )
+    private fun handleBreakdownDraftFailure(update: BreakdownDraftUpdate) {
+        if (update == BreakdownDraftUpdate.Stale) return
+        breakdownDraftController.discard(
+            if (update == BreakdownDraftUpdate.ParentChanged) {
+                "PARENT_CHANGED"
+            } else {
+                "FAILURE"
             }
+        )
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        assistantSession.speakThenListenAgain(
+            "That task changed while I was preparing the breakdown. Please try again."
+        )
+    }
+
+    private fun speakBreakdownValidationFailure() {
+        lifecycleScope.launch {
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.BREAKDOWN_TASK,
+                    outcome = ExecutionOutcome.FAILURE,
+                    requiredInput = RequiredInput.RETRY,
+                    allowedUserMoves = listOf(
+                        AllowedUserMove.RETRY,
+                        AllowedUserMove.CANCEL,
+                        AllowedUserMove.REQUEST_HELP
+                    ),
+                    listenAgain = true,
+                    fallbackSpeech =
+                        "The proposed breakdown was not structurally safe. Please describe the large task again."
+                )
+            )
         }
+    }
+
+    private fun logBreakdownTargetResolution(
+        matchCount: Int,
+        ambiguous: Boolean,
+        selectedMode: BreakdownDraftMode?
+    ) {
+        DebugDiagnosticLog.event(
+            "BREAKDOWN_TARGET_RESOLUTION",
+            "matchCount=$matchCount\nambiguous=$ambiguous\n" +
+                "selectedMode=${selectedMode?.name.orEmpty()}"
+        )
     }
 
     private fun findTaskById(

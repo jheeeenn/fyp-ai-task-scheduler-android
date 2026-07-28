@@ -5,6 +5,18 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
 
+enum class BreakdownTransactionStatus {
+    SUCCESS,
+    PARENT_CHANGED,
+    ALREADY_HAS_SUBTASKS
+}
+
+data class BreakdownTransactionResult(
+    val status: BreakdownTransactionStatus,
+    val parent: TaskEntity? = null,
+    val insertedCount: Int = 0
+)
+
 @Dao // data access object
 interface TaskDao {
 
@@ -21,6 +33,74 @@ interface TaskDao {
     suspend fun insertRootTasksAtomically(tasks: List<TaskEntity>): List<Long> {
         require(tasks.all { it.parentTaskId == null })
         return insertAll(tasks)
+    }
+
+    @Transaction
+    suspend fun insertSubtasksIntoExistingRootAtomically(
+        parentTaskId: Long,
+        subtaskTitles: List<String>
+    ): BreakdownTransactionResult {
+        require(subtaskTitles.size in 2..5)
+        require(subtaskTitles.all { it.isNotBlank() })
+        val parent = getById(parentTaskId)
+            ?: return BreakdownTransactionResult(BreakdownTransactionStatus.PARENT_CHANGED)
+        if (parent.parentTaskId != null || parent.isDone) {
+            return BreakdownTransactionResult(BreakdownTransactionStatus.PARENT_CHANGED)
+        }
+        if (getSubtasks(parentTaskId).isNotEmpty()) {
+            return BreakdownTransactionResult(
+                BreakdownTransactionStatus.ALREADY_HAS_SUBTASKS
+            )
+        }
+
+        val children = subtaskTitles.mapIndexed { index, title ->
+            TaskEntity(
+                title = title,
+                dueDate = parent.dueDate,
+                dueTime = parent.dueTime,
+                parentTaskId = parent.id,
+                subtaskOrder = index
+            )
+        }
+        val insertedIds = insertAll(children)
+        check(insertedIds.size == children.size)
+        return BreakdownTransactionResult(
+            status = BreakdownTransactionStatus.SUCCESS,
+            parent = parent,
+            insertedCount = insertedIds.size
+        )
+    }
+
+    @Transaction
+    suspend fun insertNewRootWithSubtasksAtomically(
+        parent: TaskEntity,
+        subtaskTitles: List<String>
+    ): BreakdownTransactionResult {
+        require(parent.id == 0L)
+        require(parent.parentTaskId == null)
+        require(!parent.isDone)
+        require(parent.title.isNotBlank())
+        require(subtaskTitles.size in 2..5)
+        require(subtaskTitles.all { it.isNotBlank() })
+
+        val parentId = insert(parent)
+        val insertedParent = parent.copy(id = parentId)
+        val children = subtaskTitles.mapIndexed { index, title ->
+            TaskEntity(
+                title = title,
+                dueDate = parent.dueDate,
+                dueTime = parent.dueTime,
+                parentTaskId = parentId,
+                subtaskOrder = index
+            )
+        }
+        val insertedIds = insertAll(children)
+        check(insertedIds.size == children.size)
+        return BreakdownTransactionResult(
+            status = BreakdownTransactionStatus.SUCCESS,
+            parent = insertedParent,
+            insertedCount = insertedIds.size
+        )
     }
 
     @Query("UPDATE tasks SET isDone = :isDone WHERE id = :id")

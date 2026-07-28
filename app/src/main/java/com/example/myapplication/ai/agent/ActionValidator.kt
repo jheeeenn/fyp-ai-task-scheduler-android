@@ -45,10 +45,6 @@ class ActionValidator {
                 if (command.taskTitle.isNullOrBlank()) {
                     fail("BREAKDOWN_TASK requires taskTitle")
                 }
-
-                if (command.plan.size !in 2..4) {
-                    fail("BREAKDOWN_TASK requires 2 to 4 subtasks")
-                }
             }
 
             AiIntent.DELETE_TASK.name,

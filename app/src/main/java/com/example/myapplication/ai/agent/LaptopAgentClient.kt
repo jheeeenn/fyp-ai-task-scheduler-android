@@ -70,6 +70,20 @@ open class LaptopAgentClient(
             responseFormat = AgentResponseSchemas.contextActionExtractionResponseFormat(),
             boundedContextAction = true,
             boundedRoutineExtraction = false
+            )
+        }
+
+    open suspend fun processBreakdownFollowUp(
+        userText: String,
+        contextSummary: String
+    ): String = withContext(Dispatchers.IO) {
+        execute(
+            normalizedText = "$contextSummary\nUser response: $userText",
+            systemPrompt = BREAKDOWN_FOLLOW_UP_SYSTEM_PROMPT,
+            responseFormat = AgentResponseSchemas.breakdownFollowUpResponseFormat(),
+            boundedContextAction = false,
+            boundedRoutineExtraction = false,
+            boundedBreakdownFollowUp = true
         )
     }
 
@@ -78,7 +92,8 @@ open class LaptopAgentClient(
         systemPrompt: String,
         responseFormat: JSONObject,
         boundedContextAction: Boolean,
-        boundedRoutineExtraction: Boolean
+        boundedRoutineExtraction: Boolean,
+        boundedBreakdownFollowUp: Boolean = false
     ): String {
         val payload = JSONObject().apply {
             put("model", modelId)
@@ -98,7 +113,9 @@ open class LaptopAgentClient(
             })
         }
 
-        if (boundedRoutineExtraction) {
+        if (boundedBreakdownFollowUp) {
+            Log.d("BREAKDOWN_FOLLOW_UP_SCHEMA", "Strict bounded follow-up schema enabled")
+        } else if (boundedRoutineExtraction) {
             Log.d("ROUTINE_EXTRACTION_SCHEMA", "Strict bounded routine schema enabled")
         } else if (boundedContextAction) {
             Log.d("CONTEXT_ACTION_EXTRACTION_SCHEMA", "enabled")
@@ -117,7 +134,12 @@ open class LaptopAgentClient(
         return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                if (boundedRoutineExtraction) {
+                if (boundedBreakdownFollowUp) {
+                    Log.d(
+                        "BREAKDOWN_FOLLOW_UP_HTTP",
+                        "HTTP ${response.code}; responseChars=${body.length}"
+                    )
+                } else if (boundedRoutineExtraction) {
                     Log.d(
                         "ROUTINE_EXTRACTION_HTTP",
                         "HTTP ${response.code}; responseChars=${body.length}"
@@ -135,7 +157,9 @@ open class LaptopAgentClient(
                 }
 
                 if (!response.isSuccessful) {
-                    val message = if (boundedRoutineExtraction) {
+                    val message = if (boundedBreakdownFollowUp) {
+                        "LM Studio breakdown follow-up HTTP ${response.code}"
+                    } else if (boundedRoutineExtraction) {
                         "LM Studio routine extraction HTTP ${response.code}"
                     } else if (boundedContextAction) {
                         "LM Studio context-action HTTP ${response.code}"
@@ -204,6 +228,29 @@ open class LaptopAgentClient(
     }
 
     companion object {
+        internal val BREAKDOWN_FOLLOW_UP_SYSTEM_PROMPT = """
+You semantically interpret one user response to an Android-authored task-breakdown proposal.
+Gemma proposes. Android validates the complete title-only plan, resolves stored tasks, confirms,
+and is the only component that may persist tasks. Never claim that anything was saved.
+
+Return exactly one compact JSON object with exactly these fields: move, plan, confidence.
+move must be CONFIRM, REJECT, CANCEL, REVISE, or UNKNOWN.
+
+Use CONFIRM only when the user semantically approves the complete current proposal and asks
+Android to proceed. Natural approvals such as "That looks good, go ahead" are confirmations.
+Use REJECT or CANCEL when the user declines or abandons the proposal.
+Use REVISE for natural feedback that changes the plan, including requests for more specificity,
+fewer steps, more detail, or replacement of an ordinal step. For REVISE, return the complete
+revised ordered plan of 2 to 5 short actionable subtask-title strings, not only the changed item.
+Use UNKNOWN for unrelated, unclear, or merely conversational input. Never treat arbitrary
+feedback as confirmation.
+
+For CONFIRM, REJECT, CANCEL, and UNKNOWN, plan must be an empty array.
+Never return task IDs, Room IDs, dates, times, completion fields, instructions, metadata,
+or nested plan objects. A plan item is only a subtask title string. Do not rename the parent.
+Do not add nested subtasks. Do not output markdown or explanations.
+""".trimIndent()
+
         internal val ROUTINE_EXTRACTION_SYSTEM_PROMPT = """
 You are the bounded Smart Routine Builder extractor for an Android task scheduling app.
 Gemma proposes; Android validates and is the only component that may create tasks.
@@ -398,7 +445,9 @@ For RESCHEDULE_TASK, do not put "date" in missing_fields when the user only chan
 
 Plan rules:
 For CREATE_TASK, QUERY_TASK, UPDATE_TASK, RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, plan must be an empty array.
-For BREAKDOWN_TASK, plan must contain 2 to 4 short actionable subtask titles.
+For BREAKDOWN_TASK, plan must contain 2 to 5 short actionable subtask-title strings in order.
+Each plan item is only a title. Never put IDs, dates, times, completion fields, instructions,
+metadata, or nested objects in plan.
 For BREAKDOWN_TASK, date, time, recurrence, and priority should usually be empty unless the user clearly provides them.
 """.trimIndent()
     }

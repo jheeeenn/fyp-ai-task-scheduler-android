@@ -49,7 +49,7 @@ class TaskAgentResponseParser {
             need_clarification = json.optBoolean("need_clarification", false),
             missing_fields = json.optJSONArray("missing_fields").toStringList(),
             requires_confirmation = json.optBoolean("requires_confirmation", false),
-            plan = json.optJSONArray("plan").toStringList()
+            plan = json.optJSONArray("plan").toStrictStringList()
         )
 
         Log.d("TASK_AGENT_PARSE", "action=${response.action}, confidence=${response.confidence}")
@@ -135,6 +135,19 @@ class TaskAgentResponseParser {
         if (this == null) return emptyList()
         return (0 until length()).mapNotNull { index ->
             optString(index).takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun JSONArray?.toStrictStringList(): List<String> {
+        if (this == null) return emptyList()
+        return (0 until length()).map { index ->
+            val value = get(index)
+            if (value !is String) {
+                throw TaskAgentParseException(
+                    "Task-agent plan entries must be title strings"
+                )
+            }
+            value
         }
     }
 }

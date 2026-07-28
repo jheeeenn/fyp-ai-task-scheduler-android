@@ -84,10 +84,9 @@ class TaskActionNormalizer {
             source = "laptop_agent",
             needsClarification = response.need_clarification,
             missingFields = missingFields,
-            plan = response.plan
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .take(4),
+            // BREAKDOWN_TASK plans remain an untrusted model proposal here.
+            // The bounded Android breakdown controller performs final trimming and validation.
+            plan = response.plan,
             naturalResponse = response.natural_response.clean().takeIf { it.isNotBlank() }
         )
 
