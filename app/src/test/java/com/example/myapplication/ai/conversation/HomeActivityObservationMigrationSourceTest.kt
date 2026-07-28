@@ -74,6 +74,14 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(deliveryBody.contains("response.hint.ifBlank { observation.fallbackHint }"))
         assertTrue(deliveryBody.contains("observation.listenAgain"))
         assertTrue(deliveryBody.contains("assistantSession.speakThenRun(response.speech) { afterSpeech() }"))
+        assertTrue(deliveryBody.contains("assistantSession.speakThenListenAgain(response.speech)"))
+        assertTrue(deliveryBody.contains("assistantSession.speakThenStop("))
+        assertTrue(deliveryBody.contains("dismissPanel = true"))
+        assertFalse(
+            deliveryBody.contains(
+                "assistantSession.speak(response.speech, listenAgain = false)"
+            )
+        )
         assertTrue(speakBody.contains("val response = renderObservationResponse(observation)"))
         assertTrue(speakBody.contains("recordObservationResponse(observation, response)"))
         assertTrue(speakBody.contains("deliverObservationResponse(observation, response)"))

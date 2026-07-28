@@ -1909,7 +1909,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         } else if (observation.listenAgain) {
             assistantSession.speakThenListenAgain(response.speech)
         } else {
-            assistantSession.speak(response.speech, listenAgain = false)
+            assistantSession.speakThenStop(
+                response.speech,
+                dismissPanel = true
+            )
         }
     }
 
