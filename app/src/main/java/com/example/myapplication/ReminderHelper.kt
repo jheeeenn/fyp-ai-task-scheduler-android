@@ -23,21 +23,44 @@ object ReminderHelper {
 
     fun cancelReminder(context: Context, taskId: Long) {
         if (taskId <= 0L) {
-            logCancel(taskId, null, "INVALID_TASK_ID")
+            logCancel(taskId, "ALL", "INVALID_TASK_ID")
             return
         }
         val alarmManager =
             context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
         if (alarmManager == null) {
-            logCancel(taskId, null, "ALARM_MANAGER_UNAVAILABLE")
+            logCancel(taskId, "ALL", "ALARM_MANAGER_UNAVAILABLE")
             return
         }
 
-        val cancelled = ReminderSequenceCoordinator.cancelAllStages(
+        val legacyCancelled = cancelLegacyReminder(context, taskId, alarmManager)
+        val escalationCancelled = ReminderSequenceCoordinator.cancelAllStages(
             taskId = taskId,
             canceller = alarmCanceller(context, alarmManager)
         )
-        logCancel(taskId, null, if (cancelled) "SEQUENCE_CANCELLED" else "PARTIAL_FAILURE")
+        logCancel(
+            taskId,
+            "ALL",
+            if (legacyCancelled && escalationCancelled) {
+                "LEGACY_AND_SEQUENCE_CANCELLED"
+            } else {
+                "PARTIAL_FAILURE"
+            }
+        )
+    }
+
+    fun cancelLegacyReminder(context: Context, taskId: Long): Boolean {
+        if (taskId <= 0L) {
+            logCancel(taskId, "LEGACY", "INVALID_TASK_ID")
+            return false
+        }
+        val alarmManager =
+            context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        if (alarmManager == null) {
+            logCancel(taskId, "LEGACY", "ALARM_MANAGER_UNAVAILABLE")
+            return false
+        }
+        return cancelLegacyReminder(context, taskId, alarmManager)
     }
 
     fun scheduleReminderFromTask(context: Context, task: TaskEntity): Boolean {
@@ -157,16 +180,41 @@ object ReminderHelper {
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
             )
             if (pendingIntent == null) {
-                logCancel(taskId, stage, "NOT_FOUND")
+                logCancel(taskId, stage.name, "NOT_FOUND")
             } else {
                 alarmManager.cancel(pendingIntent)
                 pendingIntent.cancel()
-                logCancel(taskId, stage, "CANCELLED")
+                logCancel(taskId, stage.name, "CANCELLED")
             }
         } catch (exception: Exception) {
-            logCancel(taskId, stage, "FAILED_${exception.javaClass.simpleName}")
+            logCancel(taskId, stage.name, "FAILED_${exception.javaClass.simpleName}")
             throw exception
         }
+    }
+
+    private fun cancelLegacyReminder(
+        context: Context,
+        taskId: Long,
+        alarmManager: AlarmManager
+    ): Boolean = try {
+        val legacyIntent = Intent(context, ReminderReceiver::class.java)
+        val legacyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            taskId.toInt(),
+            legacyIntent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (legacyPendingIntent == null) {
+            logCancel(taskId, "LEGACY", "NOT_FOUND")
+        } else {
+            alarmManager.cancel(legacyPendingIntent)
+            legacyPendingIntent.cancel()
+            logCancel(taskId, "LEGACY", "CANCELLED")
+        }
+        true
+    } catch (exception: Exception) {
+        logCancel(taskId, "LEGACY", "FAILED_${exception.javaClass.simpleName}")
+        false
     }
 
     private fun alarmIntent(context: Context, spec: ReminderAlarmSpec): Intent =
@@ -210,13 +258,13 @@ object ReminderHelper {
 
     private fun logCancel(
         taskId: Long,
-        stage: ReminderEscalationStage?,
+        stage: String,
         outcome: String
     ) {
         if (BuildConfig.DEBUG) {
             Log.d(
                 CANCEL_TAG,
-                "taskId=$taskId stage=${stage?.name ?: "ALL"} outcome=$outcome"
+                "taskId=$taskId stage=$stage outcome=$outcome"
             )
         }
     }

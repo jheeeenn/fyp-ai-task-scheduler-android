@@ -177,6 +177,12 @@ import com.example.myapplication.data.RoutineOccurrenceInsertResult
 import com.example.myapplication.data.RoutineWithSteps
 import com.example.myapplication.data.BreakdownTransactionResult
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
+import com.example.myapplication.reminder.LegacyReminderCanceller
+import com.example.myapplication.reminder.ReminderBootstrapLogger
+import com.example.myapplication.reminder.ReminderBootstrapScheduler
+import com.example.myapplication.reminder.ReminderBootstrapTaskSource
+import com.example.myapplication.reminder.ReminderEscalationBootstrapper
+import com.example.myapplication.reminder.SharedPreferencesReminderBootstrapVersionStore
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private var shouldOpenAssistantOnResume = false
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
@@ -261,6 +267,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
     private var hasShownPermissionDialog = false
+    private var reminderBootstrapInProgress = false
     private var notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()){ granted->
             if(granted){
@@ -492,7 +499,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
         refreshOverview()
 
-        if(!hasShownPermissionDialog && !allRequiredPermissionsReady()){
+        val reminderPermissionsReady = allRequiredPermissionsReady()
+        if (reminderPermissionsReady) {
+            runReminderEscalationBootstrapIfReady()
+        } else if(!hasShownPermissionDialog){
             hasShownPermissionDialog = true
             showReminderSetupDialog()
         }
@@ -529,10 +539,65 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         Manifest.permission.POST_NOTIFICATIONS
                     ) == PackageManager.PERMISSION_GRANTED
         val exactAlarmReady =
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                    (getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+            isExactAlarmPermissionReady()
         return notificationReady && exactAlarmReady
     }
+
+    private fun isExactAlarmPermissionReady(): Boolean = try {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            (getSystemService(Context.ALARM_SERVICE) as AlarmManager)
+                .canScheduleExactAlarms()
+    } catch (_: RuntimeException) {
+        false
+    }
+
+    private fun runReminderEscalationBootstrapIfReady() {
+        if (reminderBootstrapInProgress || !allRequiredPermissionsReady()) return
+        reminderBootstrapInProgress = true
+        lifecycleScope.launch {
+            try {
+                val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+                val bootstrapper = ReminderEscalationBootstrapper(
+                    taskSource = ReminderBootstrapTaskSource {
+                        dao.getRootActiveTasks()
+                    },
+                    scheduler = ReminderBootstrapScheduler { task ->
+                        ReminderHelper.scheduleReminderFromTask(
+                            this@HomeActivity,
+                            task
+                        )
+                    },
+                    legacyCanceller = LegacyReminderCanceller { taskId ->
+                        ReminderHelper.cancelLegacyReminder(
+                            this@HomeActivity,
+                            taskId
+                        )
+                    },
+                    versionStore = SharedPreferencesReminderBootstrapVersionStore(
+                        this@HomeActivity
+                    ),
+                    exactAlarmPermissionReady = ::isExactAlarmPermissionReady,
+                    logger = ReminderBootstrapLogger { result ->
+                        if (BuildConfig.DEBUG) {
+                            Log.d(
+                                "REMINDER_ESCALATION_BOOTSTRAP",
+                                "eligibleCount=${result.eligibleCount} " +
+                                    "scheduledCount=${result.scheduledCount} " +
+                                    "rejectedCount=${result.rejectedCount} " +
+                                    "outcome=${result.outcome.name}"
+                            )
+                        }
+                    }
+                )
+                withContext(Dispatchers.IO) {
+                    bootstrapper.runIfNeeded()
+                }
+            } finally {
+                reminderBootstrapInProgress = false
+            }
+        }
+    }
+
     private fun showReminderSetupDialog(){
         AlertDialog.Builder(this)
             .setTitle("Enable Reminder Permissions")
@@ -571,8 +636,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
                     .setNegativeButton("Later", null)
                     .show()
+                return
             }
         }
+        runReminderEscalationBootstrapIfReady()
     }
 
     private fun checkExactAlarmPermissionAfterReturn() {
@@ -582,8 +649,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 showPermissionDeniedDialog(
                     "Alarms & reminders is still disabled. Task reminders may not work until it is enabled."
                 )
+                return
             }
         }
+        runReminderEscalationBootstrapIfReady()
     }
 
     private fun showPermissionDeniedDialog(message: String) {
