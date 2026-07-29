@@ -1711,7 +1711,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     }
 
                                     if (matchedTask.parentTaskId == null) {
-                                        ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id.toInt())
+                                        ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id)
                                     }
 
                                     refreshOverview()
@@ -4282,7 +4282,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 dao.deleteTaskAndSubtasks(taskId)
             }
 
-            ReminderHelper.cancelReminder(this@HomeActivity, taskId.toInt())
+            ReminderHelper.cancelReminder(this@HomeActivity, taskId)
             refreshOverview()
 
             clearPendingDeleteState()
@@ -5237,7 +5237,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     }
 
                     if (chosenTask.parentTaskId == null) {
-                        ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id.toInt())
+                        ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id)
                     }
 
                     refreshOverview()

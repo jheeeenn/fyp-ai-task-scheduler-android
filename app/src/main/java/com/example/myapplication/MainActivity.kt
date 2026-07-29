@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (newDoneState) {
-                    ReminderHelper.cancelReminder(this@MainActivity, task.id.toInt())
+                    ReminderHelper.cancelReminder(this@MainActivity, task.id)
                 } else {
                     ReminderHelper.scheduleReminderFromTask(
                         this@MainActivity,
@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
                         withContext(Dispatchers.IO) {
                             dao.deleteTaskAndSubtasks(task.id)
                         }
-                        ReminderHelper.cancelReminder(this@MainActivity, task.id.toInt())
+                        ReminderHelper.cancelReminder(this@MainActivity, task.id)
                         selectedTaskId = null
                         loadTasks()
                     }

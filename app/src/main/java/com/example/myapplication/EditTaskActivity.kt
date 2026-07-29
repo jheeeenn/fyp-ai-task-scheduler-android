@@ -19,7 +19,8 @@ import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.data.AppDatabase
-import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.reminder.ReminderEligibilityPolicy
+import com.example.myapplication.reminder.ReminderSchedulingEligibility
 import com.example.myapplication.voice.AssistantPromptHelper
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.TextNormalizer
@@ -287,6 +288,15 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             val existingTask = withContext(Dispatchers.IO) {
                 dao.getById(taskId)
             }
+            if (existingTask == null) {
+                Toast.makeText(
+                    this@EditTaskActivity,
+                    "Task no longer exists.",
+                    Toast.LENGTH_LONG
+                ).show()
+                finish()
+                return@launch
+            }
 
             val finalResolution = temporalResolver.resolve(selectedDate, selectedTime, listOfNotNull(selectedDate, selectedTime).joinToString(" "))
             if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.UPDATE) is TemporalPolicyResult.InvalidPastSchedule) {
@@ -294,12 +304,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 return@launch
             }
 
-            ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
+            ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
 
             withContext(Dispatchers.IO) {
                 dao.updateTask(taskId, newTitle, selectedDate, selectedTime)
 
-                if (existingTask?.parentTaskId == null) {
+                if (existingTask.parentTaskId == null) {
                     dao.updateSubtasksSchedule(
                         parentTaskId = taskId,
                         dueDate = selectedDate,
@@ -308,26 +318,33 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 }
             }
 
-            val updatedTask = TaskEntity(
-                id = taskId,
+            val updatedTask = existingTask.copy(
                 title = newTitle,
                 dueDate = selectedDate,
-                dueTime = selectedTime,
-                isDone = false,
-                parentTaskId = existingTask?.parentTaskId,
-                subtaskOrder = existingTask?.subtaskOrder ?: 0
+                dueTime = selectedTime
             )
 
-            val scheduled = if (updatedTask.parentTaskId == null) {
+            val reminderExpected = updatedTask.parentTaskId == null &&
+                !updatedTask.isDone &&
+                !updatedTask.dueDate.isNullOrBlank() &&
+                !updatedTask.dueTime.isNullOrBlank()
+            val schedulingEligibility = ReminderEligibilityPolicy.evaluateForScheduling(
+                updatedTask,
+                System.currentTimeMillis()
+            )
+            val scheduled = if (
+                reminderExpected &&
+                schedulingEligibility is ReminderSchedulingEligibility.Eligible
+            ) {
                 ReminderHelper.scheduleReminderFromTask(
                     this@EditTaskActivity,
                     updatedTask
                 )
             } else {
-                true
+                !reminderExpected
             }
 
-            if (selectedDate != null && selectedTime != null) {
+            if (reminderExpected) {
                 if (scheduled) {
                     Toast.makeText(
                         this@EditTaskActivity,
@@ -366,7 +383,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     withContext(Dispatchers.IO) {
                         dao.deleteTaskAndSubtasks(taskId)
                     }
-                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
+                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
                     Toast.makeText(
                         this@EditTaskActivity,
                         "Task deleted",
@@ -498,7 +515,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     withContext(Dispatchers.IO) {
                         dao.deleteTaskAndSubtasks(taskId)
                     }
-                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
+                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
                     assistantSession.dismissPanel()
                     finish()
                 }
@@ -652,7 +669,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     withContext(Dispatchers.IO) {
                         dao.deleteTaskAndSubtasks(taskId)
                     }
-                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId.toInt())
+                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
                     assistantSession.dismissPanel()
                     finish()
                 }

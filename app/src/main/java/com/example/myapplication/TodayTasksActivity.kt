@@ -73,7 +73,7 @@ class TodayTasksActivity : AppCompatActivity() {
                 }
 
                 if (newDoneState) {
-                    ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id.toInt())
+                    ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id)
                 } else {
                     ReminderHelper.scheduleReminderFromTask(
                         this@TodayTasksActivity,
@@ -113,7 +113,7 @@ class TodayTasksActivity : AppCompatActivity() {
                         withContext(Dispatchers.IO) {
                             dao.deleteTaskAndSubtasks(task.id)
                         }
-                        ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id.toInt())
+                        ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id)
                         selectedTaskId = null
                         loadTasks()
                     }

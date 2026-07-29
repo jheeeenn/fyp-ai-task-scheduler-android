@@ -1,12 +1,7 @@
 package com.example.myapplication
 
-import android.app.AlarmManager
 import android.app.DatePickerDialog
-import android.app.PendingIntent
 import android.app.TimePickerDialog
-import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
@@ -490,24 +485,18 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val finalTitle = title
         val finalDate = selectedDate!!
         val finalTime = selectedTime!!
-        val finalYear = selectedYear!!
-        val finalMonth = selectedMonth!!
-        val finalDay = selectedDay!!
-        val finalHour = selectedHour24!!
-        val finalMinute = selectedMinute!!
+        val taskToInsert = TaskEntity(
+            title = finalTitle,
+            dueDate = finalDate,
+            dueTime = finalTime
+        )
 
         isSavingTask = true
         setCreateDraftControlsEnabled(false)
         lifecycleScope.launch {
             val insertedId = try {
                 withContext(Dispatchers.IO) {
-                    dao.insert(
-                        TaskEntity(
-                            title = finalTitle,
-                            dueDate = finalDate,
-                            dueTime = finalTime
-                        )
-                    )
+                    dao.insert(taskToInsert)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -526,14 +515,10 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 return@launch
             }
 
-            val scheduled = scheduleReminder(
-                taskId = insertedId.toInt(),
-                taskTitle = finalTitle,
-                year = finalYear,
-                month = finalMonth,
-                day = finalDay,
-                hour24 = finalHour,
-                minute = finalMinute
+            val insertedTask = taskToInsert.copy(id = insertedId)
+            val scheduled = ReminderHelper.scheduleReminderFromTask(
+                this@CreateTaskActivity,
+                insertedTask
             )
 
             if (scheduled) {
@@ -584,67 +569,6 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun formatTime(hour: Int, minute: Int): String {
         return ScheduleTextParser.formatTime(hour, minute)
-    }
-
-    private fun scheduleReminder(
-        taskId: Int,
-        taskTitle: String,
-        year: Int,
-        month: Int,
-        day: Int,
-        hour24: Int,
-        minute: Int
-    ): Boolean {
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            !alarmManager.canScheduleExactAlarms()
-        ) {
-            return false
-        }
-
-        val intent = Intent(this, ReminderReceiver::class.java).apply {
-            putExtra("task_title", taskTitle)
-            putExtra("task_id", taskId)
-        }
-
-        val pendingIntent = PendingIntent.getBroadcast(
-            this,
-            taskId,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val triggerCalendar = Calendar.getInstance().apply {
-            set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month)
-            set(Calendar.DAY_OF_MONTH, day)
-            set(Calendar.HOUR_OF_DAY, hour24)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        if (triggerCalendar.before(Calendar.getInstance())) {
-            Toast.makeText(
-                this,
-                "Selected date and time is already in the past.",
-                Toast.LENGTH_LONG
-            ).show()
-
-            assistantSession.pauseListeningForAssistantSpeech()
-            //voiceHelper.speak("The selected date and time is already in the past.")
-            voiceHelper.speak(responseManager.pastDateTime())
-            return false
-        }
-
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerCalendar.timeInMillis,
-            pendingIntent
-        )
-
-        return true
     }
 
     private fun applySpokenDate(dateText: String, replacingConstraint: Boolean = false): Boolean {

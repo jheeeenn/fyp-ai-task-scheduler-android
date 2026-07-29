@@ -51,7 +51,7 @@ class CreateTaskActivitySourceTest {
     fun saveTaskRemainsTheOnlyRoomInsertionAuthority() {
         assertEquals(1, Regex("dao\\.insert\\(").findAll(source).count())
         assertTrue(saveBody.contains("dao.insert("))
-        assertTrue(saveBody.contains("scheduleReminder("))
+        assertTrue(saveBody.contains("ReminderHelper.scheduleReminderFromTask("))
         assertTrue(moveHandler.contains("saveTask()"))
     }
 
@@ -275,21 +275,17 @@ class CreateTaskActivitySourceTest {
     fun saveCoroutineUsesOnlyImmutableValidatedSnapshots() {
         val coroutineBody = saveBody.substringAfter("lifecycleScope.launch")
         listOf(
-            "finalTitle", "finalDate", "finalTime", "finalYear",
-            "finalMonth", "finalDay", "finalHour", "finalMinute"
+            "finalTitle", "finalDate", "finalTime", "taskToInsert"
         ).forEach { snapshot ->
             assertTrue(saveBody.contains("val $snapshot ="))
             assertTrue(saveBody.indexOf("val $snapshot =") < saveBody.indexOf("lifecycleScope.launch"))
         }
-        assertTrue(coroutineBody.contains("title = finalTitle"))
-        assertTrue(coroutineBody.contains("dueDate = finalDate"))
-        assertTrue(coroutineBody.contains("dueTime = finalTime"))
-        assertTrue(coroutineBody.contains("taskTitle = finalTitle"))
-        assertTrue(coroutineBody.contains("year = finalYear"))
-        assertTrue(coroutineBody.contains("month = finalMonth"))
-        assertTrue(coroutineBody.contains("day = finalDay"))
-        assertTrue(coroutineBody.contains("hour24 = finalHour"))
-        assertTrue(coroutineBody.contains("minute = finalMinute"))
+        assertTrue(saveBody.contains("title = finalTitle"))
+        assertTrue(saveBody.contains("dueDate = finalDate"))
+        assertTrue(saveBody.contains("dueTime = finalTime"))
+        assertTrue(coroutineBody.contains("dao.insert(taskToInsert)"))
+        assertTrue(coroutineBody.contains("taskToInsert.copy(id = insertedId)"))
+        assertTrue(coroutineBody.contains("ReminderHelper.scheduleReminderFromTask"))
         listOf(
             "selectedDate", "selectedTime", "selectedYear", "selectedMonth",
             "selectedDay", "selectedHour24", "selectedMinute"
