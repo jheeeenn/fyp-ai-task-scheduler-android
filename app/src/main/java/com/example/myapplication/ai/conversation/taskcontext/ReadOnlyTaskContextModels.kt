@@ -4,6 +4,7 @@ enum class TaskContextScope {
     NONE,
     RECENT_QUERY_RESULTS,
     DAILY_BRIEFING,
+    CONTEXT_SUGGESTION,
     TASK_MATCH_CHOICES
 }
 

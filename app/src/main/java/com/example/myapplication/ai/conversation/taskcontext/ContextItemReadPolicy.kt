@@ -87,7 +87,8 @@ object ContextItemReadPolicy {
 
     private val SUPPORTED_SCOPES = setOf(
         TaskContextScope.RECENT_QUERY_RESULTS,
-        TaskContextScope.DAILY_BRIEFING
+        TaskContextScope.DAILY_BRIEFING,
+        TaskContextScope.CONTEXT_SUGGESTION
     )
     private val TIME_QUESTION = Regex(
         "(?i)\\b(?:what|which)\\s+time\\b"

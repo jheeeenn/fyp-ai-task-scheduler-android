@@ -4,6 +4,7 @@ internal enum class RepeatableSpeechKind {
     QUERY_COUNT,
     QUERY_PAGE,
     DAILY_BRIEFING,
+    CONTEXT_SUGGESTION,
     CONTEXT_READ
 }
 

@@ -225,6 +225,10 @@ class ConversationOrchestrator(
                 reply = ""
             )
             ConversationRoute.DAILY_BRIEFING -> decision
+            ConversationRoute.CONTEXT_AWARE_SUGGESTION -> decision.copy(
+                taskText = normalizedText,
+                reply = ""
+            )
             ConversationRoute.CONTEXT_READ -> decision
             ConversationRoute.CONTEXT_ACTION -> decision
             ConversationRoute.QUERY_READING_CONTROL -> decision

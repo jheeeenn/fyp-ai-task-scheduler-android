@@ -157,11 +157,38 @@ object AgentResponseSchemas {
         )
     }
 
+    fun contextSuggestionDecisionResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "context_suggestion_decision",
+            properties = JSONObject().apply {
+                put(
+                    "suggestion_type",
+                    stringEnum(
+                        "FOCUS_TASK",
+                        "CONTINUE_SUBTASK",
+                        "BREAK_DOWN_TASK",
+                        "REVIEW_CLOSE_SCHEDULE",
+                        "NO_SUGGESTION"
+                    )
+                )
+                put("primary_ref", stringType())
+                put("secondary_ref", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("suggestion_type")
+                put("primary_ref")
+                put("secondary_ref")
+                put("confidence")
+            }
+        )
+    }
+
     fun conversationDecisionResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_AWARE_SUGGESTION", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())

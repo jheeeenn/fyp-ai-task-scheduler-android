@@ -6,7 +6,8 @@ internal enum class QueryReadingInteractionState {
     NONE,
     QUERY_COUNT,
     QUERY_PAGE,
-    DAILY_BRIEFING
+    DAILY_BRIEFING,
+    CONTEXT_SUGGESTION
 }
 
 internal data class QueryReadingControlValidation(
@@ -40,6 +41,7 @@ internal object QueryReadingControlPolicy {
 
             ConversationQueryReadingMove.STOP ->
                 interactionState == QueryReadingInteractionState.DAILY_BRIEFING ||
+                    interactionState == QueryReadingInteractionState.CONTEXT_SUGGESTION ||
                     (interactionState != QueryReadingInteractionState.NONE &&
                         hasActiveSession)
 

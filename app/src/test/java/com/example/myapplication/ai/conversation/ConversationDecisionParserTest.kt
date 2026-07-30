@@ -75,6 +75,77 @@ class ConversationDecisionParserTest {
     }
 
     @Test
+    fun acceptsStrictContextAwareSuggestionRoute() {
+        val decision = parser.parse(
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what should i focus on"
+            )
+        )
+
+        assertEquals(ConversationRoute.CONTEXT_AWARE_SUGGESTION, decision.route)
+        assertEquals("what should i focus on", decision.taskText)
+        assertEquals("", decision.reply)
+        assertEquals("", decision.contextRef)
+        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
+        assertEquals(ConversationContextAction.NONE, decision.contextAction)
+        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
+        assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
+        assertEquals(true, decision.listenAgain)
+    }
+
+    @Test
+    fun contextAwareSuggestionRequiresOriginalRequestEmptyOutputFieldsConfidenceAndListening() {
+        listOf(
+            decisionJson(route = "CONTEXT_AWARE_SUGGESTION"),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                reply = "Focus on revision"
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                contextRef = "T1"
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                contextDetail = "TIME"
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                contextAction = "UPDATE"
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                queryReadingMove = "REPEAT_LAST"
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                queryPresentationHint = "OVERVIEW"
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                confidence = 0.79
+            ),
+            decisionJson(
+                route = "CONTEXT_AWARE_SUGGESTION",
+                taskText = "what next",
+                listenAgain = false
+            )
+        ).forEach { invalid ->
+            assertThrows(ConversationSchemaException::class.java) {
+                parser.parse(invalid)
+            }
+        }
+    }
+
+    @Test
     fun acceptsValidContextActions() {
         val reschedule = parser.parse(
             decisionJson(

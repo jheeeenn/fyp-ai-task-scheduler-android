@@ -98,6 +98,14 @@ import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContext
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
 import com.example.myapplication.ai.conversation.taskcontext.ValidatedContextRead
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionDecision
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionDeliveryGuard
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionDeliveryResult
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSemanticOrchestrator
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSnapshot
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSnapshotBuilder
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSpeechRenderer
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionType
 import com.example.myapplication.ai.conversation.query.AccessibleTaskQuerySession
 import com.example.myapplication.ai.conversation.query.AuthoritativeRepeatState
 import com.example.myapplication.ai.conversation.query.QueryReadingControlPolicy
@@ -194,6 +202,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         RoutineFollowUpSemanticOrchestrator
     private lateinit var savedRoutineSemanticOrchestrator:
         SavedRoutineSemanticOrchestrator
+    private lateinit var contextSuggestionSemanticOrchestrator:
+        ContextSuggestionSemanticOrchestrator
     private lateinit var breakdownFollowUpSemanticOrchestrator:
         BreakdownFollowUpSemanticOrchestrator
     private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()
@@ -208,6 +218,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         AFTER_TASK_SUMMARY,
         AFTER_TASK_DETAILS,
         AFTER_DAILY_BRIEFING,
+        AFTER_CONTEXT_SUGGESTION,
         QUERY_COUNT,
         QUERY_PAGE,
         TASK_MATCH_AMBIGUITY,
@@ -311,6 +322,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             conversationAgentClient
         )
         savedRoutineSemanticOrchestrator = SavedRoutineSemanticOrchestrator(
+            conversationAgentClient
+        )
+        contextSuggestionSemanticOrchestrator = ContextSuggestionSemanticOrchestrator(
             conversationAgentClient
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
@@ -715,6 +729,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
             )
 
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION -> Pair(
+                "An authoritative on-demand context-aware task suggestion was read.",
+                listOf(
+                    "Ask about the selected task or either selected task in a close-schedule pair.",
+                    "Ask for a spoken task's date, time, status, or subtask summary.",
+                    "Give a separate explicit task command using the task name.",
+                    "Ask to repeat the exact suggestion or end the session."
+                )
+            )
+
             HomeFollowUpContext.QUERY_COUNT -> Pair(
                 "A task query count was read, but no task item has been exposed yet.",
                 listOf(
@@ -801,6 +825,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "Create a task.",
                 "Query tasks by date, time, or date range.",
                 "Provide an on-demand daily briefing covering overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus.",
+                "Suggest one active task to focus on.",
+                "Suggest continuing the first unfinished subtask of an active task.",
+                "Suggest using task breakdown for a suitable active task without subtasks.",
+                "Identify two active tasks scheduled no more than thirty minutes apart on the same date.",
                 "Update a task.",
                 "Reschedule a task.",
                 "Delete a task after confirmation.",
@@ -828,6 +856,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             usageExamples = listOf(
                 "Say, 'Show my tasks tomorrow.'",
                 "Say, 'Give me my daily briefing.'",
+                "Say, 'What should I focus on?'",
                 "Say, 'Create a task called revision tomorrow at 4 PM.'",
                 "Say, 'Use my morning routine tomorrow.'",
                 "Say, 'How do I reschedule a task?' for app guidance."
@@ -841,6 +870,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "Daily briefings are available on demand and are not delivered automatically on a schedule.",
                 "The daily briefing's suggested focus uses deterministic due-date and time ordering, not behavioural learning, habit-based recommendations, priority fields, or calendar integration.",
                 "After a daily briefing, the user may ask about one of the spoken tasks.",
+                "Context-aware suggestions run only after an explicit request and never change a task.",
+                "Suggestions use current task structure and device-local schedules, not proactive monitoring, behavioural profiles, learned priorities, task priority fields, inferred duration, or calendar data.",
+                "A close-schedule suggestion means tasks are no more than thirty minutes apart; it does not claim a definite conflict because task duration is unknown.",
+                "The user must give a separate explicit task command before any breakdown, reschedule, completion, or other task change.",
                 "Task breakdown requires plan approval and any missing scheduling information.",
                 "A saved routine is a reusable template of 2 to 5 ordered titles and default times; occurrence dates are stored only on generated tasks.",
                 "Every routine task requires an exact future date and time, and Android reviews the complete routine before creation.",
@@ -933,6 +966,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 (homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_DAILY_BRIEFING ||
+                    homeFollowUpContext == HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION ||
                     homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE) &&
                     (ContextReferenceMutationGuard.containsContextReference(
                             normalized,
@@ -983,6 +1017,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
                         homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
                         homeFollowUpContext == HomeFollowUpContext.AFTER_DAILY_BRIEFING ||
+                        homeFollowUpContext == HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION ||
                         homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE
                 val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
                     taskContextCapture.snapshot
@@ -1226,6 +1261,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         executeDailyBriefing(
                             requestToken = requestToken,
                             decision = conversationDecision
+                        )
+                        return@launch
+                    }
+                    ConversationRoute.CONTEXT_AWARE_SUGGESTION -> {
+                        executeContextSuggestion(
+                            normalizedRequest = conversationDecision.taskText,
+                            requestToken = requestToken,
+                            routingDecision = conversationDecision
                         )
                         return@launch
                     }
@@ -2052,6 +2095,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             RepeatableSpeechKind.QUERY_COUNT -> SafeObservationInteraction.QUERY_COUNT
             RepeatableSpeechKind.QUERY_PAGE -> SafeObservationInteraction.QUERY_PAGE
             RepeatableSpeechKind.DAILY_BRIEFING -> SafeObservationInteraction.NONE
+            RepeatableSpeechKind.CONTEXT_SUGGESTION -> SafeObservationInteraction.NONE
             RepeatableSpeechKind.CONTEXT_READ -> SafeObservationInteraction.NONE
         },
         querySessionActive = accessibleTaskQuerySession != null,
@@ -2201,6 +2245,267 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         val current = isAssistantRequestCurrent(requestToken)
         if (!current) {
             Log.d("DAILY_BRIEFING_STALE", "reason=REQUEST_CHANGED")
+        }
+        return current
+    }
+
+    private suspend fun executeContextSuggestion(
+        normalizedRequest: String,
+        requestToken: AssistantRequestToken,
+        routingDecision: ConversationDecision
+    ) {
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        Log.d(
+            "CONTEXT_SUGGESTION_REQUEST",
+            "requestGeneration=${requestToken.requestGeneration}"
+        )
+        val capturedNow = Calendar.getInstance()
+        val taskDao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+
+        val roomData = withContext(Dispatchers.IO) {
+            val roots = taskDao.getRootTasks()
+            val subtasks = roots.associate { root ->
+                root.id to taskDao.getSubtasks(root.id)
+            }
+            roots to subtasks
+        }
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+
+        val snapshot = ContextSuggestionSnapshotBuilder.build(
+            now = capturedNow,
+            rootTasks = roomData.first,
+            subtasksByParentId = roomData.second
+        )
+        Log.d(
+            "CONTEXT_SUGGESTION_SNAPSHOT",
+            "requestGeneration=${requestToken.requestGeneration} " +
+                "candidateCount=${snapshot.candidates.size} " +
+                "closePairCount=${snapshot.closePairs.size}"
+        )
+
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val selection = contextSuggestionSemanticOrchestrator.select(
+            originalRequest = normalizedRequest,
+            snapshot = snapshot
+        )
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        Log.d(
+            "CONTEXT_SUGGESTION_AGENT",
+            "requestGeneration=${requestToken.requestGeneration} " +
+                "suggestionType=${selection.decision.suggestionType} " +
+                "primaryRef=${selection.decision.primaryRef} " +
+                "secondaryRef=${selection.decision.secondaryRef} " +
+                "confidence=${selection.decision.confidence} " +
+                "source=${selection.source}"
+        )
+        Log.d(
+            "CONTEXT_SUGGESTION_VALIDATION",
+            "requestGeneration=${requestToken.requestGeneration} " +
+                "validationResult=${selection.validationResult} " +
+                "source=${selection.source}"
+        )
+
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val selectedCandidates = selectedContextSuggestionCandidates(
+            snapshot,
+            selection.decision
+        )
+        val refreshed = withContext(Dispatchers.IO) {
+            if (selection.decision.suggestionType == ContextSuggestionType.NO_SUGGESTION) {
+                val roots = taskDao.getRootTasks()
+                val subtasks = roots.associate { root ->
+                    root.id to taskDao.getSubtasks(root.id)
+                }
+                Triple(
+                    emptyMap(),
+                    emptyMap(),
+                    ContextSuggestionSnapshotBuilder.build(
+                        now = Calendar.getInstance(),
+                        rootTasks = roots,
+                        subtasksByParentId = subtasks
+                    )
+                )
+            } else {
+                val tasks = selectedCandidates.mapNotNull { candidate ->
+                    taskDao.getById(candidate.taskId)
+                }
+                val subtasks = selectedCandidates.associate { candidate ->
+                    candidate.taskId to taskDao.getSubtasks(candidate.taskId)
+                }
+                Triple(
+                    tasks.associateBy(TaskEntity::id),
+                    subtasks,
+                    null
+                )
+            }
+        }
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+
+        val deliveryResult = refreshed.third?.let(
+            ContextSuggestionDeliveryGuard::validateFreshNoSuggestion
+        ) ?: ContextSuggestionDeliveryGuard.validateFreshSelection(
+                snapshot = snapshot,
+                decision = selection.decision,
+                freshTasksById = refreshed.first,
+                freshSubtasksByParentId = refreshed.second,
+                now = Calendar.getInstance()
+            )
+        if (deliveryResult != ContextSuggestionDeliveryResult.CURRENT) {
+            Log.d(
+                "CONTEXT_SUGGESTION_STALE",
+                "requestGeneration=${requestToken.requestGeneration} " +
+                    "validationResult=$deliveryResult"
+            )
+            deliverChangedContextSuggestion(requestToken, routingDecision, deliveryResult)
+            return
+        }
+
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        clearAccessibleTaskQuerySession(clearTaskContext = true)
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+
+        val selectedTasks = selectedCandidates.mapNotNull { refreshed.first[it.taskId] }
+        if (selectedTasks.isNotEmpty()) {
+            readOnlyTaskContextStore.replaceContextSuggestionResults(
+                tasks = selectedTasks,
+                subtasksByParentId = refreshed.second
+            )
+            currentSubtasksByParentId = refreshed.second
+        }
+        if (::conversationOrchestrator.isInitialized) {
+            conversationOrchestrator.clearInvalidContextFocus(
+                readOnlyTaskContextStore.snapshot()
+            )
+        }
+        val contextGeneration = readOnlyTaskContextStore.currentGeneration()
+
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val primaryCandidate = snapshot.candidate(selection.decision.primaryRef)
+        val secondaryCandidate = snapshot.candidate(selection.decision.secondaryRef)
+        val primaryTask = primaryCandidate?.let { refreshed.first[it.taskId] }
+        val secondaryTask = secondaryCandidate?.let { refreshed.first[it.taskId] }
+        val firstUnfinishedSubtask = primaryTask?.let { task ->
+            refreshed.second[task.id]
+                .orEmpty()
+                .sortedWith(compareBy<TaskEntity> { it.subtaskOrder }.thenBy { it.id })
+                .firstOrNull { !it.isDone }
+        }
+        val speech = ContextSuggestionSpeechRenderer.render(
+            decision = selection.decision,
+            snapshot = snapshot,
+            primaryTask = primaryTask,
+            secondaryTask = secondaryTask,
+            firstUnfinishedSubtask = firstUnfinishedSubtask,
+            now = Calendar.getInstance()
+        )
+        val outcome = if (
+            selection.decision.suggestionType == ContextSuggestionType.NO_SUGGESTION
+        ) {
+            ExecutionOutcome.NO_RESULTS
+        } else {
+            ExecutionOutcome.INFORMATION
+        }
+        val observation = ExecutionObservation(
+            operation = ExecutionOperation.CONTEXT_SUGGESTION,
+            outcome = outcome,
+            taskTitle = primaryTask?.title.orEmpty(),
+            taskCount = selectedTasks.size,
+            detail = selection.decision.suggestionType.name,
+            tasks = selectedTasks.map { task ->
+                TaskObservationMapper.observedTask(
+                    task,
+                    refreshed.second[task.id].orEmpty()
+                )
+            },
+            listenAgain = true,
+            fallbackSpeech = speech
+        )
+        val response = AndroidObservationResponseRenderer.render(observation)
+
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        conversationOrchestrator.commitFinalDecision(routingDecision)
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        recordObservationResponse(observation, response)
+        authoritativeRepeatState = AuthoritativeRepeatState(
+            speech = response.speech,
+            kind = RepeatableSpeechKind.CONTEXT_SUGGESTION,
+            contextGeneration = contextGeneration
+        )
+        homeFollowUpContext = HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        Log.d(
+            "CONTEXT_SUGGESTION_RESPONSE",
+            "requestGeneration=${requestToken.requestGeneration} " +
+                "suggestionType=${selection.decision.suggestionType} " +
+                "primaryRef=${selection.decision.primaryRef} " +
+                "secondaryRef=${selection.decision.secondaryRef} " +
+                "source=${selection.source} outcome=$outcome"
+        )
+        deliverObservationResponse(observation, response)
+    }
+
+    private fun selectedContextSuggestionCandidates(
+        snapshot: ContextSuggestionSnapshot,
+        decision: ContextSuggestionDecision
+    ) = when (decision.suggestionType) {
+        ContextSuggestionType.NO_SUGGESTION -> emptyList()
+        ContextSuggestionType.REVIEW_CLOSE_SCHEDULE -> listOfNotNull(
+            snapshot.candidate(decision.primaryRef),
+            snapshot.candidate(decision.secondaryRef)
+        )
+        else -> listOfNotNull(snapshot.candidate(decision.primaryRef))
+    }
+
+    private fun deliverChangedContextSuggestion(
+        requestToken: AssistantRequestToken,
+        routingDecision: ConversationDecision,
+        deliveryResult: ContextSuggestionDeliveryResult
+    ) {
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        clearAccessibleTaskQuerySession(clearTaskContext = true)
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val speech =
+            "Your tasks changed while I was checking. Please ask for another suggestion."
+        val observation = ExecutionObservation(
+            operation = ExecutionOperation.CONTEXT_SUGGESTION,
+            outcome = ExecutionOutcome.INFORMATION,
+            detail = deliveryResult.name,
+            listenAgain = true,
+            fallbackSpeech = speech
+        )
+        val response = AndroidObservationResponseRenderer.render(observation)
+        conversationOrchestrator.commitFinalDecision(routingDecision)
+        recordObservationResponse(observation, response)
+        authoritativeRepeatState = AuthoritativeRepeatState(
+            speech = response.speech,
+            kind = RepeatableSpeechKind.CONTEXT_SUGGESTION,
+            contextGeneration = readOnlyTaskContextStore.currentGeneration()
+        )
+        homeFollowUpContext = HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        Log.d(
+            "CONTEXT_SUGGESTION_RESPONSE",
+            "requestGeneration=${requestToken.requestGeneration} " +
+                "suggestionType=NONE primaryRef= secondaryRef= " +
+                "source=ANDROID_STALE_GUARD outcome=${ExecutionOutcome.INFORMATION}"
+        )
+        deliverObservationResponse(observation, response)
+    }
+
+    private fun isContextSuggestionRequestCurrent(
+        requestToken: AssistantRequestToken
+    ): Boolean {
+        val current = ContextSuggestionDeliveryGuard.requestResult(
+            token = requestToken,
+            currentRequestGeneration = assistantRequestGeneration,
+            requestActive = assistantRequestActive
+        ) == ContextSuggestionDeliveryResult.CURRENT
+        if (!current) {
+            Log.d(
+                "CONTEXT_SUGGESTION_STALE",
+                "requestGeneration=${requestToken.requestGeneration} " +
+                    "validationResult=${ContextSuggestionDeliveryResult.STALE_REQUEST}"
+            )
         }
         return current
     }
@@ -2659,7 +2964,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.AFTER_TASK_SUMMARY,
             HomeFollowUpContext.AFTER_TASK_DETAILS,
             HomeFollowUpContext.QUERY_PAGE,
-            HomeFollowUpContext.AFTER_DAILY_BRIEFING
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING,
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
         )
         if (!isResultInteraction) return false
 
@@ -2708,7 +3014,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.AFTER_TASK_SUMMARY,
             HomeFollowUpContext.AFTER_TASK_DETAILS,
             HomeFollowUpContext.QUERY_PAGE,
-            HomeFollowUpContext.AFTER_DAILY_BRIEFING
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING,
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
         )
         if (!isResultInteraction) return false
 
@@ -2844,7 +3151,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 else -> false
             }
 
-            HomeFollowUpContext.AFTER_DAILY_BRIEFING -> false
+            HomeFollowUpContext.AFTER_DAILY_BRIEFING,
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION -> false
             else -> false
         }
     }
@@ -2880,6 +3188,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.QUERY_PAGE -> QueryReadingInteractionState.QUERY_PAGE
             HomeFollowUpContext.AFTER_DAILY_BRIEFING ->
                 QueryReadingInteractionState.DAILY_BRIEFING
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION ->
+                QueryReadingInteractionState.CONTEXT_SUGGESTION
             else -> QueryReadingInteractionState.NONE
         }
 
@@ -4245,6 +4555,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
             }
 
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION -> {
+                if (isSimpleFollowUpEndCommand(normalized)) {
+                    endAssistantConversation()
+                    true
+                } else {
+                    false
+                }
+            }
+
             HomeFollowUpContext.QUERY_COUNT,
             HomeFollowUpContext.QUERY_PAGE -> false
             HomeFollowUpContext.NONE -> false
@@ -5409,6 +5728,21 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
             }
             HomeFollowUpContext.AFTER_DAILY_BRIEFING -> {
+                when (intent) {
+                    ConversationIntent.CONFIRM_NO,
+                    ConversationIntent.STOP_CONVERSATION -> {
+                        if (isSimpleFollowUpEndCommand(normalized)) {
+                            endAssistantConversation()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+
+                    else -> false
+                }
+            }
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION -> {
                 when (intent) {
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {

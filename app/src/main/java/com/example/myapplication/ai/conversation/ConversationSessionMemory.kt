@@ -122,6 +122,9 @@ class ConversationSessionMemory {
             ConversationRoute.DAILY_BRIEFING -> {
                 pendingAction = "DAILY_BRIEFING"
             }
+            ConversationRoute.CONTEXT_AWARE_SUGGESTION -> {
+                pendingAction = "CONTEXT_AWARE_SUGGESTION"
+            }
             ConversationRoute.ASK_CLARIFICATION -> {
                 pendingAction = "ASK_CLARIFICATION"
                 recordAssistant(decision.reply)

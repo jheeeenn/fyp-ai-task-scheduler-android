@@ -38,6 +38,18 @@ class ReadOnlyTaskContextStore {
     }
 
     @Synchronized
+    fun replaceContextSuggestionResults(
+        tasks: List<TaskEntity>,
+        subtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
+    ) {
+        replace(
+            scope = TaskContextScope.CONTEXT_SUGGESTION,
+            tasks = tasks,
+            subtasksByParentId = subtasksByParentId
+        )
+    }
+
+    @Synchronized
     fun replaceTaskMatchChoices(tasks: List<TaskEntity>) {
         replace(
             scope = TaskContextScope.TASK_MATCH_CHOICES,

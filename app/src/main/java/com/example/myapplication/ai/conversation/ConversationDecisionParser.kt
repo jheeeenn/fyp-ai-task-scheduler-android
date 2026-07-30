@@ -194,6 +194,34 @@ class ConversationDecisionParser {
             return
         }
 
+        if (route == ConversationRoute.CONTEXT_AWARE_SUGGESTION) {
+            if (taskText.isBlank() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
+                throw ConversationSchemaException(
+                    "CONTEXT_AWARE_SUGGESTION requires non-empty task_text and empty reply and context_ref"
+                )
+            }
+            if (contextDetail != ConversationContextDetail.NONE ||
+                contextAction != ConversationContextAction.NONE ||
+                queryReadingMove != ConversationQueryReadingMove.NONE ||
+                queryPresentationHint != TaskQueryPresentation.NONE
+            ) {
+                throw ConversationSchemaException(
+                    "CONTEXT_AWARE_SUGGESTION requires NONE context and query fields"
+                )
+            }
+            if (confidence < MIN_ACCEPTED_ROUTING_CONFIDENCE) {
+                throw ConversationSchemaException(
+                    "CONTEXT_AWARE_SUGGESTION confidence is below the accepted routing threshold"
+                )
+            }
+            if (!listenAgain) {
+                throw ConversationSchemaException(
+                    "CONTEXT_AWARE_SUGGESTION requires listen_again true"
+                )
+            }
+            return
+        }
+
         if (route == ConversationRoute.QUERY_READING_CONTROL) {
             if (taskText.isNotEmpty() || reply.isNotEmpty() || contextRef.isNotEmpty()) {
                 throw ConversationSchemaException(
