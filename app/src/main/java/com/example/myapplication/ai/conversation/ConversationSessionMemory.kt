@@ -79,6 +79,22 @@ class ConversationSessionMemory {
         recordFinalSpokenResponse(finalSpeech)
     }
 
+    fun setAuthoritativeContextFocus(
+        item: ReadOnlyTaskContextItem,
+        selectedRef: String,
+        capturedGeneration: Long
+    ) {
+        val normalizedRef = selectedRef.trim().uppercase(Locale.ROOT)
+        require(normalizedRef.isNotBlank() && item.ref.equals(normalizedRef, ignoreCase = true)) {
+            "Authoritative context focus must match the selected item"
+        }
+        lastContextRef = normalizedRef
+        lastContextGeneration = capturedGeneration
+        lastContextDetail = ConversationContextDetail.SUMMARY
+        authoritativeContextTitle = sanitizeUntrustedValue(item.title)
+        lastReferencedTask = authoritativeContextTitle
+    }
+
     fun contextFocusForGeneration(
         currentGeneration: Long,
         suppliedRefs: Set<String>

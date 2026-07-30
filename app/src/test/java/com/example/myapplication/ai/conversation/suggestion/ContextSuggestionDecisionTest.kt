@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.SocketTimeoutException
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
@@ -142,6 +143,26 @@ class ContextSuggestionDecisionTest {
         assertEquals(ContextSuggestionDecisionSource.DETERMINISTIC_FALLBACK, result.source)
         assertEquals(ContextSuggestionValidationResult.REQUEST_FAILED, result.validationResult)
         assertEquals(ContextSuggestionType.CONTINUE_SUBTASK, result.decision.suggestionType)
+        assertEquals("S1", result.decision.primaryRef)
+    }
+
+    @Test
+    fun semanticTimeoutFallsBackExactlyOnceWithoutRetry() = runBlocking {
+        val snapshot = snapshot(listOf(task(1, "Next task", "31/07/2026", "10 AM")))
+        var calls = 0
+        val orchestrator = ContextSuggestionSemanticOrchestrator(
+            ContextSuggestionSemanticClient { _, _ ->
+                calls += 1
+                throw SocketTimeoutException("selection timed out")
+            }
+        )
+
+        val result = orchestrator.select("What should I do next?", snapshot)
+
+        assertEquals(1, calls)
+        assertEquals(ContextSuggestionDecisionSource.DETERMINISTIC_FALLBACK, result.source)
+        assertEquals(ContextSuggestionValidationResult.REQUEST_FAILED, result.validationResult)
+        assertEquals(ContextSuggestionType.FOCUS_TASK, result.decision.suggestionType)
         assertEquals("S1", result.decision.primaryRef)
     }
 

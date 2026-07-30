@@ -101,6 +101,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ValidatedContextRea
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionDecision
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionDeliveryGuard
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionDeliveryResult
+import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionFocusPolicy
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSemanticOrchestrator
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSnapshot
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSnapshotBuilder
@@ -2426,6 +2427,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         conversationOrchestrator.commitFinalDecision(routingDecision)
         if (!isContextSuggestionRequestCurrent(requestToken)) return
         recordObservationResponse(observation, response)
+        establishContextSuggestionFocus(
+            suggestionType = selection.decision.suggestionType,
+            capturedGeneration = contextGeneration,
+            requestToken = requestToken
+        )
         authoritativeRepeatState = AuthoritativeRepeatState(
             speech = response.speech,
             kind = RepeatableSpeechKind.CONTEXT_SUGGESTION,
@@ -2454,6 +2460,28 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             snapshot.candidate(decision.secondaryRef)
         )
         else -> listOfNotNull(snapshot.candidate(decision.primaryRef))
+    }
+
+    private fun establishContextSuggestionFocus(
+        suggestionType: ContextSuggestionType,
+        capturedGeneration: Long,
+        requestToken: AssistantRequestToken
+    ) {
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val publishedSnapshot = readOnlyTaskContextStore.snapshot()
+        val item = ContextSuggestionFocusPolicy.authoritativeItemOrNull(
+            suggestionType = suggestionType,
+            publishedSnapshot = publishedSnapshot,
+            capturedGeneration = capturedGeneration,
+            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+        ) ?: return
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        if (readOnlyTaskContextStore.currentGeneration() != capturedGeneration) return
+        conversationOrchestrator.setAuthoritativeContextFocus(
+            item = item,
+            selectedRef = "T1",
+            capturedGeneration = capturedGeneration
+        )
     }
 
     private fun deliverChangedContextSuggestion(

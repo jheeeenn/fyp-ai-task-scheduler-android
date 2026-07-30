@@ -264,6 +264,18 @@ class ConversationOrchestrator(
             suppliedRefs = snapshot.items.map { it.ref }.toSet()
         )
 
+    fun setAuthoritativeContextFocus(
+        item: ReadOnlyTaskContextItem,
+        selectedRef: String,
+        capturedGeneration: Long
+    ) {
+        memory.setAuthoritativeContextFocus(
+            item = item,
+            selectedRef = selectedRef,
+            capturedGeneration = capturedGeneration
+        )
+    }
+
     fun commitFinalDecision(decision: ConversationDecision) {
         memory.commitFinalDecision(decision)
     }

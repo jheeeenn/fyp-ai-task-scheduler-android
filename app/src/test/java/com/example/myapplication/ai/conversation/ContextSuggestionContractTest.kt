@@ -17,6 +17,9 @@ class ContextSuggestionContractTest {
     private val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
     private val homeSource =
         File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+    private val clientSource =
+        File("src/main/java/com/example/myapplication/ai/conversation/ConversationAgentClient.kt")
+            .readText()
 
     @Test
     fun routeEnumAndStrictRoutingSchemaSupportContextAwareSuggestion() {
@@ -57,6 +60,8 @@ class ContextSuggestionContractTest {
         ).forEach { assertTrue("Missing routing contrast: $it", prompt.contains(it)) }
         assertTrue(prompt.contains("SAVED_ROUTINE_ACTION"))
         assertTrue(prompt.contains("semantic examples, not a local phrase dictionary"))
+        assertTrue(prompt.contains("validated single-task context suggestion"))
+        assertTrue(prompt.contains("\"do it\" or \"break it down\""))
     }
 
     @Test
@@ -152,6 +157,56 @@ class ContextSuggestionContractTest {
         assertTrue(execution.contains("taskDao.getById(candidate.taskId)"))
         assertTrue(execution.contains("validateFreshSelection("))
         assertTrue(execution.contains("replaceContextSuggestionResults("))
+    }
+
+    @Test
+    fun singleResultFocusIsEstablishedOnlyAfterObservationRecording() {
+        val execution = homeSource
+            .substringAfter("private suspend fun executeContextSuggestion(")
+            .substringBefore("private fun selectedContextSuggestionCandidates(")
+        val focusHelper = homeSource
+            .substringAfter("private fun establishContextSuggestionFocus(")
+            .substringBefore("private fun deliverChangedContextSuggestion(")
+
+        assertTrue(
+            execution.indexOf("recordObservationResponse(observation, response)") <
+                execution.indexOf("establishContextSuggestionFocus(")
+        )
+        assertTrue(focusHelper.contains("isContextSuggestionRequestCurrent(requestToken)"))
+        assertTrue(focusHelper.contains("ContextSuggestionFocusPolicy.authoritativeItemOrNull("))
+        assertTrue(focusHelper.contains("readOnlyTaskContextStore.currentGeneration()"))
+        assertTrue(focusHelper.contains("conversationOrchestrator.setAuthoritativeContextFocus("))
+        assertTrue(focusHelper.contains("selectedRef = \"T1\""))
+    }
+
+    @Test
+    fun contextSuggestionUsesDedicatedTenSecondHttpClient() {
+        val generalClient = clientSource
+            .substringAfter("private val client = OkHttpClient.Builder()")
+            .substringBefore("private val safeStyleClient")
+        val suggestionClient = clientSource
+            .substringAfter("private val contextSuggestionClient = client.newBuilder()")
+            .substringBefore("open suspend fun process(")
+        val clientSelection = clientSource
+            .substringAfter("val requestClient = when (kind)")
+            .substringBefore("requestClient.newCall(request)")
+
+        assertTrue(generalClient.contains(".readTimeout(45, TimeUnit.SECONDS)"))
+        assertTrue(generalClient.contains(".callTimeout(60, TimeUnit.SECONDS)"))
+        assertEquals(10L, ConversationAgentClient.CONTEXT_SUGGESTION_TIMEOUT_SECONDS)
+        listOf("connectTimeout", "readTimeout", "writeTimeout", "callTimeout").forEach {
+            assertTrue(
+                suggestionClient.contains(
+                    ".$it(CONTEXT_SUGGESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)"
+                )
+            )
+        }
+        assertTrue(
+            clientSelection.contains(
+                "RequestKind.CONTEXT_SUGGESTION -> contextSuggestionClient"
+            )
+        )
+        assertTrue(clientSelection.contains("else -> client"))
     }
 
     @Test
