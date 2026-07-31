@@ -75,7 +75,7 @@ class ContextSuggestionFocusPolicyTest {
     }
 
     @Test
-    fun pairAndNoSuggestionNeverCreateImplicitFocus() {
+    fun pairAndNoResultSuggestionsNeverCreateImplicitFocus() {
         val pairStore = ReadOnlyTaskContextStore().apply {
             replaceContextSuggestionResults(
                 listOf(
@@ -90,6 +90,14 @@ class ContextSuggestionFocusPolicyTest {
             ContextSuggestionFocusPolicy.authoritativeItemOrNull(
                 ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
                 pairSnapshot,
+                pairSnapshot.generation,
+                pairStore.currentGeneration()
+            )
+        )
+        assertNull(
+            ContextSuggestionFocusPolicy.authoritativeItemOrNull(
+                ContextSuggestionType.NO_CLOSE_SCHEDULE,
+                pairSnapshot.copy(items = emptyList()),
                 pairSnapshot.generation,
                 pairStore.currentGeneration()
             )

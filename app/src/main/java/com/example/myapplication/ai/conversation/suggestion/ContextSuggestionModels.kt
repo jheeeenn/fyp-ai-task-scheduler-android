@@ -9,6 +9,7 @@ enum class ContextSuggestionType {
     CONTINUE_SUBTASK,
     BREAK_DOWN_TASK,
     REVIEW_CLOSE_SCHEDULE,
+    NO_CLOSE_SCHEDULE,
     NO_SUGGESTION
 }
 
@@ -70,11 +71,6 @@ data class ContextSuggestionSnapshot(
     val closePairs: List<ContextSuggestionClosePair>,
     val capturedAtMillis: Long
 ) {
-    val hasOverdueCandidate: Boolean
-        get() = candidates.any {
-            it.attentionCategory == ContextSuggestionAttentionCategory.OVERDUE
-        }
-
     fun candidate(ref: String): ContextSuggestionCandidate? =
         candidates.firstOrNull { it.ref == ref }
 

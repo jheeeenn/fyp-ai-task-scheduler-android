@@ -46,6 +46,8 @@ object ContextSuggestionSpeechRenderer {
             "Review ${spokenTitle(first.title)} and ${spokenTitle(second.title)}. " +
                 "They are scheduled $gapWording on ${spokenDate(pair.dueDate)}."
         }
+        ContextSuggestionType.NO_CLOSE_SCHEDULE ->
+            "I did not find active tasks scheduled within thirty minutes of each other."
         ContextSuggestionType.NO_SUGGESTION ->
             "You do not have an active task for me to suggest right now."
     }

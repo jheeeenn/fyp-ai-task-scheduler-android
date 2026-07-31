@@ -850,10 +850,12 @@ FOCUS_TASK
 CONTINUE_SUBTASK
 BREAK_DOWN_TASK
 REVIEW_CLOSE_SCHEDULE
+NO_CLOSE_SCHEDULE
 NO_SUGGESTION
 
 FOCUS_TASK selects one supplied candidate that deserves immediate attention.
-Prefer OVERDUE, then DUE_TODAY, then UPCOMING candidates.
+Use this for a broad focus request. For broad focus requests, prefer OVERDUE, then DUE_TODAY,
+then UPCOMING candidates.
 primary_ref must be one supplied candidate ref and secondary_ref must be empty.
 
 CONTINUE_SUBTASK selects only a supplied candidate whose unfinished_subtask_count is greater
@@ -864,15 +866,26 @@ BREAK_DOWN_TASK selects only a supplied candidate marked structurally_eligible_f
 Use it only when the untrusted title semantically appears multi-step, project-like, broad, or
 difficult. Avoid it for clearly simple atomic errands. Do not perform task breakdown.
 primary_ref must be one eligible supplied candidate ref and secondary_ref must be empty.
+For an explicit request about how to start or whether breakdown would help, select an eligible
+BREAK_DOWN_TASK when suitable even if a different candidate is overdue.
 
 REVIEW_CLOSE_SCHEDULE selects exactly one supplied close_schedule_pairs entry.
 Return that entry's primary_ref and secondary_ref in the supplied order. Do not invent a pair.
 The pair is only close together; do not call it a definite conflict because duration is unknown.
+When the explicit request asks whether tasks are scheduled close together and one or more supplied
+pairs exist, use REVIEW_CLOSE_SCHEDULE. Do not answer that request with FOCUS_TASK merely because
+another candidate is overdue.
+
+NO_CLOSE_SCHEDULE is allowed only when close_schedule_pairs is empty.
+Use it when the explicit request asks whether tasks are scheduled close together and Android
+supplied no close pair. Candidates may still exist. Both refs must be empty.
 
 NO_SUGGESTION is allowed only when candidates is empty.
 Both refs must be empty.
 
 Use the original normalized request only to interpret which bounded kind of help the user wants.
+Match that requested kind of help before applying attention ordering. Urgency is semantic guidance
+for broad focus selection, not permission to replace a close-schedule or start-help answer.
 Before returning, verify the object has exactly four fields and only supplied refs.
 Do not output markdown, reasoning, speech, advice, plans, explanations, or extra fields.
 """.trimIndent()

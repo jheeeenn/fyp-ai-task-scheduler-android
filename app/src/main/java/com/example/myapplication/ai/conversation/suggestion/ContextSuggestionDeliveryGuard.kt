@@ -43,7 +43,10 @@ object ContextSuggestionDeliveryGuard {
         freshSubtasksByParentId: Map<Long, List<TaskEntity>>,
         now: Calendar
     ): ContextSuggestionDeliveryResult {
-        if (decision.suggestionType == ContextSuggestionType.NO_SUGGESTION) {
+        if (
+            decision.suggestionType == ContextSuggestionType.NO_SUGGESTION ||
+            decision.suggestionType == ContextSuggestionType.NO_CLOSE_SCHEDULE
+        ) {
             return ContextSuggestionDeliveryResult.CURRENT
         }
         val primaryCandidate = snapshot.candidate(decision.primaryRef)
@@ -124,6 +127,8 @@ object ContextSuggestionDeliveryGuard {
                     ContextSuggestionDeliveryResult.CLOSE_PAIR_CHANGED
                 }
             }
+            ContextSuggestionType.NO_CLOSE_SCHEDULE ->
+                ContextSuggestionDeliveryResult.CURRENT
             ContextSuggestionType.NO_SUGGESTION ->
                 ContextSuggestionDeliveryResult.CURRENT
         }
@@ -139,5 +144,14 @@ object ContextSuggestionDeliveryGuard {
             ContextSuggestionDeliveryResult.CURRENT
         } else {
             ContextSuggestionDeliveryResult.CANDIDATES_CHANGED
+        }
+
+    fun validateFreshNoCloseSchedule(
+        freshSnapshot: ContextSuggestionSnapshot
+    ): ContextSuggestionDeliveryResult =
+        if (freshSnapshot.closePairs.isEmpty()) {
+            ContextSuggestionDeliveryResult.CURRENT
+        } else {
+            ContextSuggestionDeliveryResult.CLOSE_PAIR_CHANGED
         }
 }

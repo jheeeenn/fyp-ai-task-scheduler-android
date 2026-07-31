@@ -18,6 +18,10 @@ class ContextSuggestionDecisionTest {
     fun parserRequiresExactlyFourFieldsAndKnownType() {
         val accepted = parser.parse(json("FOCUS_TASK", "S1"))
         assertEquals(ContextSuggestionType.FOCUS_TASK, accepted.suggestionType)
+        assertEquals(
+            ContextSuggestionType.NO_CLOSE_SCHEDULE,
+            parser.parse(json("NO_CLOSE_SCHEDULE", "")).suggestionType
+        )
 
         listOf(
             json("FOCUS_TASK", "S1").replace("\"confidence\":0.95", "\"confidence\":0.95,\"reply\":\"x\""),
@@ -79,12 +83,56 @@ class ContextSuggestionDecisionTest {
             )
         )
         assertEquals(
+            ContextSuggestionValidationResult.INVALID_SECONDARY_REF,
+            validate(
+                snapshot,
+                ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
+                pair.primaryRef,
+                "S99"
+            )
+        )
+        assertEquals(
             ContextSuggestionValidationResult.UNKNOWN_CLOSE_PAIR,
             validate(
                 snapshot,
                 ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
                 pair.secondaryRef,
                 pair.primaryRef
+            )
+        )
+        assertEquals(
+            ContextSuggestionValidationResult.UNKNOWN_PRIMARY_REF,
+            validate(
+                snapshot,
+                ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
+                "S99",
+                pair.secondaryRef
+            )
+        )
+        assertEquals(
+            ContextSuggestionValidationResult.DUPLICATE_REFS,
+            validate(
+                snapshot,
+                ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
+                pair.primaryRef,
+                pair.primaryRef
+            )
+        )
+
+        val tooFarApart = snapshot(
+            listOf(
+                task(11, "Ten", "31/07/2026", "10:00"),
+                task(12, "Ten thirty one", "31/07/2026", "10:31")
+            )
+        )
+        assertTrue(tooFarApart.closePairs.isEmpty())
+        assertEquals(
+            ContextSuggestionValidationResult.UNKNOWN_CLOSE_PAIR,
+            validate(
+                tooFarApart,
+                ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
+                "S1",
+                "S2"
             )
         )
     }
@@ -102,7 +150,47 @@ class ContextSuggestionDecisionTest {
     }
 
     @Test
-    fun overdueWorkBlocksBreakdownAndCloseScheduleProposals() {
+    fun noCloseScheduleIsValidOnlyWithEmptyPairListAndEmptyRefs() {
+        val noPair = snapshot(
+            listOf(
+                task(1, "First", "31/07/2026", "10 AM"),
+                task(2, "Second", "31/07/2026", "11 AM")
+            )
+        )
+        assertTrue(noPair.candidates.isNotEmpty())
+        assertTrue(noPair.closePairs.isEmpty())
+        assertEquals(
+            ContextSuggestionValidationResult.ACCEPTED,
+            validate(noPair, ContextSuggestionType.NO_CLOSE_SCHEDULE, "")
+        )
+        assertEquals(
+            ContextSuggestionValidationResult.INVALID_SECONDARY_REF,
+            validate(noPair, ContextSuggestionType.NO_CLOSE_SCHEDULE, "S1")
+        )
+        assertEquals(
+            ContextSuggestionValidationResult.INVALID_SECONDARY_REF,
+            validate(
+                noPair,
+                ContextSuggestionType.NO_CLOSE_SCHEDULE,
+                "",
+                "S1"
+            )
+        )
+
+        val withPair = snapshot(
+            listOf(
+                task(3, "Third", "31/07/2026", "10 AM"),
+                task(4, "Fourth", "31/07/2026", "10:30 AM")
+            )
+        )
+        assertEquals(
+            ContextSuggestionValidationResult.NO_CLOSE_SCHEDULE_WITH_PAIRS,
+            validate(withPair, ContextSuggestionType.NO_CLOSE_SCHEDULE, "")
+        )
+    }
+
+    @Test
+    fun overdueWorkDoesNotInvalidateBreakdownOrExactClosePair() {
         val overdue = task(1, "Urgent", "30/07/2026", "10 AM")
         val broad = task(2, "Plan final year project", "31/07/2026", "10 AM")
         val close = task(3, "Review draft", "31/07/2026", "10:15 AM")
@@ -110,11 +198,11 @@ class ContextSuggestionDecisionTest {
         val pair = snapshot.closePairs.single()
 
         assertEquals(
-            ContextSuggestionValidationResult.OVERDUE_SAFEGUARD,
+            ContextSuggestionValidationResult.ACCEPTED,
             validate(snapshot, ContextSuggestionType.BREAK_DOWN_TASK, "S2")
         )
         assertEquals(
-            ContextSuggestionValidationResult.OVERDUE_SAFEGUARD,
+            ContextSuggestionValidationResult.ACCEPTED,
             validate(
                 snapshot,
                 ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
@@ -122,6 +210,66 @@ class ContextSuggestionDecisionTest {
                 pair.secondaryRef
             )
         )
+    }
+
+    @Test
+    fun explicitCloseRequestAcceptsSemanticPairDespiteOverdueCandidate() = runBlocking {
+        val snapshot = snapshot(
+            listOf(
+                task(1, "Urgent", "30/07/2026", "10 AM"),
+                task(2, "Meeting", "31/07/2026", "10 AM"),
+                task(3, "Review", "31/07/2026", "10:15 AM")
+            )
+        )
+        val pair = snapshot.closePairs.single()
+        var calls = 0
+        val orchestrator = ContextSuggestionSemanticOrchestrator(
+            ContextSuggestionSemanticClient { _, _ ->
+                calls += 1
+                json(
+                    "REVIEW_CLOSE_SCHEDULE",
+                    pair.primaryRef,
+                    pair.secondaryRef
+                )
+            }
+        )
+
+        val result = orchestrator.select(
+            "Is anything scheduled too close together?",
+            snapshot
+        )
+
+        assertEquals(1, calls)
+        assertEquals(ContextSuggestionDecisionSource.SEMANTIC_AGENT, result.source)
+        assertEquals(ContextSuggestionValidationResult.ACCEPTED, result.validationResult)
+        assertEquals(
+            ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
+            result.decision.suggestionType
+        )
+    }
+
+    @Test
+    fun explicitCloseRequestAcceptsSemanticNoCloseResultWhenPairsAreEmpty() = runBlocking {
+        val snapshot = snapshot(
+            listOf(
+                task(1, "First", "31/07/2026", "10 AM"),
+                task(2, "Second", "31/07/2026", "11 AM")
+            )
+        )
+        val orchestrator = ContextSuggestionSemanticOrchestrator(
+            ContextSuggestionSemanticClient { _, _ ->
+                json("NO_CLOSE_SCHEDULE", "")
+            }
+        )
+
+        val result = orchestrator.select(
+            "Is anything scheduled too close together?",
+            snapshot
+        )
+
+        assertEquals(ContextSuggestionDecisionSource.SEMANTIC_AGENT, result.source)
+        assertEquals(ContextSuggestionValidationResult.ACCEPTED, result.validationResult)
+        assertEquals(ContextSuggestionType.NO_CLOSE_SCHEDULE, result.decision.suggestionType)
     }
 
     @Test
@@ -202,6 +350,26 @@ class ContextSuggestionDecisionTest {
         assertEquals(1, calls)
         assertEquals(ContextSuggestionDecisionSource.SEMANTIC_AGENT, result.source)
         assertEquals(ContextSuggestionValidationResult.ACCEPTED, result.validationResult)
+    }
+
+    @Test
+    fun generalFocusRequestCanSelectHighestRankedOverdueCandidate() = runBlocking {
+        val snapshot = snapshot(
+            listOf(
+                task(1, "Overdue", "30/07/2026", "10 AM"),
+                task(2, "Later", "31/07/2026", "10 AM")
+            )
+        )
+        val orchestrator = ContextSuggestionSemanticOrchestrator(
+            ContextSuggestionSemanticClient { _, _ -> json("FOCUS_TASK", "S1") }
+        )
+
+        val result = orchestrator.select("What should I focus on?", snapshot)
+
+        assertEquals(ContextSuggestionDecisionSource.SEMANTIC_AGENT, result.source)
+        assertEquals(ContextSuggestionValidationResult.ACCEPTED, result.validationResult)
+        assertEquals(ContextSuggestionType.FOCUS_TASK, result.decision.suggestionType)
+        assertEquals("S1", result.decision.primaryRef)
     }
 
     private fun validate(

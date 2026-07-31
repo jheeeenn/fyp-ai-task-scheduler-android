@@ -20,6 +20,11 @@ class ContextSuggestionContractTest {
     private val clientSource =
         File("src/main/java/com/example/myapplication/ai/conversation/ConversationAgentClient.kt")
             .readText()
+    private val validatorSource =
+        File(
+            "src/main/java/com/example/myapplication/ai/conversation/suggestion/" +
+                "ContextSuggestionDecisionValidator.kt"
+        ).readText()
 
     @Test
     fun routeEnumAndStrictRoutingSchemaSupportContextAwareSuggestion() {
@@ -101,6 +106,15 @@ class ContextSuggestionContractTest {
             setOf("suggestion_type", "primary_ref", "secondary_ref", "confidence"),
             format.getJSONObject("properties").keys().asSequence().toSet()
         )
+        val suggestionTypes = format
+            .getJSONObject("properties")
+            .getJSONObject("suggestion_type")
+            .getJSONArray("enum")
+        assertTrue(
+            (0 until suggestionTypes.length())
+                .map(suggestionTypes::getString)
+                .contains("NO_CLOSE_SCHEDULE")
+        )
         ContextSuggestionType.entries.forEach {
             assertTrue(semanticPrompt.contains(it.name))
         }
@@ -111,6 +125,17 @@ class ContextSuggestionContractTest {
         assertTrue(semanticPrompt.contains("Do not claim that an action was performed"))
         assertTrue(semanticPrompt.contains("Do not create, edit, complete, delete, reschedule"))
         assertTrue(semanticPrompt.contains("Android validates the decision"))
+        assertTrue(
+            semanticPrompt.contains(
+                "Do not answer that request with FOCUS_TASK merely because"
+            )
+        )
+        assertTrue(
+            semanticPrompt.contains(
+                "Urgency is semantic guidance"
+            )
+        )
+        assertFalse(validatorSource.contains("OVERDUE_SAFEGUARD"))
     }
 
     @Test
@@ -177,6 +202,28 @@ class ContextSuggestionContractTest {
         assertTrue(focusHelper.contains("readOnlyTaskContextStore.currentGeneration()"))
         assertTrue(focusHelper.contains("conversationOrchestrator.setAuthoritativeContextFocus("))
         assertTrue(focusHelper.contains("selectedRef = \"T1\""))
+    }
+
+    @Test
+    fun noCloseScheduleReloadsRootsPublishesNoTasksAndUsesNoResults() {
+        val execution = homeSource
+            .substringAfter("private suspend fun executeContextSuggestion(")
+            .substringBefore("private fun selectedContextSuggestionCandidates(")
+        val selectedCandidates = homeSource
+            .substringAfter("private fun selectedContextSuggestionCandidates(")
+            .substringBefore("private fun establishContextSuggestionFocus(")
+
+        assertTrue(execution.contains("ContextSuggestionType.NO_CLOSE_SCHEDULE"))
+        assertTrue(execution.contains("taskDao.getRootTasks()"))
+        assertTrue(execution.contains("validateFreshNoCloseSchedule("))
+        assertTrue(execution.contains("ExecutionOutcome.NO_RESULTS"))
+        assertTrue(
+            selectedCandidates.contains(
+                "ContextSuggestionType.NO_CLOSE_SCHEDULE -> emptyList()"
+            )
+        )
+        assertTrue(execution.contains("if (selectedTasks.isNotEmpty())"))
+        assertTrue(execution.contains("replaceContextSuggestionResults("))
     }
 
     @Test

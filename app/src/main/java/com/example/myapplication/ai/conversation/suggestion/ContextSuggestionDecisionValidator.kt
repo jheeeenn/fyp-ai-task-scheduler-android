@@ -11,9 +11,9 @@ enum class ContextSuggestionValidationResult {
     NO_UNFINISHED_SUBTASK,
     NOT_BREAKDOWN_ELIGIBLE,
     UNKNOWN_CLOSE_PAIR,
+    NO_CLOSE_SCHEDULE_WITH_PAIRS,
     NO_SUGGESTION_WITH_CANDIDATES,
-    SUGGESTION_WITHOUT_CANDIDATES,
-    OVERDUE_SAFEGUARD
+    SUGGESTION_WITHOUT_CANDIDATES
 }
 
 object ContextSuggestionDecisionValidator {
@@ -32,16 +32,19 @@ object ContextSuggestionDecisionValidator {
         ) {
             return ContextSuggestionValidationResult.DUPLICATE_REFS
         }
-        if (
-            snapshot.hasOverdueCandidate &&
-            decision.suggestionType in setOf(
-                ContextSuggestionType.BREAK_DOWN_TASK,
-                ContextSuggestionType.REVIEW_CLOSE_SCHEDULE
-            )
-        ) {
-            return ContextSuggestionValidationResult.OVERDUE_SAFEGUARD
-        }
         return when (decision.suggestionType) {
+            ContextSuggestionType.NO_CLOSE_SCHEDULE -> {
+                if (
+                    decision.primaryRef.isNotEmpty() ||
+                    decision.secondaryRef.isNotEmpty()
+                ) {
+                    ContextSuggestionValidationResult.INVALID_SECONDARY_REF
+                } else if (snapshot.closePairs.isNotEmpty()) {
+                    ContextSuggestionValidationResult.NO_CLOSE_SCHEDULE_WITH_PAIRS
+                } else {
+                    ContextSuggestionValidationResult.ACCEPTED
+                }
+            }
             ContextSuggestionType.NO_SUGGESTION -> {
                 if (
                     decision.primaryRef.isNotEmpty() ||

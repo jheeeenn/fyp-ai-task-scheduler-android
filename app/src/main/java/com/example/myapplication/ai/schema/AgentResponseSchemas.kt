@@ -168,6 +168,7 @@ object AgentResponseSchemas {
                         "CONTINUE_SUBTASK",
                         "BREAK_DOWN_TASK",
                         "REVIEW_CLOSE_SCHEDULE",
+                        "NO_CLOSE_SCHEDULE",
                         "NO_SUGGESTION"
                     )
                 )

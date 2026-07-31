@@ -2312,7 +2312,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             selection.decision
         )
         val refreshed = withContext(Dispatchers.IO) {
-            if (selection.decision.suggestionType == ContextSuggestionType.NO_SUGGESTION) {
+            if (
+                selection.decision.suggestionType == ContextSuggestionType.NO_SUGGESTION ||
+                selection.decision.suggestionType == ContextSuggestionType.NO_CLOSE_SCHEDULE
+            ) {
                 val roots = taskDao.getRootTasks()
                 val subtasks = roots.associate { root ->
                     root.id to taskDao.getSubtasks(root.id)
@@ -2342,15 +2345,23 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         }
         if (!isContextSuggestionRequestCurrent(requestToken)) return
 
-        val deliveryResult = refreshed.third?.let(
-            ContextSuggestionDeliveryGuard::validateFreshNoSuggestion
-        ) ?: ContextSuggestionDeliveryGuard.validateFreshSelection(
+        val deliveryResult = when (selection.decision.suggestionType) {
+            ContextSuggestionType.NO_SUGGESTION ->
+                ContextSuggestionDeliveryGuard.validateFreshNoSuggestion(
+                    requireNotNull(refreshed.third)
+                )
+            ContextSuggestionType.NO_CLOSE_SCHEDULE ->
+                ContextSuggestionDeliveryGuard.validateFreshNoCloseSchedule(
+                    requireNotNull(refreshed.third)
+                )
+            else -> ContextSuggestionDeliveryGuard.validateFreshSelection(
                 snapshot = snapshot,
                 decision = selection.decision,
                 freshTasksById = refreshed.first,
                 freshSubtasksByParentId = refreshed.second,
                 now = Calendar.getInstance()
             )
+        }
         if (deliveryResult != ContextSuggestionDeliveryResult.CURRENT) {
             Log.d(
                 "CONTEXT_SUGGESTION_STALE",
@@ -2400,7 +2411,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             now = Calendar.getInstance()
         )
         val outcome = if (
-            selection.decision.suggestionType == ContextSuggestionType.NO_SUGGESTION
+            selection.decision.suggestionType == ContextSuggestionType.NO_SUGGESTION ||
+            selection.decision.suggestionType == ContextSuggestionType.NO_CLOSE_SCHEDULE
         ) {
             ExecutionOutcome.NO_RESULTS
         } else {
@@ -2454,7 +2466,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         snapshot: ContextSuggestionSnapshot,
         decision: ContextSuggestionDecision
     ) = when (decision.suggestionType) {
-        ContextSuggestionType.NO_SUGGESTION -> emptyList()
+        ContextSuggestionType.NO_SUGGESTION,
+        ContextSuggestionType.NO_CLOSE_SCHEDULE -> emptyList()
         ContextSuggestionType.REVIEW_CLOSE_SCHEDULE -> listOfNotNull(
             snapshot.candidate(decision.primaryRef),
             snapshot.candidate(decision.secondaryRef)

@@ -89,6 +89,20 @@ class ContextSuggestionSpeechRendererTest {
         assertFalse(reviewSpeech.contains("conflict", ignoreCase = true))
 
         assertEquals(
+            "I did not find active tasks scheduled within thirty minutes of each other.",
+            ContextSuggestionSpeechRenderer.render(
+                ContextSuggestionDecision(
+                    ContextSuggestionType.NO_CLOSE_SCHEDULE,
+                    "",
+                    "",
+                    1.0
+                ),
+                snapshot(listOf(task(3, "Not close", "31/07/2026", "1 PM"))),
+                now = now()
+            )
+        )
+
+        assertEquals(
             "You do not have an active task for me to suggest right now.",
             ContextSuggestionSpeechRenderer.render(
                 ContextSuggestionDecision(

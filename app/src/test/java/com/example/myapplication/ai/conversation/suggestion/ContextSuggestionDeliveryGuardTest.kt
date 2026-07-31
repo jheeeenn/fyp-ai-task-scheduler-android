@@ -46,6 +46,32 @@ class ContextSuggestionDeliveryGuardTest {
     }
 
     @Test
+    fun freshClosePairAppearanceSuppressesNoCloseScheduleDelivery() {
+        assertEquals(
+            ContextSuggestionDeliveryResult.CURRENT,
+            ContextSuggestionDeliveryGuard.validateFreshNoCloseSchedule(
+                snapshot(
+                    listOf(
+                        task(1, "First", "31/07/2026", "9 AM"),
+                        task(2, "Second", "31/07/2026", "10 AM")
+                    )
+                )
+            )
+        )
+        assertEquals(
+            ContextSuggestionDeliveryResult.CLOSE_PAIR_CHANGED,
+            ContextSuggestionDeliveryGuard.validateFreshNoCloseSchedule(
+                snapshot(
+                    listOf(
+                        task(1, "First", "31/07/2026", "9 AM"),
+                        task(2, "Second", "31/07/2026", "9:30 AM")
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
     fun deletedCompletedChildOrRescheduledTaskPreventsFreshSpeech() {
         val task = task(1, "Task", "31/07/2026", "9 AM")
         val snapshot = snapshot(listOf(task))
