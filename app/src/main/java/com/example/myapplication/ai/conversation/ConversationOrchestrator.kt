@@ -5,6 +5,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContext
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
+import java.util.Locale
 
 class ConversationOrchestratorException(
     message: String,
@@ -151,7 +152,7 @@ class ConversationOrchestrator(
                 memorySnapshot = routingMemory,
                 appContextSummary = appContextSummary
             )
-            parser.parse(rawContent)
+            parseCanonicalDecision(rawContent)
         } catch (e: ConversationSchemaException) {
             retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, contextFocus, e)
         } catch (e: ConversationAgentResponseException) {
@@ -183,24 +184,33 @@ class ConversationOrchestrator(
         contextFocus: ConversationContextFocus?,
         firstFailure: Exception
     ): ConversationDecision {
-        Log.e("CONVO_ORCH_SCHEMA", "first response invalid, retrying once", firstFailure)
+        val failureCode = repairFailureCode(firstFailure)
+        Log.e(
+            "CONVO_ORCH_SCHEMA",
+            "first response invalid; failureCode=$failureCode; retrying once"
+        )
 
         return try {
             val repairContent = conversationAgentClient.processRepair(
                 userText = normalizedText,
-                appContextSummary = appendTaskContext(
-                    memorySnapshot = appContextSummary,
+                appContextSummary = boundedRepairContext(
+                    appContextSummary = appContextSummary,
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
                     contextFocus = contextFocus
-                )
+                ),
+                failureCode = failureCode
             )
-            val repairedDecision = parser.parse(repairContent).copy(
+            val repairedDecision = parseCanonicalDecision(
+                rawContent = repairContent,
                 source = SOURCE_SCHEMA_REPAIR
             )
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
             repairedDecision
         } catch (repairFailure: Exception) {
-            Log.e("CONVO_ORCH_SCHEMA", "repair response failed", repairFailure)
+            Log.e(
+                "CONVO_ORCH_SCHEMA",
+                "repair response failed; failureCode=${repairFailureCode(repairFailure)}"
+            )
             throw ConversationOrchestratorException(
                 "Conversation Agent failed after schema retry",
                 repairFailure
@@ -214,7 +224,7 @@ class ConversationOrchestrator(
     ): ConversationDecision {
         return when (decision.route) {
             ConversationRoute.TASK_COMMAND -> decision.copy(
-                taskText = decision.taskText.ifBlank { normalizedText }
+                taskText = normalizedText
             )
             ConversationRoute.SMART_ROUTINE_BUILDER -> decision.copy(
                 taskText = normalizedText,
@@ -294,7 +304,10 @@ class ConversationOrchestrator(
             primaryRoute = primaryRoute,
             currentInteraction = currentInteraction
         )
-        return parser.parse(rawContent).copy(source = SOURCE_CONTEXT_REPAIR)
+        return parseCanonicalDecision(
+            rawContent = rawContent,
+            source = SOURCE_CONTEXT_REPAIR
+        )
     }
 
     suspend fun processContextActionRepair(
@@ -311,7 +324,55 @@ class ConversationOrchestrator(
             primaryRoute = primaryRoute,
             currentInteraction = currentInteraction
         )
-        return parser.parse(rawContent).copy(source = SOURCE_CONTEXT_ACTION_REPAIR)
+        return parseCanonicalDecision(
+            rawContent = rawContent,
+            source = SOURCE_CONTEXT_ACTION_REPAIR
+        )
+    }
+
+    private fun parseCanonicalDecision(
+        rawContent: String,
+        source: String = SOURCE_CONVERSATION_AGENT
+    ): ConversationDecision {
+        val result = parser.parseWithReport(rawContent)
+        if (result.canonicalizationReport.wasCanonicalized) {
+            Log.d(
+                "CONVO_DECISION_CANONICALIZED",
+                "route=${result.decision.route.name} " +
+                    "fields=${result.canonicalizationReport.fields.joinToString(",")}"
+            )
+        }
+        return result.decision.copy(source = source)
+    }
+
+    private fun repairFailureCode(failure: Exception): String = when (failure) {
+        is ConversationSchemaException ->
+            failure.decisionFailureCode?.name ?: FAILURE_CODE_SCHEMA_UNKNOWN
+        is ConversationAgentResponseException -> FAILURE_CODE_AGENT_RESPONSE
+        else -> FAILURE_CODE_UNEXPECTED
+    }
+
+    private fun boundedRepairContext(
+        appContextSummary: String,
+        readOnlyTaskContextSnapshot: String,
+        contextFocus: ConversationContextFocus?
+    ): String = buildString {
+        append(appContextSummary.trim())
+        appendLine()
+        appendLine()
+        appendLine("Bounded decision-repair context:")
+        val refs = SUPPLIED_CONTEXT_REF.findAll(readOnlyTaskContextSnapshot)
+            .map { it.groupValues[1].uppercase(Locale.ROOT) }
+            .distinct()
+            .toList()
+        appendLine(
+            "Supplied temporary refs: " +
+                refs.takeIf { it.isNotEmpty() }?.joinToString(",").orEmpty()
+        )
+        append(
+            "Current validated focus ref: " +
+                contextFocus?.takeIf { it.available }?.ref.orEmpty()
+        )
     }
 
     fun recordAuthoritativeContextRead(
@@ -361,9 +422,14 @@ class ConversationOrchestrator(
     }
 
     private companion object {
+        const val SOURCE_CONVERSATION_AGENT = "conversation_agent"
         const val SOURCE_SCHEMA_REPAIR = "conversation_agent_schema_repair"
         const val SOURCE_CONTEXT_REPAIR = "conversation_agent_context_repair"
         const val SOURCE_CONTEXT_ACTION_REPAIR = "conversation_agent_context_action_repair"
+        const val FAILURE_CODE_AGENT_RESPONSE = "AGENT_RESPONSE_FAILURE"
+        const val FAILURE_CODE_SCHEMA_UNKNOWN = "SCHEMA_FAILURE"
+        const val FAILURE_CODE_UNEXPECTED = "UNEXPECTED_FAILURE"
+        val SUPPLIED_CONTEXT_REF = Regex("\\\"ref\\\":\\\"(T[1-9][0-9]*)\\\"")
         val NO_TASK_CONTEXT = """
             Scope: NONE
             Generation: 0

@@ -6,8 +6,10 @@ import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.conversation.ConversationContextDetail
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
+import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationQueryReadingMove
 import com.example.myapplication.ai.conversation.ConversationRoute
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -20,23 +22,27 @@ class SmartRoutineIntegrationContractTest {
 
     @Test
     fun routineRequestsUseDedicatedStrictRouteWithOriginalRequestOnly() {
-        val decision = parser.parse(
-            decisionJson(
-                route = "SMART_ROUTINE_BUILDER",
-                taskText = "create my morning routine for tomorrow"
-            )
+        val originalRequest = "create my morning routine for tomorrow"
+        val rawDecision = decisionJson(
+            route = "SMART_ROUTINE_BUILDER",
+            taskText = "model-authored routine rewrite",
+            reply = "I created a routine."
         )
+        val decision = runBlocking {
+            orchestratorReturning(rawDecision).process(
+                normalizedText = originalRequest,
+                appContextSummary = "Interaction: NONE"
+            )
+        }
 
         assertEquals(ConversationRoute.SMART_ROUTINE_BUILDER, decision.route)
-        assertEquals("create my morning routine for tomorrow", decision.taskText)
+        assertEquals(originalRequest, decision.taskText)
         assertEquals("", decision.reply)
         assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
         assertEquals(ConversationContextAction.NONE, decision.contextAction)
         assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
         assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
         listOf(
-            decisionJson("SMART_ROUTINE_BUILDER", "", confidence = 0.97),
-            decisionJson("SMART_ROUTINE_BUILDER", "routine", reply = "I prepared it"),
             decisionJson("SMART_ROUTINE_BUILDER", "routine", confidence = 0.79),
             decisionJson("SMART_ROUTINE_BUILDER", "routine", listenAgain = false)
         ).forEach {
@@ -46,18 +52,23 @@ class SmartRoutineIntegrationContractTest {
 
     @Test
     fun savedRoutineRequestsUseSeparateStrictTopLevelRoute() {
-        val decision = parser.parse(
-            decisionJson(
-                route = "SAVED_ROUTINE_ACTION",
-                taskText = "use my morning routine tomorrow"
-            )
+        val originalRequest = "use my morning routine tomorrow"
+        val rawDecision = decisionJson(
+            route = "SAVED_ROUTINE_ACTION",
+            taskText = "model-authored saved-routine rewrite",
+            reply = "I used the routine."
         )
+        val decision = runBlocking {
+            orchestratorReturning(rawDecision).process(
+                normalizedText = originalRequest,
+                appContextSummary = "Interaction: NONE"
+            )
+        }
 
         assertEquals(ConversationRoute.SAVED_ROUTINE_ACTION, decision.route)
-        assertEquals("use my morning routine tomorrow", decision.taskText)
+        assertEquals(originalRequest, decision.taskText)
+        assertEquals("", decision.reply)
         listOf(
-            decisionJson("SAVED_ROUTINE_ACTION", ""),
-            decisionJson("SAVED_ROUTINE_ACTION", "list routines", reply = "You have two"),
             decisionJson("SAVED_ROUTINE_ACTION", "run routine", confidence = 0.79),
             decisionJson("SAVED_ROUTINE_ACTION", "run routine", listenAgain = false)
         ).forEach {
@@ -70,6 +81,17 @@ class SmartRoutineIntegrationContractTest {
         assertTrue(prompt.contains("SMART_ROUTINE_BUILDER for that"))
         assertTrue(prompt.contains("Android alone queries"))
     }
+
+    private fun orchestratorReturning(rawDecision: String) = ConversationOrchestrator(
+        conversationAgentClient = object : ConversationAgentClient(null) {
+            override suspend fun process(
+                userText: String,
+                memorySnapshot: String,
+                appContextSummary: String
+            ): String = rawDecision
+        },
+        parser = parser
+    )
 
     @Test
     fun routingPromptSeparatesRoutineSingleTaskBreakdownAndDiscussion() {

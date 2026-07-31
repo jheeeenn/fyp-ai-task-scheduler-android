@@ -78,6 +78,8 @@ User text:
 $userText
 
 Return the routing decision using only the required ConversationDecision schema. Do not output task-agent fields. Do not explain your reasoning.
+Use the supplied bounded failure code to correct the failed structural or authority-field contract.
+Do not invent task data, refs, Room IDs, or facts, and do not reproduce any discarded content.
 QUERY_READING_CONTROL always requires an empty context_ref. Never combine query-reading control
 with T1, T2, an ordinal, or another contextual selector. A repeat, read-again, or say-again
 request with exactly one supplied task selector is CONTEXT_READ with context_detail SUMMARY,
@@ -86,6 +88,21 @@ not QUERY_READING_CONTROL.
 
             executeConversationRequest(repairPrompt, RequestKind.ROUTING)
         }
+
+    open suspend fun processRepair(
+        userText: String,
+        appContextSummary: String,
+        failureCode: String
+    ): String = processRepair(
+        userText = userText,
+        appContextSummary = buildString {
+            append(appContextSummary.trim())
+            appendLine()
+            appendLine()
+            appendLine("Conversation decision contract failure code:")
+            append(failureCode)
+        }
+    )
 
     open suspend fun processContextReadRepair(
         userText: String,

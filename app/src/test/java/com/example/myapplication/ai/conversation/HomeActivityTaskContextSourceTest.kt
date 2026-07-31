@@ -185,6 +185,9 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(branch.contains("updateDoneStatus").not())
         assertTrue(branch.contains("deleteTask").not())
         assertTrue(branch.contains("insertTask").not())
+        assertTrue(branch.contains("normalizedText = normalized"))
+        assertTrue(branch.contains("conversationDecision.taskText").not())
+        assertTrue(branch.contains("assistantSession.speak(conversationDecision.reply").not())
     }
 
     private fun String.countOccurrences(needle: String): Int =

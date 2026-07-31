@@ -2,141 +2,72 @@ package com.example.myapplication.ai.conversation
 
 import com.example.myapplication.ai.TaskQueryPresentation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationDecisionParserTest {
     private val parser = ConversationDecisionParser()
 
     @Test
-    fun acceptsValidContextReadT2Summary() {
-        val decision = parser.parse(
+    fun contextActionCanonicalizesInactiveTextAndPreservesAuthority() {
+        val result = parser.parseWithReport(
             decisionJson(
-                route = "CONTEXT_READ",
+                route = "CONTEXT_ACTION",
+                taskText = EXACT_RESCHEDULE_UTTERANCE,
+                reply = "I moved the task to August first at nine.",
                 contextRef = "T2",
-                contextDetail = "SUMMARY"
-            )
-        )
-
-        assertEquals(ConversationRoute.CONTEXT_READ, decision.route)
-        assertEquals("T2", decision.contextRef)
-        assertEquals(ConversationContextDetail.SUMMARY, decision.contextDetail)
-        assertEquals("", decision.taskText)
-        assertEquals("", decision.reply)
-    }
-
-    @Test
-    fun acceptsStrictDailyBriefingRoute() {
-        val decision = parser.parse(decisionJson(route = "DAILY_BRIEFING"))
-
-        assertEquals(ConversationRoute.DAILY_BRIEFING, decision.route)
-        assertEquals("", decision.taskText)
-        assertEquals("", decision.reply)
-        assertEquals("", decision.contextRef)
-        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
-        assertEquals(ConversationContextAction.NONE, decision.contextAction)
-        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
-        assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
-        assertEquals(true, decision.listenAgain)
-    }
-
-    @Test
-    fun dailyBriefingRequiresEmptyFieldsAcceptedConfidenceAndListenAgain() {
-        listOf(
-            decisionJson(route = "DAILY_BRIEFING", taskText = "brief me"),
-            decisionJson(route = "DAILY_BRIEFING", reply = "Here is the briefing"),
-            decisionJson(route = "DAILY_BRIEFING", contextRef = "T1"),
-            decisionJson(route = "DAILY_BRIEFING", contextDetail = "TIME"),
-            decisionJson(route = "DAILY_BRIEFING", contextAction = "UPDATE"),
-            decisionJson(route = "DAILY_BRIEFING", queryReadingMove = "REPEAT_LAST"),
-            decisionJson(route = "DAILY_BRIEFING", queryPresentationHint = "OVERVIEW"),
-            decisionJson(route = "DAILY_BRIEFING", confidence = 0.79),
-            decisionJson(route = "DAILY_BRIEFING", listenAgain = false)
-        ).forEach { invalid ->
-            assertThrows(ConversationSchemaException::class.java) { parser.parse(invalid) }
-        }
-    }
-
-    @Test
-    fun dailyBriefingOnlyConstraintsDoNotLeakIntoOtherRoutes() {
-        val task = parser.parse(
-            decisionJson(
-                route = "TASK_COMMAND",
-                taskText = "show all my tasks today",
-                queryPresentationHint = "OVERVIEW",
-                confidence = 0.60,
-                listenAgain = false
-            )
-        )
-
-        assertEquals(ConversationRoute.TASK_COMMAND, task.route)
-        assertEquals(0.60, task.confidence, 0.0)
-        assertEquals(false, task.listenAgain)
-    }
-
-    @Test
-    fun acceptsStrictContextAwareSuggestionRoute() {
-        val decision = parser.parse(
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what should i focus on"
-            )
-        )
-
-        assertEquals(ConversationRoute.CONTEXT_AWARE_SUGGESTION, decision.route)
-        assertEquals("what should i focus on", decision.taskText)
-        assertEquals("", decision.reply)
-        assertEquals("", decision.contextRef)
-        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
-        assertEquals(ConversationContextAction.NONE, decision.contextAction)
-        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
-        assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
-        assertEquals(true, decision.listenAgain)
-    }
-
-    @Test
-    fun contextAwareSuggestionRequiresOriginalRequestEmptyOutputFieldsConfidenceAndListening() {
-        listOf(
-            decisionJson(route = "CONTEXT_AWARE_SUGGESTION"),
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                reply = "Focus on revision"
-            ),
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                contextRef = "T1"
-            ),
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                contextDetail = "TIME"
-            ),
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                contextAction = "UPDATE"
-            ),
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                queryReadingMove = "REPEAT_LAST"
-            ),
-            decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
+                contextDetail = "TIME",
+                contextAction = "RESCHEDULE",
+                queryReadingMove = "REPEAT_LAST",
                 queryPresentationHint = "OVERVIEW"
+            )
+        )
+
+        val decision = result.decision
+        assertEquals(ConversationRoute.CONTEXT_ACTION, decision.route)
+        assertEquals("", decision.taskText)
+        assertEquals("", decision.reply)
+        assertEquals("T2", decision.contextRef)
+        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
+        assertEquals(ConversationContextAction.RESCHEDULE, decision.contextAction)
+        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
+        assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
+        assertEquals(
+            listOf(
+                "task_text",
+                "reply",
+                "context_detail",
+                "query_reading_move",
+                "query_presentation_hint"
+            ),
+            result.canonicalizationReport.fields
+        )
+    }
+
+    @Test
+    fun contextActionAuthorityFieldsStillFailClosed() {
+        listOf(
+            decisionJson(
+                route = "CONTEXT_ACTION",
+                contextRef = "",
+                contextAction = "RESCHEDULE"
             ),
             decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                confidence = 0.79
+                route = "CONTEXT_ACTION",
+                contextRef = "T2",
+                contextAction = "NONE"
             ),
             decisionJson(
-                route = "CONTEXT_AWARE_SUGGESTION",
-                taskText = "what next",
-                listenAgain = false
+                route = "CONTEXT_ACTION",
+                contextRef = "918273645",
+                contextAction = "RESCHEDULE"
+            ),
+            decisionJson(
+                route = "CONTEXT_ACTION",
+                contextRef = "task-2",
+                contextAction = "UPDATE"
             )
         ).forEach { invalid ->
             assertThrows(ConversationSchemaException::class.java) {
@@ -146,204 +77,246 @@ class ConversationDecisionParserTest {
     }
 
     @Test
-    fun acceptsValidContextActions() {
-        val reschedule = parser.parse(
+    fun contextReadCanonicalizesInactiveFieldsAndKeepsRefAndDetailStrict() {
+        val result = parser.parseWithReport(
             decisionJson(
-                route = "CONTEXT_ACTION",
+                route = "CONTEXT_READ",
+                taskText = "echoed request",
+                reply = "The task is at nine.",
                 contextRef = "T2",
-                contextAction = "RESCHEDULE"
-            )
-        )
-        val update = parser.parse(
-            decisionJson(
-                route = "CONTEXT_ACTION",
-                contextRef = "T1",
-                contextAction = "UPDATE"
+                contextDetail = "TIME",
+                contextAction = "UPDATE",
+                queryReadingMove = "REPEAT_LAST",
+                queryPresentationHint = "DETAILS"
             )
         )
 
-        assertEquals(ConversationContextAction.RESCHEDULE, reschedule.contextAction)
-        assertEquals("T2", reschedule.contextRef)
-        assertEquals(ConversationContextAction.UPDATE, update.contextAction)
-        assertEquals("T1", update.contextRef)
-    }
+        assertEquals("", result.decision.taskText)
+        assertEquals("", result.decision.reply)
+        assertEquals("T2", result.decision.contextRef)
+        assertEquals(ConversationContextDetail.TIME, result.decision.contextDetail)
+        assertEquals(ConversationContextAction.NONE, result.decision.contextAction)
+        assertEquals(ConversationQueryReadingMove.NONE, result.decision.queryReadingMove)
+        assertEquals(TaskQueryPresentation.NONE, result.decision.queryPresentationHint)
+        assertTrue(result.canonicalizationReport.fields.contains("reply"))
 
-    @Test
-    fun rejectsInvalidContextActionFields() {
         listOf(
-            decisionJson(route = "CONTEXT_ACTION", contextAction = "UPDATE"),
-            decisionJson(route = "CONTEXT_ACTION", contextRef = "T1"),
-            decisionJson(route = "CONTEXT_ACTION", contextRef = "T1", contextDetail = "TIME", contextAction = "RESCHEDULE"),
-            decisionJson(route = "CONTEXT_ACTION", taskText = "edit first", contextRef = "T1", contextAction = "UPDATE"),
-            decisionJson(route = "CONTEXT_ACTION", reply = "Done", contextRef = "T1", contextAction = "UPDATE")
+            decisionJson(
+                route = "CONTEXT_READ",
+                contextRef = "",
+                contextDetail = "SUMMARY"
+            ),
+            decisionJson(
+                route = "CONTEXT_READ",
+                contextRef = "T2",
+                contextDetail = "NONE"
+            ),
+            decisionJson(
+                route = "CONTEXT_READ",
+                contextRef = "27",
+                contextDetail = "DATE"
+            )
         ).forEach { invalid ->
-            assertThrows(ConversationSchemaException::class.java) { parser.parse(invalid) }
-        }
-    }
-
-    @Test
-    fun rejectsContextReadWithEmptyRef() {
-        assertThrows(ConversationSchemaException::class.java) {
-            parser.parse(
-                decisionJson(
-                    route = "CONTEXT_READ",
-                    contextRef = "",
-                    contextDetail = "SUMMARY"
-                )
-            )
-        }
-    }
-
-    @Test
-    fun rejectsContextReadWithNoneDetail() {
-        assertThrows(ConversationSchemaException::class.java) {
-            parser.parse(
-                decisionJson(
-                    route = "CONTEXT_READ",
-                    contextRef = "T2",
-                    contextDetail = "NONE"
-                )
-            )
-        }
-    }
-
-    @Test
-    fun rejectsContextReadWithModelAuthoredFactualReply() {
-        assertThrows(ConversationSchemaException::class.java) {
-            parser.parse(
-                decisionJson(
-                    route = "CONTEXT_READ",
-                    reply = "The second task is groceries.",
-                    contextRef = "T2",
-                    contextDetail = "SUMMARY"
-                )
-            )
-        }
-    }
-
-    @Test
-    fun nonContextRoutesRequireEmptyRefAndNoneDetail() {
-        listOf("TASK_COMMAND", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN")
-            .forEach { route ->
-                assertThrows(ConversationSchemaException::class.java) {
-                    parser.parse(
-                        decisionJson(
-                            route = route,
-                            taskText = if (route == "TASK_COMMAND") "delete medicine" else "",
-                            reply = if (route == "DIRECT_REPLY") "Hello" else "",
-                            contextRef = "T1",
-                            contextDetail = "TITLE"
-                        )
-                    )
-                }
+            assertThrows(ConversationSchemaException::class.java) {
+                parser.parse(invalid)
             }
+        }
     }
 
     @Test
-    fun acceptsNonContextRouteWithEmptyRefAndNoneDetail() {
+    fun dailyBriefingCanonicalizesInactiveFieldsButKeepsThresholdAndListeningStrict() {
         val decision = parser.parse(
             decisionJson(
-                route = "TASK_COMMAND",
-                taskText = "what do I have tomorrow",
+                route = "DAILY_BRIEFING",
+                taskText = "brief me",
+                reply = "Here is the briefing.",
+                contextRef = "T1",
+                contextDetail = "TIME",
+                contextAction = "UPDATE",
+                queryReadingMove = "REPEAT_LAST",
                 queryPresentationHint = "OVERVIEW"
             )
         )
 
-        assertEquals(ConversationRoute.TASK_COMMAND, decision.route)
-        assertEquals(TaskQueryPresentation.OVERVIEW, decision.queryPresentationHint)
-        assertEquals("", decision.contextRef)
-        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
-        assertEquals(ConversationContextAction.NONE, decision.contextAction)
-    }
-
-    @Test
-    fun queryReadingControlRequiresNonNoneMoveAndEmptyFactualFields() {
-        val accepted = parser.parse(
-            decisionJson(
-                route = "QUERY_READING_CONTROL",
-                queryReadingMove = "REPEAT_LAST"
-            )
-        )
-
-        assertEquals(ConversationRoute.QUERY_READING_CONTROL, accepted.route)
-        assertEquals(ConversationQueryReadingMove.REPEAT_LAST, accepted.queryReadingMove)
-
+        assertEquals(ConversationRoute.DAILY_BRIEFING, decision.route)
+        assertInactiveFieldsAreCanonical(decision)
         listOf(
-            decisionJson(route = "QUERY_READING_CONTROL"),
-            decisionJson(route = "QUERY_READING_CONTROL", queryReadingMove = "REPEAT_LAST", reply = "Repeating it."),
-            decisionJson(route = "QUERY_READING_CONTROL", queryReadingMove = "REPEAT_LAST", taskText = "repeat"),
-            decisionJson(route = "QUERY_READING_CONTROL", queryReadingMove = "REPEAT_LAST", contextRef = "T1")
+            decisionJson(route = "DAILY_BRIEFING", confidence = 0.79),
+            decisionJson(route = "DAILY_BRIEFING", listenAgain = false)
         ).forEach { invalid ->
-            assertThrows(ConversationSchemaException::class.java) { parser.parse(invalid) }
+            assertThrows(ConversationSchemaException::class.java) {
+                parser.parse(invalid)
+            }
         }
     }
 
     @Test
-    fun routesOtherThanQueryReadingControlRequireMoveNone() {
-        listOf("TASK_COMMAND", "CONTEXT_READ", "CONTEXT_ACTION", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN")
-            .forEach { route ->
-                assertThrows(ConversationSchemaException::class.java) {
-                    parser.parse(
-                        decisionJson(
-                            route = route,
-                            taskText = if (route == "TASK_COMMAND") "show tasks" else "",
-                            reply = if (route == "DIRECT_REPLY") "Hello" else "",
-                            contextRef = when (route) {
-                                "CONTEXT_READ", "CONTEXT_ACTION" -> "T1"
-                                else -> ""
-                            },
-                            contextDetail = if (route == "CONTEXT_READ") "TITLE" else "NONE",
-                            contextAction = if (route == "CONTEXT_ACTION") "UPDATE" else "NONE",
-                            queryReadingMove = "REPEAT_LAST"
-                        )
-                    )
-                }
-            }
-    }
-
-    @Test
-    fun routesOtherThanTaskCommandRequirePresentationHintNone() {
-        assertThrows(ConversationSchemaException::class.java) {
-            parser.parse(
+    fun delegatedRoutesDiscardIrrelevantEchoedFields() {
+        val delegatedRoutes = listOf(
+            "SMART_ROUTINE_BUILDER",
+            "SAVED_ROUTINE_ACTION",
+            "CONTEXT_AWARE_SUGGESTION"
+        )
+        delegatedRoutes.forEach { route ->
+            val decision = parser.parse(
                 decisionJson(
-                    route = "DIRECT_REPLY",
-                    reply = "Hello",
+                    route = route,
+                    taskText = "model-authored task text",
+                    reply = "model-authored reply",
+                    contextRef = "T7",
+                    contextDetail = "STATUS",
+                    contextAction = "RESCHEDULE",
+                    queryReadingMove = "STOP",
                     queryPresentationHint = "COUNT_ONLY"
                 )
             )
+            assertEquals(ConversationRoute.valueOf(route), decision.route)
+            assertInactiveFieldsAreCanonical(decision)
         }
     }
 
     @Test
-    fun allNonContextActionRoutesRequireContextActionNone() {
-        listOf("TASK_COMMAND", "CONTEXT_READ", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN")
+    fun taskCommandKeepsOnlyPresentationAuthorityAndClearsModelTaskText() {
+        val decision = parser.parse(
+            decisionJson(
+                route = "TASK_COMMAND",
+                taskText = "model rewrite",
+                reply = "Done",
+                contextRef = "T1",
+                contextDetail = "TITLE",
+                contextAction = "UPDATE",
+                queryReadingMove = "CONTINUE",
+                queryPresentationHint = "OVERVIEW",
+                confidence = 0.60,
+                listenAgain = false
+            )
+        )
+
+        assertEquals(ConversationRoute.TASK_COMMAND, decision.route)
+        assertEquals("", decision.taskText)
+        assertEquals("", decision.reply)
+        assertEquals("", decision.contextRef)
+        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
+        assertEquals(ConversationContextAction.NONE, decision.contextAction)
+        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
+        assertEquals(TaskQueryPresentation.OVERVIEW, decision.queryPresentationHint)
+        assertEquals(0.60, decision.confidence, 0.0)
+        assertFalse(decision.listenAgain)
+    }
+
+    @Test
+    fun queryReadingControlCanonicalizesInactiveFieldsButRequiresAuthorityMove() {
+        val accepted = parser.parse(
+            decisionJson(
+                route = "QUERY_READING_CONTROL",
+                taskText = "repeat",
+                reply = "Repeating it.",
+                contextRef = "T1",
+                contextDetail = "SUMMARY",
+                contextAction = "UPDATE",
+                queryReadingMove = "REPEAT_LAST",
+                queryPresentationHint = "DETAILS"
+            )
+        )
+
+        assertEquals(ConversationQueryReadingMove.REPEAT_LAST, accepted.queryReadingMove)
+        assertEquals("", accepted.taskText)
+        assertEquals("", accepted.reply)
+        assertEquals("", accepted.contextRef)
+        assertEquals(ConversationContextDetail.NONE, accepted.contextDetail)
+        assertEquals(ConversationContextAction.NONE, accepted.contextAction)
+        assertEquals(TaskQueryPresentation.NONE, accepted.queryPresentationHint)
+
+        assertThrows(ConversationSchemaException::class.java) {
+            parser.parse(decisionJson(route = "QUERY_READING_CONTROL"))
+        }
+    }
+
+    @Test
+    fun conversationalReplyRoutesKeepReplyButDiscardControlFields() {
+        listOf("DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN")
             .forEach { route ->
-                assertThrows(ConversationSchemaException::class.java) {
-                    parser.parse(
-                        decisionJson(
-                            route = route,
-                            contextRef = if (route == "CONTEXT_READ") "T1" else "",
-                            contextDetail = if (route == "CONTEXT_READ") "TITLE" else "NONE",
-                            contextAction = "UPDATE"
-                        )
+                val decision = parser.parse(
+                    decisionJson(
+                        route = route,
+                        taskText = "echoed task text",
+                        reply = "Safe conversational reply",
+                        contextRef = "T1",
+                        contextDetail = "TITLE",
+                        contextAction = "UPDATE",
+                        queryReadingMove = "STOP",
+                        queryPresentationHint = "OVERVIEW"
                     )
-                }
+                )
+                assertEquals("Safe conversational reply", decision.reply)
+                assertEquals("", decision.taskText)
+                assertEquals("", decision.contextRef)
+                assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
+                assertEquals(ConversationContextAction.NONE, decision.contextAction)
+                assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
+                assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
             }
     }
 
     @Test
-    fun continuesRejectingTaskAgentFields() {
-        val withTaskAgentField = decisionJson(
-            route = "TASK_COMMAND",
-            taskText = "delete medicine"
-        ).replace(
-            "\"listen_again\":true",
-            "\"listen_again\":true,\"action\":\"DELETE_TASK\""
+    fun structuralDecoderRejectsMissingAdditionalForbiddenAndWrongTypes() {
+        val valid = decisionJson(route = "DIRECT_REPLY", reply = "Hello")
+        val invalid = listOf(
+            valid.replace("\"reply\":\"Hello\",", ""),
+            valid.replace(
+                "\"listen_again\":true",
+                "\"listen_again\":true,\"extra\":\"x\""
+            ),
+            valid.replace(
+                "\"listen_again\":true",
+                "\"listen_again\":true,\"action\":\"DELETE_TASK\""
+            ),
+            valid.replace("\"context_ref\":\"\"", "\"context_ref\":7"),
+            valid.replace("\"confidence\":0.97", "\"confidence\":\"high\""),
+            valid.replace("\"listen_again\":true", "\"listen_again\":\"yes\"")
         )
 
-        assertThrows(ConversationSchemaException::class.java) {
-            parser.parse(withTaskAgentField)
+        invalid.forEach {
+            assertThrows(ConversationSchemaException::class.java) {
+                parser.parse(it)
+            }
         }
+    }
+
+    @Test
+    fun structuralDecoderRejectsUnknownEnumsEvenWhenFieldWouldBeInactive() {
+        listOf(
+            decisionJson(route = "NOT_A_ROUTE"),
+            decisionJson(route = "DIRECT_REPLY", contextDetail = "WHEN"),
+            decisionJson(route = "DIRECT_REPLY", contextAction = "MOVE"),
+            decisionJson(route = "DIRECT_REPLY", queryReadingMove = "AGAIN"),
+            decisionJson(route = "DIRECT_REPLY", queryPresentationHint = "VERBOSE")
+        ).forEach { invalid ->
+            assertThrows(ConversationSchemaException::class.java) {
+                parser.parse(invalid)
+            }
+        }
+    }
+
+    @Test
+    fun confidenceMustBeFiniteAndBetweenZeroAndOne() {
+        listOf(-0.01, 1.01).forEach { confidence ->
+            assertThrows(ConversationSchemaException::class.java) {
+                parser.parse(
+                    decisionJson(route = "DIRECT_REPLY", confidence = confidence)
+                )
+            }
+        }
+    }
+
+    private fun assertInactiveFieldsAreCanonical(decision: ConversationDecision) {
+        assertEquals("", decision.taskText)
+        assertEquals("", decision.reply)
+        assertEquals("", decision.contextRef)
+        assertEquals(ConversationContextDetail.NONE, decision.contextDetail)
+        assertEquals(ConversationContextAction.NONE, decision.contextAction)
+        assertEquals(ConversationQueryReadingMove.NONE, decision.queryReadingMove)
+        assertEquals(TaskQueryPresentation.NONE, decision.queryPresentationHint)
     }
 
     private fun decisionJson(
@@ -371,4 +344,9 @@ class ConversationDecisionParserTest {
           "listen_again":$listenAgain
         }
     """.trimIndent()
+
+    private companion object {
+        const val EXACT_RESCHEDULE_UTTERANCE =
+            "move the second one to 1st of August 2026 at 9:00 a.m."
+    }
 }
