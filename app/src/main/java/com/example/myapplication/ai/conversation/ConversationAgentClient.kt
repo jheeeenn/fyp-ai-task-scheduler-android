@@ -805,6 +805,8 @@ Use CONTEXT_ACTION only when the user asks to update, edit, or reschedule exactl
 context item. Select exactly one supplied temporary ref. A target may be identified by a supplied
 ref, an ordinal, one unique supplied title, or the Android-validated current focus. Current focus
 is valid only for the captured generation. Never invent a ref or compare against database records.
+When exactly two items are supplied, "former" may identify the first and "latter" the second;
+otherwise those pair-relative selectors require clarification.
 "it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated
 task focus says Available: true. When focus is unavailable, these pronouns are unresolved and
 require ASK_CLARIFICATION. Never choose T1 as a default. Reading all results does not establish
@@ -812,7 +814,8 @@ focus. Focus is established only by a previously Android-validated CONTEXT_READ 
 Android's validated single-task context suggestion.
 
 Use UPDATE for opening or editing general task details and explicit replacement titles.
-Use RESCHEDULE for a date or time change. For CONTEXT_ACTION, task_text and reply must be empty,
+Use RESCHEDULE for an absolute or relative date or time change, including an earlier/later offset
+whose final value Android must calculate. For CONTEXT_ACTION, task_text and reply must be empty,
 context_detail must be NONE, and context_action must be UPDATE or RESCHEDULE. Android privately
 resolves and re-fetches the target and uses the original normalized utterance for extraction.
 query_reading_move and query_presentation_hint must both be NONE.
@@ -1044,7 +1047,11 @@ Context-action rules:
 - Select exactly one supplied temporary ref. Never invent a ref.
 - Use UPDATE for opening or editing general task details or changing a title.
 - Use RESCHEDULE when changing a date or time.
+- Earlier/later changes and duration offsets are RESCHEDULE even when no final clock value is
+  stated; Android extracts and calculates those operations after authoritative grounding.
 - A target may be identified by a temporary ref, ordinal, unique supplied title, or previously Android-validated current focus.
+- When and only when exactly two context items are supplied, "former" identifies the first and
+  "latter" identifies the second.
 - Current focus is valid only while its generation matches the supplied snapshot.
 - "it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated task focus says Available: true.
 - When focus is unavailable, those pronouns are unresolved. Never choose T1 or any snapshot item as a default.

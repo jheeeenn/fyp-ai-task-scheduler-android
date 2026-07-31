@@ -34,6 +34,12 @@ open class LaptopAgentClient(
         .writeTimeout(10, TimeUnit.SECONDS)
         .callTimeout(75, TimeUnit.SECONDS)
         .build()
+    private val boundedTemporalClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(10, TimeUnit.SECONDS)
+        .build()
 
     open suspend fun process(normalizedText: String): String = withContext(Dispatchers.IO) {
         execute(
@@ -69,9 +75,25 @@ open class LaptopAgentClient(
             systemPrompt = prompt,
             responseFormat = AgentResponseSchemas.contextActionExtractionResponseFormat(),
             boundedContextAction = true,
-            boundedRoutineExtraction = false
-            )
-        }
+            boundedRoutineExtraction = false,
+            maxOutputTokens = RELATIVE_TEMPORAL_MAX_TOKENS,
+            requestClient = boundedTemporalClient
+        )
+    }
+
+    open suspend fun processRelativeTemporalCorrection(
+        normalizedText: String
+    ): String = withContext(Dispatchers.IO) {
+        execute(
+            normalizedText = normalizedText,
+            systemPrompt = RELATIVE_TEMPORAL_CORRECTION_SYSTEM_PROMPT,
+            responseFormat = AgentResponseSchemas.relativeTemporalCorrectionResponseFormat(),
+            boundedContextAction = true,
+            boundedRoutineExtraction = false,
+            maxOutputTokens = RELATIVE_TEMPORAL_MAX_TOKENS,
+            requestClient = boundedTemporalClient
+        )
+    }
 
     open suspend fun processBreakdownFollowUp(
         userText: String,
@@ -93,12 +115,14 @@ open class LaptopAgentClient(
         responseFormat: JSONObject,
         boundedContextAction: Boolean,
         boundedRoutineExtraction: Boolean,
-        boundedBreakdownFollowUp: Boolean = false
+        boundedBreakdownFollowUp: Boolean = false,
+        maxOutputTokens: Int = 512,
+        requestClient: OkHttpClient = client
     ): String {
         val payload = JSONObject().apply {
             put("model", modelId)
             put("temperature", 0.0)
-            put("max_tokens", 512)
+            put("max_tokens", maxOutputTokens)
             put("stream", false)
             put("response_format", responseFormat)
             put("messages", JSONArray().apply {
@@ -132,7 +156,7 @@ open class LaptopAgentClient(
             .build()
 
         return try {
-            client.newCall(request).execute().use { response ->
+            requestClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (boundedBreakdownFollowUp) {
                     Log.d(
@@ -317,28 +341,85 @@ Expected structured response:
 }
 """.trimIndent()
 
+        internal const val RELATIVE_TEMPORAL_MAX_TOKENS = 220
+
         internal val CONTEXT_ACTION_SYSTEM_PROMPT = """
 You extract only requested changes for one task that Android has already selected and validated.
 Expected contextual action: {{EXPECTED_ACTION}}.
 You must not select, identify, query, or mutate a task or request database access.
 Never output or request a task ID or Room ID. Never claim that a change succeeded.
 
-Return exactly these six JSON fields:
-action, replacement_title, new_date, new_time, confidence, need_clarification.
+Return exactly these eleven JSON fields:
+action, replacement_title, date_operation, time_operation, relative_base,
+replacement_date_text, replacement_time_text, date_offset_days, time_offset_minutes,
+confidence, need_clarification.
 No additional fields are allowed.
-When expected action is RESCHEDULE, action must be RESCHEDULE_TASK, replacement_title must be
-empty, and copy new date meaning into new_date and new time meaning into new_time. Preserve
-literal phrases such as "next Wednesday" and "around 4 PM". Do not calculate dates. Date-only
-or time-only changes are valid.
+
+This is semantic operation extraction, not an exhaustive phrase dictionary. Interpret natural
+meaning and paraphrases. Gemma proposes operations only. Android resolves literal expressions,
+performs all calendar arithmetic, checks the authoritative stored schedule, and decides whether
+the result is safe.
+
+For a date or time field:
+- KEEP means preserve that field: replacement text must be empty and its offset must be zero.
+- SET means replace it from the user's literal text: replacement text must be non-empty and its
+  offset must be zero. Preserve text such as "tomorrow", "next Tuesday", or "9 AM". Do not
+  calculate a final date or time.
+- OFFSET means move it by an amount: replacement text must be empty and the signed offset must be
+  non-zero. Earlier uses a negative offset and later uses a positive offset.
+Date offsets are whole days from -365 through 365. Time offsets are whole minutes from -10080
+through 10080. Never convert an offset into a model-authored final date or time.
+
+For this initial extraction, relative_base must be AUTHORITATIVE_TASK. At least one temporal
+operation for RESCHEDULE must be SET or OFFSET. If direction, amount, unit, or whether the user
+means earlier versus later is genuinely ambiguous, set need_clarification=true instead of
+guessing. In particular, spatial words such as "forward" can mean different temporal directions.
+
+When expected action is RESCHEDULE, action must be RESCHEDULE_TASK and replacement_title must be
+empty.
 When expected action is UPDATE, action must be UPDATE_TASK. If the user explicitly supplies a
-replacement title, put only that replacement in replacement_title.
-An edit request with no replacement fields is valid and should still return UPDATE_TASK.
-Set need_clarification to false when the requested changes can be extracted. Empty change fields
-are allowed because Android opens an edit screen for manual review.
+replacement title, put only that replacement in replacement_title. UPDATE must use KEEP for both
+temporal operations, AUTHORITATIVE_TASK, empty replacement texts, and zero offsets. An edit request
+with no replacement title is still valid.
 
-User: "move it to next Friday at 3 PM"
-{"action":"RESCHEDULE_TASK","replacement_title":"","new_date":"next Friday","new_time":"3 PM","confidence":0.98,"need_clarification":false}
+Illustrative semantic mapping: moving a task to next Friday at 3 PM uses date SET with literal
+"next Friday", time SET with literal "3 PM", and AUTHORITATIVE_TASK. Moving it thirty minutes
+later keeps the date and uses time OFFSET +30. These illustrate meaning; accept natural
+paraphrases rather than matching these word sequences.
 
+Do not output markdown or explanations.
+""".trimIndent()
+
+        internal val RELATIVE_TEMPORAL_CORRECTION_SYSTEM_PROMPT = """
+You interpret one natural correction to the current unsaved schedule proposal for one task.
+The task was already selected and grounded by Android. Never select a task, request or output an
+ID, output final task facts, access stored data, claim a save, or perform calendar arithmetic.
+
+Return exactly: move, date_operation, time_operation, relative_base,
+replacement_date_text, replacement_time_text, date_offset_days, time_offset_minutes, confidence,
+need_clarification. No additional fields are allowed.
+
+Use APPLY_CHANGE for a new temporal operation. KEEP, SET, and OFFSET have the same strict meanings
+as field preservation, literal replacement, and signed arithmetic. SET preserves the user's
+literal text and never calculates the final value. Offsets must be non-zero and within date
+-365..365 days and time -10080..10080 minutes.
+
+Choose the calculation base semantically:
+- AUTHORITATIVE_TASK means the correction replaces the earlier unsaved schedule and starts from
+  the original authoritative task schedule.
+- CURRENT_PROPOSAL means the user deliberately builds on the currently proposed schedule.
+A correction meaning "one hour later instead" is a replacement based on AUTHORITATIVE_TASK. A
+correction meaning an additional thirty minutes is cumulative and uses CURRENT_PROPOSAL. These
+are illustrative meaning distinctions, not an exhaustive vocabulary or phrase dictionary. If it
+is unclear whether a change replaces or accumulates, set need_clarification=true.
+When the user corrects one field while semantically preserving another field from the current
+proposal, use CURRENT_PROPOSAL. Use AUTHORITATIVE_TASK when the meaning is to discard the earlier
+proposal and replace it from the original schedule.
+
+Use RESTORE_ORIGINAL only when the user semantically asks to return to the original schedule. For
+RESTORE_ORIGINAL use KEEP, KEEP, AUTHORITATIVE_TASK, empty replacement texts, and zero offsets.
+Use UNKNOWN with need_clarification=true for unrelated or unclear input. Ambiguous temporal
+direction, including an unclear use of "forward", requires clarification rather than guessing.
 Do not output markdown or explanations.
 """.trimIndent()
 

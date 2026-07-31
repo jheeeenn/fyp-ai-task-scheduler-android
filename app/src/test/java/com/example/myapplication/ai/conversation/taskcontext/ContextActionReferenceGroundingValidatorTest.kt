@@ -100,6 +100,28 @@ class ContextActionReferenceGroundingValidatorTest {
     }
 
     @Test
+    fun formerAndLatterAreBoundedToAnExactPair() {
+        assertEquals(
+            ContextActionReferenceGroundingResult.VALID_ORDINAL,
+            validate("shift the latter task by an hour", "T2").result
+        )
+        assertEquals(
+            ContextActionReferenceGroundingResult.VALID_ORDINAL,
+            validate("move the former task to Friday", "T1").result
+        )
+        val threeItems = snapshot.copy(
+            items = snapshot.items + item("T3", "Third task")
+        )
+        val ambiguous = validateAgainst(
+            text = "move the latter task to Friday",
+            selectedRef = "T3",
+            capturedSnapshot = threeItems,
+            focus = null
+        )
+        assertFalse(ambiguous.isValid)
+    }
+
+    @Test
     fun explicitTemporaryRefRequiresSameModelRef() {
         assertEquals(
             ContextActionReferenceGroundingResult.VALID_EXPLICIT_REF,

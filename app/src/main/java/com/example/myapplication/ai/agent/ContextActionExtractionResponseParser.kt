@@ -13,7 +13,13 @@ class ContextActionExtractionResponseParser {
         if (rawContent.isBlank()) {
             throw ContextActionExtractionParseException("Context-action extraction returned blank content")
         }
-        val jsonText = extractFirstJsonObject(stripMarkdownFences(rawContent))
+        val strippedContent = stripMarkdownFences(rawContent)
+        val jsonText = extractFirstJsonObject(strippedContent)
+        if (jsonText != strippedContent.trim()) {
+            throw ContextActionExtractionParseException(
+                "Context-action extraction must contain only one JSON object"
+            )
+        }
         val json = try {
             JSONObject(jsonText)
         } catch (e: JSONException) {
@@ -36,8 +42,13 @@ class ContextActionExtractionResponseParser {
         return ContextActionExtractionResponse(
             action = requireString(json, "action"),
             replacementTitle = requireString(json, "replacement_title"),
-            newDate = requireString(json, "new_date"),
-            newTime = requireString(json, "new_time"),
+            dateOperation = requireString(json, "date_operation"),
+            timeOperation = requireString(json, "time_operation"),
+            relativeBase = requireString(json, "relative_base"),
+            replacementDateText = requireString(json, "replacement_date_text"),
+            replacementTimeText = requireString(json, "replacement_time_text"),
+            dateOffsetDays = requireInteger(json, "date_offset_days"),
+            timeOffsetMinutes = requireInteger(json, "time_offset_minutes"),
             confidence = requireNumber(json, "confidence"),
             needClarification = requireBoolean(json, "need_clarification")
         )
@@ -106,6 +117,14 @@ class ContextActionExtractionResponseParser {
         return value.toDouble()
     }
 
+    private fun requireInteger(json: JSONObject, field: String): Int {
+        return when (val value = json.get(field)) {
+            is Int -> value
+            is Long -> value.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
+            else -> null
+        } ?: throw ContextActionExtractionParseException("Field '$field' must be an integer")
+    }
+
     private fun requireBoolean(json: JSONObject, field: String): Boolean {
         val value = json.get(field)
         if (value !is Boolean) {
@@ -118,8 +137,13 @@ class ContextActionExtractionResponseParser {
         val REQUIRED_FIELDS = setOf(
             "action",
             "replacement_title",
-            "new_date",
-            "new_time",
+            "date_operation",
+            "time_operation",
+            "relative_base",
+            "replacement_date_text",
+            "replacement_time_text",
+            "date_offset_days",
+            "time_offset_minutes",
             "confidence",
             "need_clarification"
         )

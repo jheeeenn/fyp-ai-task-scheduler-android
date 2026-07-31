@@ -281,16 +281,62 @@ object AgentResponseSchemas {
             properties = JSONObject().apply {
                 put("action", stringEnum("UPDATE_TASK", "RESCHEDULE_TASK"))
                 put("replacement_title", stringType())
-                put("new_date", stringType())
-                put("new_time", stringType())
+                put("date_operation", stringEnum("KEEP", "SET", "OFFSET"))
+                put("time_operation", stringEnum("KEEP", "SET", "OFFSET"))
+                put(
+                    "relative_base",
+                    stringEnum("AUTHORITATIVE_TASK", "CURRENT_PROPOSAL")
+                )
+                put("replacement_date_text", stringType())
+                put("replacement_time_text", stringType())
+                put("date_offset_days", integerType(-365, 365))
+                put("time_offset_minutes", integerType(-10_080, 10_080))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
                 put("need_clarification", booleanType())
             },
             required = JSONArray().apply {
                 put("action")
                 put("replacement_title")
-                put("new_date")
-                put("new_time")
+                put("date_operation")
+                put("time_operation")
+                put("relative_base")
+                put("replacement_date_text")
+                put("replacement_time_text")
+                put("date_offset_days")
+                put("time_offset_minutes")
+                put("confidence")
+                put("need_clarification")
+            }
+        )
+    }
+
+    fun relativeTemporalCorrectionResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "relative_temporal_correction",
+            properties = JSONObject().apply {
+                put("move", stringEnum("APPLY_CHANGE", "RESTORE_ORIGINAL", "UNKNOWN"))
+                put("date_operation", stringEnum("KEEP", "SET", "OFFSET"))
+                put("time_operation", stringEnum("KEEP", "SET", "OFFSET"))
+                put(
+                    "relative_base",
+                    stringEnum("AUTHORITATIVE_TASK", "CURRENT_PROPOSAL")
+                )
+                put("replacement_date_text", stringType())
+                put("replacement_time_text", stringType())
+                put("date_offset_days", integerType(-365, 365))
+                put("time_offset_minutes", integerType(-10_080, 10_080))
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+                put("need_clarification", booleanType())
+            },
+            required = JSONArray().apply {
+                put("move")
+                put("date_operation")
+                put("time_operation")
+                put("relative_base")
+                put("replacement_date_text")
+                put("replacement_time_text")
+                put("date_offset_days")
+                put("time_offset_minutes")
                 put("confidence")
                 put("need_clarification")
             }
@@ -425,6 +471,12 @@ object AgentResponseSchemas {
 
     private fun numberType(minimum: Double, maximum: Double): JSONObject = JSONObject().apply {
         put("type", "number")
+        put("minimum", minimum)
+        put("maximum", maximum)
+    }
+
+    private fun integerType(minimum: Int, maximum: Int): JSONObject = JSONObject().apply {
+        put("type", "integer")
         put("minimum", minimum)
         put("maximum", maximum)
     }

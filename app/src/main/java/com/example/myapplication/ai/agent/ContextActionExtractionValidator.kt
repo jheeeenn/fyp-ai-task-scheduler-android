@@ -2,8 +2,15 @@ package com.example.myapplication.ai.agent
 
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.conversation.ConversationContextAction
+import com.example.myapplication.ai.temporal.RelativeTemporalBase
+import com.example.myapplication.ai.temporal.RelativeTemporalOperation
+import com.example.myapplication.ai.temporal.RelativeTemporalProposal
+import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidator
 
-class ContextActionExtractionValidator {
+class ContextActionExtractionValidator(
+    private val temporalValidator: RelativeTemporalProposalValidator =
+        RelativeTemporalProposalValidator()
+) {
     fun validate(
         response: ContextActionExtractionResponse,
         expectedAction: ConversationContextAction
@@ -16,34 +23,89 @@ class ContextActionExtractionValidator {
         if (actualAction != expectedAction || expectedAction == ConversationContextAction.NONE) {
             fail("Context-action extraction action does not match expected action")
         }
+        val replacementTitle = response.replacementTitle.clean().takeIf { it.isNotEmpty() }
+        if (actualAction == ConversationContextAction.RESCHEDULE && replacementTitle != null) {
+            fail("RESCHEDULE context action must not return a replacement title")
+        }
+        if (actualAction == ConversationContextAction.UPDATE) {
+            validateUpdateOnlyResponse(response)
+            return ContextActionChangeSet(
+                action = actualAction,
+                replacementTitle = replacementTitle,
+                confidence = response.confidence.toFloat()
+            )
+        }
+
+        val proposal = temporalValidator.validate(
+            RelativeTemporalProposal(
+                dateOperation = response.dateOperation.toOperation("date_operation"),
+                timeOperation = response.timeOperation.toOperation("time_operation"),
+                relativeBase = response.relativeBase.toRelativeBase(),
+                replacementDateText = response.replacementDateText,
+                replacementTimeText = response.replacementTimeText,
+                dateOffsetDays = response.dateOffsetDays,
+                timeOffsetMinutes = response.timeOffsetMinutes,
+                confidence = response.confidence,
+                needClarification = response.needClarification
+            )
+        )
+        if (proposal.relativeBase != RelativeTemporalBase.AUTHORITATIVE_TASK) {
+            fail("Initial context reschedule must use the authoritative task as its base")
+        }
+        return ContextActionChangeSet(
+            action = actualAction,
+            replacementTitle = replacementTitle,
+            newDateText = proposal.replacementDateText.takeIf {
+                proposal.dateOperation == RelativeTemporalOperation.SET
+            },
+            newTimeText = proposal.replacementTimeText.takeIf {
+                proposal.timeOperation == RelativeTemporalOperation.SET
+            },
+            confidence = response.confidence.toFloat(),
+            temporalProposal = proposal
+        )
+    }
+
+    private fun validateUpdateOnlyResponse(response: ContextActionExtractionResponse) {
         if (!response.confidence.isFinite() ||
             response.confidence < MIN_CONFIDENCE ||
             response.confidence > 1.0
         ) {
             fail("Context-action extraction confidence is below $MIN_CONFIDENCE")
         }
-        if (response.needClarification) {
-            fail("Context-action extraction requested clarification")
+        if (response.needClarification) fail("Context-action extraction requested clarification")
+        if (
+            response.dateOperation != RelativeTemporalOperation.KEEP.name ||
+            response.timeOperation != RelativeTemporalOperation.KEEP.name ||
+            response.relativeBase != RelativeTemporalBase.AUTHORITATIVE_TASK.name ||
+            response.replacementDateText.isNotBlank() ||
+            response.replacementTimeText.isNotBlank() ||
+            response.dateOffsetDays != 0 ||
+            response.timeOffsetMinutes != 0
+        ) {
+            fail("UPDATE context action must not return temporal changes")
+        }
+    }
+
+    private fun String.toOperation(field: String): RelativeTemporalOperation =
+        try {
+            RelativeTemporalOperation.valueOf(this)
+        } catch (_: IllegalArgumentException) {
+            fail("Unknown $field value")
         }
 
-        val replacementTitle = response.replacementTitle.clean().takeIf { it.isNotEmpty() }
-        if (actualAction == ConversationContextAction.RESCHEDULE && replacementTitle != null) {
-            fail("RESCHEDULE context action must not return a replacement title")
+    private fun String.toRelativeBase(): RelativeTemporalBase =
+        try {
+            RelativeTemporalBase.valueOf(this)
+        } catch (_: IllegalArgumentException) {
+            fail("Unknown relative_base value")
         }
-        return ContextActionChangeSet(
-            action = actualAction,
-            replacementTitle = replacementTitle,
-            newDateText = response.newDate.clean().takeIf { it.isNotEmpty() },
-            newTimeText = response.newTime.clean().takeIf { it.isNotEmpty() },
-            confidence = response.confidence.toFloat()
-        )
-    }
 
     private fun String.clean(): String = trim().replace(Regex("\\s+"), " ")
 
     private fun fail(message: String): Nothing = throw TaskAgentValidationException(message)
 
     companion object {
-        const val MIN_CONFIDENCE = 0.60
+        const val MIN_CONFIDENCE = RelativeTemporalProposal.MIN_CONFIDENCE
     }
 }

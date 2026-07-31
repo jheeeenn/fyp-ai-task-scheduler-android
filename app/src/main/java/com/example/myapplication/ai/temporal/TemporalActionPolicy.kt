@@ -3,6 +3,7 @@ package com.example.myapplication.ai.temporal
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 enum class TemporalUseCase { QUERY, CREATE, UPDATE, RESCHEDULE, BREAKDOWN, TASK_MATCH }
 
@@ -16,8 +17,6 @@ sealed class TemporalPolicyResult {
 }
 
 object TemporalActionPolicy {
-    private val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }
-
     fun evaluate(
         resolution: TemporalResolution,
         useCase: TemporalUseCase,
@@ -71,12 +70,29 @@ object TemporalActionPolicy {
     }
 
     private fun isWhollyPast(r: TemporalResolution, base: Calendar): Boolean {
-        val endDate = parseDate(r.endDateInclusive ?: r.startDateInclusive) ?: return false
+        val endDate = parseDate(
+            r.endDateInclusive ?: r.startDateInclusive,
+            base.timeZone
+        ) ?: return false
         val today = (base.clone() as Calendar).apply { set(Calendar.HOUR_OF_DAY,0); set(Calendar.MINUTE,0); set(Calendar.SECOND,0); set(Calendar.MILLISECOND,0) }.time.time
         if (endDate < today) return true
         if (endDate == today && r.hasTimeConstraint && !r.wrapsMidnight) return (r.endMinuteInclusive ?: 1439) < base.get(Calendar.HOUR_OF_DAY) * 60 + base.get(Calendar.MINUTE)
         return false
     }
 
-    private fun parseDate(value: String?): Long? = try { if (value.isNullOrBlank()) null else dateFormat.parse(value)?.time } catch (_: Exception) { null }
+    private fun parseDate(
+        value: String?,
+        timeZone: TimeZone = TimeZone.getDefault()
+    ): Long? = try {
+        if (value.isNullOrBlank()) {
+            null
+        } else {
+            SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply {
+                isLenient = false
+                this.timeZone = timeZone
+            }.parse(value)?.time
+        }
+    } catch (_: Exception) {
+        null
+    }
 }

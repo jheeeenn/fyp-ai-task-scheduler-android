@@ -138,6 +138,11 @@ import com.example.myapplication.ai.temporal.TemporalActionPolicy
 import com.example.myapplication.ai.temporal.TemporalExpressionResolver
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
+import com.example.myapplication.ai.temporal.ExactTemporalSchedule
+import com.example.myapplication.ai.temporal.RelativeTemporalCalculationResult
+import com.example.myapplication.ai.temporal.RelativeTemporalChangeCalculator
+import com.example.myapplication.ai.temporal.RelativeTemporalOperation
+import com.example.myapplication.ai.temporal.RelativeTemporalSpeechRenderer
 import com.example.myapplication.ai.routine.RoutineDraftController
 import com.example.myapplication.ai.routine.RoutineDraftIssue
 import com.example.myapplication.ai.routine.RoutineDraftState
@@ -1366,48 +1371,29 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 expectedAction = validation.action
                             )
                         } catch (_: TaskAgentProcessingException) {
+                            val clarification = if (
+                                validation.action == ConversationContextAction.RESCHEDULE
+                            ) {
+                                RelativeTemporalSpeechRenderer.semanticClarification()
+                            } else {
+                                "Please repeat the requested change."
+                            }
                             rejectContextAction(
-                                "Please repeat the requested change.",
+                                clarification,
                                 "android_context_action_extraction"
                             )
                             return@launch
                         }
-                        val hasDateChange = !extractedChange.newDateText.isNullOrBlank()
-                        val hasTimeChange = !extractedChange.newTimeText.isNullOrBlank()
-                        val extractedTemporalResolution =
-                            if (
-                                validation.action == ConversationContextAction.RESCHEDULE &&
-                                (hasDateChange || hasTimeChange)
-                            ) {
-                                TemporalExpressionResolver().resolve(
-                                    agentDateText = extractedChange.newDateText,
-                                    agentTimeText = extractedChange.newTimeText,
-                                    originalText = listOfNotNull(
-                                        extractedChange.newDateText,
-                                        extractedChange.newTimeText
-                                    ).joinToString(" ")
-                                )
-                            } else {
-                                null
-                            }
-                        val extractedTemporalPolicy = extractedTemporalResolution?.let {
-                            TemporalActionPolicy.evaluate(it, TemporalUseCase.RESCHEDULE)
-                        }
-                        val clarificationRequired =
-                            validation.action == ConversationContextAction.RESCHEDULE &&
-                                (
-                                    !hasDateChange && !hasTimeChange ||
-                                        extractedTemporalPolicy is TemporalPolicyResult.Unresolved ||
-                                        extractedTemporalPolicy is TemporalPolicyResult.InvalidPastSchedule ||
-                                        extractedTemporalPolicy is TemporalPolicyResult.NeedsExactDate ||
-                                        extractedTemporalPolicy is TemporalPolicyResult.NeedsExactTime ||
-                                        extractedTemporalPolicy is TemporalPolicyResult.NeedsExactDateAndTime
-                                    )
+                        val proposal = extractedChange.temporalProposal
+                        val hasDateChange = proposal != null &&
+                            proposal.dateOperation != RelativeTemporalOperation.KEEP
+                        val hasTimeChange = proposal != null &&
+                            proposal.timeOperation != RelativeTemporalOperation.KEEP
                         Log.d(
                             "HOME_CONTEXT_RESCHEDULE_EXTRACTION",
                             "hasDateChange=$hasDateChange " +
                                 "hasTimeChange=$hasTimeChange " +
-                                "clarificationRequired=$clarificationRequired"
+                                "clarificationRequired=false"
                         )
 
                         if (readOnlyTaskContextStore.currentGeneration() != capturedGeneration) {
@@ -1422,20 +1408,87 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             rejectUnavailableContextAction()
                             return@launch
                         }
-                        val authoritativeTask = withContext(Dispatchers.IO) {
+                        val calculationTask = withContext(Dispatchers.IO) {
                             taskDao.getById(reResolvedTaskId)
                         }
-                        if (!isEligibleContextActionTarget(authoritativeTask)) {
+                        if (!isEligibleContextActionTarget(calculationTask) ||
+                            !sameContextActionTaskSnapshot(initiallyFetchedTask, calculationTask)
+                        ) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+
+                        val calculation = if (
+                            validation.action == ConversationContextAction.RESCHEDULE
+                        ) {
+                            RelativeTemporalChangeCalculator().calculate(
+                                authoritativeOriginal = ExactTemporalSchedule(
+                                    date = calculationTask?.dueDate,
+                                    time = calculationTask?.dueTime
+                                ),
+                                currentProposal = null,
+                                proposal = requireNotNull(proposal),
+                                now = Calendar.getInstance()
+                            )
+                        } else {
+                            null
+                        }
+                        when (calculation) {
+                            is RelativeTemporalCalculationResult.Failure -> {
+                                Log.d(
+                                    "RELATIVE_TEMPORAL_CALCULATION",
+                                    "result=REJECTED crossedDateBoundary=false " +
+                                        "source=${calculation.source}"
+                                )
+                                rejectContextAction(
+                                    RelativeTemporalSpeechRenderer.calculationClarification(
+                                        calculation.reason
+                                    ),
+                                    "android_relative_temporal_calculation"
+                                )
+                                return@launch
+                            }
+                            is RelativeTemporalCalculationResult.PastSchedule -> {
+                                Log.d(
+                                    "RELATIVE_TEMPORAL_CALCULATION",
+                                    "result=PAST crossedDateBoundary=${calculation.crossedDateBoundary} " +
+                                        "source=${calculation.source}"
+                                )
+                                rejectContextAction(
+                                    RelativeTemporalSpeechRenderer.pastSchedule(calculation.schedule),
+                                    "android_relative_temporal_past"
+                                )
+                                return@launch
+                            }
+                            is RelativeTemporalCalculationResult.Success -> Log.d(
+                                "RELATIVE_TEMPORAL_CALCULATION",
+                                "result=SUCCESS crossedDateBoundary=${calculation.crossedDateBoundary} " +
+                                    "source=${calculation.source}"
+                            )
+                            null -> Unit
+                        }
+
+                        if (readOnlyTaskContextStore.currentGeneration() != capturedGeneration) {
+                            rejectUnavailableContextAction()
+                            return@launch
+                        }
+                        val openingTask = withContext(Dispatchers.IO) {
+                            taskDao.getById(reResolvedTaskId)
+                        }
+                        if (!isEligibleContextActionTarget(openingTask) ||
+                            !sameContextActionTaskSnapshot(calculationTask, openingTask)
+                        ) {
                             rejectUnavailableContextAction()
                             return@launch
                         }
 
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
                         openContextActionEditScreen(
-                            task = requireNotNull(authoritativeTask),
+                            task = requireNotNull(openingTask),
                             action = validation.action,
                             extractedChange = extractedChange,
-                            requiresTemporalCollection = clarificationRequired
+                            calculatedTemporal =
+                                calculation as? RelativeTemporalCalculationResult.Success
                         )
                         return@launch
                     }
@@ -2554,6 +2607,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     private fun isEligibleContextActionTarget(task: TaskEntity?): Boolean =
         ContextActionTargetValidator.isEligible(task)
 
+    private fun sameContextActionTaskSnapshot(first: TaskEntity?, second: TaskEntity?): Boolean =
+        first != null && second != null &&
+            first.id == second.id &&
+            first.title == second.title &&
+            first.dueDate == second.dueDate &&
+            first.dueTime == second.dueTime &&
+            first.isDone == second.isDone &&
+            first.parentTaskId == second.parentTaskId &&
+            first.subtaskOrder == second.subtaskOrder
+
     private fun rejectUnavailableContextAction() {
         rejectContextAction(
             reply = "That task is no longer available. Please repeat your task query.",
@@ -2577,20 +2640,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         task: TaskEntity,
         action: ConversationContextAction,
         extractedChange: ContextActionChangeSet,
-        requiresTemporalCollection: Boolean
+        calculatedTemporal: RelativeTemporalCalculationResult.Success?
     ) {
         val operation = if (action == ConversationContextAction.RESCHEDULE) {
             ExecutionOperation.RESCHEDULE_TASK
         } else {
             ExecutionOperation.UPDATE_TASK
         }
-        val reply = if (
-            action == ConversationContextAction.RESCHEDULE &&
-            requiresTemporalCollection
-        ) {
-            "Opening the task so you can choose a new date or time."
-        } else if (action == ConversationContextAction.RESCHEDULE) {
-            responseManager.openReschedule()
+        val reply = if (action == ConversationContextAction.RESCHEDULE) {
+            "I calculated the new schedule. Opening it for confirmation."
         } else {
             responseManager.openEditTask()
         }
@@ -2600,8 +2658,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 outcome = ExecutionOutcome.INFORMATION,
                 taskTitle = task.title,
                 tasks = listOf(observedTask(task)),
-                dateText = extractedChange.newDateText.orEmpty(),
-                timeText = extractedChange.newTimeText.orEmpty(),
+                dateText = calculatedTemporal?.schedule?.date.orEmpty(),
+                timeText = calculatedTemporal?.schedule?.time.orEmpty(),
                 listenAgain = false,
                 fallbackSpeech = reply
             )
@@ -2611,9 +2669,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 putExtra("task_title", task.title)
                 putExtra("task_date", task.dueDate)
                 putExtra("task_time", task.dueTime)
+                putExtra("task_is_done", task.isDone)
                 putExtra("opened_by_assistant", true)
-                putExtra("prefill_new_date_text", extractedChange.newDateText)
-                putExtra("prefill_new_time_text", extractedChange.newTimeText)
+                putExtra("prefill_new_date_text", calculatedTemporal?.schedule?.date)
+                putExtra("prefill_new_time_text", calculatedTemporal?.schedule?.time)
                 if (action == ConversationContextAction.UPDATE &&
                     !extractedChange.replacementTitle.isNullOrBlank()
                 ) {
@@ -2621,9 +2680,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 }
                 if (action == ConversationContextAction.RESCHEDULE) {
                     putExtra("assistant_mode", "reschedule")
+                    putExtra("relative_temporal_proposal", calculatedTemporal != null)
+                    putExtra("relative_temporal_revision", 1)
                     putExtra(
-                        "reschedule_collection_required",
-                        requiresTemporalCollection
+                        "relative_temporal_crossed_date_boundary",
+                        calculatedTemporal?.crossedDateBoundary == true
                     )
                 }
             }

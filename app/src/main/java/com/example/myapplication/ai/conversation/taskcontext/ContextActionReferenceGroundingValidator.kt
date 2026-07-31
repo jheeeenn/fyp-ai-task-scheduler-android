@@ -67,10 +67,20 @@ object ContextActionReferenceGroundingValidator {
             .flatMap { pattern -> pattern.findAll(normalizedText) }
             .map { match -> ordinalPosition(match.groupValues[1]) }
             .filter { it > 0 }
-            .distinct()
-            .toList()
-        if (ordinalPositions.isNotEmpty()) {
-            val expected = ordinalPositions.singleOrNull()?.let { position ->
+            .toMutableList()
+        PAIR_SELECTOR.findAll(normalizedText)
+            .map { match ->
+                if (capturedSnapshot.items.size == 2) {
+                    if (match.groupValues[1].equals("former", ignoreCase = true)) 1 else 2
+                } else {
+                    -1
+                }
+            }
+            .filter { it > 0 }
+            .forEach(ordinalPositions::add)
+        val distinctOrdinalPositions = ordinalPositions.distinct()
+        if (distinctOrdinalPositions.isNotEmpty()) {
+            val expected = distinctOrdinalPositions.singleOrNull()?.let { position ->
                 capturedSnapshot.items.getOrNull(position - 1)?.ref
             }
             return compareSelected(
@@ -175,6 +185,9 @@ object ContextActionReferenceGroundingValidator {
     )
     private val STANDALONE_SUPPLIED_ORDINAL = Regex(
         "(?i)\\bthe\\s+($ORDINAL)(?=\\s*(?:$|to\\b|on\\b|for\\b))"
+    )
+    private val PAIR_SELECTOR = Regex(
+        "(?i)\\b(?:the\\s+)?(former|latter)\\s+(?:one|task|result|item)\\b"
     )
     private val FOCUS_REFERENCE = Regex(
         "(?i)\\b(?:it|its|that\\s+(?:task|one)|this\\s+(?:task|one))\\b"

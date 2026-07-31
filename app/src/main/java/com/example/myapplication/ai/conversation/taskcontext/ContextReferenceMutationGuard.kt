@@ -67,6 +67,14 @@ object ContextReferenceMutationGuard {
                 val position = ordinalPosition(match.groupValues[1])
                 snapshot.items.getOrNull(position - 1)?.let { refs += it.ref }
             }
+        if (snapshot.items.size == 2) {
+            PAIR_SELECTOR.findAll(text).forEach { match ->
+                val position = if (
+                    match.groupValues[1].equals("former", ignoreCase = true)
+                ) 1 else 2
+                snapshot.items.getOrNull(position - 1)?.let { refs += it.ref }
+            }
+        }
         return refs
     }
 
@@ -76,7 +84,8 @@ object ContextReferenceMutationGuard {
     fun explicitContextSelectorCount(text: String): Int =
         TEMPORARY_REF.findAll(text).count() +
             SUPPLIED_RESULT_ORDINAL.findAll(text).count() +
-            STANDALONE_SUPPLIED_ORDINAL.findAll(text).count()
+            STANDALONE_SUPPLIED_ORDINAL.findAll(text).count() +
+            PAIR_SELECTOR.findAll(text).count()
 
     fun hasFocusReference(text: String): Boolean =
         DEICTIC_TASK_REFERENCE.containsMatchIn(text) ||
@@ -113,6 +122,9 @@ object ContextReferenceMutationGuard {
     )
     private val STANDALONE_SUPPLIED_ORDINAL = Regex(
         "(?i)\\bthe\\s+($ORDINAL)(?=\\s*(?:$|to\\b|on\\b|for\\b))"
+    )
+    private val PAIR_SELECTOR = Regex(
+        "(?i)\\b(?:the\\s+)?(former|latter)\\s+(?:one|task|result|item)\\b"
     )
     private val DEICTIC_TASK_REFERENCE = Regex("(?i)\\b(?:that|this)\\s+(?:task|one)\\b")
     private val FOCUS_PRONOUN = Regex("(?i)\\b(?:it|its|that one|that task)\\b")

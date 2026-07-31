@@ -226,9 +226,10 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(helper.contains("putExtra(\"task_time\", task.dueTime)"))
         assertTrue(helper.contains("putExtra(\"opened_by_assistant\", true)"))
         assertTrue(helper.contains("putExtra(\"prefill_title\", extractedChange.replacementTitle)"))
-        assertTrue(helper.contains("putExtra(\"prefill_new_date_text\", extractedChange.newDateText)"))
-        assertTrue(helper.contains("putExtra(\"prefill_new_time_text\", extractedChange.newTimeText)"))
+        assertTrue(helper.contains("putExtra(\"prefill_new_date_text\", calculatedTemporal?.schedule?.date)"))
+        assertTrue(helper.contains("putExtra(\"prefill_new_time_text\", calculatedTemporal?.schedule?.time)"))
         assertTrue(helper.contains("putExtra(\"assistant_mode\", \"reschedule\")"))
+        assertTrue(helper.contains("putExtra(\"relative_temporal_proposal\", calculatedTemporal != null)"))
         assertTrue(helper.contains("startActivity(editIntent)"))
     }
 

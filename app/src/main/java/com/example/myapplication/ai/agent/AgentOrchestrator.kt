@@ -5,6 +5,9 @@ import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionParser
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
+import com.example.myapplication.ai.temporal.ValidatedRelativeTemporalCorrection
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
 
@@ -19,6 +22,10 @@ class AgentOrchestrator(
         ContextActionExtractionResponseParser(),
     private val contextActionExtractionValidator: ContextActionExtractionValidator =
         ContextActionExtractionValidator(),
+    private val relativeTemporalCorrectionParser: RelativeTemporalCorrectionParser =
+        RelativeTemporalCorrectionParser(),
+    private val relativeTemporalCorrectionValidator: RelativeTemporalCorrectionValidator =
+        RelativeTemporalCorrectionValidator(),
     private val routineExtractionParser: RoutineExtractionResponseParser =
         RoutineExtractionResponseParser()
 ) {
@@ -31,6 +38,8 @@ class AgentOrchestrator(
             val validatedCommand = actionValidator.validate(normalizedCommand)
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DebugDiagnosticLog.event(
                 "AGENT_ORCHESTRATOR",
@@ -48,10 +57,60 @@ class AgentOrchestrator(
             Log.d("AGENT_ORCHESTRATOR", "Trying bounded context-action extraction")
             val rawContent = laptopAgentClient.processContextAction(normalizedText, expectedAction)
             val response = contextActionExtractionParser.parse(rawContent)
-            contextActionExtractionValidator.validate(response, expectedAction)
+            val change = contextActionExtractionValidator.validate(response, expectedAction)
+            change.temporalProposal?.let { proposal ->
+                Log.d(
+                    "RELATIVE_TEMPORAL_EXTRACTION",
+                    "dateOperation=${proposal.dateOperation} " +
+                        "timeOperation=${proposal.timeOperation} " +
+                        "relativeBase=${proposal.relativeBase} " +
+                        "confidence=${proposal.confidence} " +
+                        "clarificationRequired=${proposal.needClarification}"
+                )
+                Log.d("RELATIVE_TEMPORAL_VALIDATION", "result=ACCEPTED failureReason=NONE")
+            }
+            change
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            Log.d(
+                "RELATIVE_TEMPORAL_VALIDATION",
+                "result=REJECTED failureReason=${e::class.java.simpleName}"
+            )
             Log.e("AGENT_ORCHESTRATOR", "Context-action extraction failed closed", e)
             throw TaskAgentProcessingException("Task agent failed to extract context action", e)
+        }
+    }
+
+    suspend fun processRelativeTemporalCorrection(
+        normalizedText: String
+    ): ValidatedRelativeTemporalCorrection {
+        return try {
+            val rawContent = laptopAgentClient.processRelativeTemporalCorrection(normalizedText)
+            val response = relativeTemporalCorrectionParser.parse(rawContent)
+            val correction = relativeTemporalCorrectionValidator.validate(response)
+            val proposal = (correction as? ValidatedRelativeTemporalCorrection.Apply)?.proposal
+            Log.d(
+                "RELATIVE_TEMPORAL_EXTRACTION",
+                "dateOperation=${proposal?.dateOperation ?: "KEEP"} " +
+                    "timeOperation=${proposal?.timeOperation ?: "KEEP"} " +
+                    "relativeBase=${proposal?.relativeBase ?: "AUTHORITATIVE_TASK"} " +
+                    "confidence=${proposal?.confidence ?: response.confidence} " +
+                    "clarificationRequired=${response.needClarification}"
+            )
+            Log.d("RELATIVE_TEMPORAL_VALIDATION", "result=ACCEPTED failureReason=NONE")
+            correction
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.d(
+                "RELATIVE_TEMPORAL_VALIDATION",
+                "result=REJECTED failureReason=${e::class.java.simpleName}"
+            )
+            throw TaskAgentProcessingException(
+                "Task agent failed to interpret relative-temporal correction",
+                e
+            )
         }
     }
 

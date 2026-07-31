@@ -124,6 +124,61 @@ interface TaskDao {
     @Query("UPDATE tasks SET title = :title, dueDate = :dueDate, dueTime = :dueTime WHERE id = :id")
     suspend fun updateTask(id: Long, title: String, dueDate: String?, dueTime: String?)
 
+    @Query(
+        """
+        UPDATE tasks
+        SET title = :newTitle, dueDate = :newDueDate, dueTime = :newDueTime
+        WHERE id = :id
+          AND title = :expectedTitle
+          AND dueDate IS :expectedDueDate
+          AND dueTime IS :expectedDueTime
+          AND isDone = :expectedIsDone
+        """
+    )
+    suspend fun updateTaskIfAuthoritativeSnapshotMatches(
+        id: Long,
+        expectedTitle: String,
+        expectedDueDate: String?,
+        expectedDueTime: String?,
+        expectedIsDone: Boolean,
+        newTitle: String,
+        newDueDate: String?,
+        newDueTime: String?
+    ): Int
+
+    @Transaction
+    suspend fun updateTaskAndSubtasksIfAuthoritativeSnapshotMatches(
+        id: Long,
+        expectedTitle: String,
+        expectedDueDate: String?,
+        expectedDueTime: String?,
+        expectedIsDone: Boolean,
+        newTitle: String,
+        newDueDate: String?,
+        newDueTime: String?
+    ): Boolean {
+        val updatedRows = updateTaskIfAuthoritativeSnapshotMatches(
+            id = id,
+            expectedTitle = expectedTitle,
+            expectedDueDate = expectedDueDate,
+            expectedDueTime = expectedDueTime,
+            expectedIsDone = expectedIsDone,
+            newTitle = newTitle,
+            newDueDate = newDueDate,
+            newDueTime = newDueTime
+        )
+        if (updatedRows != 1) return false
+        val updatedTask = getById(id) ?: return false
+        if (updatedTask.parentTaskId == null) {
+            updateSubtasksSchedule(
+                parentTaskId = id,
+                dueDate = newDueDate,
+                dueTime = newDueTime
+            )
+        }
+        return true
+    }
+
     @Query("""
     UPDATE tasks 
     SET dueDate = :dueDate, dueTime = :dueTime 
