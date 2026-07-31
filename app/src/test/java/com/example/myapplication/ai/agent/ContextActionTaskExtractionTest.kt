@@ -131,7 +131,7 @@ class ContextActionTaskExtractionTest {
     fun actionMismatchLowConfidenceClarificationAndCurrentBaseFailClosed() {
         listOf(
             updateResponse(),
-            offsetResponse(minutes = 30, confidence = 0.59),
+            offsetResponse(minutes = 30, confidence = 0.79),
             offsetResponse(minutes = 30, needClarification = true),
             JSONObject(offsetResponse(minutes = 30))
                 .put("relative_base", "CURRENT_PROPOSAL")

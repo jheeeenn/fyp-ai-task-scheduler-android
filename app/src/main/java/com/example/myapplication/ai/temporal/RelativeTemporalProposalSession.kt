@@ -2,6 +2,7 @@ package com.example.myapplication.ai.temporal
 
 enum class RelativeTemporalProposalState {
     ACTIVE,
+    SAVING,
     CANCELLED,
     SAVED
 }
@@ -27,6 +28,21 @@ sealed class RelativeTemporalConfirmationResult {
     data object Inactive : RelativeTemporalConfirmationResult()
 }
 
+data class RelativeTemporalSaveClaim(
+    val revision: Int,
+    val title: String,
+    val schedule: ExactTemporalSchedule
+)
+
+sealed class RelativeTemporalSaveClaimResult {
+    data class Claimed(
+        val claim: RelativeTemporalSaveClaim
+    ) : RelativeTemporalSaveClaimResult()
+
+    data object StaleRevision : RelativeTemporalSaveClaimResult()
+    data object Inactive : RelativeTemporalSaveClaimResult()
+}
+
 /** Pure revision state for one authoritative task and one unsaved schedule proposal. */
 class RelativeTemporalProposalSession(
     val authoritativeOriginal: ExactTemporalSchedule,
@@ -45,6 +61,7 @@ class RelativeTemporalProposalSession(
         private set
 
     private var requestGeneration: Long = 0L
+    private var saveClaim: RelativeTemporalSaveClaim? = null
 
     fun beginCorrection(): RelativeTemporalCorrectionToken {
         check(state == RelativeTemporalProposalState.ACTIVE)
@@ -96,16 +113,48 @@ class RelativeTemporalProposalSession(
         return RelativeTemporalConfirmationResult.Latest(revision, currentProposal)
     }
 
-    fun markSaved(savedRevision: Int): Boolean {
-        if (proposalForConfirmation(savedRevision) !is RelativeTemporalConfirmationResult.Latest) {
-            return false
+    fun claimSave(requestedRevision: Int, proposedTitle: String): RelativeTemporalSaveClaimResult {
+        if (state != RelativeTemporalProposalState.ACTIVE) {
+            return RelativeTemporalSaveClaimResult.Inactive
         }
+        if (requestedRevision != revision) {
+            return RelativeTemporalSaveClaimResult.StaleRevision
+        }
+        val claim = RelativeTemporalSaveClaim(
+            revision = revision,
+            title = proposedTitle,
+            schedule = currentProposal.copy()
+        )
         requestGeneration += 1L
+        saveClaim = claim
+        state = RelativeTemporalProposalState.SAVING
+        return RelativeTemporalSaveClaimResult.Claimed(claim)
+    }
+
+    fun isCurrentSaveClaim(claim: RelativeTemporalSaveClaim): Boolean =
+        state == RelativeTemporalProposalState.SAVING && saveClaim === claim
+
+    fun completeSave(claim: RelativeTemporalSaveClaim): Boolean {
+        if (!isCurrentSaveClaim(claim) || claim.revision != revision) return false
         state = RelativeTemporalProposalState.SAVED
+        saveClaim = null
+        return true
+    }
+
+    fun failSave(claim: RelativeTemporalSaveClaim, retryable: Boolean): Boolean {
+        if (!isCurrentSaveClaim(claim)) return false
+        requestGeneration += 1L
+        saveClaim = null
+        state = if (retryable) {
+            RelativeTemporalProposalState.ACTIVE
+        } else {
+            RelativeTemporalProposalState.CANCELLED
+        }
         return true
     }
 
     fun cancel(): ExactTemporalSchedule {
+        if (state != RelativeTemporalProposalState.ACTIVE) return currentProposal
         requestGeneration += 1L
         state = RelativeTemporalProposalState.CANCELLED
         currentProposal = authoritativeOriginal

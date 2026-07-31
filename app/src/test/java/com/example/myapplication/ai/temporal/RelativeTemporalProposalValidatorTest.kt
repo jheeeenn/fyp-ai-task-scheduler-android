@@ -25,7 +25,7 @@ class RelativeTemporalProposalValidatorTest {
 
     @Test
     fun lowNonFiniteAndOutOfRangeConfidenceAreRejected() {
-        listOf(0.59, Double.NaN, Double.POSITIVE_INFINITY, 1.01).forEach { confidence ->
+        listOf(0.79, Double.NaN, Double.POSITIVE_INFINITY, 1.01).forEach { confidence ->
             assertThrows(RelativeTemporalProposalValidationException::class.java) {
                 validator.validate(
                     proposal(
@@ -36,6 +36,17 @@ class RelativeTemporalProposalValidatorTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun acceptedConfidenceThresholdIsInclusiveAtPointEight() {
+        validator.validate(
+            proposal(
+                timeOperation = RelativeTemporalOperation.OFFSET,
+                timeOffset = 30,
+                confidence = 0.80
+            )
+        )
     }
 
     @Test

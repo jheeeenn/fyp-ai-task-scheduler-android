@@ -1370,7 +1370,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 normalizedText = normalized,
                                 expectedAction = validation.action
                             )
+                        } catch (exception: CancellationException) {
+                            throw exception
                         } catch (_: TaskAgentProcessingException) {
+                            if (!isRelativeTemporalRequestCurrent(
+                                    requestToken,
+                                    "AFTER_EXTRACTION"
+                                )
+                            ) return@launch
                             val clarification = if (
                                 validation.action == ConversationContextAction.RESCHEDULE
                             ) {
@@ -1384,6 +1391,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             )
                             return@launch
                         }
+                        if (!isRelativeTemporalRequestCurrent(
+                                requestToken,
+                                "AFTER_EXTRACTION"
+                            )
+                        ) return@launch
                         val proposal = extractedChange.temporalProposal
                         val hasDateChange = proposal != null &&
                             proposal.dateOperation != RelativeTemporalOperation.KEEP
@@ -1411,6 +1423,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         val calculationTask = withContext(Dispatchers.IO) {
                             taskDao.getById(reResolvedTaskId)
                         }
+                        if (!isRelativeTemporalRequestCurrent(
+                                requestToken,
+                                "AFTER_CALCULATION"
+                            )
+                        ) return@launch
                         if (!isEligibleContextActionTarget(calculationTask) ||
                             !sameContextActionTaskSnapshot(initiallyFetchedTask, calculationTask)
                         ) {
@@ -1435,6 +1452,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         }
                         when (calculation) {
                             is RelativeTemporalCalculationResult.Failure -> {
+                                if (!isRelativeTemporalRequestCurrent(
+                                        requestToken,
+                                        "AFTER_CALCULATION"
+                                    )
+                                ) return@launch
                                 Log.d(
                                     "RELATIVE_TEMPORAL_CALCULATION",
                                     "result=REJECTED crossedDateBoundary=false " +
@@ -1449,6 +1471,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 return@launch
                             }
                             is RelativeTemporalCalculationResult.PastSchedule -> {
+                                if (!isRelativeTemporalRequestCurrent(
+                                        requestToken,
+                                        "AFTER_CALCULATION"
+                                    )
+                                ) return@launch
                                 Log.d(
                                     "RELATIVE_TEMPORAL_CALCULATION",
                                     "result=PAST crossedDateBoundary=${calculation.crossedDateBoundary} " +
@@ -1460,11 +1487,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 )
                                 return@launch
                             }
-                            is RelativeTemporalCalculationResult.Success -> Log.d(
-                                "RELATIVE_TEMPORAL_CALCULATION",
-                                "result=SUCCESS crossedDateBoundary=${calculation.crossedDateBoundary} " +
-                                    "source=${calculation.source}"
-                            )
+                            is RelativeTemporalCalculationResult.Success -> {
+                                if (!isRelativeTemporalRequestCurrent(
+                                        requestToken,
+                                        "AFTER_CALCULATION"
+                                    )
+                                ) return@launch
+                                Log.d(
+                                    "RELATIVE_TEMPORAL_CALCULATION",
+                                    "result=SUCCESS crossedDateBoundary=${calculation.crossedDateBoundary} " +
+                                        "source=${calculation.source}"
+                                )
+                            }
                             null -> Unit
                         }
 
@@ -1475,6 +1509,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         val openingTask = withContext(Dispatchers.IO) {
                             taskDao.getById(reResolvedTaskId)
                         }
+                        if (!isRelativeTemporalRequestCurrent(
+                                requestToken,
+                                "BEFORE_OPEN"
+                            )
+                        ) return@launch
                         if (!isEligibleContextActionTarget(openingTask) ||
                             !sameContextActionTaskSnapshot(calculationTask, openingTask)
                         ) {
@@ -1482,8 +1521,19 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             return@launch
                         }
 
+                        if (!isRelativeTemporalRequestCurrent(
+                                requestToken,
+                                "BEFORE_OPEN"
+                            )
+                        ) return@launch
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        if (!isRelativeTemporalRequestCurrent(
+                                requestToken,
+                                "BEFORE_OPEN"
+                            )
+                        ) return@launch
                         openContextActionEditScreen(
+                            requestToken = requestToken,
                             task = requireNotNull(openingTask),
                             action = validation.action,
                             extractedChange = extractedChange,
@@ -2303,6 +2353,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return current
     }
 
+    private fun isRelativeTemporalRequestCurrent(
+        requestToken: AssistantRequestToken,
+        phase: String
+    ): Boolean {
+        val current = isAssistantRequestCurrent(requestToken)
+        if (!current) {
+            Log.d(
+                "RELATIVE_TEMPORAL_STALE",
+                "phase=$phase reason=NEWER_ASSISTANT_REQUEST"
+            )
+        }
+        return current
+    }
+
     private suspend fun executeContextSuggestion(
         normalizedRequest: String,
         requestToken: AssistantRequestToken,
@@ -2637,6 +2701,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private suspend fun openContextActionEditScreen(
+        requestToken: AssistantRequestToken,
         task: TaskEntity,
         action: ConversationContextAction,
         extractedChange: ContextActionChangeSet,
@@ -2652,6 +2717,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         } else {
             responseManager.openEditTask()
         }
+        if (!isRelativeTemporalRequestCurrent(requestToken, "BEFORE_OPEN")) return
         speakObservationThenRun(
             ExecutionObservation(
                 operation = operation,
@@ -2664,6 +2730,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 fallbackSpeech = reply
             )
         ) {
+            if (!isRelativeTemporalRequestCurrent(requestToken, "BEFORE_OPEN")) {
+                return@speakObservationThenRun
+            }
             val editIntent = Intent(this@HomeActivity, EditTaskActivity::class.java).apply {
                 putExtra("task_id", task.id)
                 putExtra("task_title", task.title)

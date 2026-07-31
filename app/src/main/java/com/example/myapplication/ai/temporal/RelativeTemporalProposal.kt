@@ -31,7 +31,7 @@ data class RelativeTemporalProposal(
     val needClarification: Boolean
 ) {
     companion object {
-        const val MIN_CONFIDENCE = 0.60
+        const val MIN_CONFIDENCE = 0.80
         const val MAX_ABSOLUTE_DATE_OFFSET_DAYS = 365
         const val MAX_ABSOLUTE_TIME_OFFSET_MINUTES = 10_080
     }

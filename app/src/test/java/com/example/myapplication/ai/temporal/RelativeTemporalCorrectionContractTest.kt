@@ -58,6 +58,15 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     @Test
+    fun correctionConfidenceBelowPointEightFailsClosed() {
+        assertThrows(RelativeTemporalProposalValidationException::class.java) {
+            validator.validate(parser.parse(applyResponse().replace("0.98", "0.79")))
+        }
+        val accepted = validator.validate(parser.parse(applyResponse().replace("0.98", "0.80")))
+        assertTrue(accepted is ValidatedRelativeTemporalCorrection.Apply)
+    }
+
+    @Test
     fun restoreOriginalRequiresNeutralFields() {
         val restored = validator.validate(
             parser.parse(

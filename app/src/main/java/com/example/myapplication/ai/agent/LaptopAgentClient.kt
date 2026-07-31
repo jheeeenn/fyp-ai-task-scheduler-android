@@ -359,6 +359,8 @@ This is semantic operation extraction, not an exhaustive phrase dictionary. Inte
 meaning and paraphrases. Gemma proposes operations only. Android resolves literal expressions,
 performs all calendar arithmetic, checks the authoritative stored schedule, and decides whether
 the result is safe.
+Use confidence below 0.80 when the temporal meaning is not sufficiently certain; Android accepts
+only confidence from 0.80 through 1.0.
 
 For a date or time field:
 - KEEP means preserve that field: replacement text must be empty and its offset must be zero.
@@ -398,6 +400,9 @@ ID, output final task facts, access stored data, claim a save, or perform calend
 Return exactly: move, date_operation, time_operation, relative_base,
 replacement_date_text, replacement_time_text, date_offset_days, time_offset_minutes, confidence,
 need_clarification. No additional fields are allowed.
+
+Use confidence below 0.80 when the correction meaning is not sufficiently certain; Android
+accepts only confidence from 0.80 through 1.0.
 
 Use APPLY_CHANGE for a new temporal operation. KEEP, SET, and OFFSET have the same strict meanings
 as field preservation, literal replacement, and signed arithmetic. SET preserves the user's

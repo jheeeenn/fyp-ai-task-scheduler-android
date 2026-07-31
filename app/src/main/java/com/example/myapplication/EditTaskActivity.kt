@@ -57,10 +57,11 @@ import com.example.myapplication.ai.temporal.TemporalUseCase
 import com.example.myapplication.ai.temporal.ExactTemporalSchedule
 import com.example.myapplication.ai.temporal.RelativeTemporalCalculationResult
 import com.example.myapplication.ai.temporal.RelativeTemporalChangeCalculator
-import com.example.myapplication.ai.temporal.RelativeTemporalConfirmationResult
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalSession
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalState
 import com.example.myapplication.ai.temporal.RelativeTemporalRevisionResult
+import com.example.myapplication.ai.temporal.RelativeTemporalSaveClaim
+import com.example.myapplication.ai.temporal.RelativeTemporalSaveClaimResult
 import com.example.myapplication.ai.temporal.RelativeTemporalSpeechRenderer
 import com.example.myapplication.ai.temporal.ValidatedRelativeTemporalCorrection
 
@@ -203,6 +204,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
 
         btnCancelTask.setOnClickListenerWithHaptic {
+            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnClickListenerWithHaptic
             relativeTemporalSession?.cancel()
             assistantSession.speakThenRun(responseManager.cancelEdit()) {
                 finish()
@@ -210,6 +212,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         btnGoHome.setOnClickListenerWithHaptic {
+            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnClickListenerWithHaptic
             relativeTemporalSession?.cancel()
             assistantSession.speakThenRun(responseManager.returnHomeFromEdit()) {
                 finish()
@@ -217,10 +220,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
 
         btnTalkAssistant.setOnClickListenerWithHaptic {
+            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnClickListenerWithHaptic
             assistantSession.startSession()
         }
         btnTalkAssistant.setOnLongClickListener {
             btnTalkAssistant.performLongClickHapticFeedback()
+            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnLongClickListener true
             showTypedAssistantInputDialog()
             true
         }
@@ -284,6 +289,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun openDatePicker() {
+        if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
         val calendar = Calendar.getInstance()
         val year = selectedYear ?: calendar.get(Calendar.YEAR)
         val month = selectedMonth ?: calendar.get(Calendar.MONTH)
@@ -292,6 +298,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val dialog = DatePickerDialog(
             this,
             { _, pickedYear, pickedMonth, pickedDay ->
+                if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@DatePickerDialog
                 val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
                 val wasTemporalClarification = pendingTemporalClarification != null
                 if (acceptExactDate(pickedDate, replacingConstraint = false)) {
@@ -312,6 +319,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun openTimePicker() {
+        if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
         val calendar = Calendar.getInstance()
         val hour = selectedHour24 ?: calendar.get(Calendar.HOUR_OF_DAY)
         val minute = selectedMinute ?: calendar.get(Calendar.MINUTE)
@@ -319,6 +327,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         val dialog = TimePickerDialog(
             this,
             { _, pickedHour, pickedMinute ->
+                if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@TimePickerDialog
                 val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
                 val wasTemporalClarification = pendingTemporalClarification != null
                 if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
@@ -338,39 +347,58 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun saveTask(expectedProposalRevision: Int? = null) {
-        val newTitle = etTaskTitle.text.toString().trim()
+        val proposedTitle = etTaskTitle.text.toString().trim()
 
-        if (newTitle.isEmpty()) {
+        if (proposedTitle.isEmpty()) {
             etTaskTitle.error = "Task title cannot be empty"
             etTaskTitle.requestFocus()
             return
         }
 
-        val relativeConfirmation = relativeTemporalSession?.let { session ->
-            when (
-                val confirmation = session.proposalForConfirmation(
-                    expectedProposalRevision ?: -1
-                )
-            ) {
-                is RelativeTemporalConfirmationResult.Latest -> confirmation
-                RelativeTemporalConfirmationResult.Inactive,
-                RelativeTemporalConfirmationResult.StaleRevision -> {
+        // Capture the ordinary edit values before a relative save claim can enter SAVING.
+        val ordinaryScheduleSnapshot = ExactTemporalSchedule(selectedDate, selectedTime)
+        val claimedSession = relativeTemporalSession
+        val saveClaim = claimedSession?.let { session ->
+            when (val result = session.claimSave(expectedProposalRevision ?: -1, proposedTitle)) {
+                is RelativeTemporalSaveClaimResult.Claimed -> result.claim
+                RelativeTemporalSaveClaimResult.Inactive,
+                RelativeTemporalSaveClaimResult.StaleRevision -> {
+                    Log.d(
+                        "RELATIVE_TEMPORAL_PROPOSAL",
+                        "revision=${session.revision} state=${session.state} saveClaim=REJECTED"
+                    )
                     speak("That confirmation is no longer current. Please review the latest proposal.")
                     return
                 }
             }
         }
-        if (relativeConfirmation != null) {
-            setSelectedSchedule(relativeConfirmation.schedule, synchronizeSession = false)
+
+        // Everything below this point uses immutable values frozen by the confirmation claim.
+        val claimedTitle = saveClaim?.title ?: proposedTitle
+        val claimedSchedule = saveClaim?.schedule ?: ordinaryScheduleSnapshot
+        val claimedDate = claimedSchedule.date
+        val claimedTime = claimedSchedule.time
+        val claimedTaskId = taskId
+        val claimedOriginalTitle = authoritativeOriginalTitle
+        val claimedOriginalDate = authoritativeOriginalDate
+        val claimedOriginalTime = authoritativeOriginalTime
+        val claimedOriginalIsDone = authoritativeOriginalIsDone
+
+        saveClaim?.let {
+            Log.d(
+                "RELATIVE_TEMPORAL_PROPOSAL",
+                "revision=${it.revision} state=SAVING saveClaim=ACQUIRED"
+            )
         }
 
         val dao = AppDatabase.getInstance(this).taskDao()
 
         lifecycleScope.launch {
             val existingTask = withContext(Dispatchers.IO) {
-                dao.getById(taskId)
+                dao.getById(claimedTaskId)
             }
             if (existingTask == null) {
+                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
                 Toast.makeText(
                     this@EditTaskActivity,
                     "Task no longer exists.",
@@ -379,65 +407,100 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 finish()
                 return@launch
             }
-            if (relativeTemporalSession != null && !authoritativeSnapshotMatches(existingTask)) {
-                relativeTemporalSession?.cancel()
+            if (saveClaim != null && !authoritativeSnapshotMatches(
+                    task = existingTask,
+                    expectedTaskId = claimedTaskId,
+                    expectedTitle = claimedOriginalTitle,
+                    expectedDate = claimedOriginalDate,
+                    expectedTime = claimedOriginalTime,
+                    expectedIsDone = claimedOriginalIsDone
+                )
+            ) {
+                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
                 speak("That task changed since this proposal was created. I did not save anything.")
                 return@launch
             }
+            if (saveClaim != null && claimedSession?.isCurrentSaveClaim(saveClaim) != true) {
+                Log.d(
+                    "RELATIVE_TEMPORAL_PROPOSAL",
+                    "revision=${saveClaim.revision} state=STALE_SAVE_CLAIM mutation=SKIPPED"
+                )
+                speak("That confirmation is no longer current. I did not save anything.")
+                return@launch
+            }
 
-            val finalResolution = temporalResolver.resolve(selectedDate, selectedTime, listOfNotNull(selectedDate, selectedTime).joinToString(" "))
+            val finalResolution = temporalResolver.resolve(
+                claimedDate,
+                claimedTime,
+                listOfNotNull(claimedDate, claimedTime).joinToString(" ")
+            )
             if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.UPDATE) is TemporalPolicyResult.InvalidPastSchedule) {
+                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = true)
                 speak(responseManager.pastDateTime())
                 return@launch
             }
 
             val updated = withContext(Dispatchers.IO) {
-                if (relativeTemporalSession != null) {
+                if (saveClaim != null) {
                     dao.updateTaskAndSubtasksIfAuthoritativeSnapshotMatches(
-                        id = taskId,
-                        expectedTitle = authoritativeOriginalTitle,
-                        expectedDueDate = authoritativeOriginalDate,
-                        expectedDueTime = authoritativeOriginalTime,
-                        expectedIsDone = authoritativeOriginalIsDone,
-                        newTitle = newTitle,
-                        newDueDate = selectedDate,
-                        newDueTime = selectedTime
+                        id = claimedTaskId,
+                        expectedTitle = claimedOriginalTitle,
+                        expectedDueDate = claimedOriginalDate,
+                        expectedDueTime = claimedOriginalTime,
+                        expectedIsDone = claimedOriginalIsDone,
+                        newTitle = claimedTitle,
+                        newDueDate = claimedDate,
+                        newDueTime = claimedTime
                     )
                 } else {
-                    dao.updateTask(taskId, newTitle, selectedDate, selectedTime)
+                    dao.updateTask(claimedTaskId, claimedTitle, claimedDate, claimedTime)
                     if (existingTask.parentTaskId == null) {
                         dao.updateSubtasksSchedule(
-                            parentTaskId = taskId,
-                            dueDate = selectedDate,
-                            dueTime = selectedTime
+                            parentTaskId = claimedTaskId,
+                            dueDate = claimedDate,
+                            dueTime = claimedTime
                         )
                     }
                     true
                 }
             }
             if (!updated) {
-                relativeTemporalSession?.cancel()
+                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
                 speak("That task changed before I could save it. I did not apply the proposal.")
                 return@launch
             }
 
-            ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
+            val saveStateCompleted = if (saveClaim != null) {
+                claimedSession?.completeSave(saveClaim) == true
+            } else {
+                true
+            }
+            if (!saveStateCompleted) {
+                Log.e(
+                    "RELATIVE_TEMPORAL_PROPOSAL",
+                    "revision=${saveClaim?.revision ?: -1} state=SAVE_COMPLETION_REJECTED"
+                )
+                speak("The save could not be completed safely. Please review the task before trying again.")
+                return@launch
+            }
 
             val updatedTask = existingTask.copy(
-                title = newTitle,
-                dueDate = selectedDate,
-                dueTime = selectedTime
+                title = claimedTitle,
+                dueDate = claimedDate,
+                dueTime = claimedTime
             )
 
-            relativeConfirmation?.let {
-                relativeTemporalSession?.markSaved(it.revision)
+            saveClaim?.let {
                 Log.d(
                     "RELATIVE_TEMPORAL_PROPOSAL",
                     "revision=${it.revision} state=SAVED " +
-                        "hasDateChange=${it.schedule.date != authoritativeOriginalDate} " +
-                        "hasTimeChange=${it.schedule.time != authoritativeOriginalTime}"
+                        "hasDateChange=${it.schedule.date != claimedOriginalDate} " +
+                        "hasTimeChange=${it.schedule.time != claimedOriginalTime}"
                 )
             }
+
+            // Reminder work is authorized only after Room mutation and SAVING -> SAVED.
+            ReminderHelper.cancelReminder(this@EditTaskActivity, claimedTaskId)
 
             val reminderExpected = updatedTask.parentTaskId == null &&
                 !updatedTask.isDone &&
@@ -487,7 +550,32 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         }
     }
 
+    private fun failRelativeTemporalSaveClaim(
+        session: RelativeTemporalProposalSession?,
+        claim: RelativeTemporalSaveClaim?,
+        retryable: Boolean
+    ) {
+        if (session == null || claim == null) return
+        val released = session.failSave(claim, retryable)
+        Log.d(
+            "RELATIVE_TEMPORAL_PROPOSAL",
+            "revision=${claim.revision} state=${session.state} saveClaimReleased=$released"
+        )
+    }
+
+    private fun ignoreInputWhileRelativeTemporalSaveIsInFlight(): Boolean {
+        val session = relativeTemporalSession ?: return false
+        if (session.state != RelativeTemporalProposalState.SAVING) return false
+        Log.d(
+            "RELATIVE_TEMPORAL_PROPOSAL",
+            "revision=${session.revision} state=SAVING action=IGNORED"
+        )
+        speak("I am saving the confirmed proposal. Please wait.")
+        return true
+    }
+
     private fun confirmDeleteTask() {
+        if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
         val dao = AppDatabase.getInstance(this).taskDao()
 
         AlertDialog.Builder(this)
@@ -514,6 +602,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun handleVoiceInput(text: String) {
+        if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
         val normalized = TextNormalizer.normalize(text)
         if (BuildConfig.DEBUG) {
             Log.d(
@@ -649,6 +738,10 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun handleRelativeTemporalProposalInput(normalized: String): Boolean {
         val session = relativeTemporalSession ?: return false
+        if (session.state == RelativeTemporalProposalState.SAVING) {
+            ignoreInputWhileRelativeTemporalSaveIsInFlight()
+            return true
+        }
         if (session.state != RelativeTemporalProposalState.ACTIVE) return false
         if (relativeTemporalCorrectionInFlight) {
             speak("I am still checking the latest correction. Please wait.")
@@ -1104,14 +1197,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun synchronizeRelativeProposalFromUi() {
-        relativeTemporalSession?.replaceFromManualEdit(
+        val session = relativeTemporalSession ?: return
+        if (session.state != RelativeTemporalProposalState.ACTIVE) return
+        session.replaceFromManualEdit(
             ExactTemporalSchedule(selectedDate, selectedTime)
         )
-        if (relativeTemporalSession != null) {
-            initialProposalCrossedDateBoundary =
-                selectedDate != authoritativeOriginalDate
-            logRelativeTemporalProposal("WAITING_CONFIRMATION")
-        }
+        initialProposalCrossedDateBoundary = selectedDate != authoritativeOriginalDate
+        logRelativeTemporalProposal("WAITING_CONFIRMATION")
     }
 
     private fun advanceTemporalClarification() {
@@ -1294,6 +1386,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun askToSaveChanges() {
+        if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
         if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
             repeatPendingTemporalPrompt()
             return
@@ -1323,6 +1416,20 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             task.dueTime == authoritativeOriginalTime &&
             task.isDone == authoritativeOriginalIsDone
 
+    private fun authoritativeSnapshotMatches(
+        task: TaskEntity?,
+        expectedTaskId: Long,
+        expectedTitle: String,
+        expectedDate: String?,
+        expectedTime: String?,
+        expectedIsDone: Boolean
+    ): Boolean = task != null &&
+        task.id == expectedTaskId &&
+        task.title == expectedTitle &&
+        task.dueDate == expectedDate &&
+        task.dueTime == expectedTime &&
+        task.isDone == expectedIsDone
+
     private fun logRelativeTemporalProposal(state: String) {
         val session = relativeTemporalSession ?: return
         Log.d(
@@ -1334,6 +1441,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun showTypedAssistantInputDialog() {
+        if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
         val input = EditText(this).apply {
             hint = "Type what you would say to the assistant"
             inputType = InputType.TYPE_CLASS_TEXT or
