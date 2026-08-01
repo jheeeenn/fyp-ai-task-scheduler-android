@@ -29,6 +29,11 @@ sealed class ValidatedRelativeTemporalCorrection {
     data object RestoreOriginal : ValidatedRelativeTemporalCorrection()
 }
 
+data class RelativeTemporalCorrectionValidation(
+    val correction: ValidatedRelativeTemporalCorrection,
+    val canonicalizationReport: RelativeTemporalCanonicalizationReport
+)
+
 class RelativeTemporalCorrectionParser {
     fun parse(rawContent: String): RelativeTemporalCorrectionResponse {
         if (rawContent.isBlank()) throw parseFailure("Relative-temporal correction was blank")
@@ -139,9 +144,17 @@ class RelativeTemporalCorrectionParser {
 
 class RelativeTemporalCorrectionValidator(
     private val proposalValidator: RelativeTemporalProposalValidator =
-        RelativeTemporalProposalValidator()
+        RelativeTemporalProposalValidator(),
+    private val proposalCanonicalizer: RelativeTemporalProposalCanonicalizer =
+        RelativeTemporalProposalCanonicalizer()
 ) {
-    fun validate(response: RelativeTemporalCorrectionResponse): ValidatedRelativeTemporalCorrection {
+    fun validate(
+        response: RelativeTemporalCorrectionResponse
+    ): ValidatedRelativeTemporalCorrection = validateWithReport(response).correction
+
+    fun validateWithReport(
+        response: RelativeTemporalCorrectionResponse
+    ): RelativeTemporalCorrectionValidation {
         val move = try {
             RelativeTemporalCorrectionMove.valueOf(response.move)
         } catch (_: IllegalArgumentException) {
@@ -163,7 +176,10 @@ class RelativeTemporalCorrectionValidator(
         }
         if (move == RelativeTemporalCorrectionMove.RESTORE_ORIGINAL) {
             validateNeutralRestore(response)
-            return ValidatedRelativeTemporalCorrection.RestoreOriginal
+            return RelativeTemporalCorrectionValidation(
+                correction = ValidatedRelativeTemporalCorrection.RestoreOriginal,
+                canonicalizationReport = RelativeTemporalCanonicalizationReport.NONE
+            )
         }
         val dateOperation = response.dateOperation.toOperation(
             RelativeTemporalValidationFailure.UNKNOWN_DATE_OPERATION
@@ -179,20 +195,24 @@ class RelativeTemporalCorrectionValidator(
                 "Unknown relative base"
             )
         }
-        return ValidatedRelativeTemporalCorrection.Apply(
-            proposalValidator.validate(
-                RelativeTemporalProposal(
-                    dateOperation,
-                    timeOperation,
-                    base,
-                    response.replacementDateText,
-                    response.replacementTimeText,
-                    response.dateOffsetDays,
-                    response.timeOffsetMinutes,
-                    response.confidence,
-                    response.needClarification
-                )
+        val canonicalized = proposalCanonicalizer.canonicalize(
+            RelativeTemporalProposal(
+                dateOperation,
+                timeOperation,
+                base,
+                response.replacementDateText,
+                response.replacementTimeText,
+                response.dateOffsetDays,
+                response.timeOffsetMinutes,
+                response.confidence,
+                response.needClarification
             )
+        )
+        return RelativeTemporalCorrectionValidation(
+            correction = ValidatedRelativeTemporalCorrection.Apply(
+                proposalValidator.validate(canonicalized.proposal)
+            ),
+            canonicalizationReport = canonicalized.report
         )
     }
 

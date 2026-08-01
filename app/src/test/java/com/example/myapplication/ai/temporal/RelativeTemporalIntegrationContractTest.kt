@@ -226,4 +226,35 @@ class RelativeTemporalIntegrationContractTest {
         assertFalse(relativeHandler.contains("when (normalized"))
         assertTrue(relativeHandler.contains("processRelativeTemporalCorrection(normalized)"))
     }
+
+    @Test
+    fun parsedShapeAndCanonicalizationDiagnosticsAreSanitizedAndOrdered() {
+        val orchestrator = File(
+            "src/main/java/com/example/myapplication/ai/agent/AgentOrchestrator.kt"
+        ).readText()
+        val initial = orchestrator
+            .substringAfter("suspend fun processContextAction(")
+            .substringBefore("suspend fun processRelativeTemporalCorrection(")
+        val correction = orchestrator
+            .substringAfter("suspend fun processRelativeTemporalCorrection(")
+            .substringBefore("suspend fun processRoutine(")
+
+        assertTrue(initial.indexOf("contextActionExtractionParser.parse") < initial.indexOf("logParsedRelativeTemporalShape"))
+        assertTrue(initial.indexOf("logParsedRelativeTemporalShape") < initial.indexOf("validateWithReport"))
+        assertTrue(correction.indexOf("relativeTemporalCorrectionParser.parse") < correction.indexOf("logParsedRelativeTemporalShape"))
+        assertTrue(correction.indexOf("logParsedRelativeTemporalShape") < correction.indexOf("validateWithReport"))
+        assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_PARSED"))
+        assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CANONICALIZED"))
+        assertTrue(orchestrator.contains("replacementDatePresent="))
+        assertTrue(orchestrator.contains("replacementTimePresent="))
+        assertTrue(orchestrator.contains("fields=${'$'}{changedFields.joinToString(\",\")}"))
+
+        val parsedLog = orchestrator
+            .substringAfter("\"RELATIVE_TEMPORAL_PARSED\"")
+            .substringBefore("private fun logCanonicalization")
+        assertFalse(parsedLog.contains("replacementDateText="))
+        assertFalse(parsedLog.contains("replacementTimeText="))
+        assertFalse(parsedLog.contains("rawContent"))
+        assertFalse(parsedLog.contains("normalizedText"))
+    }
 }

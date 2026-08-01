@@ -6,12 +6,19 @@ import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionParser
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
+import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.ValidatedRelativeTemporalCorrection
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
 
 class TaskAgentProcessingException(message: String, cause: Throwable) : Exception(message, cause)
+
+private enum class RelativeTemporalExtractionStage {
+    INITIAL,
+    CORRECTION
+}
 
 class AgentOrchestrator(
     private val laptopAgentClient: LaptopAgentClient,
@@ -57,7 +64,16 @@ class AgentOrchestrator(
             Log.d("AGENT_ORCHESTRATOR", "Trying bounded context-action extraction")
             val rawContent = laptopAgentClient.processContextAction(normalizedText, expectedAction)
             val response = contextActionExtractionParser.parse(rawContent)
-            val change = contextActionExtractionValidator.validate(response, expectedAction)
+            logParsedRelativeTemporalShape(RelativeTemporalExtractionStage.INITIAL, response)
+            val validation = contextActionExtractionValidator.validateWithReport(
+                response,
+                expectedAction
+            )
+            logCanonicalization(
+                RelativeTemporalExtractionStage.INITIAL,
+                validation.canonicalizationReport.changedFields
+            )
+            val change = validation.changeSet
             change.temporalProposal?.let { proposal ->
                 Log.d(
                     "RELATIVE_TEMPORAL_EXTRACTION",
@@ -88,7 +104,13 @@ class AgentOrchestrator(
         return try {
             val rawContent = laptopAgentClient.processRelativeTemporalCorrection(normalizedText)
             val response = relativeTemporalCorrectionParser.parse(rawContent)
-            val correction = relativeTemporalCorrectionValidator.validate(response)
+            logParsedRelativeTemporalShape(RelativeTemporalExtractionStage.CORRECTION, response)
+            val validation = relativeTemporalCorrectionValidator.validateWithReport(response)
+            logCanonicalization(
+                RelativeTemporalExtractionStage.CORRECTION,
+                validation.canonicalizationReport.changedFields
+            )
+            val correction = validation.correction
             val proposal = (correction as? ValidatedRelativeTemporalCorrection.Apply)?.proposal
             Log.d(
                 "RELATIVE_TEMPORAL_EXTRACTION",
@@ -151,4 +173,79 @@ class AgentOrchestrator(
             )
         }
     }
+
+    private fun logParsedRelativeTemporalShape(
+        stage: RelativeTemporalExtractionStage,
+        response: ContextActionExtractionResponse
+    ) {
+        logParsedRelativeTemporalShape(
+            stage = stage,
+            dateOperation = response.dateOperation,
+            timeOperation = response.timeOperation,
+            replacementDatePresent = response.replacementDateText.isNotBlank(),
+            replacementTimePresent = response.replacementTimeText.isNotBlank(),
+            dateOffsetDays = response.dateOffsetDays,
+            timeOffsetMinutes = response.timeOffsetMinutes,
+            confidence = response.confidence,
+            clarificationRequired = response.needClarification
+        )
+    }
+
+    private fun logParsedRelativeTemporalShape(
+        stage: RelativeTemporalExtractionStage,
+        response: RelativeTemporalCorrectionResponse
+    ) {
+        logParsedRelativeTemporalShape(
+            stage = stage,
+            dateOperation = response.dateOperation,
+            timeOperation = response.timeOperation,
+            replacementDatePresent = response.replacementDateText.isNotBlank(),
+            replacementTimePresent = response.replacementTimeText.isNotBlank(),
+            dateOffsetDays = response.dateOffsetDays,
+            timeOffsetMinutes = response.timeOffsetMinutes,
+            confidence = response.confidence,
+            clarificationRequired = response.needClarification
+        )
+    }
+
+    private fun logParsedRelativeTemporalShape(
+        stage: RelativeTemporalExtractionStage,
+        dateOperation: String,
+        timeOperation: String,
+        replacementDatePresent: Boolean,
+        replacementTimePresent: Boolean,
+        dateOffsetDays: Int,
+        timeOffsetMinutes: Int,
+        confidence: Double,
+        clarificationRequired: Boolean
+    ) {
+        Log.d(
+            "RELATIVE_TEMPORAL_PARSED",
+            "stage=${stage.name} " +
+                "dateOperation=${sanitizedOperation(dateOperation)} " +
+                "timeOperation=${sanitizedOperation(timeOperation)} " +
+                "replacementDatePresent=$replacementDatePresent " +
+                "replacementTimePresent=$replacementTimePresent " +
+                "dateOffsetDays=$dateOffsetDays " +
+                "timeOffsetMinutes=$timeOffsetMinutes " +
+                "confidence=$confidence " +
+                "clarificationRequired=$clarificationRequired"
+        )
+    }
+
+    private fun logCanonicalization(
+        stage: RelativeTemporalExtractionStage,
+        changedFields: List<String>
+    ) {
+        if (changedFields.isEmpty()) return
+        Log.d(
+            "RELATIVE_TEMPORAL_CANONICALIZED",
+            "stage=${stage.name} fields=${changedFields.joinToString(",")}"
+        )
+    }
+
+    private fun sanitizedOperation(value: String): String =
+        value.takeIf { candidate ->
+            RelativeTemporalOperation.entries.any { operation -> operation.name == candidate }
+        } ?: "UNKNOWN"
 }

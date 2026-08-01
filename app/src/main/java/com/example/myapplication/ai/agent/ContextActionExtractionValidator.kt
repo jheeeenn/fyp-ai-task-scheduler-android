@@ -3,18 +3,32 @@ package com.example.myapplication.ai.agent
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.temporal.RelativeTemporalBase
+import com.example.myapplication.ai.temporal.RelativeTemporalCanonicalizationReport
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.RelativeTemporalProposal
+import com.example.myapplication.ai.temporal.RelativeTemporalProposalCanonicalizer
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidator
+
+data class ContextActionExtractionValidation(
+    val changeSet: ContextActionChangeSet,
+    val canonicalizationReport: RelativeTemporalCanonicalizationReport
+)
 
 class ContextActionExtractionValidator(
     private val temporalValidator: RelativeTemporalProposalValidator =
-        RelativeTemporalProposalValidator()
+        RelativeTemporalProposalValidator(),
+    private val temporalCanonicalizer: RelativeTemporalProposalCanonicalizer =
+        RelativeTemporalProposalCanonicalizer()
 ) {
     fun validate(
         response: ContextActionExtractionResponse,
         expectedAction: ConversationContextAction
-    ): ContextActionChangeSet {
+    ): ContextActionChangeSet = validateWithReport(response, expectedAction).changeSet
+
+    fun validateWithReport(
+        response: ContextActionExtractionResponse,
+        expectedAction: ConversationContextAction
+    ): ContextActionExtractionValidation {
         val actualAction = when (response.action.trim().uppercase()) {
             AiIntent.UPDATE_TASK.name -> ConversationContextAction.UPDATE
             AiIntent.RESCHEDULE_TASK.name -> ConversationContextAction.RESCHEDULE
@@ -29,14 +43,17 @@ class ContextActionExtractionValidator(
         }
         if (actualAction == ConversationContextAction.UPDATE) {
             validateUpdateOnlyResponse(response)
-            return ContextActionChangeSet(
-                action = actualAction,
-                replacementTitle = replacementTitle,
-                confidence = response.confidence.toFloat()
+            return ContextActionExtractionValidation(
+                changeSet = ContextActionChangeSet(
+                    action = actualAction,
+                    replacementTitle = replacementTitle,
+                    confidence = response.confidence.toFloat()
+                ),
+                canonicalizationReport = RelativeTemporalCanonicalizationReport.NONE
             )
         }
 
-        val proposal = temporalValidator.validate(
+        val canonicalized = temporalCanonicalizer.canonicalize(
             RelativeTemporalProposal(
                 dateOperation = response.dateOperation.toOperation("date_operation"),
                 timeOperation = response.timeOperation.toOperation("time_operation"),
@@ -49,20 +66,24 @@ class ContextActionExtractionValidator(
                 needClarification = response.needClarification
             )
         )
+        val proposal = temporalValidator.validate(canonicalized.proposal)
         if (proposal.relativeBase != RelativeTemporalBase.AUTHORITATIVE_TASK) {
             fail("Initial context reschedule must use the authoritative task as its base")
         }
-        return ContextActionChangeSet(
-            action = actualAction,
-            replacementTitle = replacementTitle,
-            newDateText = proposal.replacementDateText.takeIf {
-                proposal.dateOperation == RelativeTemporalOperation.SET
-            },
-            newTimeText = proposal.replacementTimeText.takeIf {
-                proposal.timeOperation == RelativeTemporalOperation.SET
-            },
-            confidence = response.confidence.toFloat(),
-            temporalProposal = proposal
+        return ContextActionExtractionValidation(
+            changeSet = ContextActionChangeSet(
+                action = actualAction,
+                replacementTitle = replacementTitle,
+                newDateText = proposal.replacementDateText.takeIf {
+                    proposal.dateOperation == RelativeTemporalOperation.SET
+                },
+                newTimeText = proposal.replacementTimeText.takeIf {
+                    proposal.timeOperation == RelativeTemporalOperation.SET
+                },
+                confidence = response.confidence.toFloat(),
+                temporalProposal = proposal
+            ),
+            canonicalizationReport = canonicalized.report
         )
     }
 

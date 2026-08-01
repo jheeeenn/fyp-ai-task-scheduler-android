@@ -58,6 +58,27 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     @Test
+    fun correctionCanonicalizesInactiveDatePollutionAndReportsOnlyDateOperation() {
+        val validation = validator.validateWithReport(
+            parser.parse(
+                response(
+                    move = "APPLY_CHANGE",
+                    dateOperation = "SET",
+                    timeOperation = "OFFSET",
+                    base = "AUTHORITATIVE_TASK",
+                    timeOffset = 30
+                )
+            )
+        )
+        val proposal = (validation.correction as ValidatedRelativeTemporalCorrection.Apply).proposal
+
+        assertEquals(RelativeTemporalOperation.KEEP, proposal.dateOperation)
+        assertEquals(RelativeTemporalOperation.OFFSET, proposal.timeOperation)
+        assertEquals(30, proposal.timeOffsetMinutes)
+        assertEquals(listOf("date_operation"), validation.canonicalizationReport.changedFields)
+    }
+
+    @Test
     fun correctionConfidenceBelowPointEightFailsClosed() {
         assertThrows(RelativeTemporalProposalValidationException::class.java) {
             validator.validate(parser.parse(applyResponse().replace("0.98", "0.79")))
@@ -89,6 +110,10 @@ class RelativeTemporalCorrectionContractTest {
         assertTrue(prompt.contains("AUTHORITATIVE_TASK means"))
         assertTrue(prompt.contains("CURRENT_PROPOSAL means"))
         assertTrue(prompt.contains("requires clarification rather than guessing"))
+        assertTrue(prompt.contains("An unchanged field must use KEEP."))
+        assertTrue(prompt.contains("A pure time offset must use date_operation=KEEP."))
+        assertTrue(prompt.contains("SET must never be returned without non-empty literal replacement text."))
+        assertTrue(prompt.contains("Verify that each operation matches"))
 
         val editSource = File("src/main/java/com/example/myapplication/EditTaskActivity.kt").readText()
         val correction = editSource

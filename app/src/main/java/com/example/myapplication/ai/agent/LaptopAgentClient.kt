@@ -372,6 +372,13 @@ For a date or time field:
 Date offsets are whole days from -365 through 365. Time offsets are whole minutes from -10080
 through 10080. Never convert an offset into a model-authored final date or time.
 
+Before returning JSON, self-check every temporal field:
+- An unchanged field must use KEEP.
+- A pure time offset must use date_operation=KEEP.
+- A pure date offset must use time_operation=KEEP.
+- SET must never be returned without non-empty literal replacement text.
+- Verify that each operation matches its accompanying replacement text and offset fields.
+
 For this initial extraction, relative_base must be AUTHORITATIVE_TASK. At least one temporal
 operation for RESCHEDULE must be SET or OFFSET. If direction, amount, unit, or whether the user
 means earlier versus later is genuinely ambiguous, set need_clarification=true instead of
@@ -408,6 +415,13 @@ Use APPLY_CHANGE for a new temporal operation. KEEP, SET, and OFFSET have the sa
 as field preservation, literal replacement, and signed arithmetic. SET preserves the user's
 literal text and never calculates the final value. Offsets must be non-zero and within date
 -365..365 days and time -10080..10080 minutes.
+
+Before returning JSON, self-check every temporal field:
+- An unchanged field must use KEEP.
+- A pure time offset must use date_operation=KEEP.
+- A pure date offset must use time_operation=KEEP.
+- SET must never be returned without non-empty literal replacement text.
+- Verify that each operation matches its accompanying replacement text and offset fields.
 
 Choose the calculation base semantically:
 - AUTHORITATIVE_TASK means the correction replaces the earlier unsaved schedule and starts from

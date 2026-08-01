@@ -67,6 +67,10 @@ class ContextActionTaskExtractionTest {
         assertTrue(prompt.contains("not an exhaustive phrase dictionary"))
         assertTrue(prompt.contains("Android resolves literal expressions"))
         assertTrue(prompt.contains("relative_base must be AUTHORITATIVE_TASK"))
+        assertTrue(prompt.contains("An unchanged field must use KEEP."))
+        assertTrue(prompt.contains("A pure time offset must use date_operation=KEEP."))
+        assertTrue(prompt.contains("SET must never be returned without non-empty literal replacement text."))
+        assertTrue(prompt.contains("Verify that each operation matches"))
         assertTrue(prompt.contains("Do not output markdown"))
         assertFalse(prompt.contains("target_date"))
         assertFalse(prompt.contains("target_task_title"))
@@ -128,6 +132,42 @@ class ContextActionTaskExtractionTest {
     }
 
     @Test
+    fun exactDeviceFixtureCanonicalizesEmptyDateSetWithoutSemanticRetry() = runBlocking {
+        var semanticCalls = 0
+        val raw = response(
+            action = "RESCHEDULE_TASK",
+            dateOperation = "SET",
+            timeOperation = "OFFSET",
+            timeOffsetMinutes = 30,
+            confidence = 0.97
+        )
+        val orchestrator = AgentOrchestrator(
+            laptopAgentClient = object : LaptopAgentClient(null) {
+                override suspend fun processContextAction(
+                    normalizedText: String,
+                    expectedAction: ConversationContextAction
+                ): String {
+                    semanticCalls += 1
+                    return raw
+                }
+            },
+            taskAgentResponseParser = TaskAgentResponseParser(),
+            taskActionNormalizer = TaskActionNormalizer(),
+            actionValidator = ActionValidator()
+        )
+
+        val result = orchestrator.processContextAction(
+            "Move the second one 30 minutes later.",
+            ConversationContextAction.RESCHEDULE
+        )
+
+        assertEquals(1, semanticCalls)
+        assertEquals(RelativeTemporalOperation.KEEP, result.temporalProposal?.dateOperation)
+        assertEquals(RelativeTemporalOperation.OFFSET, result.temporalProposal?.timeOperation)
+        assertEquals(30, result.temporalProposal?.timeOffsetMinutes)
+    }
+
+    @Test
     fun actionMismatchLowConfidenceClarificationAndCurrentBaseFailClosed() {
         listOf(
             updateResponse(),
@@ -152,6 +192,15 @@ class ContextActionTaskExtractionTest {
     fun malformedCombinationsUnknownEnumAndNonIntegerOffsetFailClosed() {
         listOf(
             JSONObject(offsetResponse(30)).put("replacement_time_text", "10 AM").toString(),
+            JSONObject(offsetResponse(30))
+                .put("date_operation", "SET")
+                .put("date_offset_days", 1)
+                .toString(),
+            JSONObject(offsetResponse(30))
+                .put("date_operation", "SET")
+                .put("replacement_date_text", "tomorrow")
+                .put("date_offset_days", 1)
+                .toString(),
             JSONObject(offsetResponse(30)).put("time_operation", "SHIFT").toString(),
             JSONObject(offsetResponse(30)).put("time_operation", "offset").toString(),
             offsetResponse(30).replace("\"time_offset_minutes\":30", "\"time_offset_minutes\":30.5"),
@@ -165,6 +214,31 @@ class ContextActionTaskExtractionTest {
                         ConversationContextAction.RESCHEDULE
                     )
                 }
+            }
+        }
+    }
+
+    @Test
+    fun twoEmptySetArtifactsCanonicalizeThenFailAsNoEffectiveChange() {
+        assertThrows(TaskAgentProcessingException::class.java) {
+            runBlocking {
+                orchestrator(
+                    response(
+                        action = "RESCHEDULE_TASK",
+                        dateOperation = "SET",
+                        timeOperation = "SET"
+                    )
+                ).processContextAction("Move it", ConversationContextAction.RESCHEDULE)
+            }
+        }
+    }
+
+    @Test
+    fun malformedJsonStillFailsBeforeCanonicalization() {
+        assertThrows(TaskAgentProcessingException::class.java) {
+            runBlocking {
+                orchestrator("{\"action\":\"RESCHEDULE_TASK\"")
+                    .processContextAction("Move it", ConversationContextAction.RESCHEDULE)
             }
         }
     }
