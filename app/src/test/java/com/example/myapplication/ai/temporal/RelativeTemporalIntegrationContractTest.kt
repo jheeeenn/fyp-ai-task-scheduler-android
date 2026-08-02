@@ -194,6 +194,34 @@ class RelativeTemporalIntegrationContractTest {
     }
 
     @Test
+    fun exactConversationExitCancelsActiveProposalWithoutCallingCorrectionAgent() {
+        val handler = edit
+            .substringAfter("private fun handleRelativeTemporalProposalInput(")
+            .substringBefore("private fun processRelativeTemporalCorrection(")
+        val exitBranch = handler
+            .substringAfter("if (isConversationExitCommand(normalized)) {")
+            .substringBefore("if (relativeTemporalCorrectionInFlight)")
+        val exitPolicy = edit
+            .substringAfter("private fun isConversationExitCommand(normalized: String)")
+            .substringBefore("private fun applySpokenDate(")
+
+        assertTrue(exitPolicy.contains("\"that's all\""))
+        assertTrue(exitBranch.contains("session.cancel()"))
+        assertTrue(exitBranch.contains("endAssistantConversation()"))
+        assertFalse(exitBranch.contains("processRelativeTemporalCorrection"))
+        assertFalse(exitBranch.contains("updateTask"))
+        assertFalse(exitBranch.contains("ReminderHelper"))
+        assertTrue(
+            handler.indexOf("isConversationExitCommand(normalized)") <
+                handler.indexOf("if (relativeTemporalCorrectionInFlight)")
+        )
+        assertTrue(
+            handler.indexOf("isConversationExitCommand(normalized)") <
+                handler.indexOf("else -> processRelativeTemporalCorrection(normalized)")
+        )
+    }
+
+    @Test
     fun voiceAndTypedCorrectionsShareTheSameFinalTextHandler() {
         assertTrue(edit.contains("assistantSession.submitTypedText(typedText, clearConversation = false)"))
         assertTrue(edit.contains("override fun onAssistantFinalText(text: String)"))
@@ -247,6 +275,8 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CANONICALIZED"))
         assertTrue(orchestrator.contains("replacementDatePresent="))
         assertTrue(orchestrator.contains("replacementTimePresent="))
+        assertTrue(orchestrator.contains("relativeBase="))
+        assertTrue(orchestrator.contains("preservedRelativeBase="))
         assertTrue(orchestrator.contains("CORRECTION_RECONSTRUCTED"))
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR"))
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR_CANDIDATES"))

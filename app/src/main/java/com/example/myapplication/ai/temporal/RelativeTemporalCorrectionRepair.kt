@@ -86,10 +86,8 @@ class RelativeTemporalRepairCandidateBuilder(
 
     fun reconstructResponse(
         candidate: RelativeTemporalRepairCandidate,
-        relativeBase: RelativeTemporalBase,
         confidence: Double
     ): RelativeTemporalCorrectionResponse = candidate.response.copy(
-        relativeBase = relativeBase.name,
         confidence = confidence,
         needClarification = false
     )
@@ -176,7 +174,6 @@ class RelativeTemporalRepairCandidateBuilder(
 
 data class RelativeTemporalRepairChoiceResponse(
     val choiceRef: String,
-    val relativeBase: String,
     val confidence: Double,
     val needClarification: Boolean
 )
@@ -206,8 +203,6 @@ class RelativeTemporalRepairChoiceParser {
         return RelativeTemporalRepairChoiceResponse(
             choiceRef = (json.get("choice_ref") as? String)
                 ?: throw parseFailure("choice_ref must be a string"),
-            relativeBase = (json.get("relative_base") as? String)
-                ?: throw parseFailure("relative_base must be a string"),
             confidence = (json.get("confidence") as? Number)?.toDouble()
                 ?: throw parseFailure("confidence must be a number"),
             needClarification = (json.get("need_clarification") as? Boolean)
@@ -221,7 +216,6 @@ class RelativeTemporalRepairChoiceParser {
     private companion object {
         val REQUIRED_FIELDS = setOf(
             "choice_ref",
-            "relative_base",
             "confidence",
             "need_clarification"
         )
@@ -230,7 +224,6 @@ class RelativeTemporalRepairChoiceParser {
 
 enum class RelativeTemporalRepairChoiceFailure {
     UNKNOWN_CHOICE_REF,
-    UNKNOWN_RELATIVE_BASE,
     NON_FINITE_CONFIDENCE,
     LOW_CONFIDENCE,
     CLARIFICATION_REQUIRED
@@ -243,7 +236,6 @@ class RelativeTemporalRepairChoiceValidationException(
 
 data class ValidatedRelativeTemporalRepairChoice(
     val candidate: RelativeTemporalRepairCandidate,
-    val relativeBase: RelativeTemporalBase,
     val confidence: Double
 )
 
@@ -275,15 +267,7 @@ class RelativeTemporalRepairChoiceValidator {
                 RelativeTemporalRepairChoiceFailure.UNKNOWN_CHOICE_REF,
                 "Repair choice is not available"
             )
-        val relativeBase = try {
-            RelativeTemporalBase.valueOf(response.relativeBase)
-        } catch (_: IllegalArgumentException) {
-            fail(
-                RelativeTemporalRepairChoiceFailure.UNKNOWN_RELATIVE_BASE,
-                "Unknown repair-choice relative base"
-            )
-        }
-        return ValidatedRelativeTemporalRepairChoice(candidate, relativeBase, response.confidence)
+        return ValidatedRelativeTemporalRepairChoice(candidate, response.confidence)
     }
 
     private fun fail(

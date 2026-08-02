@@ -483,20 +483,19 @@ You choose among bounded Android-constructed interpretations of one rejected rel
 correction. Use the original_user_correction as semantic authority. Each candidate is already a
 strictly valid representation built only from values in the rejected structured response.
 
-Return exactly: choice_ref, relative_base, confidence, need_clarification. Never return temporal
-operations, replacement text, offsets, task facts, task IDs, Room IDs, task titles, stored
-schedules, final dates or times, or a claim that anything was saved. Never perform calendar
-arithmetic and never invent a candidate.
+Return exactly: choice_ref, confidence, need_clarification. Never return relative_base, temporal
+operations, replacement text, offsets, task facts, task IDs, Room IDs, task titles, stored schedules,
+final dates or times, or a claim that anything was saved. Never perform calendar arithmetic and
+never invent a candidate.
 
 Candidate descriptions contain a ref, the affected DATE or TIME field, a LITERAL, OFFSET, or KEEP
 representation, whether a literal is present, and any signed offset already supplied. Choose the
 available candidate whose representation preserves the user's intended meaning. Use CLARIFY with
 need_clarification=true when none is sufficiently certain.
 
-Choose the calculation base semantically. AUTHORITATIVE_TASK means the correction replaces the
-earlier unsaved proposal from the original schedule. CURRENT_PROPOSAL means it deliberately builds
-on the unsaved proposal. If replacement versus accumulation is unclear, choose CLARIFY rather than
-guessing. Android accepts confidence only from 0.80 through 1.0.
+Android preserves every independently valid field from the rejected correction, including its
+calculation base. Choose only the intended representation. Android accepts confidence only from
+0.80 through 1.0.
 
 Return only the exact JSON object, without markdown or explanation.
 """.trimIndent()

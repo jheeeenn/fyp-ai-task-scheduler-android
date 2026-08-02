@@ -228,7 +228,6 @@ class AgentOrchestrator(
         )
         val reconstructed = relativeTemporalRepairCandidateBuilder.reconstructResponse(
             choice.candidate,
-            choice.relativeBase,
             choice.confidence
         )
         logParsedRelativeTemporalShape(
@@ -280,13 +279,13 @@ class AgentOrchestrator(
     ) {
         val allowedRefs = candidates.mapTo(mutableSetOf()) { it.choiceRef }.apply { add("CLARIFY") }
         val choiceRef = response.choiceRef.takeIf { it in allowedRefs } ?: "UNKNOWN"
-        val relativeBase = response.relativeBase.takeIf { candidate ->
-            RelativeTemporalBase.entries.any { it.name == candidate }
-        } ?: "UNKNOWN"
+        val preservedRelativeBase = candidates.singleOrNull {
+            it.choiceRef == response.choiceRef
+        }?.response?.relativeBase?.let(::sanitizedRelativeBase) ?: "UNKNOWN"
         val confidence = response.confidence.takeIf { it.isFinite() } ?: -1.0
         Log.d(
             "RELATIVE_TEMPORAL_REPAIR_CHOICE",
-            "attempt=1 choiceRef=$choiceRef relativeBase=$relativeBase " +
+            "attempt=1 choiceRef=$choiceRef preservedRelativeBase=$preservedRelativeBase " +
                 "confidence=$confidence result=${result.name}"
         )
     }
@@ -337,6 +336,7 @@ class AgentOrchestrator(
             stage = stage,
             dateOperation = response.dateOperation,
             timeOperation = response.timeOperation,
+            relativeBase = response.relativeBase,
             replacementDatePresent = response.replacementDateText.isNotBlank(),
             replacementTimePresent = response.replacementTimeText.isNotBlank(),
             dateOffsetDays = response.dateOffsetDays,
@@ -354,6 +354,7 @@ class AgentOrchestrator(
             stage = stage,
             dateOperation = response.dateOperation,
             timeOperation = response.timeOperation,
+            relativeBase = response.relativeBase,
             replacementDatePresent = response.replacementDateText.isNotBlank(),
             replacementTimePresent = response.replacementTimeText.isNotBlank(),
             dateOffsetDays = response.dateOffsetDays,
@@ -367,6 +368,7 @@ class AgentOrchestrator(
         stage: RelativeTemporalExtractionStage,
         dateOperation: String,
         timeOperation: String,
+        relativeBase: String,
         replacementDatePresent: Boolean,
         replacementTimePresent: Boolean,
         dateOffsetDays: Int,
@@ -379,6 +381,7 @@ class AgentOrchestrator(
             "stage=${stage.name} " +
                 "dateOperation=${sanitizedOperation(dateOperation)} " +
                 "timeOperation=${sanitizedOperation(timeOperation)} " +
+                "relativeBase=${sanitizedRelativeBase(relativeBase)} " +
                 "replacementDatePresent=$replacementDatePresent " +
                 "replacementTimePresent=$replacementTimePresent " +
                 "dateOffsetDays=$dateOffsetDays " +
@@ -402,6 +405,11 @@ class AgentOrchestrator(
     private fun sanitizedOperation(value: String): String =
         value.takeIf { candidate ->
             RelativeTemporalOperation.entries.any { operation -> operation.name == candidate }
+        } ?: "UNKNOWN"
+
+    private fun sanitizedRelativeBase(value: String): String =
+        value.takeIf { candidate ->
+            RelativeTemporalBase.entries.any { it.name == candidate }
         } ?: "UNKNOWN"
 
     private companion object {

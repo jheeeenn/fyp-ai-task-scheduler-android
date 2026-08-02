@@ -77,7 +77,7 @@ class RelativeTemporalCorrectionRepairTest {
         val token = session.beginCorrection()
         val client = FakeCorrectionClient(
             normalResponse = malformedDeviceResponse(),
-            repairResponse = choiceResponse("R2", "AUTHORITATIVE_TASK", confidence = 1.0)
+            repairResponse = choiceResponse("R2", confidence = 1.0)
         )
 
         val correction = orchestrator(client).processRelativeTemporalCorrection(
@@ -115,7 +115,7 @@ class RelativeTemporalCorrectionRepairTest {
     fun literalChoiceReconstructsSetWithExistingLiteralAndZeroOffset() = runBlocking {
         val client = FakeCorrectionClient(
             normalResponse = malformedDeviceResponse(),
-            repairResponse = choiceResponse("R1", "AUTHORITATIVE_TASK")
+            repairResponse = choiceResponse("R1")
         )
 
         val correction = orchestrator(client).processRelativeTemporalCorrection("choose the literal meaning")
@@ -132,11 +132,43 @@ class RelativeTemporalCorrectionRepairTest {
     }
 
     @Test
+    fun reconstructionPreservesEitherCandidateBaseAndCannotOverrideIt() {
+        listOf("AUTHORITATIVE_TASK", "CURRENT_PROPOSAL").forEach { originalBase ->
+            val rejected = responseObject(
+                response(
+                    timeOperation = "SET",
+                    base = originalBase,
+                    replacementTime = "1 hours later instead",
+                    timeOffset = 60
+                )
+            )
+            val offsetCandidate = candidateBuilder.build(
+                rejected,
+                RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION
+            ).single { it.representation == RelativeTemporalRepairRepresentation.OFFSET }
+
+            val reconstructed = candidateBuilder.reconstructResponse(offsetCandidate, 1.0)
+
+            assertEquals(originalBase, reconstructed.relativeBase)
+            assertEquals(rejected.dateOperation, reconstructed.dateOperation)
+            assertEquals(rejected.replacementDateText, reconstructed.replacementDateText)
+            assertEquals(rejected.dateOffsetDays, reconstructed.dateOffsetDays)
+            assertEquals(RelativeTemporalOperation.OFFSET.name, reconstructed.timeOperation)
+            assertEquals(60, reconstructed.timeOffsetMinutes)
+        }
+
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/temporal/RelativeTemporalCorrectionRepair.kt"
+        ).readText().substringAfter("fun reconstructResponse(").substringBefore("private fun dateVariants(")
+        assertFalse(source.contains("relativeBase ="))
+    }
+
+    @Test
     fun unknownLowConfidenceAndClarificationChoicesFailClosedAfterOneChoiceCall() {
         val choices = listOf(
-            choiceResponse("R9", "AUTHORITATIVE_TASK"),
-            choiceResponse("R2", "AUTHORITATIVE_TASK", confidence = 0.79),
-            choiceResponse("CLARIFY", "AUTHORITATIVE_TASK", clarification = true)
+            choiceResponse("R9"),
+            choiceResponse("R2", confidence = 0.79),
+            choiceResponse("CLARIFY", clarification = true)
         )
 
         choices.forEach { repairChoice ->
@@ -218,7 +250,7 @@ class RelativeTemporalCorrectionRepairTest {
     fun noCandidatesMeansNoSemanticRepairCall() {
         val client = FakeCorrectionClient(
             normalResponse = response(timeOperation = "OFFSET", timeOffset = 0),
-            repairResponse = choiceResponse("R1", "AUTHORITATIVE_TASK")
+            repairResponse = choiceResponse("R1")
         )
 
         assertThrows(TaskAgentProcessingException::class.java) {
@@ -242,7 +274,7 @@ class RelativeTemporalCorrectionRepairTest {
         )
 
         responses.forEach { raw ->
-            val client = FakeCorrectionClient(raw, choiceResponse("R1", "AUTHORITATIVE_TASK"))
+            val client = FakeCorrectionClient(raw, choiceResponse("R1"))
             assertThrows(TaskAgentProcessingException::class.java) {
                 runBlocking {
                     orchestrator(client).processRelativeTemporalCorrection("invalid correction")
@@ -264,7 +296,7 @@ class RelativeTemporalCorrectionRepairTest {
         val token = session.beginCorrection()
         val client = FakeCorrectionClient(
             malformedDeviceResponse(),
-            choiceResponse("R2", "AUTHORITATIVE_TASK")
+            choiceResponse("R2")
         )
         val correction = orchestrator(client).processRelativeTemporalCorrection("select the offset")
             as ValidatedRelativeTemporalCorrection.Apply
@@ -360,12 +392,10 @@ class RelativeTemporalCorrectionRepairTest {
 
     private fun choiceResponse(
         choiceRef: String,
-        base: String,
         confidence: Double = 0.98,
         clarification: Boolean = false
     ): String = JSONObject()
         .put("choice_ref", choiceRef)
-        .put("relative_base", base)
         .put("confidence", confidence)
         .put("need_clarification", clarification)
         .toString()

@@ -743,6 +743,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return true
         }
         if (session.state != RelativeTemporalProposalState.ACTIVE) return false
+        if (isConversationExitCommand(normalized)) {
+            session.cancel()
+            logRelativeTemporalProposal("CANCELLED")
+            waitingForSaveConfirmation = false
+            endAssistantConversation()
+            return true
+        }
         if (relativeTemporalCorrectionInFlight) {
             speak("I am still checking the latest correction. Please wait.")
             return true

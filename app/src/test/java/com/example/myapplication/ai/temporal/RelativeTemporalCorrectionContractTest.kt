@@ -146,7 +146,7 @@ class RelativeTemporalCorrectionContractTest {
             .getJSONArray("enum")
 
         assertEquals(
-            setOf("choice_ref", "relative_base", "confidence", "need_clarification"),
+            setOf("choice_ref", "confidence", "need_clarification"),
             properties
         )
         assertEquals(listOf("R1", "R2", "CLARIFY"), (0 until choiceRefs.length()).map {
@@ -178,12 +178,18 @@ class RelativeTemporalCorrectionContractTest {
         ).first()
         val validChoice = JSONObject()
             .put("choice_ref", candidate.choiceRef)
-            .put("relative_base", "AUTHORITATIVE_TASK")
             .put("confidence", 0.98)
             .put("need_clarification", false)
 
         assertThrows(ContextActionExtractionParseException::class.java) {
             parser.parse(JSONObject(validChoice.toString()).put("time_operation", "OFFSET").toString())
+        }
+        assertThrows(ContextActionExtractionParseException::class.java) {
+            parser.parse(
+                JSONObject(validChoice.toString())
+                    .put("relative_base", "CURRENT_PROPOSAL")
+                    .toString()
+            )
         }
         assertThrows(ContextActionExtractionParseException::class.java) {
             parser.parse(JSONObject(validChoice.toString()).apply { remove("confidence") }.toString())
@@ -204,11 +210,12 @@ class RelativeTemporalCorrectionContractTest {
         val prompt = LaptopAgentClient.RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT
 
         assertTrue(prompt.contains("choose among bounded Android-constructed interpretations"))
-        assertTrue(prompt.contains("Return exactly: choice_ref, relative_base, confidence"))
-        assertTrue(prompt.contains("Never return temporal"))
+        assertTrue(prompt.contains("Return exactly: choice_ref, confidence"))
+        assertTrue(prompt.contains("Never return relative_base"))
+        assertTrue(prompt.contains("relative_base, temporal"))
         assertTrue(prompt.contains("never invent a candidate"))
-        assertTrue(prompt.contains("AUTHORITATIVE_TASK means"))
-        assertTrue(prompt.contains("CURRENT_PROPOSAL means"))
+        assertTrue(prompt.contains("preserves every independently valid field"))
+        assertTrue(prompt.contains("calculation base"))
         listOf("task IDs", "Room IDs", "task titles", "final dates", "saved").forEach {
             assertTrue(prompt.contains(it))
         }
@@ -228,6 +235,7 @@ class RelativeTemporalCorrectionContractTest {
         assertFalse(method.contains("rejected_candidate"))
         assertFalse(method.contains("replacement_date_text"))
         assertFalse(method.contains("replacement_time_text"))
+        assertFalse(method.contains("put(\"relative_base\""))
         listOf("task_id", "room_id", "task_title", "final_date", "final_time").forEach {
             assertFalse(method.contains("put(\"$it\""))
         }
