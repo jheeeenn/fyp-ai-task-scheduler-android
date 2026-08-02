@@ -11,131 +11,145 @@
     android:paddingEnd="20dp"
     android:paddingBottom="20dp">
 
-    <TextView
-        android:id="@+id/greetingText"
+    <ScrollView
+        android:id="@+id/homeScrollView"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="36dp"
-        android:text="Good Evening"
-        android:textColor="@color/ui_text_primary_dark"
-        android:textSize="34sp"
-        android:textStyle="bold"
+        android:layout_height="0dp"
+        android:fillViewport="true"
+        android:importantForAccessibility="no"
+        app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <TextView
-        android:id="@+id/overviewText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:lineSpacingExtra="4dp"
-        android:text="You have 0 tasks today"
-        android:textColor="@color/ui_text_secondary_dark"
-        android:textSize="20sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/greetingText" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="18dp">
 
-    <LinearLayout
-        android:id="@+id/topCardRow"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="30dp"
-        android:baselineAligned="false"
-        android:orientation="horizontal"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/overviewText">
+            <TextView
+                android:id="@+id/greetingText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:accessibilityHeading="true"
+                android:text="Good Evening"
+                android:textColor="@color/ui_text_primary_dark"
+                android:textSize="34sp"
+                android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnCreateTask"
-            android:layout_width="0dp"
-            android:layout_height="112dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_home_secondary_card"
-            android:backgroundTint="@null"
-            android:contentDescription="Create a new task"
-            android:hapticFeedbackEnabled="true"
-            android:text="Create\nTask"
-            android:textAllCaps="false"
-            android:textColor="@color/white"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            app:backgroundTint="@null" />
+            <TextView
+                android:id="@+id/overviewText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:accessibilityLiveRegion="polite"
+                android:lineSpacingExtra="4dp"
+                android:text="You have 0 tasks today"
+                android:textColor="@color/ui_text_secondary_dark"
+                android:textSize="20sp" />
 
-        <Button
-            android:id="@+id/btnTodayTasks"
-            android:layout_width="0dp"
-            android:layout_height="112dp"
-            android:layout_marginStart="14dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_home_primary_card"
-            android:backgroundTint="@null"
-            android:contentDescription="Open today tasks"
-            android:hapticFeedbackEnabled="true"
-            android:text="Today\nTasks"
-            android:textAllCaps="false"
-            android:textColor="@color/ui_text_primary_light"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            app:backgroundTint="@null" />
-    </LinearLayout>
+            <LinearLayout
+                android:id="@+id/topCardRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="30dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
 
-    <LinearLayout
-        android:id="@+id/secondCardRow"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:baselineAligned="false"
-        android:orientation="horizontal"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/topCardRow">
+                <Button
+                    android:id="@+id/btnCreateTask"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_home_secondary_card"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="112dp"
+                    android:paddingVertical="16dp"
+                    android:text="Create\nTask"
+                    android:textAllCaps="false"
+                    android:textColor="@color/white"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
 
-        <Button
-            android:id="@+id/btnScheduledTasks"
-            android:layout_width="0dp"
-            android:layout_height="112dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_home_primary_card"
-            android:backgroundTint="@null"
-            android:contentDescription="Open all scheduled tasks"
-            android:hapticFeedbackEnabled="true"
-            android:text="Scheduled\nTasks"
-            android:textAllCaps="false"
-            android:textColor="@color/ui_text_primary_light"
-            android:textSize="21sp"
-            android:textStyle="bold"
-            app:backgroundTint="@null" />
+                <Button
+                    android:id="@+id/btnTodayTasks"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_home_primary_card"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="112dp"
+                    android:paddingVertical="16dp"
+                    android:text="Today\nTasks"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ui_text_primary_light"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
+            </LinearLayout>
 
-        <Button
-            android:id="@+id/btnSettings"
-            android:layout_width="0dp"
-            android:layout_height="112dp"
-            android:layout_marginStart="14dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_anchor_home_button"
-            android:backgroundTint="@null"
-            android:contentDescription="Open settings"
-            android:hapticFeedbackEnabled="true"
-            android:text="Settings"
-            android:textAllCaps="false"
-            android:textColor="@color/ui_text_primary_dark"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            app:backgroundTint="@null" />
-    </LinearLayout>
+            <LinearLayout
+                android:id="@+id/secondCardRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnScheduledTasks"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_home_primary_card"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="112dp"
+                    android:paddingVertical="16dp"
+                    android:text="Scheduled\nTasks"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ui_text_primary_light"
+                    android:textSize="21sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
+
+                <Button
+                    android:id="@+id/btnSettings"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_anchor_home_button"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="112dp"
+                    android:paddingVertical="16dp"
+                    android:text="Settings"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
 
     <Button
         android:id="@+id/btnTalkAssistant"
         android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginTop="18dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
         android:background="@drawable/bg_anchor_assistant_button"
         android:backgroundTint="@null"
-        android:contentDescription="Open voice assistant. Primary action button"
         android:hapticFeedbackEnabled="true"
+        android:minHeight="104dp"
+        android:paddingVertical="18dp"
         android:text="Talk to Assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"
@@ -144,7 +158,6 @@
         app:backgroundTint="@null"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/secondCardRow" />
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

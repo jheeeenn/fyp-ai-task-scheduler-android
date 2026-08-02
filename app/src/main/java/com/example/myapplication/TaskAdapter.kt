@@ -6,11 +6,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.recyclerview.widget.RecyclerView
+import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
+import com.example.myapplication.accessibility.TaskCardAccessibilityContent
+import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
 import com.example.myapplication.data.TaskEntity
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
 
 class TaskAdapter(
     private val tasks: MutableList<TaskEntity>,
@@ -42,7 +44,12 @@ class TaskAdapter(
         holder.taskText.text = if (task.isDone) "✓ ${task.title}" else task.title
         holder.taskDateText.text = task.dueDate ?: "No date set"
         holder.taskTimeText.text = task.dueTime ?: "No time set"
-        holder.taskStatusText.text = getTaskStatus(task)
+        val taskStatus = TaskCardAccessibilitySemantics.status(
+            isDone = task.isDone,
+            dueDate = task.dueDate,
+            dueTime = task.dueTime
+        )
+        holder.taskStatusText.text = taskStatus
 
         val subtasks = subtasksByParentId[task.id].orEmpty()
         if (subtasks.isNotEmpty()) {
@@ -60,15 +67,49 @@ class TaskAdapter(
         }
 
         val isSelected = task.id == selectedTaskId
+        holder.itemView.isSelected = isSelected
         holder.taskCardRoot.setBackgroundResource(
             if (isSelected) R.drawable.bg_task_card_selected
             else R.drawable.bg_task_card
         )
+        holder.itemView.contentDescription = TaskCardAccessibilitySemantics.summary(
+            TaskCardAccessibilityContent(
+                title = task.title,
+                date = task.dueDate,
+                time = task.dueTime,
+                status = taskStatus,
+                completedSubtasks = subtasks.count { it.isDone },
+                totalSubtasks = subtasks.size,
+                isSelected = isSelected
+            )
+        )
+        ViewCompat.replaceAccessibilityAction(
+            holder.itemView,
+            AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
+            if (isSelected) "Deselect task" else "Select task"
+        ) { view, _ ->
+            view.performClick()
+            true
+        }
 
         holder.itemView.setOnClickListenerWithHaptic {
-            selectedTaskId = if (selectedTaskId == task.id) null else task.id
-            notifyDataSetChanged()
+            val clickedPosition = holder.bindingAdapterPosition
+            if (clickedPosition == RecyclerView.NO_POSITION) return@setOnClickListenerWithHaptic
+            val clickedTask = tasks[clickedPosition]
+            val previousSelectedId = selectedTaskId
+            selectedTaskId = if (previousSelectedId == clickedTask.id) null else clickedTask.id
+            val previousPosition = tasks.indexOfFirst { it.id == previousSelectedId }
+            if (previousPosition >= 0 && previousPosition != clickedPosition) {
+                notifyItemChanged(previousPosition)
+            }
+            notifyItemChanged(clickedPosition)
             onTaskSelected(tasks.find { it.id == selectedTaskId })
+            AccessibilityAnnouncementHelper.announce(
+                holder.itemView,
+                screen = "TASK_LIST",
+                event = "TASK_SELECTION_CHANGED",
+                message = if (selectedTaskId == null) "Task deselected" else "Task selected"
+            )
         }
     }
 
@@ -106,25 +147,4 @@ class TaskAdapter(
         notifyDataSetChanged()
     }
 
-    private fun getTaskStatus(task: TaskEntity): String {
-        if (task.isDone) return "Completed"
-        if (task.dueDate == null || task.dueTime == null) return "Unscheduled"
-
-        return try {
-            val formatter = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault())
-            val taskDateTime = formatter.parse("${task.dueDate} ${task.dueTime}") ?: return "Upcoming"
-
-            val now = Calendar.getInstance().time
-            val todayFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-            val todayString = todayFormatter.format(now)
-
-            when {
-                taskDateTime.before(now) -> "Overdue"
-                task.dueDate == todayString -> "Today"
-                else -> "Upcoming"
-            }
-        } catch (e: Exception) {
-            "Upcoming"
-        }
-    }
 }

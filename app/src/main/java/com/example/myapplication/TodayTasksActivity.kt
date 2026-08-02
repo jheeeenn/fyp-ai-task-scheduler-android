@@ -12,6 +12,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.accessibility.TaskListAccessibilityController
+import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.accessibility.AssistantAccessibilityState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
@@ -27,6 +30,8 @@ class TodayTasksActivity : AppCompatActivity() {
     private var todayTasks: List<TaskEntity> = emptyList()
 
     private var selectedTaskId: Long? = null
+    private lateinit var accessibilityController: TaskListAccessibilityController
+    private var announceRefreshOnResume = false
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +39,7 @@ class TodayTasksActivity : AppCompatActivity() {
         setContentView(R.layout.activity_task_list)
 
         findViewById<TextView>(R.id.titleText).text = "Today Tasks"
+        AccessibilityStateHelper.markHeading(findViewById(R.id.titleText))
 
         val recyclerView = findViewById<RecyclerView>(R.id.taskRecyclerView)
 
@@ -43,8 +49,19 @@ class TodayTasksActivity : AppCompatActivity() {
         val btnCreateNewTask = findViewById<Button>(R.id.btnCreateNewTask)
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
         val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
+        AccessibilityStateHelper.updateAssistantState(
+            btnTalkAssistant,
+            AssistantAccessibilityState.READY,
+            announce = false
+        )
 
         dao = AppDatabase.getInstance(this).taskDao()
+        accessibilityController = TaskListAccessibilityController(
+            activity = this,
+            screen = "TODAY_TASKS",
+            itemName = "task",
+            emptyMessage = "No tasks scheduled for today"
+        )
 
         adapter = TaskAdapter(
             mutableListOf(),
@@ -81,7 +98,10 @@ class TodayTasksActivity : AppCompatActivity() {
                     )
                 }
 
-                loadTasks(keepSelection = task.id)
+                loadTasks(
+                    keepSelection = task.id,
+                    mutationAnnouncement = "Task status updated. Task list refreshed"
+                )
             }
         }
 
@@ -96,6 +116,7 @@ class TodayTasksActivity : AppCompatActivity() {
             intent.putExtra("task_title", task.title)
             intent.putExtra("task_date", task.dueDate)
             intent.putExtra("task_time", task.dueTime)
+            announceRefreshOnResume = true
             startActivity(intent)
         }
 
@@ -115,7 +136,7 @@ class TodayTasksActivity : AppCompatActivity() {
                         }
                         ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id)
                         selectedTaskId = null
-                        loadTasks()
+                        loadTasks(mutationAnnouncement = "Task deleted. Task list refreshed")
                     }
                 }
                 .setNegativeButton("Cancel", null)
@@ -123,6 +144,7 @@ class TodayTasksActivity : AppCompatActivity() {
         }
 
         btnCreateNewTask.setOnClickListenerWithHaptic {
+            announceRefreshOnResume = true
             startActivity(Intent(this, CreateTaskActivity::class.java))
         }
 
@@ -142,10 +164,15 @@ class TodayTasksActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        loadTasks()
+        val announcement = if (announceRefreshOnResume) "Task list refreshed" else null
+        announceRefreshOnResume = false
+        loadTasks(mutationAnnouncement = announcement)
     }
 
-    private fun loadTasks(keepSelection: Long? = selectedTaskId) {
+    private fun loadTasks(
+        keepSelection: Long? = selectedTaskId,
+        mutationAnnouncement: String? = null
+    ) {
         lifecycleScope.launch {
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 .format(Calendar.getInstance().time)
@@ -162,6 +189,7 @@ class TodayTasksActivity : AppCompatActivity() {
             adapter.setSelectedTaskId(selectedTaskId)
 
             updateActionButtonsState()
+            accessibilityController.render(todayTasks.size, mutationAnnouncement)
         }
     }
 

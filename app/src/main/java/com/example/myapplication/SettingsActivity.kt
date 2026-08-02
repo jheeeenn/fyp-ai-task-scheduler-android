@@ -2,6 +2,7 @@ package com.example.myapplication
 
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -14,6 +15,8 @@ import android.widget.TextView
 import android.text.InputType
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.accessibility.AssistantAccessibilityState
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -50,6 +53,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        AccessibilityStateHelper.markHeading(findViewById(R.id.tvSettingsTitle))
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
@@ -62,6 +66,11 @@ class SettingsActivity : AppCompatActivity() {
 
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
         val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
+        AccessibilityStateHelper.updateAssistantState(
+            btnTalkAssistant,
+            AssistantAccessibilityState.READY,
+            announce = false
+        )
 
         tvToneValue = findViewById(R.id.tvToneValue)
         tvReplyLengthValue = findViewById(R.id.tvReplyLengthValue)
@@ -150,7 +159,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnTalkAssistant.setOnClickListenerWithHaptic {
-            Toast.makeText(this, "Voice settings assistant can be added later.", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, HomeActivity::class.java).apply {
+                putExtra("open_assistant_on_arrival", true)
+            })
         }
     }
 
@@ -187,6 +198,18 @@ class SettingsActivity : AppCompatActivity() {
         tvHighContrastValue.text = if (highContrast) "On" else "Off"
         tvConversationAgentEndpointValue.text = conversationAgentEndpoint
         tvTaskAgentEndpointValue.text = taskAgentEndpoint
+        findViewById<LinearLayout>(R.id.cardTone).contentDescription =
+            "Assistant tone, $assistantTone"
+        findViewById<LinearLayout>(R.id.cardReplyLength).contentDescription =
+            "Reply length, $replyLength"
+        findViewById<LinearLayout>(R.id.cardLargeText).contentDescription =
+            "Large text, ${if (largeText) "On" else "Off"}"
+        findViewById<LinearLayout>(R.id.cardHighContrast).contentDescription =
+            "High contrast, ${if (highContrast) "On" else "Off"}"
+        findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint).contentDescription =
+            "Conversation agent endpoint, $conversationAgentEndpoint"
+        findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint).contentDescription =
+            "Task agent endpoint, $taskAgentEndpoint"
     }
 
     private fun loadEndpointPreference(dedicatedKey: String, dedicatedDefault: String): String {

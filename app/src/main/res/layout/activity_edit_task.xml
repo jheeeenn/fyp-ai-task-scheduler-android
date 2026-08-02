@@ -34,14 +34,23 @@
                 android:textSize="36sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/tvTaskTitleLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:labelFor="@id/etTaskTitle"
+                android:text="@string/task_title_label"
+                android:textColor="@color/ui_text_primary_dark"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
             <EditText
                 android:id="@+id/etTaskTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="8dp"
                 android:background="@drawable/bg_input_field"
-                android:contentDescription="Task title input"
-                android:hint="Task title"
                 android:inputType="textCapSentences"
                 android:minHeight="72dp"
                 android:paddingHorizontal="18dp"
@@ -51,17 +60,18 @@
                 android:textSize="24sp" />
 
             <LinearLayout
+                android:id="@+id/dateInfoGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:importantForAccessibility="yes"
-                android:orientation="vertical"
-                android:screenReaderFocusable="true">
+                android:orientation="vertical">
 
                 <TextView
                     android:id="@+id/tvDateSectionLabel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
                     android:text="Date"
                     android:textColor="@color/ui_text_primary_dark"
                     android:textSize="22sp"
@@ -73,6 +83,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:background="@drawable/bg_info_panel"
+                    android:importantForAccessibility="no"
                     android:padding="16dp"
                     android:text="No date selected"
                     android:textColor="@color/ui_text_primary_dark"
@@ -83,12 +94,13 @@
             <Button
                 android:id="@+id/btnPickDate"
                 android:layout_width="match_parent"
-                android:layout_height="70dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_create_button"
                 android:backgroundTint="@null"
-                android:contentDescription="Change task date"
                 android:hapticFeedbackEnabled="true"
+                android:minHeight="70dp"
+                android:paddingVertical="14dp"
                 android:text="Change Date"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_text_primary_light"
@@ -97,17 +109,18 @@
                 app:backgroundTint="@null" />
 
             <LinearLayout
+                android:id="@+id/timeInfoGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:importantForAccessibility="yes"
-                android:orientation="vertical"
-                android:screenReaderFocusable="true">
+                android:orientation="vertical">
 
                 <TextView
                     android:id="@+id/tvTimeSectionLabel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
                     android:text="Time"
                     android:textColor="@color/ui_text_primary_dark"
                     android:textSize="22sp"
@@ -119,6 +132,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:background="@drawable/bg_info_panel"
+                    android:importantForAccessibility="no"
                     android:padding="16dp"
                     android:text="No time selected"
                     android:textColor="@color/ui_text_primary_dark"
@@ -129,12 +143,13 @@
             <Button
                 android:id="@+id/btnPickTime"
                 android:layout_width="match_parent"
-                android:layout_height="70dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_create_button"
                 android:backgroundTint="@null"
-                android:contentDescription="Change task time"
                 android:hapticFeedbackEnabled="true"
+                android:minHeight="70dp"
+                android:paddingVertical="14dp"
                 android:text="Change Time"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_text_primary_light"
@@ -145,12 +160,13 @@
             <Button
                 android:id="@+id/btnSaveTask"
                 android:layout_width="match_parent"
-                android:layout_height="72dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
                 android:background="@drawable/bg_anchor_assistant_button"
                 android:backgroundTint="@null"
-                android:contentDescription="Save task changes"
                 android:hapticFeedbackEnabled="true"
+                android:minHeight="72dp"
+                android:paddingVertical="14dp"
                 android:text="Save Changes"
                 android:textAllCaps="false"
                 android:textColor="@color/white"
@@ -161,12 +177,13 @@
             <Button
                 android:id="@+id/btnDeleteTask"
                 android:layout_width="match_parent"
-                android:layout_height="68dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_action_button"
                 android:backgroundTint="@null"
-                android:contentDescription="Delete this task"
                 android:hapticFeedbackEnabled="true"
+                android:minHeight="68dp"
+                android:paddingVertical="14dp"
                 android:text="Delete Task"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_danger"
@@ -177,11 +194,12 @@
             <Button
                 android:id="@+id/btnCancelTask"
                 android:layout_width="match_parent"
-                android:layout_height="68dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_action_button_disabled"
                 android:backgroundTint="@null"
-                android:contentDescription="Cancel editing"
+                android:minHeight="68dp"
+                android:paddingVertical="14dp"
                 android:text="Cancel"
                 android:textAllCaps="false"
                 android:textColor="@color/ui_text_primary_dark"
@@ -194,11 +212,12 @@
     <Button
         android:id="@+id/btnGoHome"
         android:layout_width="0dp"
-        android:layout_height="66dp"
+        android:layout_height="wrap_content"
         android:layout_marginBottom="10dp"
         android:background="@drawable/bg_anchor_home_button"
         android:backgroundTint="@null"
-        android:contentDescription="Go to home screen"
+        android:minHeight="66dp"
+        android:paddingVertical="12dp"
         android:text="Home"
         android:textAllCaps="false"
         android:textColor="@color/ui_text_primary_dark"
@@ -212,11 +231,12 @@
     <Button
         android:id="@+id/btnTalkAssistant"
         android:layout_width="0dp"
-        android:layout_height="104dp"
+        android:layout_height="wrap_content"
         android:background="@drawable/bg_anchor_assistant_button"
         android:backgroundTint="@null"
-        android:contentDescription="Open voice assistant. Primary action button"
         android:hapticFeedbackEnabled="true"
+        android:minHeight="104dp"
+        android:paddingVertical="16dp"
         android:text="Talk to Assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"

@@ -4,4 +4,5 @@ interface AssistantVoiceHost {
     fun onAssistantFinalText(text: String)
     fun onAssistantCancelled()
     fun onAssistantSessionStopped()
+    fun onAssistantTypedInputRequested() = Unit
 }

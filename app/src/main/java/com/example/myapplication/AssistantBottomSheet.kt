@@ -2,8 +2,14 @@ package com.example.myapplication
 
 import android.os.Bundle
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
+import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.accessibility.AssistantAccessibilitySemantics
+import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
@@ -14,7 +20,8 @@ import android.view.HapticFeedbackConstants
 
 
 class AssistantBottomSheet(
-    private val activity: AppCompatActivity
+    private val activity: AppCompatActivity,
+    private val onStateChanged: (AssistantAccessibilityState) -> Unit = {}
 ) : BottomSheetDialog(activity) {
     private var onDoubleTapCancel: (() -> Unit)? = null
     private var lastTapTime: Long = 0L
@@ -30,6 +37,7 @@ class AssistantBottomSheet(
     private lateinit var tvState: TextView
     private lateinit var tvUserSpeech: TextView
     private lateinit var tvAssistantReply: TextView
+    private var focusReturnView: View? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +48,7 @@ class AssistantBottomSheet(
         )
 
         setContentView(view)
+        AccessibilityStateHelper.markHeading(view.findViewById(R.id.assistantTitle))
 
         // to prevent outside tap dismissal
         setCancelable(false)
@@ -57,6 +66,13 @@ class AssistantBottomSheet(
         tvAssistantReply = view.findViewById(R.id.tvAssistantReply)
         tvAssistantHint = view.findViewById(R.id.tvAssistantHint)
 
+        view.findViewById<Button>(R.id.btnStopAssistant).setOnClickListenerWithHaptic {
+            onDoubleTapCancel?.invoke()
+        }
+        view.findViewById<Button>(R.id.btnTypeAssistantInput).setOnClickListenerWithHaptic {
+            onTypedInputRequested?.invoke()
+        }
+
         assistantRoot.setOnClickListener {
             assistantRoot.performTapHapticFeedback()
             val now = System.currentTimeMillis()
@@ -67,53 +83,101 @@ class AssistantBottomSheet(
             lastTapTime = now
         }
 
+        setOnDismissListener {
+            focusReturnView?.post {
+                focusReturnView?.requestFocus()
+                focusReturnView?.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
+            }
+        }
+
     }
+    private var onTypedInputRequested: (() -> Unit)? = null
+
     fun setOnDoubleTapCancelListener(listener: (() -> Unit)?) {
         onDoubleTapCancel = listener
     }
+    fun setOnTypedInputRequestedListener(listener: (() -> Unit)?) {
+        onTypedInputRequested = listener
+    }
+    fun setFocusReturnView(view: View?) {
+        focusReturnView = view
+    }
     fun showAssistantHint(text: String) {
         tvAssistantHint.text = text
+        tvAssistantHint.contentDescription = if (text.isBlank()) {
+            "No next action suggested"
+        } else {
+            "What you can do next, $text"
+        }
     }
 
     fun clearHint() {
         tvAssistantHint.text = ""
+        tvAssistantHint.contentDescription = "No next action suggested"
     }
     fun setIdleState() {
         stopStateAnimation()
-        tvState.text = "Assistant ready"
+        applyState(AssistantAccessibilityState.READY, announce = false)
     }
 
     fun setListeningState() {
-        tvState.text = "Listening..."
+        applyState(AssistantAccessibilityState.LISTENING, announce = true)
         startListeningAnimation()
     }
 
     fun setProcessingState() {
-        tvState.text = "Processing..."
+        applyState(AssistantAccessibilityState.PROCESSING, announce = true)
         startProcessingAnimation()
     }
 
-    fun setErrorState(text: String) {
+    fun setErrorState(@Suppress("UNUSED_PARAMETER") text: String) {
         stopStateAnimation()
-        tvState.text = text
+        applyState(AssistantAccessibilityState.ERROR, announce = false)
     }
 
     fun setSpeakingState() {
-        tvState.text = "Speaking..."
+        applyState(AssistantAccessibilityState.SPEAKING, announce = false)
         startSpeakingAnimation()
+    }
+    fun setWaitingForConfirmationState() {
+        stopStateAnimation()
+        applyState(AssistantAccessibilityState.WAITING_FOR_CONFIRMATION, announce = true)
+    }
+    fun setStoppedState() {
+        stopStateAnimation()
+        applyState(AssistantAccessibilityState.STOPPED, announce = false)
     }
     fun showUserSpeech(text: String) {
         tvUserSpeech.text = text
+        tvUserSpeech.contentDescription = if (text.isBlank()) "Nothing entered yet" else "You said, $text"
     }
 
     fun showAssistantReply(text: String) {
         tvAssistantReply.text = text
+        tvAssistantReply.contentDescription = if (text.isBlank()) "No assistant reply yet" else "Assistant reply, $text"
     }
 
     fun clearConversation() {
         tvUserSpeech.text = ""
         tvAssistantReply.text = ""
         tvAssistantHint.text = ""
+        tvUserSpeech.contentDescription = "Nothing entered yet"
+        tvAssistantReply.contentDescription = "No assistant reply yet"
+        tvAssistantHint.contentDescription = "No next action suggested"
+    }
+
+    private fun applyState(state: AssistantAccessibilityState, announce: Boolean) {
+        tvState.text = state.label
+        stateContainer.contentDescription = "Assistant status"
+        val changed = AccessibilityStateHelper.updateAssistantState(stateContainer, state, announce)
+        if (changed) {
+            AccessibilityAnnouncementHelper.logState(
+                screen = "ASSISTANT_PANEL",
+                element = "ASSISTANT_STATUS",
+                state = AssistantAccessibilitySemantics.diagnosticState(state)
+            )
+            onStateChanged(state)
+        }
     }
 
     // helper functions

@@ -9,12 +9,8 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 
-import android.text.InputType
 import android.util.Log
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
 import android.widget.Button
-import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -119,6 +115,9 @@ import java.text.SimpleDateFormat
 
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
+import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
+import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.accessibility.AssistantAccessibilityState
 
 import com.example.myapplication.ai.ConversationIntent
 import com.example.myapplication.ai.TaskMatcher
@@ -353,6 +352,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             else -> "Good Evening _zZZ"
         }
         greetingText.text = greeting
+        greetingText.contentDescription = when {
+            hour < 12 -> "Good Morning"
+            hour < 18 -> "Good Afternoon"
+            else -> "Good Evening"
+        }
+        AccessibilityStateHelper.markHeading(greetingText)
 
 
         // Navigation buttons
@@ -402,7 +407,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             host = this,
             voiceHelper = voiceHelper,
             responseManager = responseManager,
-            audioPermissionLauncher = audioPermissionLauncher
+            audioPermissionLauncher = audioPermissionLauncher,
+            onAccessibilityStateChanged = { state ->
+                AccessibilityStateHelper.updateAssistantState(btnTalkAssistant, state, announce = false)
+            }
+        )
+        assistantSession.bindAssistantControl(btnTalkAssistant)
+        AccessibilityStateHelper.updateAssistantState(
+            btnTalkAssistant,
+            AssistantAccessibilityState.READY,
+            announce = false
         )
 
 
@@ -416,6 +430,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             showTypedAssistantInputDialog()
             true
         }
+        AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)
 
         // to open the assistant from today task and scheduled task pages
         shouldOpenAssistantOnResume = intent.getBooleanExtra("open_assistant_on_arrival", false)
@@ -424,63 +439,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     } // end of onCreate
 
     private fun showTypedAssistantInputDialog() {
-        val input = EditText(this).apply {
-            hint = "Type what you would say to the assistant"
-            inputType = InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
-                    InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            imeOptions = EditorInfo.IME_ACTION_SEND
-            minLines = 2
-            maxLines = 4
-            setSingleLine(false)
+        AccessibleAssistantInputDialog.show(
+            activity = this,
+            title = "Type assistant command",
+            message = "Typed and voice input use the same assistant flow.",
+            emptyError = "Please type a command"
+        ) { typedText ->
+            assistantSession.submitTypedText(typedText)
         }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Type assistant command")
-            .setMessage("This uses the same parser and assistant flow as voice input.")
-            .setView(input)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Send", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val typedText = input.text.toString().trim()
-                if (typedText.isNotEmpty()) {
-                    dialog.dismiss()
-                    assistantSession.submitTypedText(typedText)
-                } else {
-                    input.error = "Please type a command"
-                }
-            }
-
-            input.requestFocus()
-            dialog.window?.setSoftInputMode(
-                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
-            )
-            input.post {
-                val inputMethodManager =
-                    getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                inputMethodManager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-            }
-        }
-
-        input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
-                val typedText = input.text.toString().trim()
-                if (typedText.isNotEmpty()) {
-                    dialog.dismiss()
-                    assistantSession.submitTypedText(typedText)
-                } else {
-                    input.error = "Please type a command"
-                }
-                true
-            } else {
-                false
-            }
-        }
-
-        dialog.show()
     }
     override fun onAssistantFinalText(text: String) {
         handleVoiceCommand(text)
@@ -512,6 +478,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
+    }
+
+    override fun onAssistantTypedInputRequested() {
+        showTypedAssistantInputDialog()
     }
 
     override fun onResume(){
@@ -547,7 +517,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             val todayCount = tasks.count { task ->
                 !task.isDone && task.dueDate == today
             }
-            overviewText.text = "You have $todayCount tasks today"
+            val updatedOverview = "You have $todayCount tasks today"
+            if (overviewText.text.toString() != updatedOverview) {
+                overviewText.text = updatedOverview
+            }
         }
     }
 

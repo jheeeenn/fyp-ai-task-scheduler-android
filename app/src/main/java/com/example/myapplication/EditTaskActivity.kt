@@ -5,11 +5,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 
 import android.os.Bundle
-import android.content.Context
-import android.text.InputType
 import android.util.Log
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
+import android.view.View
 
 import android.widget.Button
 import android.widget.EditText
@@ -68,6 +65,11 @@ import com.example.myapplication.ai.temporal.RelativeTemporalSaveClaim
 import com.example.myapplication.ai.temporal.RelativeTemporalSaveClaimResult
 import com.example.myapplication.ai.temporal.RelativeTemporalSpeechRenderer
 import com.example.myapplication.ai.temporal.ValidatedRelativeTemporalCorrection
+import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
+import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
+import com.example.myapplication.accessibility.AssistantAccessibilityState
+import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
 
 private enum class EditFieldTarget {
     NONE, TITLE, DATE, TIME, DATE_OR_TIME
@@ -107,6 +109,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var etTaskTitle: EditText
     private lateinit var tvSelectedDate: TextView
     private lateinit var tvSelectedTime: TextView
+    private lateinit var dateInfoGroup: View
+    private lateinit var timeInfoGroup: View
 
     private var taskId: Long = -1L
 
@@ -131,10 +135,13 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_edit_task)
+        AccessibilityStateHelper.markHeading(findViewById(R.id.tvEditTitle))
 
         etTaskTitle = findViewById(R.id.etTaskTitle)
         tvSelectedDate = findViewById(R.id.tvSelectedDate)
         tvSelectedTime = findViewById(R.id.tvSelectedTime)
+        dateInfoGroup = findViewById(R.id.dateInfoGroup)
+        timeInfoGroup = findViewById(R.id.timeInfoGroup)
 
         val btnPickDate = findViewById<Button>(R.id.btnPickDate)
         val btnPickTime = findViewById<Button>(R.id.btnPickTime)
@@ -159,7 +166,16 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             host = this,
             voiceHelper = voiceHelper,
             responseManager = responseManager,
-            audioPermissionLauncher = audioPermissionLauncher
+            audioPermissionLauncher = audioPermissionLauncher,
+            onAccessibilityStateChanged = { state ->
+                AccessibilityStateHelper.updateAssistantState(btnTalkAssistant, state, announce = false)
+            }
+        )
+        assistantSession.bindAssistantControl(btnTalkAssistant)
+        AccessibilityStateHelper.updateAssistantState(
+            btnTalkAssistant,
+            AssistantAccessibilityState.READY,
+            announce = false
         )
 
         promptHelper = AssistantPromptHelper(assistantSession, responseManager)
@@ -176,6 +192,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         tvSelectedDate.text = "Selected date: ${authoritativeOriginalDate ?: "No date selected"}"
         tvSelectedTime.text = "Selected time: ${authoritativeOriginalTime ?: "No time selected"}"
+        updateScheduleAccessibilityState()
 
         parseExistingDate(authoritativeOriginalDate)
         parseExistingTime(authoritativeOriginalTime)
@@ -235,6 +252,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             showTypedAssistantInputDialog()
             true
         }
+        AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)
 
 
 
@@ -311,7 +329,11 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 if (acceptExactDate(pickedDate, replacingConstraint = false)) {
                     if (!wasTemporalClarification) {
                         pendingFieldTarget = EditFieldTarget.NONE
-                        askToSaveChanges()
+                        announceManualScheduleChange(
+                            view = dateInfoGroup,
+                            event = "DATE_UPDATED",
+                            value = TaskCardAccessibilitySemantics.spokenDate(selectedDate)
+                        )
                     }
                 } else {
                     speak("That date is outside the requested date range. Please choose a valid date.")
@@ -340,7 +362,11 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
                     if (!wasTemporalClarification) {
                         pendingFieldTarget = EditFieldTarget.NONE
-                        askToSaveChanges()
+                        announceManualScheduleChange(
+                            view = timeInfoGroup,
+                            event = "TIME_UPDATED",
+                            value = TaskCardAccessibilitySemantics.spokenTime(selectedTime)
+                        )
                     }
                 } else {
                     speak("That time is outside the requested time range. Please choose a valid time.")
@@ -1210,6 +1236,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
         selectedYear = parts.getOrNull(2)?.toIntOrNull()
         tvSelectedDate.text = "Selected date: $selectedDate"
+        updateDateAccessibilityState()
         synchronizeRelativeProposalFromUi()
     }
 
@@ -1233,6 +1260,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedMinute = minute % 60
         selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
         tvSelectedTime.text = "Selected time: $selectedTime"
+        updateTimeAccessibilityState()
         synchronizeRelativeProposalFromUi()
     }
 
@@ -1251,6 +1279,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         parseExistingTime(selectedTime)
         tvSelectedDate.text = "Selected date: ${selectedDate ?: "No date selected"}"
         tvSelectedTime.text = "Selected time: ${selectedTime ?: "No time selected"}"
+        updateScheduleAccessibilityState()
         if (synchronizeSession) synchronizeRelativeProposalFromUi()
     }
 
@@ -1450,6 +1479,7 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
         waitingForSaveConfirmation = true
+        assistantSession.expectConfirmation()
         val session = relativeTemporalSession
         if (session != null && session.state == RelativeTemporalProposalState.ACTIVE) {
             promptHelper.speakInfo(
@@ -1500,54 +1530,55 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun showTypedAssistantInputDialog() {
         if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
-        val input = EditText(this).apply {
-            hint = "Type what you would say to the assistant"
-            inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
-                InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            imeOptions = EditorInfo.IME_ACTION_SEND
-            minLines = 2
-            maxLines = 4
-            setSingleLine(false)
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Type assistant response")
-            .setMessage("Typed and voice corrections use the same assistant flow.")
-            .setView(input)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Send", null)
-            .create()
-
-        fun submit() {
-            val typedText = input.text.toString().trim()
-            if (typedText.isEmpty()) {
-                input.error = "Please type a response"
-                return
-            }
-            dialog.dismiss()
+        AccessibleAssistantInputDialog.show(
+            activity = this,
+            title = "Type assistant response",
+            message = "Typed and voice corrections use the same assistant flow.",
+            emptyError = "Please type a response"
+        ) { typedText ->
             assistantSession.submitTypedText(typedText, clearConversation = false)
         }
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { submit() }
-            input.requestFocus()
-            dialog.window?.setSoftInputMode(
-                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+    }
+
+    override fun onAssistantTypedInputRequested() {
+        showTypedAssistantInputDialog()
+    }
+
+    private fun updateScheduleAccessibilityState() {
+        updateDateAccessibilityState()
+        updateTimeAccessibilityState()
+    }
+
+    private fun updateDateAccessibilityState() {
+        dateInfoGroup.contentDescription = "Selected date"
+        AccessibilityStateHelper.updateStateDescription(
+            dateInfoGroup,
+            TaskCardAccessibilitySemantics.spokenDate(selectedDate)
+                .replace("No date set", "No date selected")
+        )
+    }
+
+    private fun updateTimeAccessibilityState() {
+        timeInfoGroup.contentDescription = "Selected time"
+        AccessibilityStateHelper.updateStateDescription(
+            timeInfoGroup,
+            TaskCardAccessibilitySemantics.spokenTime(selectedTime)
+                .replace("No time set", "No time selected")
+        )
+    }
+
+    private fun announceManualScheduleChange(view: View, event: String, value: String) {
+        if (AccessibilityStateHelper.isScreenReaderActive(view)) {
+            AccessibilityAnnouncementHelper.announce(
+                view,
+                screen = "EDIT_TASK",
+                event = event,
+                message = value
             )
-            input.post {
-                val inputMethodManager =
-                    getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                inputMethodManager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-            }
+            view.postDelayed({ askToSaveChanges() }, 1200)
+        } else {
+            askToSaveChanges()
         }
-        input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
-                submit()
-                true
-            } else {
-                false
-            }
-        }
-        dialog.show()
     }
 
     private fun isSaveCommand(normalized: String): Boolean {

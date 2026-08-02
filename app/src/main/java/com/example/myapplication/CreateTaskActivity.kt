@@ -7,6 +7,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -47,6 +48,11 @@ import com.example.myapplication.ai.conversation.createdraft.CreateDraftAgentCon
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftMoveResolution
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticOrchestrator
 import kotlinx.coroutines.CancellationException
+import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
+import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
+import com.example.myapplication.accessibility.AssistantAccessibilityState
+import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
 
 internal fun isCreateDraftFieldReplacement(
     field: CreateDraftField,
@@ -108,6 +114,8 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var btnPickDate: Button
     private lateinit var btnPickTime: Button
     private lateinit var btnTalkAssistant: Button
+    private lateinit var dateInfoGroup: View
+    private lateinit var timeInfoGroup: View
 
     private lateinit var dao: com.example.myapplication.data.TaskDao
 
@@ -131,6 +139,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_create_task)
+        AccessibilityStateHelper.markHeading(findViewById(R.id.tvCreateTitle))
 
         etTaskTitle = findViewById(R.id.etTaskTitle)
 
@@ -140,9 +149,11 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
         btnPickTime = findViewById(R.id.btnPickTime)
         tvSelectedTime = findViewById(R.id.tvSelectedTime)
+        timeInfoGroup = findViewById(R.id.timeInfoGroup)
 
         btnPickDate = findViewById(R.id.btnPickDate)
         tvSelectedDate = findViewById(R.id.tvSelectedDate)
+        dateInfoGroup = findViewById(R.id.dateInfoGroup)
 
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
         btnTalkAssistant = findViewById(R.id.btnTalkAssistant)
@@ -163,7 +174,16 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             host = this,
             voiceHelper = voiceHelper,
             responseManager = responseManager,
-            audioPermissionLauncher = audioPermissionLauncher
+            audioPermissionLauncher = audioPermissionLauncher,
+            onAccessibilityStateChanged = { state ->
+                AccessibilityStateHelper.updateAssistantState(btnTalkAssistant, state, announce = false)
+            }
+        )
+        assistantSession.bindAssistantControl(btnTalkAssistant)
+        AccessibilityStateHelper.updateAssistantState(
+            btnTalkAssistant,
+            AssistantAccessibilityState.READY,
+            announce = false
         )
 
         promptHelper = AssistantPromptHelper(assistantSession, responseManager)
@@ -210,6 +230,12 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             }
             assistantSession.startSession()
         }
+        btnTalkAssistant.setOnLongClickListener {
+            btnTalkAssistant.performLongClickHapticFeedback()
+            showTypedAssistantInputDialog()
+            true
+        }
+        AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)
 
 
     } // end of onCreate()
@@ -402,8 +428,18 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 assistantSession.pauseListeningForAssistantSpeech()
                 if (acceptExactDate(pickedDate, replacingConstraint = false)) {
                     pendingTaskState.dateText = selectedDate
-                    voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
-                    moveToNextMissingStep()
+                    if (AccessibilityStateHelper.isScreenReaderActive(dateInfoGroup)) {
+                        AccessibilityAnnouncementHelper.announce(
+                            dateInfoGroup,
+                            screen = "CREATE_TASK",
+                            event = "DATE_UPDATED",
+                            message = TaskCardAccessibilitySemantics.spokenDate(selectedDate)
+                        )
+                        dateInfoGroup.postDelayed({ moveToNextMissingStep() }, 1200)
+                    } else {
+                        voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
+                        moveToNextMissingStep()
+                    }
                 } else {
                     voiceHelper.speak(invalidTemporalDateMessage())
                 }
@@ -432,8 +468,18 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     pendingTaskState.timeText = selectedTime
                     pendingSemanticTimePhrase = null
                     suggestedLearnedTime = null
-                    voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
-                    moveToNextMissingStep()
+                    if (AccessibilityStateHelper.isScreenReaderActive(timeInfoGroup)) {
+                        AccessibilityAnnouncementHelper.announce(
+                            timeInfoGroup,
+                            screen = "CREATE_TASK",
+                            event = "TIME_UPDATED",
+                            message = TaskCardAccessibilitySemantics.spokenTime(selectedTime)
+                        )
+                        timeInfoGroup.postDelayed({ moveToNextMissingStep() }, 1200)
+                    } else {
+                        voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
+                        moveToNextMissingStep()
+                    }
                 } else {
                     voiceHelper.speak(invalidTemporalTimeMessage())
                 }
@@ -586,6 +632,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
         selectedYear = parts.getOrNull(2)?.toIntOrNull()
         tvSelectedDate.text = "Selected date: $selectedDate"
+        updateDateAccessibilityState()
         pendingTemporalClarification = pendingTemporalClarification?.copy(exactDate = date)
         advanceTemporalClarification()
         markCreateDraftChanged()
@@ -605,6 +652,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         selectedMinute = minute % 60
         selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
         tvSelectedTime.text = "Selected time: $selectedTime"
+        updateTimeAccessibilityState()
         pendingTemporalClarification = pendingTemporalClarification?.copy(exactMinute = minute)
         advanceTemporalClarification()
         markCreateDraftChanged()
@@ -994,6 +1042,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             else -> {
                 Log.d("CREATE_STATE", "next=WAITING_FOR_SAVE_CONFIRMATION")
                 dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+                assistantSession.expectConfirmation()
                 promptHelper.askSaveTask(buildTaskSummary())
             }
         }
@@ -1079,6 +1128,7 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         etTaskTitle.setText("")
         tvSelectedDate.text = "Selected date: No date selected"
         tvSelectedTime.text = "Selected time: No time selected"
+        updateScheduleAccessibilityState()
     }
 
     private fun markCreateDraftChanged() {
@@ -1124,6 +1174,44 @@ class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
         invalidateCreateDraftResolution()
         suggestedLearnedTime = null
         pendingSemanticTimePhrase = null
+    }
+
+    override fun onAssistantTypedInputRequested() {
+        showTypedAssistantInputDialog()
+    }
+
+    private fun showTypedAssistantInputDialog() {
+        AccessibleAssistantInputDialog.show(
+            activity = this,
+            title = "Type assistant response",
+            message = "Typed and voice input use the same assistant flow.",
+            emptyError = "Please type a response"
+        ) { typedText ->
+            assistantSession.submitTypedText(typedText, clearConversation = false)
+        }
+    }
+
+    private fun updateScheduleAccessibilityState() {
+        updateDateAccessibilityState()
+        updateTimeAccessibilityState()
+    }
+
+    private fun updateDateAccessibilityState() {
+        dateInfoGroup.contentDescription = "Selected date"
+        AccessibilityStateHelper.updateStateDescription(
+            dateInfoGroup,
+            TaskCardAccessibilitySemantics.spokenDate(selectedDate)
+                .replace("No date set", "No date selected")
+        )
+    }
+
+    private fun updateTimeAccessibilityState() {
+        timeInfoGroup.contentDescription = "Selected time"
+        AccessibilityStateHelper.updateStateDescription(
+            timeInfoGroup,
+            TaskCardAccessibilitySemantics.spokenTime(selectedTime)
+                .replace("No time set", "No time selected")
+        )
     }
 
     override fun onDestroy() {

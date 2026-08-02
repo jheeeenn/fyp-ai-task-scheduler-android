@@ -1,117 +1,154 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/assistantRoot"
+    android:id="@+id/assistantPanelScroll"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/bg_assistant_panel"
-    android:minHeight="420dp"
-    android:orientation="vertical"
-    android:paddingStart="22dp"
-    android:paddingTop="22dp"
-    android:paddingEnd="22dp"
-    android:paddingBottom="26dp">
-
-    <TextView
-        android:id="@+id/assistantTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Voice Assistant"
-        android:textColor="@color/ui_text_primary_dark"
-        android:textSize="28sp"
-        android:textStyle="bold" />
+    android:fillViewport="true">
 
     <LinearLayout
-        android:id="@+id/stateContainer"
+        android:id="@+id/assistantRoot"
         android:layout_width="match_parent"
-        android:layout_height="72dp"
-        android:layout_marginTop="14dp"
-        android:background="@drawable/bg_info_panel"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="18dp"
-        android:paddingEnd="18dp">
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_assistant_panel"
+        android:minHeight="420dp"
+        android:orientation="vertical"
+        android:paddingStart="22dp"
+        android:paddingTop="22dp"
+        android:paddingEnd="22dp"
+        android:paddingBottom="26dp">
 
         <TextView
-            android:id="@+id/tvAssistantState"
+            android:id="@+id/assistantTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Listening..."
+            android:accessibilityHeading="true"
+            android:text="@string/assistant_title"
             android:textColor="@color/ui_text_primary_dark"
-            android:textSize="23sp"
+            android:textSize="28sp"
             android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/stateContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_info_panel"
+            android:gravity="center_vertical"
+            android:importantForAccessibility="yes"
+            android:minHeight="72dp"
+            android:orientation="horizontal"
+            android:paddingStart="18dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:id="@+id/tvAssistantState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/assistant_ready"
+                android:textColor="@color/ui_text_primary_dark"
+                android:textSize="23sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvUserLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:importantForAccessibility="no"
+            android:text="@string/assistant_user_label"
+            android:textColor="@color/ui_text_muted_dark"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvUserSpeech"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_info_panel"
+            android:importantForAccessibility="yes"
+            android:lineSpacingExtra="5dp"
+            android:minHeight="98dp"
+            android:padding="16dp"
+            android:text=""
+            android:textColor="@color/ui_text_primary_dark"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/tvAssistantLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:importantForAccessibility="no"
+            android:text="@string/assistant_reply_label"
+            android:textColor="@color/ui_text_muted_dark"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvAssistantReply"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_info_panel"
+            android:importantForAccessibility="yes"
+            android:lineSpacingExtra="5dp"
+            android:minHeight="88dp"
+            android:padding="16dp"
+            android:text=""
+            android:textColor="@color/ui_text_primary_dark"
+            android:textSize="22sp" />
+
+        <TextView
+            android:id="@+id/tvHintLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:importantForAccessibility="no"
+            android:text="@string/assistant_next_action_label"
+            android:textColor="@color/ui_text_muted_dark"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvAssistantHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_info_panel"
+            android:importantForAccessibility="yes"
+            android:lineSpacingExtra="4dp"
+            android:minHeight="68dp"
+            android:padding="16dp"
+            android:text=""
+            android:textColor="@color/ui_text_secondary_dark"
+            android:textSize="19sp" />
+
+        <Button
+            android:id="@+id/btnTypeAssistantInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:minHeight="56dp"
+            android:paddingVertical="12dp"
+            android:text="@string/type_to_assistant"
+            android:textAllCaps="false"
+            android:textSize="18sp" />
+
+        <Button
+            android:id="@+id/btnStopAssistant"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:minHeight="56dp"
+            android:paddingVertical="12dp"
+            android:text="@string/stop_assistant"
+            android:textAllCaps="false"
+            android:textSize="18sp" />
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/tvUserLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:text="You said"
-        android:textColor="@color/ui_text_muted_dark"
-        android:textSize="16sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/tvUserSpeech"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/bg_info_panel"
-        android:importantForAccessibility="yes"
-        android:lineSpacingExtra="5dp"
-        android:minHeight="98dp"
-        android:padding="16dp"
-        android:text=""
-        android:textColor="@color/ui_text_primary_dark"
-        android:textSize="24sp" />
-
-    <TextView
-        android:id="@+id/tvAssistantLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:text="Assistant reply"
-        android:textColor="@color/ui_text_muted_dark"
-        android:textSize="16sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/tvAssistantReply"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/bg_info_panel"
-        android:importantForAccessibility="yes"
-        android:lineSpacingExtra="5dp"
-        android:minHeight="88dp"
-        android:padding="16dp"
-        android:text=""
-        android:textColor="@color/ui_text_primary_dark"
-        android:textSize="22sp" />
-
-    <TextView
-        android:id="@+id/tvHintLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:text="What you can say next"
-        android:textColor="@color/ui_text_muted_dark"
-        android:textSize="16sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/tvAssistantHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/bg_info_panel"
-        android:importantForAccessibility="yes"
-        android:lineSpacingExtra="4dp"
-        android:minHeight="68dp"
-        android:padding="16dp"
-        android:text=""
-        android:textColor="@color/ui_text_secondary_dark"
-        android:textSize="19sp" />
-
-</LinearLayout>
+</androidx.core.widget.NestedScrollView>

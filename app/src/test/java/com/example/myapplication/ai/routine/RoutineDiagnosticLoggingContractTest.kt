@@ -24,7 +24,7 @@ class RoutineDiagnosticLoggingContractTest {
         mainRoot.resolve("ai/conversation/ConversationOrchestrator.kt").readText()
 
     @Test
-    fun finalVoiceAndTypedInputsUseDebugOnlyTranscriptButPartialsDoNot() {
+    fun finalVoiceAndTypedInputsUseRedactedDebugMetadataButPartialsDoNot() {
         val finalResults = voice
             .substringAfter("override fun onResults")
             .substringBefore("override fun onPartialResults")
@@ -41,6 +41,8 @@ class RoutineDiagnosticLoggingContractTest {
         assertFalse(partialResults.contains("logUserTranscript"))
         assertFalse(partialResults.contains("ASSISTANT_TRANSCRIPT"))
         assertTrue(debugLog.contains("if (!BuildConfig.DEBUG) return"))
+        assertTrue(voice.contains("content=REDACTED"))
+        assertFalse(voice.contains("\\ntext=\$text"))
     }
 
     @Test
@@ -54,6 +56,7 @@ class RoutineDiagnosticLoggingContractTest {
         assertEquals(directSpeechCalls, transcriptCalls)
         assertTrue(voice.contains("role=ASSISTANT\\ndelivery=SPEAK"))
         assertTrue(voice.contains("listenAgain=\$listenAgain"))
+        assertTrue(voice.contains("characterCount=\${text.length}"))
     }
 
     @Test
