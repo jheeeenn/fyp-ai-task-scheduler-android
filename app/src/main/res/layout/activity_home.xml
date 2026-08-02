@@ -148,7 +148,7 @@
         android:background="@drawable/bg_anchor_assistant_button"
         android:backgroundTint="@null"
         android:hapticFeedbackEnabled="true"
-        android:minHeight="104dp"
+        android:minHeight="180dp"
         android:paddingVertical="18dp"
         android:text="Talk to Assistant"
         android:textAllCaps="false"

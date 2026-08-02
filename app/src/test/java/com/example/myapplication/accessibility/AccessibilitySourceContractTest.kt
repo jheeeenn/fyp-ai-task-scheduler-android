@@ -93,6 +93,38 @@ class AccessibilitySourceContractTest {
     }
 
     @Test
+    fun homeAssistantActionRemainsDominantFixedAndAccessible() {
+        val home = layoutRoot.resolve("activity_home.xml").readText()
+        val activity = mainRoot.resolve("HomeActivity.kt").readText()
+        val scrollView = home
+            .substringAfter("<ScrollView")
+            .substringBefore("</ScrollView>")
+        val assistantButton = home
+            .substringAfter("android:id=\"@+id/btnTalkAssistant\"")
+            .substringBefore("/>")
+        val assistantMinimumHeight = Regex("android:minHeight=\"(\\d+)dp\"")
+            .find(assistantButton)
+            ?.groupValues
+            ?.get(1)
+            ?.toInt()
+
+        assertTrue(scrollView.contains("android:id=\"@+id/homeScrollView\""))
+        assertTrue(scrollView.contains("android:layout_height=\"0dp\""))
+        assertTrue(scrollView.contains("app:layout_constraintBottom_toTopOf=\"@id/btnTalkAssistant\""))
+        assertTrue(assistantButton.contains("android:layout_width=\"0dp\""))
+        assertTrue(assistantButton.contains("android:layout_height=\"wrap_content\""))
+        assertTrue(assistantButton.contains("app:layout_constraintStart_toStartOf=\"parent\""))
+        assertTrue(assistantButton.contains("app:layout_constraintEnd_toEndOf=\"parent\""))
+        assertTrue(assistantButton.contains("app:layout_constraintBottom_toBottomOf=\"parent\""))
+        assertTrue("Home assistant action must be taller than 112dp navigation cards", assistantMinimumHeight != null)
+        assertTrue("Home assistant action must be substantially taller than navigation cards", assistantMinimumHeight!! >= 180)
+        assertTrue(activity.contains("btnTalkAssistant.setOnClickListenerWithHaptic"))
+        assertTrue(activity.contains("btnTalkAssistant.setOnLongClickListener"))
+        assertTrue(activity.contains("AccessibilityStateHelper.updateAssistantState"))
+        assertTrue(activity.contains("AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)"))
+    }
+
+    @Test
     fun voiceTouchTalkBackAndTypedPathsRemainAvailableWithoutAccessibilityAi() {
         val home = mainRoot.resolve("HomeActivity.kt").readText()
         val create = mainRoot.resolve("CreateTaskActivity.kt").readText()
