@@ -49,6 +49,31 @@ object AccessibilityStateHelper {
         val manager = view.context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         return manager.isEnabled && manager.isTouchExplorationEnabled
     }
+
+    @Suppress("DEPRECATION")
+    fun restoreAccessibilityFocus(view: View?) {
+        val target = view ?: return
+        if (!isEligibleFocusTarget(target)) return
+        target.post {
+            if (!isEligibleFocusTarget(target)) return@post
+            if (isScreenReaderActive(target)) {
+                val focused = ViewCompat.performAccessibilityAction(
+                    target,
+                    AccessibilityNodeInfoCompat.ACTION_ACCESSIBILITY_FOCUS,
+                    null
+                )
+                if (!focused) target.requestFocus()
+            } else {
+                target.requestFocus()
+            }
+        }
+    }
+
+    private fun isEligibleFocusTarget(view: View?): Boolean =
+        view != null &&
+            view.isAttachedToWindow &&
+            view.visibility == View.VISIBLE &&
+            view.isEnabled
 }
 
 object AccessibilityAnnouncementHelper {

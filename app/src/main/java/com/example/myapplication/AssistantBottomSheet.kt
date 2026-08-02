@@ -2,7 +2,6 @@ package com.example.myapplication
 
 import android.os.Bundle
 import android.view.View
-import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -38,6 +37,7 @@ class AssistantBottomSheet(
     private lateinit var tvUserSpeech: TextView
     private lateinit var tvAssistantReply: TextView
     private var focusReturnView: View? = null
+    private var restoreFocusOnDismiss = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,9 +84,10 @@ class AssistantBottomSheet(
         }
 
         setOnDismissListener {
-            focusReturnView?.post {
-                focusReturnView?.requestFocus()
-                focusReturnView?.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
+            val shouldRestoreFocus = restoreFocusOnDismiss
+            restoreFocusOnDismiss = true
+            if (shouldRestoreFocus && !activity.isFinishing && !activity.isDestroyed) {
+                AccessibilityStateHelper.restoreAccessibilityFocus(focusReturnView)
             }
         }
 
@@ -101,6 +102,10 @@ class AssistantBottomSheet(
     }
     fun setFocusReturnView(view: View?) {
         focusReturnView = view
+    }
+    fun dismissWithoutFocusReturn() {
+        restoreFocusOnDismiss = false
+        dismiss()
     }
     fun showAssistantHint(text: String) {
         tvAssistantHint.text = text

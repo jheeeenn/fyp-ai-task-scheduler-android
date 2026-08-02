@@ -18,8 +18,10 @@ object AccessibleAssistantInputDialog {
         title: String,
         message: String,
         emptyError: String,
+        onCancel: (() -> Unit)? = null,
         onSubmit: (String) -> Unit
     ) {
+        val cancellation = OneShotDialogCancellation(onCancel)
         val inputId = View.generateViewId()
         val input = EditText(activity).apply {
             id = inputId
@@ -49,7 +51,7 @@ object AccessibleAssistantInputDialog {
             .setTitle(title)
             .setMessage(message)
             .setView(container)
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Cancel") { _, _ -> cancellation.cancel() }
             .setPositiveButton("Send", null)
             .create()
 
@@ -60,6 +62,7 @@ object AccessibleAssistantInputDialog {
                 input.requestFocus()
                 return
             }
+            cancellation.markSubmitted()
             dialog.dismiss()
             onSubmit(typedText)
         }
@@ -81,9 +84,28 @@ object AccessibleAssistantInputDialog {
                 false
             }
         }
+        dialog.setOnCancelListener { cancellation.cancel() }
+        dialog.setOnDismissListener { cancellation.cancel() }
         dialog.show()
     }
 
     private fun Int.dp(context: Context): Int =
         (this * context.resources.displayMetrics.density).toInt()
+}
+
+internal class OneShotDialogCancellation(
+    private val onCancel: (() -> Unit)?
+) {
+    private var submitted = false
+    private var delivered = false
+
+    fun markSubmitted() {
+        submitted = true
+    }
+
+    fun cancel() {
+        if (submitted || delivered) return
+        delivered = true
+        onCancel?.invoke()
+    }
 }

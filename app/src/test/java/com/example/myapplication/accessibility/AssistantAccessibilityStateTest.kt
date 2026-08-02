@@ -31,11 +31,13 @@ class AssistantAccessibilityStateTest {
             event = "TIME_UPDATED"
         )
         val helper = File("src/main/java/com/example/myapplication/accessibility/AccessibilityStateHelper.kt").readText()
-        val voice = File("src/main/java/com/example/myapplication/voice/AssistantVoiceSession.kt").readText()
+        val transcriptLogger =
+            File("src/main/java/com/example/myapplication/diagnostics/AssistantTranscriptDiagnosticLogger.kt").readText()
 
         assertEquals("screen=EDIT_TASK event=TIME_UPDATED", line)
         assertFalse(helper.contains("transcript", ignoreCase = true))
-        assertTrue(voice.contains("content=REDACTED"))
-        assertFalse(voice.contains("\\ntext=\$text"))
+        assertFalse(helper.contains("ASSISTANT_TRANSCRIPT"))
+        assertFalse(transcriptLogger.contains("ACCESSIBILITY_STATE"))
+        assertFalse(transcriptLogger.contains("ACCESSIBILITY_ANNOUNCEMENT"))
     }
 }

@@ -11,6 +11,8 @@ class RoutineDiagnosticLoggingContractTest {
     private val voice = mainRoot.resolve("voice/AssistantVoiceSession.kt").readText()
     private val debugLog =
         mainRoot.resolve("diagnostics/DebugDiagnosticLog.kt").readText()
+    private val transcriptLog =
+        mainRoot.resolve("diagnostics/AssistantTranscriptDiagnosticLogger.kt").readText()
     private val home = mainRoot.resolve("HomeActivity.kt").readText()
     private val laptop =
         mainRoot.resolve("ai/agent/LaptopAgentClient.kt").readText()
@@ -24,7 +26,7 @@ class RoutineDiagnosticLoggingContractTest {
         mainRoot.resolve("ai/conversation/ConversationOrchestrator.kt").readText()
 
     @Test
-    fun finalVoiceAndTypedInputsUseRedactedDebugMetadataButPartialsDoNot() {
+    fun finalVoiceAndTypedInputsUseBuildSensitiveTranscriptPolicyButPartialsDoNot() {
         val finalResults = voice
             .substringAfter("override fun onResults")
             .substringBefore("override fun onPartialResults")
@@ -41,8 +43,10 @@ class RoutineDiagnosticLoggingContractTest {
         assertFalse(partialResults.contains("logUserTranscript"))
         assertFalse(partialResults.contains("ASSISTANT_TRANSCRIPT"))
         assertTrue(debugLog.contains("if (!BuildConfig.DEBUG) return"))
-        assertTrue(voice.contains("content=REDACTED"))
-        assertFalse(voice.contains("\\ntext=\$text"))
+        assertTrue(voice.contains("AssistantTranscriptDiagnosticLogger.user"))
+        assertTrue(transcriptLog.contains("AssistantTranscriptLogPolicy.visibility(BuildConfig.DEBUG)"))
+        assertTrue(transcriptLog.contains("AssistantTranscriptVisibility.FULL"))
+        assertTrue(transcriptLog.contains("AssistantTranscriptVisibility.REDACTED"))
     }
 
     @Test
@@ -54,9 +58,9 @@ class RoutineDiagnosticLoggingContractTest {
 
         assertEquals(5, directSpeechCalls)
         assertEquals(directSpeechCalls, transcriptCalls)
-        assertTrue(voice.contains("role=ASSISTANT\\ndelivery=SPEAK"))
-        assertTrue(voice.contains("listenAgain=\$listenAgain"))
-        assertTrue(voice.contains("characterCount=\${text.length}"))
+        assertTrue(transcriptLog.contains("role=ASSISTANT\\ndelivery=SPEAK"))
+        assertTrue(transcriptLog.contains("content=REDACTED"))
+        assertTrue(transcriptLog.contains("characterCount="))
     }
 
     @Test

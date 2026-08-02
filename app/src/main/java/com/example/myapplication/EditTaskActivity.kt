@@ -1534,7 +1534,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             activity = this,
             title = "Type assistant response",
             message = "Typed and voice corrections use the same assistant flow.",
-            emptyError = "Please type a response"
+            emptyError = "Please type a response",
+            onCancel = assistantSession::onTypedInputCancelled
         ) { typedText ->
             assistantSession.submitTypedText(typedText, clearConversation = false)
         }

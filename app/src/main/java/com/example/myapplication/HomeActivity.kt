@@ -443,7 +443,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             activity = this,
             title = "Type assistant command",
             message = "Typed and voice input use the same assistant flow.",
-            emptyError = "Please type a command"
+            emptyError = "Please type a command",
+            onCancel = assistantSession::onTypedInputCancelled
         ) { typedText ->
             assistantSession.submitTypedText(typedText)
         }

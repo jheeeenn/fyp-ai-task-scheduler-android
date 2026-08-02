@@ -15,7 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
 import com.example.myapplication.AssistantBottomSheet
 import com.example.myapplication.VoiceHelper
-import com.example.myapplication.diagnostics.DebugDiagnosticLog
+import com.example.myapplication.diagnostics.AssistantTranscriptDiagnosticLogger
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 
 class AssistantVoiceSession(
@@ -39,6 +39,7 @@ class AssistantVoiceSession(
     private var isForceStopping = false
     private var waitingForConfirmation = false
     private var assistantControl: View? = null
+    private val typedInputCancellationRecovery = TypedInputCancellationRecoveryPolicy()
 
     fun ensureInitialized() {
         if (assistantBottomSheet == null) {
@@ -50,6 +51,10 @@ class AssistantVoiceSession(
             }
             assistantBottomSheet?.setOnTypedInputRequestedListener {
                 activity.runOnUiThread {
+                    typedInputCancellationRecovery.onPanelTypedInputRequested(
+                        sessionActive = assistantSessionActive,
+                        forceStopping = isForceStopping
+                    )
                     stopListeningBeforeSpeak()
                     assistantBottomSheet?.setIdleState()
                     host.onAssistantTypedInputRequested()
@@ -197,6 +202,7 @@ class AssistantVoiceSession(
     fun submitTypedText(text: String, clearConversation: Boolean = true) {
         val typedText = text.trim()
         if (typedText.isEmpty()) return
+        typedInputCancellationRecovery.onTypedInputSubmitted()
 
         ensureInitialized()
         stopListeningBeforeSpeak()
@@ -215,6 +221,21 @@ class AssistantVoiceSession(
 
         logUserTranscript(typedText, source = "TYPED")
         host.onAssistantFinalText(typedText.lowercase())
+    }
+
+    fun onTypedInputCancelled() {
+        val shouldRecover = typedInputCancellationRecovery.claimRecovery(
+            sessionActive = assistantSessionActive,
+            forceStopping = isForceStopping,
+            listening = isListening
+        )
+        if (!shouldRecover) return
+
+        activity.window.decorView.postDelayed({
+            if (!assistantSessionActive || isForceStopping || isListening) return@postDelayed
+            updateListeningAccessibilityState()
+            startVoiceFlow()
+        }, TYPED_INPUT_RECOVERY_DELAY_MS)
     }
 
     fun startVoiceFlow() {
@@ -400,7 +421,7 @@ class AssistantVoiceSession(
 
     fun dismissPanel() {
         assistantBottomSheet?.setStoppedState()
-        assistantBottomSheet?.dismiss()
+        assistantBottomSheet?.dismissWithoutFocusReturn()
     }
 
     fun bindAssistantControl(view: View) {
@@ -449,7 +470,7 @@ class AssistantVoiceSession(
         voiceHelper.speak(text) {
             activity.runOnUiThread {
                 assistantBottomSheet?.setStoppedState()
-                assistantBottomSheet?.dismiss()
+                assistantBottomSheet?.dismissWithoutFocusReturn()
                 assistantSessionActive = false
                 isForceStopping = false
                 action()
@@ -470,17 +491,11 @@ class AssistantVoiceSession(
         stopListeningBeforeSpeak()}
 
     private fun logUserTranscript(text: String, source: String) {
-        DebugDiagnosticLog.longEvent(
-            "ASSISTANT_TRANSCRIPT",
-            "role=USER\nsource=$source\ncontent=REDACTED\ncharacterCount=${text.length}"
-        )
+        AssistantTranscriptDiagnosticLogger.user(text, source)
     }
 
     private fun logAssistantTranscript(text: String, listenAgain: Boolean) {
-        DebugDiagnosticLog.longEvent(
-            "ASSISTANT_TRANSCRIPT",
-            "role=ASSISTANT\ndelivery=SPEAK\nlistenAgain=$listenAgain\ncontent=REDACTED\ncharacterCount=${text.length}"
-        )
+        AssistantTranscriptDiagnosticLogger.assistant(text, listenAgain)
     }
 
     private fun updateListeningAccessibilityState() {
@@ -489,6 +504,10 @@ class AssistantVoiceSession(
         } else {
             assistantBottomSheet?.setListeningState()
         }
+    }
+
+    private companion object {
+        const val TYPED_INPUT_RECOVERY_DELAY_MS = 200L
     }
 
 }
