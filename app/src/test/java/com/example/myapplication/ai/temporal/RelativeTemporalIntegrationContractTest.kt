@@ -247,8 +247,10 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CANONICALIZED"))
         assertTrue(orchestrator.contains("replacementDatePresent="))
         assertTrue(orchestrator.contains("replacementTimePresent="))
-        assertTrue(orchestrator.contains("CORRECTION_REPAIR"))
+        assertTrue(orchestrator.contains("CORRECTION_RECONSTRUCTED"))
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR"))
+        assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR_CANDIDATES"))
+        assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR_CHOICE"))
         assertTrue(orchestrator.contains("stage=CORRECTION attempt=1"))
         listOf("REQUESTED", "ACCEPTED", "REJECTED", "PARSE_FAILED", "NOT_ELIGIBLE").forEach {
             assertTrue(orchestrator.contains(it))

@@ -136,16 +136,79 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     @Test
-    fun repairPromptUsesTheExactSchemaAndPreservesAndroidAuthority() {
+    fun repairChoiceSchemaIsExactDynamicAndCannotReturnOperationFields() {
+        val schema = AgentResponseSchemas.relativeTemporalRepairChoiceResponseFormat(
+            listOf("R1", "R2")
+        ).getJSONObject("json_schema").getJSONObject("schema")
+        val properties = schema.getJSONObject("properties").keys().asSequence().toSet()
+        val choiceRefs = schema.getJSONObject("properties")
+            .getJSONObject("choice_ref")
+            .getJSONArray("enum")
+
+        assertEquals(
+            setOf("choice_ref", "relative_base", "confidence", "need_clarification"),
+            properties
+        )
+        assertEquals(listOf("R1", "R2", "CLARIFY"), (0 until choiceRefs.length()).map {
+            choiceRefs.getString(it)
+        })
+        assertFalse(schema.getBoolean("additionalProperties"))
+        listOf(
+            "move", "date_operation", "time_operation", "replacement_date_text",
+            "replacement_time_text", "date_offset_days", "time_offset_minutes"
+        ).forEach { assertFalse(properties.contains(it)) }
+    }
+
+    @Test
+    fun repairChoiceParserRejectsMissingAdditionalAndUnknownRefsFailValidation() {
+        val parser = RelativeTemporalRepairChoiceParser()
+        val validator = RelativeTemporalRepairChoiceValidator()
+        val candidate = RelativeTemporalRepairCandidateBuilder().build(
+            RelativeTemporalCorrectionParser().parse(
+                response(
+                    move = "APPLY_CHANGE",
+                    dateOperation = "KEEP",
+                    timeOperation = "SET",
+                    base = "AUTHORITATIVE_TASK",
+                    replacementTime = "duration literal",
+                    timeOffset = 60
+                )
+            ),
+            RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION
+        ).first()
+        val validChoice = JSONObject()
+            .put("choice_ref", candidate.choiceRef)
+            .put("relative_base", "AUTHORITATIVE_TASK")
+            .put("confidence", 0.98)
+            .put("need_clarification", false)
+
+        assertThrows(ContextActionExtractionParseException::class.java) {
+            parser.parse(JSONObject(validChoice.toString()).put("time_operation", "OFFSET").toString())
+        }
+        assertThrows(ContextActionExtractionParseException::class.java) {
+            parser.parse(JSONObject(validChoice.toString()).apply { remove("confidence") }.toString())
+        }
+        assertThrows(ContextActionExtractionParseException::class.java) {
+            parser.parse(validChoice.toString() + validChoice.toString())
+        }
+        assertThrows(RelativeTemporalRepairChoiceValidationException::class.java) {
+            validator.validate(
+                parser.parse(JSONObject(validChoice.toString()).put("choice_ref", "R9").toString()),
+                listOf(candidate)
+            )
+        }
+    }
+
+    @Test
+    fun repairPromptUsesCandidateChoiceAndPreservesAndroidAuthority() {
         val prompt = LaptopAgentClient.RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT
 
-        assertTrue(prompt.contains("original user correction as the only semantic authority"))
-        assertTrue(prompt.contains("KEEP has empty replacement text and zero offset"))
-        assertTrue(prompt.contains("SET has non-empty literal replacement text and zero offset"))
-        assertTrue(prompt.contains("OFFSET has empty replacement text and a non-zero signed offset"))
-        assertTrue(prompt.contains("Exactly one representation may carry authority"))
-        assertTrue(prompt.contains("Never perform calendar arithmetic"))
-        assertTrue(prompt.contains("Return only"))
+        assertTrue(prompt.contains("choose among bounded Android-constructed interpretations"))
+        assertTrue(prompt.contains("Return exactly: choice_ref, relative_base, confidence"))
+        assertTrue(prompt.contains("Never return temporal"))
+        assertTrue(prompt.contains("never invent a candidate"))
+        assertTrue(prompt.contains("AUTHORITATIVE_TASK means"))
+        assertTrue(prompt.contains("CURRENT_PROPOSAL means"))
         listOf("task IDs", "Room IDs", "task titles", "final dates", "saved").forEach {
             assertTrue(prompt.contains(it))
         }
@@ -156,12 +219,15 @@ class RelativeTemporalCorrectionContractTest {
         val method = source
             .substringAfter("open suspend fun processRelativeTemporalCorrectionRepair(")
             .substringBefore("open suspend fun processBreakdownFollowUp(")
-        assertTrue(method.contains("relativeTemporalCorrectionResponseFormat()"))
+        assertTrue(method.contains("relativeTemporalRepairChoiceResponseFormat("))
         assertTrue(method.contains("RELATIVE_TEMPORAL_MAX_TOKENS"))
         assertTrue(method.contains("boundedTemporalClient"))
         assertTrue(method.contains("original_user_correction"))
         assertTrue(method.contains("validation_failure"))
-        assertTrue(method.contains("rejected_candidate"))
+        assertTrue(method.contains("candidates"))
+        assertFalse(method.contains("rejected_candidate"))
+        assertFalse(method.contains("replacement_date_text"))
+        assertFalse(method.contains("replacement_time_text"))
         listOf("task_id", "room_id", "task_title", "final_date", "final_time").forEach {
             assertFalse(method.contains("put(\"$it\""))
         }
@@ -201,4 +267,5 @@ class RelativeTemporalCorrectionContractTest {
         .put("confidence", confidence)
         .put("need_clarification", clarification)
         .toString()
+
 }

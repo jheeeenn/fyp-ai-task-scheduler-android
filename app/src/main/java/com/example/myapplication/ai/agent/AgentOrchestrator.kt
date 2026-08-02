@@ -5,11 +5,18 @@ import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
+import com.example.myapplication.ai.temporal.RelativeTemporalBase
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionParser
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidationException
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairCandidate
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairCandidateBuilder
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairChoiceParser
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairChoiceResponse
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairChoiceValidationException
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairChoiceValidator
 import com.example.myapplication.ai.temporal.RelativeTemporalValidationFailure
 import com.example.myapplication.ai.temporal.ValidatedRelativeTemporalCorrection
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
@@ -20,7 +27,7 @@ class TaskAgentProcessingException(message: String, cause: Throwable) : Exceptio
 private enum class RelativeTemporalExtractionStage {
     INITIAL,
     CORRECTION,
-    CORRECTION_REPAIR
+    CORRECTION_RECONSTRUCTED
 }
 
 private enum class RelativeTemporalRepairResult {
@@ -29,6 +36,11 @@ private enum class RelativeTemporalRepairResult {
     REJECTED,
     PARSE_FAILED,
     NOT_ELIGIBLE
+}
+
+private enum class RelativeTemporalRepairChoiceResult {
+    SELECTED,
+    REJECTED
 }
 
 class AgentOrchestrator(
@@ -44,6 +56,12 @@ class AgentOrchestrator(
         RelativeTemporalCorrectionParser(),
     private val relativeTemporalCorrectionValidator: RelativeTemporalCorrectionValidator =
         RelativeTemporalCorrectionValidator(),
+    private val relativeTemporalRepairCandidateBuilder: RelativeTemporalRepairCandidateBuilder =
+        RelativeTemporalRepairCandidateBuilder(relativeTemporalCorrectionValidator),
+    private val relativeTemporalRepairChoiceParser: RelativeTemporalRepairChoiceParser =
+        RelativeTemporalRepairChoiceParser(),
+    private val relativeTemporalRepairChoiceValidator: RelativeTemporalRepairChoiceValidator =
+        RelativeTemporalRepairChoiceValidator(),
     private val routineExtractionParser: RoutineExtractionResponseParser =
         RoutineExtractionResponseParser()
 ) {
@@ -164,12 +182,21 @@ class AgentOrchestrator(
         rejectedResponse: RelativeTemporalCorrectionResponse,
         validationFailure: RelativeTemporalValidationFailure
     ): ValidatedRelativeTemporalCorrection {
+        val candidates = relativeTemporalRepairCandidateBuilder.build(
+            rejectedResponse,
+            validationFailure
+        )
+        logCorrectionRepairCandidates(validationFailure, candidates.size)
+        if (candidates.isEmpty()) {
+            logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.REJECTED)
+            throw IllegalArgumentException("No valid relative-temporal repair candidates")
+        }
         logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.REQUESTED)
         val rawContent = try {
             laptopAgentClient.processRelativeTemporalCorrectionRepair(
                 originalUserText,
-                rejectedResponse,
-                validationFailure
+                validationFailure,
+                candidates
             )
         } catch (exception: CancellationException) {
             throw exception
@@ -177,21 +204,45 @@ class AgentOrchestrator(
             logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.REJECTED)
             throw exception
         }
-        val response = try {
-            relativeTemporalCorrectionParser.parse(rawContent)
+        val choiceResponse = try {
+            relativeTemporalRepairChoiceParser.parse(rawContent)
         } catch (exception: ContextActionExtractionParseException) {
             logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.PARSE_FAILED)
             throw exception
         }
-        logParsedRelativeTemporalShape(RelativeTemporalExtractionStage.CORRECTION_REPAIR, response)
+        val choice = try {
+            relativeTemporalRepairChoiceValidator.validate(choiceResponse, candidates)
+        } catch (exception: RelativeTemporalRepairChoiceValidationException) {
+            logCorrectionRepairChoice(
+                choiceResponse,
+                candidates,
+                RelativeTemporalRepairChoiceResult.REJECTED
+            )
+            logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.REJECTED)
+            throw exception
+        }
+        logCorrectionRepairChoice(
+            choiceResponse,
+            candidates,
+            RelativeTemporalRepairChoiceResult.SELECTED
+        )
+        val reconstructed = relativeTemporalRepairCandidateBuilder.reconstructResponse(
+            choice.candidate,
+            choice.relativeBase,
+            choice.confidence
+        )
+        logParsedRelativeTemporalShape(
+            RelativeTemporalExtractionStage.CORRECTION_RECONSTRUCTED,
+            reconstructed
+        )
         val validation = try {
-            relativeTemporalCorrectionValidator.validateWithReport(response)
+            relativeTemporalCorrectionValidator.validateWithReport(reconstructed)
         } catch (exception: RelativeTemporalProposalValidationException) {
             logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.REJECTED)
             throw exception
         }
         logCanonicalization(
-            RelativeTemporalExtractionStage.CORRECTION_REPAIR,
+            RelativeTemporalExtractionStage.CORRECTION_RECONSTRUCTED,
             validation.canonicalizationReport.changedFields
         )
         logCorrectionRepair(validationFailure, RelativeTemporalRepairResult.ACCEPTED)
@@ -209,6 +260,34 @@ class AgentOrchestrator(
         Log.d(
             "RELATIVE_TEMPORAL_REPAIR",
             "stage=CORRECTION attempt=1 trigger=${trigger.name} result=${result.name}"
+        )
+    }
+
+    private fun logCorrectionRepairCandidates(
+        trigger: RelativeTemporalValidationFailure,
+        candidateCount: Int
+    ) {
+        Log.d(
+            "RELATIVE_TEMPORAL_REPAIR_CANDIDATES",
+            "stage=CORRECTION trigger=${trigger.name} candidateCount=$candidateCount"
+        )
+    }
+
+    private fun logCorrectionRepairChoice(
+        response: RelativeTemporalRepairChoiceResponse,
+        candidates: List<RelativeTemporalRepairCandidate>,
+        result: RelativeTemporalRepairChoiceResult
+    ) {
+        val allowedRefs = candidates.mapTo(mutableSetOf()) { it.choiceRef }.apply { add("CLARIFY") }
+        val choiceRef = response.choiceRef.takeIf { it in allowedRefs } ?: "UNKNOWN"
+        val relativeBase = response.relativeBase.takeIf { candidate ->
+            RelativeTemporalBase.entries.any { it.name == candidate }
+        } ?: "UNKNOWN"
+        val confidence = response.confidence.takeIf { it.isFinite() } ?: -1.0
+        Log.d(
+            "RELATIVE_TEMPORAL_REPAIR_CHOICE",
+            "attempt=1 choiceRef=$choiceRef relativeBase=$relativeBase " +
+                "confidence=$confidence result=${result.name}"
         )
     }
 

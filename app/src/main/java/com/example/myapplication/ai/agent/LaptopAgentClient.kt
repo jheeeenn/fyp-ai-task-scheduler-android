@@ -5,7 +5,7 @@ import android.util.Log
 import com.example.myapplication.SettingsActivity
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import com.example.myapplication.ai.conversation.ConversationContextAction
-import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
+import com.example.myapplication.ai.temporal.RelativeTemporalRepairCandidate
 import com.example.myapplication.ai.temporal.RelativeTemporalValidationFailure
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.Dispatchers
@@ -99,29 +99,31 @@ open class LaptopAgentClient(
 
     open suspend fun processRelativeTemporalCorrectionRepair(
         originalUserText: String,
-        rejectedResponse: RelativeTemporalCorrectionResponse,
-        validationFailure: RelativeTemporalValidationFailure
+        validationFailure: RelativeTemporalValidationFailure,
+        candidates: List<RelativeTemporalRepairCandidate>
     ): String = withContext(Dispatchers.IO) {
         val repairInput = JSONObject().apply {
             put("original_user_correction", originalUserText)
             put("validation_failure", validationFailure.name)
-            put("rejected_candidate", JSONObject().apply {
-                put("move", rejectedResponse.move)
-                put("date_operation", rejectedResponse.dateOperation)
-                put("time_operation", rejectedResponse.timeOperation)
-                put("relative_base", rejectedResponse.relativeBase)
-                put("replacement_date_text", rejectedResponse.replacementDateText)
-                put("replacement_time_text", rejectedResponse.replacementTimeText)
-                put("date_offset_days", rejectedResponse.dateOffsetDays)
-                put("time_offset_minutes", rejectedResponse.timeOffsetMinutes)
-                put("confidence", rejectedResponse.confidence)
-                put("need_clarification", rejectedResponse.needClarification)
+            put("candidates", JSONArray().apply {
+                candidates.forEach { candidate ->
+                    put(JSONObject().apply {
+                        put("choice_ref", candidate.choiceRef)
+                        put("field", candidate.field.name)
+                        put("representation", candidate.representation.name)
+                        put("literal_present", candidate.literalPresent)
+                        put("date_offset_days", candidate.dateOffsetDays)
+                        put("time_offset_minutes", candidate.timeOffsetMinutes)
+                    })
+                }
             })
         }
         execute(
             normalizedText = repairInput.toString(),
             systemPrompt = RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT,
-            responseFormat = AgentResponseSchemas.relativeTemporalCorrectionResponseFormat(),
+            responseFormat = AgentResponseSchemas.relativeTemporalRepairChoiceResponseFormat(
+                candidates.map { it.choiceRef }
+            ),
             boundedContextAction = true,
             boundedRoutineExtraction = false,
             maxOutputTokens = RELATIVE_TEMPORAL_MAX_TOKENS,
@@ -477,33 +479,26 @@ Do not output markdown or explanations.
 """.trimIndent()
 
         internal val RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT = """
-You repair one structurally parsed relative-temporal correction candidate after Android rejected
-its operation shape. Use the original user correction as the only semantic authority. The rejected
-candidate and validation_failure explain the inconsistency; they do not authorize a final task
-fact. Never request or output task IDs, Room IDs, task titles, stored schedules, final dates or
-times, or a claim that anything was saved. Never perform calendar arithmetic.
+You choose among bounded Android-constructed interpretations of one rejected relative-temporal
+correction. Use the original_user_correction as semantic authority. Each candidate is already a
+strictly valid representation built only from values in the rejected structured response.
 
-Return exactly: move, date_operation, time_operation, relative_base,
-replacement_date_text, replacement_time_text, date_offset_days, time_offset_minutes, confidence,
-need_clarification. No additional fields are allowed.
+Return exactly: choice_ref, relative_base, confidence, need_clarification. Never return temporal
+operations, replacement text, offsets, task facts, task IDs, Room IDs, task titles, stored
+schedules, final dates or times, or a claim that anything was saved. Never perform calendar
+arithmetic and never invent a candidate.
 
-Choose exactly one valid representation for each temporal field:
-- KEEP has empty replacement text and zero offset.
-- SET has non-empty literal replacement text and zero offset.
-- OFFSET has empty replacement text and a non-zero signed offset.
-Exactly one representation may carry authority for a field. Preserve the original semantic
-meaning; do not combine literal replacement authority with offset authority and do not invent
-missing meaning. A duration-based shift uses OFFSET. A literal clock or calendar expression uses
-SET. An unchanged field uses KEEP.
+Candidate descriptions contain a ref, the affected DATE or TIME field, a LITERAL, OFFSET, or KEEP
+representation, whether a literal is present, and any signed offset already supplied. Choose the
+available candidate whose representation preserves the user's intended meaning. Use CLARIFY with
+need_clarification=true when none is sufficiently certain.
 
-Preserve whether the correction semantically replaces the earlier unsaved proposal or builds on
-it: AUTHORITATIVE_TASK replaces from the original task schedule, while CURRENT_PROPOSAL
-deliberately accumulates from the unsaved proposal. If the original meaning is unclear, return
-need_clarification=true rather than guessing. Confidence must reflect the repaired interpretation;
-Android accepts only 0.80 through 1.0.
+Choose the calculation base semantically. AUTHORITATIVE_TASK means the correction replaces the
+earlier unsaved proposal from the original schedule. CURRENT_PROPOSAL means it deliberately builds
+on the unsaved proposal. If replacement versus accumulation is unclear, choose CLARIFY rather than
+guessing. Android accepts confidence only from 0.80 through 1.0.
 
-Before returning JSON, verify every operation against its replacement text and offset. Return only
-the exact JSON object, without markdown or explanation.
+Return only the exact JSON object, without markdown or explanation.
 """.trimIndent()
 
         internal val SYSTEM_PROMPT = """

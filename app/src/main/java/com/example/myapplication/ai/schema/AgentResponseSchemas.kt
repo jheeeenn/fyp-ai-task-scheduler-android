@@ -343,6 +343,31 @@ object AgentResponseSchemas {
         )
     }
 
+    fun relativeTemporalRepairChoiceResponseFormat(
+        availableChoiceRefs: List<String>
+    ): JSONObject {
+        val choices = (availableChoiceRefs + "CLARIFY").distinct()
+        require(availableChoiceRefs.isNotEmpty())
+        return responseFormat(
+            name = "relative_temporal_repair_choice",
+            properties = JSONObject().apply {
+                put("choice_ref", stringEnum(*choices.toTypedArray()))
+                put(
+                    "relative_base",
+                    stringEnum("AUTHORITATIVE_TASK", "CURRENT_PROPOSAL")
+                )
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+                put("need_clarification", booleanType())
+            },
+            required = JSONArray().apply {
+                put("choice_ref")
+                put("relative_base")
+                put("confidence")
+                put("need_clarification")
+            }
+        )
+    }
+
     fun conversationResponseResponseFormat(): JSONObject {
         return responseFormat(
             name = "conversation_response",
