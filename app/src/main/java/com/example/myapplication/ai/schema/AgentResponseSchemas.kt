@@ -318,8 +318,8 @@ object AgentResponseSchemas {
                 put("date_operation", stringEnum("KEEP", "SET", "OFFSET"))
                 put("time_operation", stringEnum("KEEP", "SET", "OFFSET"))
                 put(
-                    "relative_base",
-                    stringEnum("AUTHORITATIVE_TASK", "CURRENT_PROPOSAL")
+                    "correction_relation",
+                    stringEnum("REPLACE_PREVIOUS", "BUILD_ON_CURRENT", "UNCLEAR")
                 )
                 put("replacement_date_text", stringType())
                 put("replacement_time_text", stringType())
@@ -332,7 +332,7 @@ object AgentResponseSchemas {
                 put("move")
                 put("date_operation")
                 put("time_operation")
-                put("relative_base")
+                put("correction_relation")
                 put("replacement_date_text")
                 put("replacement_time_text")
                 put("date_offset_days")

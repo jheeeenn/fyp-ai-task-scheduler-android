@@ -6,7 +6,10 @@ import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
 import com.example.myapplication.ai.temporal.RelativeTemporalBase
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionContext
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionParser
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelation
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelationMapper
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
@@ -128,10 +131,15 @@ class AgentOrchestrator(
     }
 
     suspend fun processRelativeTemporalCorrection(
-        normalizedText: String
+        normalizedText: String,
+        context: RelativeTemporalCorrectionContext
     ): ValidatedRelativeTemporalCorrection {
         return try {
-            val rawContent = laptopAgentClient.processRelativeTemporalCorrection(normalizedText)
+            logRelativeTemporalCorrectionContext(context)
+            val rawContent = laptopAgentClient.processRelativeTemporalCorrection(
+                normalizedText,
+                context
+            )
             val response = relativeTemporalCorrectionParser.parse(rawContent)
             logParsedRelativeTemporalShape(RelativeTemporalExtractionStage.CORRECTION, response)
             val correction = try {
@@ -281,12 +289,30 @@ class AgentOrchestrator(
         val choiceRef = response.choiceRef.takeIf { it in allowedRefs } ?: "UNKNOWN"
         val preservedRelativeBase = candidates.singleOrNull {
             it.choiceRef == response.choiceRef
-        }?.response?.relativeBase?.let(::sanitizedRelativeBase) ?: "UNKNOWN"
+        }?.response?.correctionRelation
+            ?.let(RelativeTemporalCorrectionRelationMapper::map)
+            ?.name ?: "UNKNOWN"
         val confidence = response.confidence.takeIf { it.isFinite() } ?: -1.0
         Log.d(
             "RELATIVE_TEMPORAL_REPAIR_CHOICE",
             "attempt=1 choiceRef=$choiceRef preservedRelativeBase=$preservedRelativeBase " +
                 "confidence=$confidence result=${result.name}"
+        )
+    }
+
+    private fun logRelativeTemporalCorrectionContext(
+        context: RelativeTemporalCorrectionContext
+    ) {
+        Log.d(
+            "RELATIVE_TEMPORAL_CORRECTION_CONTEXT",
+            "revision=${context.proposalRevision} " +
+                "previousDateOperation=${context.previousDateOperation} " +
+                "previousTimeOperation=${context.previousTimeOperation} " +
+                "previousRelativeBase=${context.previousRelativeBase} " +
+                "previousDateOffsetDays=${context.previousDateOffsetDays} " +
+                "previousTimeOffsetMinutes=${context.previousTimeOffsetMinutes} " +
+                "previousDateLiteralPresent=${context.previousDateLiteralPresent} " +
+                "previousTimeLiteralPresent=${context.previousTimeLiteralPresent}"
         )
     }
 
@@ -336,7 +362,8 @@ class AgentOrchestrator(
             stage = stage,
             dateOperation = response.dateOperation,
             timeOperation = response.timeOperation,
-            relativeBase = response.relativeBase,
+            correctionRelation = "NOT_APPLICABLE",
+            mappedRelativeBase = response.relativeBase,
             replacementDatePresent = response.replacementDateText.isNotBlank(),
             replacementTimePresent = response.replacementTimeText.isNotBlank(),
             dateOffsetDays = response.dateOffsetDays,
@@ -354,7 +381,10 @@ class AgentOrchestrator(
             stage = stage,
             dateOperation = response.dateOperation,
             timeOperation = response.timeOperation,
-            relativeBase = response.relativeBase,
+            correctionRelation = response.correctionRelation,
+            mappedRelativeBase = RelativeTemporalCorrectionRelationMapper.map(
+                response.correctionRelation
+            )?.name ?: "UNKNOWN",
             replacementDatePresent = response.replacementDateText.isNotBlank(),
             replacementTimePresent = response.replacementTimeText.isNotBlank(),
             dateOffsetDays = response.dateOffsetDays,
@@ -368,7 +398,8 @@ class AgentOrchestrator(
         stage: RelativeTemporalExtractionStage,
         dateOperation: String,
         timeOperation: String,
-        relativeBase: String,
+        correctionRelation: String,
+        mappedRelativeBase: String,
         replacementDatePresent: Boolean,
         replacementTimePresent: Boolean,
         dateOffsetDays: Int,
@@ -381,7 +412,8 @@ class AgentOrchestrator(
             "stage=${stage.name} " +
                 "dateOperation=${sanitizedOperation(dateOperation)} " +
                 "timeOperation=${sanitizedOperation(timeOperation)} " +
-                "relativeBase=${sanitizedRelativeBase(relativeBase)} " +
+                "correctionRelation=${sanitizedCorrectionRelation(correctionRelation)} " +
+                "mappedRelativeBase=${sanitizedRelativeBase(mappedRelativeBase)} " +
                 "replacementDatePresent=$replacementDatePresent " +
                 "replacementTimePresent=$replacementTimePresent " +
                 "dateOffsetDays=$dateOffsetDays " +
@@ -411,6 +443,11 @@ class AgentOrchestrator(
         value.takeIf { candidate ->
             RelativeTemporalBase.entries.any { it.name == candidate }
         } ?: "UNKNOWN"
+
+    private fun sanitizedCorrectionRelation(value: String): String =
+        value.takeIf { candidate ->
+            RelativeTemporalCorrectionRelation.entries.any { it.name == candidate }
+        } ?: if (value == "NOT_APPLICABLE") "NOT_APPLICABLE" else "UNKNOWN"
 
     private companion object {
         val REPAIRABLE_CORRECTION_FAILURES = setOf(

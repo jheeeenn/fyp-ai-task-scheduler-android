@@ -10,11 +10,41 @@ enum class RelativeTemporalCorrectionMove {
     UNKNOWN
 }
 
+enum class RelativeTemporalCorrectionRelation {
+    REPLACE_PREVIOUS,
+    BUILD_ON_CURRENT,
+    UNCLEAR
+}
+
+data class RelativeTemporalCorrectionContext(
+    val previousDateOperation: RelativeTemporalOperation,
+    val previousTimeOperation: RelativeTemporalOperation,
+    val previousRelativeBase: RelativeTemporalBase,
+    val previousDateOffsetDays: Int,
+    val previousTimeOffsetMinutes: Int,
+    val previousDateLiteralPresent: Boolean,
+    val previousTimeLiteralPresent: Boolean,
+    val proposalRevision: Int
+)
+
+object RelativeTemporalCorrectionRelationMapper {
+    fun map(relation: String): RelativeTemporalBase? = when (
+        runCatching { RelativeTemporalCorrectionRelation.valueOf(relation) }.getOrNull()
+    ) {
+        RelativeTemporalCorrectionRelation.REPLACE_PREVIOUS ->
+            RelativeTemporalBase.AUTHORITATIVE_TASK
+        RelativeTemporalCorrectionRelation.BUILD_ON_CURRENT ->
+            RelativeTemporalBase.CURRENT_PROPOSAL
+        RelativeTemporalCorrectionRelation.UNCLEAR,
+        null -> null
+    }
+}
+
 data class RelativeTemporalCorrectionResponse(
     val move: String,
     val dateOperation: String,
     val timeOperation: String,
-    val relativeBase: String,
+    val correctionRelation: String,
     val replacementDateText: String,
     val replacementTimeText: String,
     val dateOffsetDays: Int,
@@ -58,7 +88,7 @@ class RelativeTemporalCorrectionParser {
             move = requireString(json, "move"),
             dateOperation = requireString(json, "date_operation"),
             timeOperation = requireString(json, "time_operation"),
-            relativeBase = requireString(json, "relative_base"),
+            correctionRelation = requireString(json, "correction_relation"),
             replacementDateText = requireString(json, "replacement_date_text"),
             replacementTimeText = requireString(json, "replacement_time_text"),
             dateOffsetDays = requireInteger(json, "date_offset_days"),
@@ -131,7 +161,7 @@ class RelativeTemporalCorrectionParser {
             "move",
             "date_operation",
             "time_operation",
-            "relative_base",
+            "correction_relation",
             "replacement_date_text",
             "replacement_time_text",
             "date_offset_days",
@@ -178,6 +208,15 @@ class RelativeTemporalCorrectionValidator(
                 "Correction requires clarification"
             )
         }
+        val relation = runCatching {
+            RelativeTemporalCorrectionRelation.valueOf(response.correctionRelation)
+        }.getOrNull()
+        if (relation == null || relation == RelativeTemporalCorrectionRelation.UNCLEAR) {
+            throw RelativeTemporalProposalValidationException(
+                RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
+                "Correction relationship requires clarification"
+            )
+        }
         if (move == RelativeTemporalCorrectionMove.RESTORE_ORIGINAL) {
             validateNeutralRestore(response)
             return RelativeTemporalCorrectionValidation(
@@ -191,14 +230,7 @@ class RelativeTemporalCorrectionValidator(
         val timeOperation = response.timeOperation.toOperation(
             RelativeTemporalValidationFailure.UNKNOWN_TIME_OPERATION
         )
-        val base = try {
-            RelativeTemporalBase.valueOf(response.relativeBase)
-        } catch (_: IllegalArgumentException) {
-            throw validationFailure(
-                RelativeTemporalValidationFailure.UNKNOWN_RELATIVE_BASE,
-                "Unknown relative base"
-            )
-        }
+        val base = requireNotNull(RelativeTemporalCorrectionRelationMapper.map(response.correctionRelation))
         val canonicalized = proposalCanonicalizer.canonicalize(
             RelativeTemporalProposal(
                 dateOperation,
@@ -224,7 +256,7 @@ class RelativeTemporalCorrectionValidator(
         if (
             response.dateOperation != RelativeTemporalOperation.KEEP.name ||
             response.timeOperation != RelativeTemporalOperation.KEEP.name ||
-            response.relativeBase != RelativeTemporalBase.AUTHORITATIVE_TASK.name ||
+            response.correctionRelation != RelativeTemporalCorrectionRelation.REPLACE_PREVIOUS.name ||
             response.replacementDateText.isNotBlank() ||
             response.replacementTimeText.isNotBlank() ||
             response.dateOffsetDays != 0 ||

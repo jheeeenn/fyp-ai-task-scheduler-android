@@ -57,6 +57,10 @@ import com.example.myapplication.ai.temporal.TemporalUseCase
 import com.example.myapplication.ai.temporal.ExactTemporalSchedule
 import com.example.myapplication.ai.temporal.RelativeTemporalCalculationResult
 import com.example.myapplication.ai.temporal.RelativeTemporalChangeCalculator
+import com.example.myapplication.ai.temporal.RelativeTemporalBase
+import com.example.myapplication.ai.temporal.RelativeTemporalOperation
+import com.example.myapplication.ai.temporal.RelativeTemporalProposal
+import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidator
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalSession
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalState
 import com.example.myapplication.ai.temporal.RelativeTemporalRevisionResult
@@ -185,6 +189,8 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
             intent.getBooleanExtra("reschedule_collection_required", false)
         val relativeTemporalProposal =
             intent.getBooleanExtra("relative_temporal_proposal", false)
+        val initialRelativeTemporalSemanticProposal =
+            readInitialRelativeTemporalSemanticProposal()
         initialProposalCrossedDateBoundary = intent.getBooleanExtra(
             "relative_temporal_crossed_date_boundary",
             false
@@ -260,13 +266,14 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                 "You are editing ${etTaskTitle.text}. What would you like to change?"
             }*/
             val changed = applyProposedTemporalChange(prefillNewDateText, prefillNewTimeText, askForMissing = false)
-            if (relativeTemporalProposal && changed) {
+            if (relativeTemporalProposal && changed && initialRelativeTemporalSemanticProposal != null) {
                 relativeTemporalSession = RelativeTemporalProposalSession(
                     authoritativeOriginal = ExactTemporalSchedule(
                         authoritativeOriginalDate,
                         authoritativeOriginalTime
                     ),
                     initialProposal = ExactTemporalSchedule(selectedDate, selectedTime),
+                    initialSemanticProposal = initialRelativeTemporalSemanticProposal,
                     initialRevision = intent.getIntExtra("relative_temporal_revision", 1)
                 )
                 logRelativeTemporalProposal("WAITING_CONFIRMATION")
@@ -784,6 +791,12 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun processRelativeTemporalCorrection(normalized: String) {
         val session = relativeTemporalSession ?: return
+        val correctionContext = session.correctionContext()
+        if (correctionContext == null) {
+            waitingForSaveConfirmation = true
+            speak("Please describe the complete schedule change you want from the original task.")
+            return
+        }
         val token = session.beginCorrection()
         relativeTemporalCorrectionInFlight = true
         waitingForSaveConfirmation = false
@@ -794,7 +807,10 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                     speak("That task changed since this proposal was created. I did not save anything.")
                     return@launch
                 }
-                val correction = relativeTemporalAgent.processRelativeTemporalCorrection(normalized)
+                val correction = relativeTemporalAgent.processRelativeTemporalCorrection(
+                    normalized,
+                    correctionContext
+                )
                 if (!session.isCurrent(token)) return@launch
                 if (!authoritativeTaskStillMatches()) {
                     session.cancel()
@@ -823,7 +839,11 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
                                 )
                                 initialProposalCrossedDateBoundary =
                                     calculation.crossedDateBoundary
-                                session.applyCorrection(token, calculation.schedule)
+                                session.applyCorrection(
+                                    token,
+                                    calculation.schedule,
+                                    correction.proposal
+                                )
                             }
                             is RelativeTemporalCalculationResult.PastSchedule -> {
                                 Log.d(
@@ -1072,6 +1092,37 @@ class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
 
     private fun speak(text: String) {
         assistantSession.speak(text, listenAgain = true)
+    }
+
+    private fun readInitialRelativeTemporalSemanticProposal(): RelativeTemporalProposal? {
+        if (!intent.hasExtra("relative_temporal_date_operation") ||
+            !intent.hasExtra("relative_temporal_time_operation") ||
+            !intent.hasExtra("relative_temporal_base")
+        ) return null
+        return runCatching {
+            RelativeTemporalProposalValidator().validate(
+                RelativeTemporalProposal(
+                    dateOperation = RelativeTemporalOperation.valueOf(
+                        requireNotNull(intent.getStringExtra("relative_temporal_date_operation"))
+                    ),
+                    timeOperation = RelativeTemporalOperation.valueOf(
+                        requireNotNull(intent.getStringExtra("relative_temporal_time_operation"))
+                    ),
+                    relativeBase = RelativeTemporalBase.valueOf(
+                        requireNotNull(intent.getStringExtra("relative_temporal_base"))
+                    ),
+                    replacementDateText =
+                        intent.getStringExtra("relative_temporal_replacement_date").orEmpty(),
+                    replacementTimeText =
+                        intent.getStringExtra("relative_temporal_replacement_time").orEmpty(),
+                    dateOffsetDays = intent.getIntExtra("relative_temporal_date_offset_days", 0),
+                    timeOffsetMinutes =
+                        intent.getIntExtra("relative_temporal_time_offset_minutes", 0),
+                    confidence = intent.getDoubleExtra("relative_temporal_confidence", 0.0),
+                    needClarification = false
+                )
+            )
+        }.getOrNull()
     }
 
     private fun handleListenFailure(reply: String) {

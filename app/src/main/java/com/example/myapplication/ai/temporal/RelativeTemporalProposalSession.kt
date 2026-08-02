@@ -47,15 +47,21 @@ sealed class RelativeTemporalSaveClaimResult {
 class RelativeTemporalProposalSession(
     val authoritativeOriginal: ExactTemporalSchedule,
     initialProposal: ExactTemporalSchedule,
+    initialSemanticProposal: RelativeTemporalProposal,
     initialRevision: Int = 1
 ) {
+    private val semanticValidator = RelativeTemporalProposalValidator()
+
     init {
         require(initialRevision > 0)
+        semanticValidator.validate(initialSemanticProposal)
     }
 
     var revision: Int = initialRevision
         private set
     var currentProposal: ExactTemporalSchedule = initialProposal
+        private set
+    var currentSemanticProposal: RelativeTemporalProposal? = initialSemanticProposal
         private set
     var state: RelativeTemporalProposalState = RelativeTemporalProposalState.ACTIVE
         private set
@@ -71,7 +77,22 @@ class RelativeTemporalProposalSession(
 
     fun applyCorrection(
         token: RelativeTemporalCorrectionToken,
-        schedule: ExactTemporalSchedule
+        schedule: ExactTemporalSchedule,
+        semanticProposal: RelativeTemporalProposal
+    ): RelativeTemporalRevisionResult {
+        if (state != RelativeTemporalProposalState.ACTIVE) {
+            return RelativeTemporalRevisionResult.INACTIVE
+        }
+        if (token.requestGeneration != requestGeneration || token.baseRevision != revision) {
+            return RelativeTemporalRevisionResult.STALE_REQUEST
+        }
+        return applyRevision(token, schedule, semanticValidator.validate(semanticProposal))
+    }
+
+    private fun applyRevision(
+        token: RelativeTemporalCorrectionToken,
+        schedule: ExactTemporalSchedule,
+        semanticProposal: RelativeTemporalProposal
     ): RelativeTemporalRevisionResult {
         if (state != RelativeTemporalProposalState.ACTIVE) {
             return RelativeTemporalRevisionResult.INACTIVE
@@ -80,6 +101,7 @@ class RelativeTemporalProposalSession(
             return RelativeTemporalRevisionResult.STALE_REQUEST
         }
         currentProposal = schedule
+        currentSemanticProposal = semanticProposal
         revision += 1
         return RelativeTemporalRevisionResult.APPLIED
     }
@@ -90,12 +112,28 @@ class RelativeTemporalProposalSession(
             token.baseRevision == revision
 
     fun restoreOriginal(token: RelativeTemporalCorrectionToken): RelativeTemporalRevisionResult =
-        applyCorrection(token, authoritativeOriginal)
+        applyRevision(token, authoritativeOriginal, NEUTRAL_AUTHORITATIVE_PROPOSAL)
+
+    fun correctionContext(): RelativeTemporalCorrectionContext? {
+        if (state != RelativeTemporalProposalState.ACTIVE) return null
+        val proposal = currentSemanticProposal ?: return null
+        return RelativeTemporalCorrectionContext(
+            previousDateOperation = proposal.dateOperation,
+            previousTimeOperation = proposal.timeOperation,
+            previousRelativeBase = proposal.relativeBase,
+            previousDateOffsetDays = proposal.dateOffsetDays,
+            previousTimeOffsetMinutes = proposal.timeOffsetMinutes,
+            previousDateLiteralPresent = proposal.replacementDateText.isNotBlank(),
+            previousTimeLiteralPresent = proposal.replacementTimeText.isNotBlank(),
+            proposalRevision = revision
+        )
+    }
 
     fun replaceFromManualEdit(schedule: ExactTemporalSchedule) {
         if (state != RelativeTemporalProposalState.ACTIVE || schedule == currentProposal) return
         requestGeneration += 1L
         currentProposal = schedule
+        currentSemanticProposal = null
         revision += 1
     }
 
@@ -158,6 +196,21 @@ class RelativeTemporalProposalSession(
         requestGeneration += 1L
         state = RelativeTemporalProposalState.CANCELLED
         currentProposal = authoritativeOriginal
+        currentSemanticProposal = null
         return authoritativeOriginal
+    }
+
+    private companion object {
+        val NEUTRAL_AUTHORITATIVE_PROPOSAL = RelativeTemporalProposal(
+            dateOperation = RelativeTemporalOperation.KEEP,
+            timeOperation = RelativeTemporalOperation.KEEP,
+            relativeBase = RelativeTemporalBase.AUTHORITATIVE_TASK,
+            replacementDateText = "",
+            replacementTimeText = "",
+            dateOffsetDays = 0,
+            timeOffsetMinutes = 0,
+            confidence = 1.0,
+            needClarification = false
+        )
     }
 }

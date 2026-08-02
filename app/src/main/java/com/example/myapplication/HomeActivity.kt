@@ -2755,6 +2755,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     putExtra("assistant_mode", "reschedule")
                     putExtra("relative_temporal_proposal", calculatedTemporal != null)
                     putExtra("relative_temporal_revision", 1)
+                    extractedChange.temporalProposal?.let { proposal ->
+                        putExtra("relative_temporal_date_operation", proposal.dateOperation.name)
+                        putExtra("relative_temporal_time_operation", proposal.timeOperation.name)
+                        putExtra("relative_temporal_base", proposal.relativeBase.name)
+                        putExtra("relative_temporal_replacement_date", proposal.replacementDateText)
+                        putExtra("relative_temporal_replacement_time", proposal.replacementTimeText)
+                        putExtra("relative_temporal_date_offset_days", proposal.dateOffsetDays)
+                        putExtra("relative_temporal_time_offset_minutes", proposal.timeOffsetMinutes)
+                        putExtra("relative_temporal_confidence", proposal.confidence)
+                    }
                     putExtra(
                         "relative_temporal_crossed_date_boundary",
                         calculatedTemporal?.crossedDateBoundary == true

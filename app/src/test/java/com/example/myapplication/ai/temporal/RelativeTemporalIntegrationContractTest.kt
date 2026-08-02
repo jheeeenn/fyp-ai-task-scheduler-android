@@ -8,6 +8,9 @@ import java.io.File
 class RelativeTemporalIntegrationContractTest {
     private val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
     private val edit = File("src/main/java/com/example/myapplication/EditTaskActivity.kt").readText()
+    private val proposalSession = File(
+        "src/main/java/com/example/myapplication/ai/temporal/RelativeTemporalProposalSession.kt"
+    ).readText()
     private val dao = File("src/main/java/com/example/myapplication/data/TaskDao.kt").readText()
 
     @Test
@@ -32,7 +35,12 @@ class RelativeTemporalIntegrationContractTest {
             .substringAfter("private fun processRelativeTemporalCorrection(")
             .substringBefore("private suspend fun authoritativeTaskStillMatches")
         assertTrue(handler.contains("else -> processRelativeTemporalCorrection(normalized)"))
-        assertTrue(correction.contains("relativeTemporalAgent.processRelativeTemporalCorrection(normalized)"))
+        assertTrue(
+            correction.contains(
+                "relativeTemporalAgent.processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext"
+            )
+        )
+        assertTrue(correction.contains("session.correctionContext()"))
         assertTrue(correction.contains("authoritativeTaskStillMatches()"))
         assertFalse(correction.contains("processEditCommand("))
         assertFalse(correction.contains("handleOneSentenceTemporalCommand("))
@@ -44,9 +52,12 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(edit.contains("authoritativeOriginalDate"))
         assertTrue(edit.contains("session.authoritativeOriginal"))
         assertTrue(edit.contains("session.currentProposal"))
+        assertTrue(edit.contains("initialSemanticProposal = initialRelativeTemporalSemanticProposal"))
+        assertTrue(proposalSession.contains("currentSemanticProposal"))
+        assertTrue(proposalSession.contains("currentSemanticProposal = semanticProposal"))
         assertTrue(edit.contains("session.beginCorrection()"))
         assertTrue(edit.contains("session.isCurrent(token)"))
-        assertTrue(edit.contains("session.applyCorrection(token"))
+        assertTrue(edit.contains("session.applyCorrection(\n                                    token"))
     }
 
     @Test
@@ -252,7 +263,7 @@ class RelativeTemporalIntegrationContractTest {
         assertFalse(calculator.contains("normalizedText"))
         assertFalse(relativeHandler.contains("Regex("))
         assertFalse(relativeHandler.contains("when (normalized"))
-        assertTrue(relativeHandler.contains("processRelativeTemporalCorrection(normalized)"))
+        assertTrue(relativeHandler.contains("processRelativeTemporalCorrection(\n                    normalized,"))
     }
 
     @Test
@@ -275,7 +286,9 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CANONICALIZED"))
         assertTrue(orchestrator.contains("replacementDatePresent="))
         assertTrue(orchestrator.contains("replacementTimePresent="))
-        assertTrue(orchestrator.contains("relativeBase="))
+        assertTrue(orchestrator.contains("correctionRelation="))
+        assertTrue(orchestrator.contains("mappedRelativeBase="))
+        assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CORRECTION_CONTEXT"))
         assertTrue(orchestrator.contains("preservedRelativeBase="))
         assertTrue(orchestrator.contains("CORRECTION_RECONSTRUCTED"))
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR"))

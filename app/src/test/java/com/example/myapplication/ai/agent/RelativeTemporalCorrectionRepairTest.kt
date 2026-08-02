@@ -5,9 +5,12 @@ import com.example.myapplication.ai.temporal.RelativeTemporalBase
 import com.example.myapplication.ai.temporal.RelativeTemporalCalculationResult
 import com.example.myapplication.ai.temporal.RelativeTemporalChangeCalculator
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionContext
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelation
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalSession
+import com.example.myapplication.ai.temporal.RelativeTemporalProposal
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalState
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidator
 import com.example.myapplication.ai.temporal.RelativeTemporalRepairCandidate
@@ -36,7 +39,10 @@ class RelativeTemporalCorrectionRepairTest {
     fun validCorrectionUsesOnlyTheNormalSemanticCall() = runBlocking {
         val client = FakeCorrectionClient(normalResponse = validOffsetResponse(30))
 
-        val correction = orchestrator(client).processRelativeTemporalCorrection("shift by a duration")
+        val correction = orchestrator(client).processRelativeTemporalCorrection(
+            "shift by a duration",
+            context()
+        )
 
         assertTrue(correction is ValidatedRelativeTemporalCorrection.Apply)
         assertEquals(1, client.normalCalls)
@@ -73,7 +79,7 @@ class RelativeTemporalCorrectionRepairTest {
     fun offsetChoiceReconstructsAuthoritativeCorrectionAndAdvancesOnlyAfterCalculation() = runBlocking {
         val original = ExactTemporalSchedule("03/08/2026", "11:45 PM")
         val revisionOne = ExactTemporalSchedule("04/08/2026", "12:15 AM")
-        val session = RelativeTemporalProposalSession(original, revisionOne)
+        val session = RelativeTemporalProposalSession(original, revisionOne, initialSemantic())
         val token = session.beginCorrection()
         val client = FakeCorrectionClient(
             normalResponse = malformedDeviceResponse(),
@@ -81,7 +87,8 @@ class RelativeTemporalCorrectionRepairTest {
         )
 
         val correction = orchestrator(client).processRelativeTemporalCorrection(
-            "Can you move it to 1 hours later instead"
+            "Can you move it to 1 hours later instead",
+            session.correctionContext()!!
         ) as ValidatedRelativeTemporalCorrection.Apply
 
         assertEquals(1, client.normalCalls)
@@ -106,7 +113,7 @@ class RelativeTemporalCorrectionRepairTest {
         assertFalse(calculation.schedule == ExactTemporalSchedule("04/08/2026", "1:15 AM"))
         assertEquals(
             RelativeTemporalRevisionResult.APPLIED,
-            session.applyCorrection(token, calculation.schedule)
+            session.applyCorrection(token, calculation.schedule, correction.proposal)
         )
         assertEquals(2, session.revision)
     }
@@ -118,7 +125,10 @@ class RelativeTemporalCorrectionRepairTest {
             repairResponse = choiceResponse("R1")
         )
 
-        val correction = orchestrator(client).processRelativeTemporalCorrection("choose the literal meaning")
+        val correction = orchestrator(client).processRelativeTemporalCorrection(
+            "choose the literal meaning",
+            context()
+        )
             as ValidatedRelativeTemporalCorrection.Apply
 
         assertEquals(RelativeTemporalOperation.KEEP, correction.proposal.dateOperation)
@@ -133,11 +143,14 @@ class RelativeTemporalCorrectionRepairTest {
 
     @Test
     fun reconstructionPreservesEitherCandidateBaseAndCannotOverrideIt() {
-        listOf("AUTHORITATIVE_TASK", "CURRENT_PROPOSAL").forEach { originalBase ->
+        listOf(
+            RelativeTemporalCorrectionRelation.REPLACE_PREVIOUS,
+            RelativeTemporalCorrectionRelation.BUILD_ON_CURRENT
+        ).forEach { relation ->
             val rejected = responseObject(
                 response(
                     timeOperation = "SET",
-                    base = originalBase,
+                    relation = relation.name,
                     replacementTime = "1 hours later instead",
                     timeOffset = 60
                 )
@@ -148,8 +161,18 @@ class RelativeTemporalCorrectionRepairTest {
             ).single { it.representation == RelativeTemporalRepairRepresentation.OFFSET }
 
             val reconstructed = candidateBuilder.reconstructResponse(offsetCandidate, 1.0)
+            val validated = strictValidator.validate(reconstructed)
+                as ValidatedRelativeTemporalCorrection.Apply
+            val expectedBase = when (relation) {
+                RelativeTemporalCorrectionRelation.REPLACE_PREVIOUS ->
+                    RelativeTemporalBase.AUTHORITATIVE_TASK
+                RelativeTemporalCorrectionRelation.BUILD_ON_CURRENT ->
+                    RelativeTemporalBase.CURRENT_PROPOSAL
+                RelativeTemporalCorrectionRelation.UNCLEAR -> error("not repairable")
+            }
 
-            assertEquals(originalBase, reconstructed.relativeBase)
+            assertEquals(relation.name, reconstructed.correctionRelation)
+            assertEquals(expectedBase, validated.proposal.relativeBase)
             assertEquals(rejected.dateOperation, reconstructed.dateOperation)
             assertEquals(rejected.replacementDateText, reconstructed.replacementDateText)
             assertEquals(rejected.dateOffsetDays, reconstructed.dateOffsetDays)
@@ -160,7 +183,99 @@ class RelativeTemporalCorrectionRepairTest {
         val source = File(
             "src/main/java/com/example/myapplication/ai/temporal/RelativeTemporalCorrectionRepair.kt"
         ).readText().substringAfter("fun reconstructResponse(").substringBefore("private fun dateVariants(")
-        assertFalse(source.contains("relativeBase ="))
+        assertFalse(source.contains("correctionRelation ="))
+    }
+
+    @Test
+    fun replacementAndCumulativeRelationsMapWithoutProductionPhraseInterpretation() = runBlocking {
+        val replacementParaphrases = listOf(
+            "Actually, change the delay to one hour.",
+            "No, use a one-hour delay.",
+            "I meant one hour later, not thirty minutes."
+        )
+        val cumulativeParaphrases = listOf(
+            "Add another thirty minutes.",
+            "On top of that, add one hour.",
+            "Add one more hour to that."
+        )
+
+        replacementParaphrases.forEach { input ->
+            val correction = orchestrator(
+                FakeCorrectionClient(validOffsetResponse(60, "REPLACE_PREVIOUS"))
+            ).processRelativeTemporalCorrection(input, context())
+                as ValidatedRelativeTemporalCorrection.Apply
+            assertEquals(RelativeTemporalBase.AUTHORITATIVE_TASK, correction.proposal.relativeBase)
+        }
+        cumulativeParaphrases.forEach { input ->
+            val correction = orchestrator(
+                FakeCorrectionClient(validOffsetResponse(60, "BUILD_ON_CURRENT"))
+            ).processRelativeTemporalCorrection(input, context())
+                as ValidatedRelativeTemporalCorrection.Apply
+            assertEquals(RelativeTemporalBase.CURRENT_PROPOSAL, correction.proposal.relativeBase)
+        }
+
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/agent/AgentOrchestrator.kt"
+        ).readText() + File(
+            "src/main/java/com/example/myapplication/EditTaskActivity.kt"
+        ).readText()
+        (replacementParaphrases + cumulativeParaphrases).forEach { phrase ->
+            assertFalse(source.contains(phrase))
+        }
+    }
+
+    @Test
+    fun cumulativeRelationUsesCurrentProposalWhileReplacementUsesAuthoritativeOriginal() {
+        val original = ExactTemporalSchedule("03/08/2026", "11:45 PM")
+        val revisionOne = ExactTemporalSchedule("04/08/2026", "12:15 AM")
+        val replacement = strictValidator.validate(
+            responseObject(validOffsetResponse(60, "REPLACE_PREVIOUS"))
+        ) as ValidatedRelativeTemporalCorrection.Apply
+        val cumulative = strictValidator.validate(
+            responseObject(validOffsetResponse(60, "BUILD_ON_CURRENT"))
+        ) as ValidatedRelativeTemporalCorrection.Apply
+        val calculator = RelativeTemporalChangeCalculator()
+
+        val replacementResult = calculator.calculate(
+            original,
+            revisionOne,
+            replacement.proposal,
+            nowBeforeOriginal()
+        ) as RelativeTemporalCalculationResult.Success
+        val cumulativeResult = calculator.calculate(
+            original,
+            revisionOne,
+            cumulative.proposal,
+            nowBeforeOriginal()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("04/08/2026", "12:45 AM"), replacementResult.schedule)
+        assertEquals(ExactTemporalSchedule("04/08/2026", "1:15 AM"), cumulativeResult.schedule)
+    }
+
+    @Test
+    fun unclearRelationDoesNotRepairOrMutateTheSession() {
+        val original = ExactTemporalSchedule("03/08/2026", "11:45 PM")
+        val revisionOne = ExactTemporalSchedule("04/08/2026", "12:15 AM")
+        val session = RelativeTemporalProposalSession(original, revisionOne, initialSemantic())
+        session.beginCorrection()
+        val client = FakeCorrectionClient(
+            validOffsetResponse(60, "UNCLEAR"),
+            choiceResponse("R1")
+        )
+
+        assertThrows(TaskAgentProcessingException::class.java) {
+            runBlocking {
+                orchestrator(client).processRelativeTemporalCorrection(
+                    "ambiguous relationship",
+                    session.correctionContext()!!
+                )
+            }
+        }
+        assertEquals(0, client.repairCalls)
+        assertEquals(1, session.revision)
+        assertEquals(revisionOne, session.currentProposal)
+        assertEquals(initialSemantic(), session.currentSemanticProposal)
     }
 
     @Test
@@ -175,14 +290,18 @@ class RelativeTemporalCorrectionRepairTest {
             val revisionOne = ExactTemporalSchedule("04/08/2026", "12:15 AM")
             val session = RelativeTemporalProposalSession(
                 ExactTemporalSchedule("03/08/2026", "11:45 PM"),
-                revisionOne
+                revisionOne,
+                initialSemantic()
             )
             session.beginCorrection()
             val client = FakeCorrectionClient(malformedDeviceResponse(), repairChoice)
 
             assertThrows(TaskAgentProcessingException::class.java) {
                 runBlocking {
-                    orchestrator(client).processRelativeTemporalCorrection("ambiguous correction")
+                    orchestrator(client).processRelativeTemporalCorrection(
+                        "ambiguous correction",
+                        context()
+                    )
                 }
             }
             assertEquals(1, client.normalCalls)
@@ -201,7 +320,7 @@ class RelativeTemporalCorrectionRepairTest {
 
         assertThrows(TaskAgentProcessingException::class.java) {
             runBlocking {
-                orchestrator(client).processRelativeTemporalCorrection("choose a repair")
+                orchestrator(client).processRelativeTemporalCorrection("choose a repair", context())
             }
         }
         assertEquals(1, client.normalCalls)
@@ -255,7 +374,10 @@ class RelativeTemporalCorrectionRepairTest {
 
         assertThrows(TaskAgentProcessingException::class.java) {
             runBlocking {
-                orchestrator(client).processRelativeTemporalCorrection("incomplete correction")
+                orchestrator(client).processRelativeTemporalCorrection(
+                    "incomplete correction",
+                    context()
+                )
             }
         }
         assertEquals(1, client.normalCalls)
@@ -268,7 +390,7 @@ class RelativeTemporalCorrectionRepairTest {
             response(confidence = 0.79),
             response(clarification = true),
             response(timeOperation = "SHIFT", timeOffset = 30),
-            response(base = "SOME_TASK", timeOffset = 30),
+            response(relation = "SOME_RELATION", timeOffset = 30),
             response(timeOffset = 10_081),
             "{\"move\":\"APPLY_CHANGE\""
         )
@@ -277,7 +399,10 @@ class RelativeTemporalCorrectionRepairTest {
             val client = FakeCorrectionClient(raw, choiceResponse("R1"))
             assertThrows(TaskAgentProcessingException::class.java) {
                 runBlocking {
-                    orchestrator(client).processRelativeTemporalCorrection("invalid correction")
+                    orchestrator(client).processRelativeTemporalCorrection(
+                        "invalid correction",
+                        context()
+                    )
                 }
             }
             assertEquals(0, client.repairCalls)
@@ -291,14 +416,18 @@ class RelativeTemporalCorrectionRepairTest {
         val original = ExactTemporalSchedule("03/08/2026", "11:45 PM")
         val session = RelativeTemporalProposalSession(
             original,
-            ExactTemporalSchedule("04/08/2026", "12:15 AM")
+            ExactTemporalSchedule("04/08/2026", "12:15 AM"),
+            initialSemantic()
         )
         val token = session.beginCorrection()
         val client = FakeCorrectionClient(
             malformedDeviceResponse(),
             choiceResponse("R2")
         )
-        val correction = orchestrator(client).processRelativeTemporalCorrection("select the offset")
+        val correction = orchestrator(client).processRelativeTemporalCorrection(
+            "select the offset",
+            session.correctionContext()!!
+        )
             as ValidatedRelativeTemporalCorrection.Apply
         val calculation = RelativeTemporalChangeCalculator().calculate(
             original,
@@ -306,7 +435,7 @@ class RelativeTemporalCorrectionRepairTest {
             correction.proposal,
             nowBeforeOriginal()
         ) as RelativeTemporalCalculationResult.Success
-        session.applyCorrection(token, calculation.schedule)
+        session.applyCorrection(token, calculation.schedule, correction.proposal)
 
         assertEquals(2, session.revision)
         assertEquals(original, session.cancel())
@@ -362,8 +491,14 @@ class RelativeTemporalCorrectionRepairTest {
         var repairCalls = 0
         var candidates: List<RelativeTemporalRepairCandidate>? = null
 
-        override suspend fun processRelativeTemporalCorrection(normalizedText: String): String {
+        var context: RelativeTemporalCorrectionContext? = null
+
+        override suspend fun processRelativeTemporalCorrection(
+            normalizedText: String,
+            context: RelativeTemporalCorrectionContext
+        ): String {
             normalCalls += 1
+            this.context = context
             return normalResponse
         }
 
@@ -385,8 +520,12 @@ class RelativeTemporalCorrectionRepairTest {
         confidence = 1.0
     )
 
-    private fun validOffsetResponse(minutes: Int): String = response(
+    private fun validOffsetResponse(
+        minutes: Int,
+        relation: String = "REPLACE_PREVIOUS"
+    ): String = response(
         timeOperation = "OFFSET",
+        relation = relation,
         timeOffset = minutes
     )
 
@@ -407,7 +546,7 @@ class RelativeTemporalCorrectionRepairTest {
         move: String = "APPLY_CHANGE",
         dateOperation: String = "KEEP",
         timeOperation: String = "OFFSET",
-        base: String = "AUTHORITATIVE_TASK",
+        relation: String = "REPLACE_PREVIOUS",
         replacementDate: String = "",
         replacementTime: String = "",
         dateOffset: Int = 0,
@@ -418,7 +557,7 @@ class RelativeTemporalCorrectionRepairTest {
         .put("move", move)
         .put("date_operation", dateOperation)
         .put("time_operation", timeOperation)
-        .put("relative_base", base)
+        .put("correction_relation", relation)
         .put("replacement_date_text", replacementDate)
         .put("replacement_time_text", replacementTime)
         .put("date_offset_days", dateOffset)
@@ -426,6 +565,29 @@ class RelativeTemporalCorrectionRepairTest {
         .put("confidence", confidence)
         .put("need_clarification", clarification)
         .toString()
+
+    private fun context() = RelativeTemporalCorrectionContext(
+        previousDateOperation = RelativeTemporalOperation.KEEP,
+        previousTimeOperation = RelativeTemporalOperation.OFFSET,
+        previousRelativeBase = RelativeTemporalBase.AUTHORITATIVE_TASK,
+        previousDateOffsetDays = 0,
+        previousTimeOffsetMinutes = 30,
+        previousDateLiteralPresent = false,
+        previousTimeLiteralPresent = false,
+        proposalRevision = 1
+    )
+
+    private fun initialSemantic() = RelativeTemporalProposal(
+        dateOperation = RelativeTemporalOperation.KEEP,
+        timeOperation = RelativeTemporalOperation.OFFSET,
+        relativeBase = RelativeTemporalBase.AUTHORITATIVE_TASK,
+        replacementDateText = "",
+        replacementTimeText = "",
+        dateOffsetDays = 0,
+        timeOffsetMinutes = 30,
+        confidence = 0.98,
+        needClarification = false
+    )
 
     private fun nowBeforeOriginal(): Calendar =
         Calendar.getInstance(TimeZone.getTimeZone("Asia/Kuala_Lumpur")).apply {

@@ -23,7 +23,7 @@ class RelativeTemporalCorrectionContractTest {
         val properties = schema.getJSONObject("properties").keys().asSequence().toSet()
         assertEquals(
             setOf(
-                "move", "date_operation", "time_operation", "relative_base",
+                "move", "date_operation", "time_operation", "correction_relation",
                 "replacement_date_text", "replacement_time_text", "date_offset_days",
                 "time_offset_minutes", "confidence", "need_clarification"
             ),
@@ -33,6 +33,9 @@ class RelativeTemporalCorrectionContractTest {
         listOf("task_id", "room_id", "task_title", "final_date", "final_time").forEach {
             assertFalse(properties.contains(it))
         }
+        assertFalse(properties.contains("relative_base"))
+        val required = schema.getJSONArray("required")
+        assertEquals(properties, (0 until required.length()).map(required::getString).toSet())
     }
 
     @Test
@@ -43,15 +46,22 @@ class RelativeTemporalCorrectionContractTest {
         assertThrows(RelativeTemporalProposalValidationException::class.java) {
             validator.validate(parser.parse(JSONObject(applyResponse()).put("move", "OTHER").toString()))
         }
+        assertThrows(ContextActionExtractionParseException::class.java) {
+            parser.parse(
+                JSONObject(applyResponse())
+                    .put("relative_base", "CURRENT_PROPOSAL")
+                    .toString()
+            )
+        }
     }
 
     @Test
-    fun currentProposalAndAuthoritativeBaseAreBothRepresentable() {
+    fun correctionRelationsMapToOnlyTheirAndroidOwnedBases() {
         val current = validator.validate(
-            parser.parse(applyResponse(base = "CURRENT_PROPOSAL", minutes = 30))
+            parser.parse(applyResponse(relation = "BUILD_ON_CURRENT", minutes = 30))
         ) as ValidatedRelativeTemporalCorrection.Apply
         val original = validator.validate(
-            parser.parse(applyResponse(base = "AUTHORITATIVE_TASK", minutes = 60))
+            parser.parse(applyResponse(relation = "REPLACE_PREVIOUS", minutes = 60))
         ) as ValidatedRelativeTemporalCorrection.Apply
         assertEquals(RelativeTemporalBase.CURRENT_PROPOSAL, current.proposal.relativeBase)
         assertEquals(RelativeTemporalBase.AUTHORITATIVE_TASK, original.proposal.relativeBase)
@@ -65,7 +75,7 @@ class RelativeTemporalCorrectionContractTest {
                     move = "APPLY_CHANGE",
                     dateOperation = "SET",
                     timeOperation = "OFFSET",
-                    base = "AUTHORITATIVE_TASK",
+                    relation = "REPLACE_PREVIOUS",
                     timeOffset = 30
                 )
             )
@@ -105,7 +115,7 @@ class RelativeTemporalCorrectionContractTest {
                     move = "RESTORE_ORIGINAL",
                     dateOperation = "KEEP",
                     timeOperation = "KEEP",
-                    base = "AUTHORITATIVE_TASK"
+                    relation = "REPLACE_PREVIOUS"
                 )
             )
         )
@@ -113,12 +123,23 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     @Test
+    fun unclearRelationFailsClosedBeforeAnyProposalCanBeCalculated() {
+        val exception = assertThrows(RelativeTemporalProposalValidationException::class.java) {
+            validator.validate(parser.parse(applyResponse(relation = "UNCLEAR")))
+        }
+
+        assertEquals(RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED, exception.failure)
+    }
+
+    @Test
     fun promptUsesMeaningNotAnExhaustiveUtteranceDictionary() {
         val prompt = LaptopAgentClient.RELATIVE_TEMPORAL_CORRECTION_SYSTEM_PROMPT
         assertTrue(prompt.contains("semantically"))
         assertTrue(prompt.contains("not an exhaustive vocabulary or phrase dictionary"))
-        assertTrue(prompt.contains("AUTHORITATIVE_TASK means"))
-        assertTrue(prompt.contains("CURRENT_PROPOSAL means"))
+        assertTrue(prompt.contains("REPLACE_PREVIOUS means"))
+        assertTrue(prompt.contains("BUILD_ON_CURRENT means"))
+        assertTrue(prompt.contains("UNCLEAR means"))
+        assertTrue(prompt.contains("previous_change_summary"))
         assertTrue(prompt.contains("requires clarification rather than guessing"))
         assertTrue(prompt.contains("An unchanged field must use KEEP."))
         assertTrue(prompt.contains("A pure time offset must use date_operation=KEEP."))
@@ -129,10 +150,31 @@ class RelativeTemporalCorrectionContractTest {
         val correction = editSource
             .substringAfter("private fun processRelativeTemporalCorrection(")
             .substringBefore("private suspend fun authoritativeTaskStillMatches")
-        assertTrue(correction.contains("processRelativeTemporalCorrection(normalized)"))
+        assertTrue(correction.contains("processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext"))
         assertFalse(correction.contains("Regex("))
         assertFalse(correction.contains("contains(\"later\")"))
         assertFalse(correction.contains("contains(\"earlier\")"))
+    }
+
+    @Test
+    fun correctionRequestContainsOnlyUserTextAndBoundedPreviousSemanticSummary() {
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/agent/LaptopAgentClient.kt"
+        ).readText()
+        val method = source
+            .substringAfter("open suspend fun processRelativeTemporalCorrection(")
+            .substringBefore("open suspend fun processRelativeTemporalCorrectionRepair(")
+
+        listOf(
+            "current_user_correction", "previous_change_summary", "date_operation",
+            "time_operation", "relative_base", "date_offset_days", "time_offset_minutes",
+            "date_literal_present", "time_literal_present", "revision"
+        ).forEach { assertTrue(method.contains("put(\"$it\"")) }
+        listOf(
+            "task_id", "room_id", "task_title", "authoritative_date", "authoritative_time",
+            "current_proposed_date", "current_proposed_time", "reminder"
+        ).forEach { assertFalse(method.contains("put(\"$it\"")) }
+        assertTrue(method.contains("context.previousRelativeBase.name"))
     }
 
     @Test
@@ -169,7 +211,7 @@ class RelativeTemporalCorrectionContractTest {
                     move = "APPLY_CHANGE",
                     dateOperation = "KEEP",
                     timeOperation = "SET",
-                    base = "AUTHORITATIVE_TASK",
+                    relation = "REPLACE_PREVIOUS",
                     replacementTime = "duration literal",
                     timeOffset = 60
                 )
@@ -242,13 +284,13 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     private fun applyResponse(
-        base: String = "AUTHORITATIVE_TASK",
+        relation: String = "REPLACE_PREVIOUS",
         minutes: Int = 30
     ): String = response(
         move = "APPLY_CHANGE",
         dateOperation = "KEEP",
         timeOperation = "OFFSET",
-        base = base,
+        relation = relation,
         timeOffset = minutes
     )
 
@@ -256,7 +298,7 @@ class RelativeTemporalCorrectionContractTest {
         move: String,
         dateOperation: String,
         timeOperation: String,
-        base: String,
+        relation: String,
         replacementDate: String = "",
         replacementTime: String = "",
         dateOffset: Int = 0,
@@ -267,7 +309,7 @@ class RelativeTemporalCorrectionContractTest {
         .put("move", move)
         .put("date_operation", dateOperation)
         .put("time_operation", timeOperation)
-        .put("relative_base", base)
+        .put("correction_relation", relation)
         .put("replacement_date_text", replacementDate)
         .put("replacement_time_text", replacementTime)
         .put("date_offset_days", dateOffset)
