@@ -16,7 +16,7 @@ object ContextSuggestionSnapshotBuilder {
         rootTasks: List<TaskEntity>,
         subtasksByParentId: Map<Long, List<TaskEntity>>
     ): ContextSuggestionSnapshot {
-        val orderedCandidates = rootTasks.asSequence()
+        val allSeeds = rootTasks.asSequence()
             .filter { it.parentTaskId == null && !it.isDone }
             .mapNotNull { task ->
                 val schedule = validatedSchedule(task, now) ?: return@mapNotNull null
@@ -28,8 +28,22 @@ object ContextSuggestionSnapshotBuilder {
                     schedule = schedule
                 )
             }
+            .distinctBy { it.task.id }
             .sortedWith(candidateComparator)
-            .take(MAX_CANDIDATES)
+            .toList()
+        val pairAnalysis = analyzeClosePairs(allSeeds, now)
+        val reservedPairSeeds = pairAnalysis.actionablePairs.firstOrNull()?.let { pair ->
+            listOf(pair.first, pair.second)
+        }.orEmpty()
+        val reservedIds = reservedPairSeeds.mapTo(mutableSetOf()) { it.task.id }
+        val generalSeeds = allSeeds.asSequence()
+            .filterNot { it.task.id in reservedIds }
+            .take(MAX_CANDIDATES - reservedPairSeeds.size)
+            .toList()
+        val selectedSeeds = (reservedPairSeeds + generalSeeds)
+            .sortedWith(candidateComparator)
+
+        val orderedCandidates = selectedSeeds
             .mapIndexed { index, seed ->
                 val subtasks = seed.subtasks.toList()
                 ContextSuggestionCandidate(
@@ -46,11 +60,28 @@ object ContextSuggestionSnapshotBuilder {
                 )
             }
             .toList()
+        val refByTaskId = orderedCandidates.associate { candidate ->
+            candidate.taskId to candidate.ref
+        }
 
         return ContextSuggestionSnapshot(
             candidates = orderedCandidates,
-            closePairs = buildClosePairs(orderedCandidates, now),
-            capturedAtMillis = now.timeInMillis
+            closePairs = pairAnalysis.actionablePairs.mapNotNull { pair ->
+                val primaryRef = refByTaskId[pair.first.task.id] ?: return@mapNotNull null
+                val secondaryRef = refByTaskId[pair.second.task.id] ?: return@mapNotNull null
+                ContextSuggestionClosePair(
+                    primaryRef = primaryRef,
+                    secondaryRef = secondaryRef,
+                    gapMinutes = pair.gapMinutes,
+                    dueDate = pair.first.schedule.dueDate,
+                    dueDateSortMillis = pair.first.schedule.dateSortMillis,
+                    firstTaskMinute = requireNotNull(pair.first.schedule.minuteOfDay)
+                )
+            }.take(MAX_CLOSE_PAIRS),
+            capturedAtMillis = now.timeInMillis,
+            actionableClosePairCount = pairAnalysis.actionablePairs.size,
+            reservedClosePairCandidateCount = reservedPairSeeds.size,
+            excludedPastClosePairCount = pairAnalysis.excludedPastPairCount
         )
     }
 
@@ -72,7 +103,11 @@ object ContextSuggestionSnapshotBuilder {
         if (
             firstSchedule.dateSortMillis != secondSchedule.dateSortMillis ||
             firstSchedule.minuteOfDay == null ||
-            secondSchedule.minuteOfDay == null
+            secondSchedule.minuteOfDay == null ||
+            firstSchedule.exactDueMillis == null ||
+            secondSchedule.exactDueMillis == null ||
+            firstSchedule.exactDueMillis < now.timeInMillis ||
+            secondSchedule.exactDueMillis < now.timeInMillis
         ) {
             return null
         }
@@ -96,49 +131,54 @@ object ContextSuggestionSnapshotBuilder {
         return null
     }
 
-    private fun buildClosePairs(
-        candidates: List<ContextSuggestionCandidate>,
+    private fun analyzeClosePairs(
+        seeds: List<CandidateSeed>,
         now: Calendar
-    ): List<ContextSuggestionClosePair> {
-        val pairs = mutableListOf<ContextSuggestionClosePair>()
-        candidates.forEachIndexed { firstIndex, first ->
-            val firstSchedule = validatedSchedule(first.capturedTask, now)
-                ?: return@forEachIndexed
-            val firstMinute = firstSchedule.minuteOfDay ?: return@forEachIndexed
-            candidates.drop(firstIndex + 1).forEach { second ->
-                val secondSchedule = validatedSchedule(second.capturedTask, now)
-                    ?: return@forEach
-                val secondMinute = secondSchedule.minuteOfDay ?: return@forEach
-                if (firstSchedule.dateSortMillis != secondSchedule.dateSortMillis) {
-                    return@forEach
+    ): ClosePairAnalysis {
+        val actionablePairs = mutableListOf<ClosePairSeed>()
+        var excludedPastPairCount = 0
+        for (firstIndex in seeds.indices) {
+            val first = seeds[firstIndex]
+            val firstMinute = first.schedule.minuteOfDay ?: continue
+            val firstDueMillis = first.schedule.exactDueMillis ?: continue
+            for (secondIndex in firstIndex + 1 until seeds.size) {
+                val second = seeds[secondIndex]
+                val secondMinute = second.schedule.minuteOfDay ?: continue
+                val secondDueMillis = second.schedule.exactDueMillis ?: continue
+                if (first.schedule.dateSortMillis != second.schedule.dateSortMillis) {
+                    continue
                 }
                 val gap = kotlin.math.abs(firstMinute - secondMinute)
-                if (gap > MAX_CLOSE_GAP_MINUTES) return@forEach
+                if (gap > MAX_CLOSE_GAP_MINUTES) continue
                 val ordered = if (
-                    firstMinute < secondMinute ||
-                    (firstMinute == secondMinute && first.ref < second.ref)
+                    firstDueMillis < secondDueMillis ||
+                    (firstDueMillis == secondDueMillis && first.task.id < second.task.id)
                 ) {
                     first to second
                 } else {
                     second to first
                 }
-                pairs += ContextSuggestionClosePair(
-                    primaryRef = ordered.first.ref,
-                    secondaryRef = ordered.second.ref,
-                    gapMinutes = gap,
-                    dueDate = firstSchedule.dueDate,
-                    dueDateSortMillis = firstSchedule.dateSortMillis,
-                    firstTaskMinute = minOf(firstMinute, secondMinute)
-                )
+                if (firstDueMillis < now.timeInMillis || secondDueMillis < now.timeInMillis) {
+                    excludedPastPairCount += 1
+                } else {
+                    actionablePairs += ClosePairSeed(
+                        first = ordered.first,
+                        second = ordered.second,
+                        gapMinutes = gap
+                    )
+                }
             }
         }
-        return pairs.sortedWith(
-            compareBy<ContextSuggestionClosePair> { it.dueDateSortMillis }
-                .thenBy { it.firstTaskMinute }
-                .thenBy { it.gapMinutes }
-                .thenBy { it.primaryRef }
-                .thenBy { it.secondaryRef }
-        ).take(MAX_CLOSE_PAIRS)
+        return ClosePairAnalysis(
+            actionablePairs = actionablePairs.sortedWith(
+                compareBy<ClosePairSeed> { requireNotNull(it.first.schedule.exactDueMillis) }
+                    .thenBy { requireNotNull(it.second.schedule.exactDueMillis) }
+                    .thenBy { it.gapMinutes }
+                    .thenBy { it.first.task.id }
+                    .thenBy { it.second.task.id }
+            ),
+            excludedPastPairCount = excludedPastPairCount
+        )
     }
 
     private fun validatedSchedule(
@@ -240,6 +280,17 @@ object ContextSuggestionSnapshotBuilder {
         val task: TaskEntity,
         val subtasks: List<TaskEntity>,
         val schedule: ValidatedSchedule
+    )
+
+    private data class ClosePairSeed(
+        val first: CandidateSeed,
+        val second: CandidateSeed,
+        val gapMinutes: Int
+    )
+
+    private data class ClosePairAnalysis(
+        val actionablePairs: List<ClosePairSeed>,
+        val excludedPastPairCount: Int
     )
 
     private data class ValidatedSchedule(

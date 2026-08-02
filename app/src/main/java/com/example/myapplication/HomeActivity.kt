@@ -2398,7 +2398,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             "CONTEXT_SUGGESTION_SNAPSHOT",
             "requestGeneration=${requestToken.requestGeneration} " +
                 "candidateCount=${snapshot.candidates.size} " +
-                "closePairCount=${snapshot.closePairs.size}"
+                "closePairCount=${snapshot.closePairs.size} " +
+                "actionableClosePairCount=${snapshot.actionableClosePairCount} " +
+                "reservedClosePairCandidateCount=" +
+                "${snapshot.reservedClosePairCandidateCount} " +
+                "excludedPastClosePairCount=${snapshot.excludedPastClosePairCount}"
         )
 
         if (!isContextSuggestionRequestCurrent(requestToken)) return

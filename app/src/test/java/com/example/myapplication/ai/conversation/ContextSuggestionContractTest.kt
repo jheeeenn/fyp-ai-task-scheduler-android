@@ -267,6 +267,11 @@ class ContextSuggestionContractTest {
             "CONTEXT_SUGGESTION_RESPONSE"
         ).forEach { assertTrue(homeSource.contains(it) || prompt.contains(it)) }
         listOf(
+            "actionableClosePairCount=",
+            "reservedClosePairCandidateCount=",
+            "excludedPastClosePairCount="
+        ).forEach { assertTrue("Missing bounded count: $it", homeSource.contains(it)) }
+        listOf(
             "Suggest one active task to focus on.",
             "Suggest continuing the first unfinished subtask",
             "Suggest using task breakdown",

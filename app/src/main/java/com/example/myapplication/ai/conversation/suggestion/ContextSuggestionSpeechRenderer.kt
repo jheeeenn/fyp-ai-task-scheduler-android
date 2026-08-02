@@ -43,7 +43,14 @@ object ContextSuggestionSpeechRenderer {
             } else {
                 "${pair.gapMinutes} minutes apart"
             }
-            "Review ${spokenTitle(first.title)} and ${spokenTitle(second.title)}. " +
+            val firstTime = spokenTime(
+                requireNotNull(ContextSuggestionSnapshotBuilder.parseTimeMinute(first.dueTime))
+            )
+            val secondTime = spokenTime(
+                requireNotNull(ContextSuggestionSnapshotBuilder.parseTimeMinute(second.dueTime))
+            )
+            "Review ${spokenTitle(first.title)} at $firstTime and " +
+                "${spokenTitle(second.title)} at $secondTime. " +
                 "They are scheduled $gapWording on ${spokenDate(pair.dueDate)}."
         }
         ContextSuggestionType.NO_CLOSE_SCHEDULE ->

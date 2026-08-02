@@ -69,7 +69,10 @@ data class ContextSuggestionClosePair(
 data class ContextSuggestionSnapshot(
     val candidates: List<ContextSuggestionCandidate>,
     val closePairs: List<ContextSuggestionClosePair>,
-    val capturedAtMillis: Long
+    val capturedAtMillis: Long,
+    internal val actionableClosePairCount: Int,
+    internal val reservedClosePairCandidateCount: Int,
+    internal val excludedPastClosePairCount: Int
 ) {
     fun candidate(ref: String): ContextSuggestionCandidate? =
         candidates.firstOrNull { it.ref == ref }

@@ -85,7 +85,11 @@ class ContextSuggestionSpeechRendererTest {
             secondaryTask = pairSnapshot.candidate(pair.secondaryRef)?.capturedTask,
             now = now()
         )
-        assertTrue(reviewSpeech.contains("at the same time on 31 July."))
+        assertEquals(
+            "Review Final year project at 9 AM and Supervisor call at 9 AM. " +
+                "They are scheduled at the same time on 31 July.",
+            reviewSpeech
+        )
         assertFalse(reviewSpeech.contains("conflict", ignoreCase = true))
 
         assertEquals(
@@ -137,7 +141,42 @@ class ContextSuggestionSpeechRendererTest {
             now = now()
         )
 
-        assertTrue(speech.contains("20 minutes apart on 31 July."))
+        assertEquals(
+            "Review First at 9 AM and Second at 9:20 AM. " +
+                "They are scheduled 20 minutes apart on 31 July.",
+            speech
+        )
+    }
+
+    @Test
+    fun deviceClosePairSpeechIsChronologicalAndIncludesBothExactTimes() {
+        val departure = task(2, "leave home", "02/08/2026", "9 PM")
+        val breakfast = task(1, "prepare breakfast", "02/08/2026", "9:30 PM")
+        val snapshot = ContextSuggestionSnapshotBuilder.build(
+            deviceNow(),
+            listOf(breakfast, departure),
+            emptyMap()
+        )
+        val pair = snapshot.closePairs.single()
+
+        val speech = ContextSuggestionSpeechRenderer.render(
+            ContextSuggestionDecision(
+                ContextSuggestionType.REVIEW_CLOSE_SCHEDULE,
+                pair.primaryRef,
+                pair.secondaryRef,
+                0.95
+            ),
+            snapshot,
+            primaryTask = snapshot.candidate(pair.primaryRef)?.capturedTask,
+            secondaryTask = snapshot.candidate(pair.secondaryRef)?.capturedTask,
+            now = deviceNow()
+        )
+
+        assertEquals(
+            "Review leave home at 9 PM and prepare breakfast at 9:30 PM. " +
+                "They are scheduled 30 minutes apart on 2 August.",
+            speech
+        )
     }
 
     private fun decision(type: ContextSuggestionType) =
@@ -153,6 +192,14 @@ class ContextSuggestionSpeechRendererTest {
         Locale.UK
     ).apply {
         set(2026, Calendar.JULY, 30, 12, 0, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+    private fun deviceNow(): Calendar = Calendar.getInstance(
+        TimeZone.getTimeZone("Asia/Kuala_Lumpur"),
+        Locale.UK
+    ).apply {
+        set(2026, Calendar.AUGUST, 2, 16, 25, 0)
         set(Calendar.MILLISECOND, 0)
     }
 
