@@ -88,6 +88,16 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     @Test
+    fun nonFiniteCorrectionConfidenceRetainsItsStrictFailureCategory() {
+        val response = parser.parse(applyResponse()).copy(confidence = Double.NaN)
+        val exception = assertThrows(RelativeTemporalProposalValidationException::class.java) {
+            validator.validate(response)
+        }
+
+        assertEquals(RelativeTemporalValidationFailure.NON_FINITE_CONFIDENCE, exception.failure)
+    }
+
+    @Test
     fun restoreOriginalRequiresNeutralFields() {
         val restored = validator.validate(
             parser.parse(
@@ -123,6 +133,38 @@ class RelativeTemporalCorrectionContractTest {
         assertFalse(correction.contains("Regex("))
         assertFalse(correction.contains("contains(\"later\")"))
         assertFalse(correction.contains("contains(\"earlier\")"))
+    }
+
+    @Test
+    fun repairPromptUsesTheExactSchemaAndPreservesAndroidAuthority() {
+        val prompt = LaptopAgentClient.RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT
+
+        assertTrue(prompt.contains("original user correction as the only semantic authority"))
+        assertTrue(prompt.contains("KEEP has empty replacement text and zero offset"))
+        assertTrue(prompt.contains("SET has non-empty literal replacement text and zero offset"))
+        assertTrue(prompt.contains("OFFSET has empty replacement text and a non-zero signed offset"))
+        assertTrue(prompt.contains("Exactly one representation may carry authority"))
+        assertTrue(prompt.contains("Never perform calendar arithmetic"))
+        assertTrue(prompt.contains("Return only"))
+        listOf("task IDs", "Room IDs", "task titles", "final dates", "saved").forEach {
+            assertTrue(prompt.contains(it))
+        }
+
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/agent/LaptopAgentClient.kt"
+        ).readText()
+        val method = source
+            .substringAfter("open suspend fun processRelativeTemporalCorrectionRepair(")
+            .substringBefore("open suspend fun processBreakdownFollowUp(")
+        assertTrue(method.contains("relativeTemporalCorrectionResponseFormat()"))
+        assertTrue(method.contains("RELATIVE_TEMPORAL_MAX_TOKENS"))
+        assertTrue(method.contains("boundedTemporalClient"))
+        assertTrue(method.contains("original_user_correction"))
+        assertTrue(method.contains("validation_failure"))
+        assertTrue(method.contains("rejected_candidate"))
+        listOf("task_id", "room_id", "task_title", "final_date", "final_time").forEach {
+            assertFalse(method.contains("put(\"$it\""))
+        }
     }
 
     private fun applyResponse(

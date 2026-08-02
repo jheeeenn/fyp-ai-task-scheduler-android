@@ -247,6 +247,19 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CANONICALIZED"))
         assertTrue(orchestrator.contains("replacementDatePresent="))
         assertTrue(orchestrator.contains("replacementTimePresent="))
+        assertTrue(orchestrator.contains("CORRECTION_REPAIR"))
+        assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_REPAIR"))
+        assertTrue(orchestrator.contains("stage=CORRECTION attempt=1"))
+        listOf("REQUESTED", "ACCEPTED", "REJECTED", "PARSE_FAILED", "NOT_ELIGIBLE").forEach {
+            assertTrue(orchestrator.contains(it))
+        }
+        val repairLog = orchestrator
+            .substringAfter("private fun logCorrectionRepair(")
+            .substringBefore("suspend fun processRoutine(")
+        assertFalse(repairLog.contains("originalUserText"))
+        assertFalse(repairLog.contains("rejectedResponse"))
+        assertFalse(repairLog.contains("replacementDateText"))
+        assertFalse(repairLog.contains("replacementTimeText"))
         assertTrue(orchestrator.contains("fields=${'$'}{changedFields.joinToString(\",\")}"))
 
         val parsedLog = orchestrator

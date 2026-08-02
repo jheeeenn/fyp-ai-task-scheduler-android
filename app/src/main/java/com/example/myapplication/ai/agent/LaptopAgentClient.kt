@@ -5,6 +5,8 @@ import android.util.Log
 import com.example.myapplication.SettingsActivity
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import com.example.myapplication.ai.conversation.ConversationContextAction
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
+import com.example.myapplication.ai.temporal.RelativeTemporalValidationFailure
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -87,6 +89,38 @@ open class LaptopAgentClient(
         execute(
             normalizedText = normalizedText,
             systemPrompt = RELATIVE_TEMPORAL_CORRECTION_SYSTEM_PROMPT,
+            responseFormat = AgentResponseSchemas.relativeTemporalCorrectionResponseFormat(),
+            boundedContextAction = true,
+            boundedRoutineExtraction = false,
+            maxOutputTokens = RELATIVE_TEMPORAL_MAX_TOKENS,
+            requestClient = boundedTemporalClient
+        )
+    }
+
+    open suspend fun processRelativeTemporalCorrectionRepair(
+        originalUserText: String,
+        rejectedResponse: RelativeTemporalCorrectionResponse,
+        validationFailure: RelativeTemporalValidationFailure
+    ): String = withContext(Dispatchers.IO) {
+        val repairInput = JSONObject().apply {
+            put("original_user_correction", originalUserText)
+            put("validation_failure", validationFailure.name)
+            put("rejected_candidate", JSONObject().apply {
+                put("move", rejectedResponse.move)
+                put("date_operation", rejectedResponse.dateOperation)
+                put("time_operation", rejectedResponse.timeOperation)
+                put("relative_base", rejectedResponse.relativeBase)
+                put("replacement_date_text", rejectedResponse.replacementDateText)
+                put("replacement_time_text", rejectedResponse.replacementTimeText)
+                put("date_offset_days", rejectedResponse.dateOffsetDays)
+                put("time_offset_minutes", rejectedResponse.timeOffsetMinutes)
+                put("confidence", rejectedResponse.confidence)
+                put("need_clarification", rejectedResponse.needClarification)
+            })
+        }
+        execute(
+            normalizedText = repairInput.toString(),
+            systemPrompt = RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT,
             responseFormat = AgentResponseSchemas.relativeTemporalCorrectionResponseFormat(),
             boundedContextAction = true,
             boundedRoutineExtraction = false,
@@ -440,6 +474,36 @@ RESTORE_ORIGINAL use KEEP, KEEP, AUTHORITATIVE_TASK, empty replacement texts, an
 Use UNKNOWN with need_clarification=true for unrelated or unclear input. Ambiguous temporal
 direction, including an unclear use of "forward", requires clarification rather than guessing.
 Do not output markdown or explanations.
+""".trimIndent()
+
+        internal val RELATIVE_TEMPORAL_CORRECTION_REPAIR_SYSTEM_PROMPT = """
+You repair one structurally parsed relative-temporal correction candidate after Android rejected
+its operation shape. Use the original user correction as the only semantic authority. The rejected
+candidate and validation_failure explain the inconsistency; they do not authorize a final task
+fact. Never request or output task IDs, Room IDs, task titles, stored schedules, final dates or
+times, or a claim that anything was saved. Never perform calendar arithmetic.
+
+Return exactly: move, date_operation, time_operation, relative_base,
+replacement_date_text, replacement_time_text, date_offset_days, time_offset_minutes, confidence,
+need_clarification. No additional fields are allowed.
+
+Choose exactly one valid representation for each temporal field:
+- KEEP has empty replacement text and zero offset.
+- SET has non-empty literal replacement text and zero offset.
+- OFFSET has empty replacement text and a non-zero signed offset.
+Exactly one representation may carry authority for a field. Preserve the original semantic
+meaning; do not combine literal replacement authority with offset authority and do not invent
+missing meaning. A duration-based shift uses OFFSET. A literal clock or calendar expression uses
+SET. An unchanged field uses KEEP.
+
+Preserve whether the correction semantically replaces the earlier unsaved proposal or builds on
+it: AUTHORITATIVE_TASK replaces from the original task schedule, while CURRENT_PROPOSAL
+deliberately accumulates from the unsaved proposal. If the original meaning is unclear, return
+need_clarification=true rather than guessing. Confidence must reflect the repaired interpretation;
+Android accepts only 0.80 through 1.0.
+
+Before returning JSON, verify every operation against its replacement text and offset. Return only
+the exact JSON object, without markdown or explanation.
 """.trimIndent()
 
         internal val SYSTEM_PROMPT = """

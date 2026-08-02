@@ -160,9 +160,13 @@ class RelativeTemporalCorrectionValidator(
         } catch (_: IllegalArgumentException) {
             RelativeTemporalCorrectionMove.UNKNOWN
         }
-        if (!response.confidence.isFinite() ||
-            response.confidence !in RelativeTemporalProposal.MIN_CONFIDENCE..1.0
-        ) {
+        if (!response.confidence.isFinite()) {
+            throw RelativeTemporalProposalValidationException(
+                RelativeTemporalValidationFailure.NON_FINITE_CONFIDENCE,
+                "Correction confidence must be finite"
+            )
+        }
+        if (response.confidence !in RelativeTemporalProposal.MIN_CONFIDENCE..1.0) {
             throw RelativeTemporalProposalValidationException(
                 RelativeTemporalValidationFailure.LOW_CONFIDENCE,
                 "Correction confidence is too low"
