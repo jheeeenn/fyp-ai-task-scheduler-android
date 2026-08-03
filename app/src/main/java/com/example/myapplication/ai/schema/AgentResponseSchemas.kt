@@ -98,6 +98,39 @@ object AgentResponseSchemas {
         )
     }
 
+    fun taskDetailEditMoveResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "task_detail_edit_move",
+            properties = JSONObject().apply {
+                put(
+                    "move",
+                    stringEnum(
+                        "SET_TITLE",
+                        "SET_DATE",
+                        "SET_TIME",
+                        "SET_SCHEDULE",
+                        "ASK_CLARIFICATION",
+                        "CANCEL",
+                        "UNKNOWN"
+                    )
+                )
+                put("title", stringType())
+                put("date_text", stringType())
+                put("time_text", stringType())
+                put("clarification", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("move")
+                put("title")
+                put("date_text")
+                put("time_text")
+                put("clarification")
+                put("confidence")
+            }
+        )
+    }
+
     fun routineFollowUpMoveResponseFormat(): JSONObject {
         return responseFormat(
             name = "routine_follow_up_move",

@@ -34,6 +34,30 @@ data class TaskDetailSaveClaim(
     val draft: EditableTaskDraft
 )
 
+data class TaskDetailPastTimeProposal(
+    val proposedTime: String,
+    val tomorrowDate: String,
+    val sourceDraftRevision: Long,
+    val interactionGeneration: Long
+) {
+    fun isCurrent(draftRevision: Long, generation: Long): Boolean =
+        sourceDraftRevision == draftRevision && interactionGeneration == generation
+}
+
+data class TaskDetailEditRequestGuard(
+    val interaction: TaskDetailEditInteraction,
+    val interactionGeneration: Long,
+    val draftRevision: Long
+) {
+    fun isCurrent(
+        currentInteraction: TaskDetailEditInteraction,
+        currentGeneration: Long,
+        currentDraftRevision: Long
+    ): Boolean = interaction == currentInteraction &&
+        interactionGeneration == currentGeneration &&
+        draftRevision == currentDraftRevision
+}
+
 class TaskDetailDraftController private constructor(
     base: TaskDetailAuthoritativeBase,
     draft: EditableTaskDraft
@@ -112,6 +136,7 @@ enum class TaskDetailEditInteraction {
     WAITING_FOR_TITLE,
     WAITING_FOR_DATE,
     WAITING_FOR_TIME,
+    WAITING_FOR_PAST_TIME_CONFIRMATION,
     WAITING_FOR_SAVE_CONFIRMATION,
     WAITING_FOR_HOME_CONFIRMATION,
     WAITING_FOR_BACK_CONFIRMATION,
@@ -134,10 +159,31 @@ object TaskDetailConfirmationInterpreter {
     }
 }
 
+enum class TaskDetailPastTimeConfirmationMove {
+    APPLY_TOMORROW,
+    ASK_DATE_AND_TIME,
+    CANCEL,
+    REPEAT_QUESTION
+}
+
+object TaskDetailPastTimeConfirmationResolver {
+    fun resolve(value: String): TaskDetailPastTimeConfirmationMove =
+        when (TaskDetailConfirmationInterpreter.interpret(value)) {
+            TaskDetailConfirmation.YES -> TaskDetailPastTimeConfirmationMove.APPLY_TOMORROW
+            TaskDetailConfirmation.NO -> TaskDetailPastTimeConfirmationMove.ASK_DATE_AND_TIME
+            TaskDetailConfirmation.CANCEL -> TaskDetailPastTimeConfirmationMove.CANCEL
+            TaskDetailConfirmation.UNCLEAR -> TaskDetailPastTimeConfirmationMove.REPEAT_QUESTION
+        }
+}
+
 sealed class TaskFieldEditResult {
     data class Title(val value: String) : TaskFieldEditResult()
     data class Schedule(val dueDate: String?, val dueTime: String?) : TaskFieldEditResult()
     data class NeedsClarification(val prompt: String) : TaskFieldEditResult()
+    data class PastSameDayTime(
+        val proposedTime: String,
+        val tomorrowDate: String
+    ) : TaskFieldEditResult()
     data object Invalid : TaskFieldEditResult()
     data object PastSchedule : TaskFieldEditResult()
 }
@@ -161,65 +207,112 @@ class TaskFieldEditResolver(
             is CreateDraftMove.ChangeField -> move.value.takeIf { move.field == CreateDraftField.TITLE }
             else -> null
         }?.trim() ?: return TaskFieldEditResult.Invalid
-        return TaskFieldEditResult.Title(title)
+        return validateProposedTitle(title)
+    }
+
+    fun validateProposedTitle(title: String): TaskFieldEditResult {
+        val candidate = title.trim()
+        if (candidate.isBlank() || candidate.length > MAX_TITLE_LENGTH) {
+            return TaskFieldEditResult.Invalid
+        }
+        if (COMMAND_WRAPPER.matches(TextNormalizer.normalize(candidate))) {
+            return TaskFieldEditResult.Invalid
+        }
+        return TaskFieldEditResult.Title(candidate)
     }
 
     fun resolveDate(
         raw: String,
         draft: EditableTaskDraft,
         now: Calendar = Calendar.getInstance()
-    ): TaskFieldEditResult {
-        val normalized = TextNormalizer.normalize(raw)
-        relativeOffset(normalized, DATE_OFFSET_PATTERN)?.let { days ->
-            val base = parseDate(draft.dueDate, now) ?: return TaskFieldEditResult.Invalid
-            base.add(Calendar.DAY_OF_MONTH, days)
-            return checkedSchedule(formatDate(base), draft.dueTime, now)
-        }
-        val resolution = temporalResolver.resolve(normalized, null, normalized, clone(now))
-        if (!resolution.isExactDate || resolution.startDateInclusive.isNullOrBlank()) {
-            return TaskFieldEditResult.Invalid
-        }
-        return checkedSchedule(resolution.startDateInclusive, draft.dueTime, now)
-    }
+    ): TaskFieldEditResult = resolveScheduleProposal(raw, null, draft, now)
 
     fun resolveTime(
         raw: String,
         draft: EditableTaskDraft,
         now: Calendar = Calendar.getInstance()
+    ): TaskFieldEditResult = resolveScheduleProposal(null, raw, draft, now)
+
+    fun resolveScheduleProposal(
+        dateText: String?,
+        timeText: String?,
+        draft: EditableTaskDraft,
+        now: Calendar = Calendar.getInstance()
     ): TaskFieldEditResult {
-        val normalized = TextNormalizer.normalize(raw)
-        relativeOffset(normalized, TIME_OFFSET_PATTERN)?.let { hours ->
-            val base = parseSchedule(draft.dueDate, draft.dueTime, now)
-                ?: return TaskFieldEditResult.Invalid
-            base.add(Calendar.HOUR_OF_DAY, hours)
-            return checkedSchedule(formatDate(base), formatTime(base), now)
-        }
-        val halfPast = HALF_PAST_PATTERN.matchEntire(stripTemporalWrapper(normalized))
-        val timeText = if (halfPast != null) {
-            val hour = number(halfPast.groupValues[1]) ?: return TaskFieldEditResult.Invalid
-            val meridiem = halfPast.groupValues[2]
-            if (meridiem.isBlank()) {
-                return TaskFieldEditResult.NeedsClarification(
-                    "Did you mean ${hour}:30 AM or ${hour}:30 PM?"
-                )
-            }
-            "$hour:30 $meridiem"
-        } else {
-            stripTemporalWrapper(normalized)
-        }
-        val resolution = temporalResolver.resolve(null, timeText, timeText, clone(now))
-        if (!resolution.isExactTime || resolution.startMinuteInclusive == null) {
-            return if (resolution.hasTimeConstraint) {
-                TaskFieldEditResult.NeedsClarification("What exact time would you like to use?")
+        var candidateDate = draft.dueDate
+        var candidateTime = draft.dueTime
+
+        if (!dateText.isNullOrBlank()) {
+            val normalizedDate = TextNormalizer.normalize(dateText)
+            val relativeDays = relativeOffset(normalizedDate, DATE_OFFSET_PATTERN)
+            if (relativeDays != null) {
+                val base = parseDate(draft.dueDate, now) ?: return TaskFieldEditResult.Invalid
+                base.add(Calendar.DAY_OF_MONTH, relativeDays)
+                candidateDate = formatDate(base)
             } else {
-                TaskFieldEditResult.Invalid
+                val resolution = temporalResolver.resolve(normalizedDate, null, normalizedDate, clone(now))
+                if (!resolution.isExactDate || resolution.startDateInclusive.isNullOrBlank()) {
+                    return TaskFieldEditResult.Invalid
+                }
+                candidateDate = resolution.startDateInclusive
+                if (timeText.isNullOrBlank() && resolution.hasTimeConstraint) {
+                    if (!resolution.isExactTime || resolution.startMinuteInclusive == null) {
+                        return TaskFieldEditResult.NeedsClarification(
+                            "What exact time would you like to use?"
+                        )
+                    }
+                    candidateTime = formatTime(resolution.startMinuteInclusive)
+                }
             }
         }
-        return checkedSchedule(
-            draft.dueDate,
-            formatTime(resolution.startMinuteInclusive),
-            now
-        )
+
+        if (!timeText.isNullOrBlank()) {
+            val normalizedTime = TextNormalizer.normalize(timeText)
+            relativeOffset(normalizedTime, TIME_OFFSET_PATTERN)?.let { hours ->
+                val base = parseSchedule(draft.dueDate, draft.dueTime, now)
+                    ?: return TaskFieldEditResult.Invalid
+                base.add(Calendar.HOUR_OF_DAY, hours)
+                candidateDate = formatDate(base)
+                candidateTime = formatTime(base)
+                return checkedSchedule(candidateDate, candidateTime, now)
+            }
+            if (stripTemporalWrapper(normalizedTime) == "same time") {
+                candidateTime = draft.dueTime ?: return TaskFieldEditResult.Invalid
+            } else {
+                val halfPast = HALF_PAST_PATTERN.matchEntire(stripTemporalWrapper(normalizedTime))
+                val exactTimeText = if (halfPast != null) {
+                    val hour = number(halfPast.groupValues[1]) ?: return TaskFieldEditResult.Invalid
+                    val meridiem = halfPast.groupValues[2]
+                    if (meridiem.isBlank()) {
+                        return TaskFieldEditResult.NeedsClarification(
+                            "Did you mean ${hour}:30 AM or ${hour}:30 PM?"
+                        )
+                    }
+                    "$hour:30 $meridiem"
+                } else {
+                    stripTemporalWrapper(normalizedTime)
+                }
+                val resolution = temporalResolver.resolve(null, exactTimeText, exactTimeText, clone(now))
+                if (!resolution.isExactTime || resolution.startMinuteInclusive == null) {
+                    return if (resolution.hasTimeConstraint) {
+                        TaskFieldEditResult.NeedsClarification("What exact time would you like to use?")
+                    } else {
+                        TaskFieldEditResult.Invalid
+                    }
+                }
+                candidateTime = formatTime(resolution.startMinuteInclusive)
+            }
+        }
+
+        if (dateText.isNullOrBlank() && !timeText.isNullOrBlank() &&
+            isToday(candidateDate, now) && isAtOrBeforeNow(candidateDate, candidateTime, now)
+        ) {
+            return TaskFieldEditResult.PastSameDayTime(
+                proposedTime = requireNotNull(candidateTime),
+                tomorrowDate = formatDate(clone(now).apply { add(Calendar.DAY_OF_MONTH, 1) })
+            )
+        }
+        return checkedSchedule(candidateDate, candidateTime, now)
     }
 
     fun validateDraft(
@@ -231,6 +324,11 @@ class TaskFieldEditResolver(
         }
         return checkedSchedule(draft.dueDate, draft.dueTime, now)
     }
+
+    fun isSchedulePast(
+        draft: EditableTaskDraft,
+        now: Calendar = Calendar.getInstance()
+    ): Boolean = validateDraft(draft, now) is TaskFieldEditResult.PastSchedule
 
     private fun checkedSchedule(
         dueDate: String?,
@@ -251,6 +349,14 @@ class TaskFieldEditResolver(
             is TemporalPolicyResult.InvalidPastSchedule -> TaskFieldEditResult.PastSchedule
             else -> TaskFieldEditResult.Schedule(dueDate.clean(), dueTime.clean())
         }
+    }
+
+    private fun isToday(date: String?, now: Calendar): Boolean =
+        date == formatDate(now)
+
+    private fun isAtOrBeforeNow(date: String?, time: String?, now: Calendar): Boolean {
+        val proposed = parseSchedule(date, time, now) ?: return false
+        return proposed.timeInMillis <= now.timeInMillis
     }
 
     private fun relativeOffset(text: String, pattern: Regex): Int? {
@@ -306,6 +412,7 @@ class TaskFieldEditResolver(
         const val DATE_PATTERN = "dd/MM/yyyy"
         const val TIME_PATTERN = "hh:mm a"
         const val DATE_TIME_PATTERN = "$DATE_PATTERN $TIME_PATTERN"
+        const val MAX_TITLE_LENGTH = 200
         val DATE_OFFSET_PATTERN = Regex("^(one|two|three|four|five|six|seven|\\d+) days? later$")
         val TIME_OFFSET_PATTERN = Regex("^(one|two|three|four|five|six|seven|\\d+) hours? later$")
         val HALF_PAST_PATTERN = Regex(
@@ -313,6 +420,9 @@ class TaskFieldEditResolver(
         )
         val TITLE_WRAPPER = Regex(
             "^i (?:want|would like) (?:the )?(?:task )?(?:title|name) to be (.+)$"
+        )
+        val COMMAND_WRAPPER = Regex(
+            "^(?:change|set|rename|call) (?:it|the task|task)(?: title| name)? (?:to|as) .+$"
         )
         val NUMBERS = mapOf(
             "one" to 1, "two" to 2, "three" to 3, "four" to 4,

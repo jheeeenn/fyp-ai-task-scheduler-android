@@ -23,6 +23,13 @@ import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
 import com.example.myapplication.accessibility.AccessibilityStateHelper
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
+import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditAgentContext
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditField
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditLocalCandidate
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditMoveResolution
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditProposal
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditSemanticOrchestrator
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.reminder.ReminderEligibilityPolicy
@@ -68,6 +75,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
     private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
     private lateinit var assistantSession: AssistantVoiceSession
     private lateinit var responseManager: AssistantResponseManager
+    private lateinit var taskDetailEditSemanticOrchestrator: TaskDetailEditSemanticOrchestrator
 
     private var taskId: Long = -1L
     private var currentTask: TaskEntity? = null
@@ -76,6 +84,9 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
     private val fieldResolver = TaskFieldEditResolver()
     private var editInteraction = TaskDetailEditInteraction.IDLE
     private var interactionRevision = -1L
+    private var editInteractionGeneration = 0L
+    private var pendingFieldClarification: String? = null
+    private var pendingPastTimeProposal: TaskDetailPastTimeProposal? = null
     private var pendingSaveClaim: TaskDetailSaveClaim? = null
     private var pendingExitAfterSave: (() -> Unit)? = null
     private var taskMutationInProgress = false
@@ -105,6 +116,9 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         )
         bindViews()
         responseManager = AssistantResponseManager.fromPreferences(this)
+        taskDetailEditSemanticOrchestrator = TaskDetailEditSemanticOrchestrator(
+            semanticClient = ConversationAgentClient(this)
+        )
         assistantSession = AssistantVoiceSession(
             activity = this,
             host = this,
@@ -588,8 +602,11 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             return
         }
         navigationCoordinator.cancelPending()
+        editInteractionGeneration += 1L
         editInteraction = interaction
         interactionRevision = draft.revision
+        pendingFieldClarification = null
+        pendingPastTimeProposal = null
         pendingSaveClaim = null
         pendingExitAfterSave = null
         assistantSession.prepareForContextEntry()
@@ -694,10 +711,13 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         afterSave: (() -> Unit)? = null
     ) {
         navigationCoordinator.cancelPending()
+        editInteractionGeneration += 1L
         editInteraction = interaction
         interactionRevision = draftController?.draft?.revision ?: -1L
         pendingSaveClaim = claim
         pendingExitAfterSave = afterSave
+        pendingFieldClarification = null
+        pendingPastTimeProposal = null
         assistantSession.prepareForContextEntry()
         assistantSession.startPassiveSession()
         assistantSession.expectConfirmation()
@@ -709,6 +729,8 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             TaskDetailEditInteraction.WAITING_FOR_TITLE,
             TaskDetailEditInteraction.WAITING_FOR_DATE,
             TaskDetailEditInteraction.WAITING_FOR_TIME -> handleFieldResponse(text)
+            TaskDetailEditInteraction.WAITING_FOR_PAST_TIME_CONFIRMATION ->
+                handlePastTimeConfirmationResponse(text)
             TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION,
@@ -726,14 +748,100 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             endLocalInteraction("That edit is no longer current. Please try again.")
             return
         }
-        val result = when (editInteraction) {
+        taskDetailEditSemanticOrchestrator.resolveImmediate(text)?.let { immediate ->
+            applySemanticFieldResolution(immediate)
+            return
+        }
+
+        val capturedInteraction = editInteraction
+        val requestedField = requestedField(capturedInteraction) ?: return
+        val capturedDraft = controller.draft
+        val guard = TaskDetailEditRequestGuard(
+            interaction = capturedInteraction,
+            interactionGeneration = editInteractionGeneration,
+            draftRevision = capturedDraft.revision
+        )
+        val now = Calendar.getInstance()
+        val localResult = when (capturedInteraction) {
             TaskDetailEditInteraction.WAITING_FOR_TITLE -> fieldResolver.resolveTitle(text)
             TaskDetailEditInteraction.WAITING_FOR_DATE ->
-                fieldResolver.resolveDate(text, controller.draft)
+                fieldResolver.resolveDate(text, capturedDraft, now)
             TaskDetailEditInteraction.WAITING_FOR_TIME ->
-                fieldResolver.resolveTime(text, controller.draft)
+                fieldResolver.resolveTime(text, capturedDraft, now)
             else -> return
         }
+        val context = TaskDetailEditAgentContext(
+            requestedField = requestedField,
+            interactionState = capturedInteraction.name,
+            interactionGeneration = guard.interactionGeneration,
+            draftRevision = guard.draftRevision,
+            hasTitle = capturedDraft.title.isNotBlank(),
+            currentDueDate = capturedDraft.dueDate.orEmpty(),
+            currentDueTime = capturedDraft.dueTime.orEmpty(),
+            currentLocalDate = formatContextDate(now),
+            currentLocalTime = formatContextTime(now),
+            timezone = now.timeZone.id,
+            currentSchedulePast = fieldResolver.isSchedulePast(capturedDraft, now),
+            pendingClarification = pendingFieldClarification.orEmpty(),
+            allowedMoves = TaskDetailEditAgentContext.allowedMoves(requestedField)
+        )
+
+        assistantSession.pauseListeningForAssistantSpeech()
+        assistantSession.getBottomSheet()?.setProcessingState()
+        lifecycleScope.launch {
+            val resolution = taskDetailEditSemanticOrchestrator.resolve(
+                userText = text,
+                context = context,
+                localCandidate = localCandidate(localResult)
+            )
+            val currentRevision = draftController?.draft?.revision ?: -1L
+            if (activityStopped || isFinishing || isDestroyed ||
+                !guard.isCurrent(editInteraction, editInteractionGeneration, currentRevision)
+            ) {
+                Log.d(
+                    "TASK_DETAIL_EDIT_RESOLUTION",
+                    "target=$requestedField state=${capturedInteraction.name} move=${resolution.move} " +
+                        "source=${resolution.source.logValue} confidence=${resolution.confidence} " +
+                        "agentAttempted=${resolution.agentAttempted} reason=STALE_RESPONSE " +
+                        "draftRevision=${guard.draftRevision} generation=${guard.interactionGeneration}"
+                )
+                return@launch
+            }
+            applySemanticFieldResolution(resolution)
+        }
+    }
+
+    private fun applySemanticFieldResolution(resolution: TaskDetailEditMoveResolution) {
+        val controller = draftController ?: return
+        when (val proposal = resolution.proposal) {
+            is TaskDetailEditProposal.Title ->
+                applyValidatedFieldResult(fieldResolver.validateProposedTitle(proposal.value))
+            is TaskDetailEditProposal.Schedule ->
+                applyValidatedFieldResult(
+                    fieldResolver.resolveScheduleProposal(
+                        dateText = proposal.dateText,
+                        timeText = proposal.timeText,
+                        draft = controller.draft
+                    )
+                )
+            is TaskDetailEditProposal.Clarification -> {
+                pendingFieldClarification = proposal.question
+                assistantSession.speakThenListenAgain(proposal.question)
+            }
+            is TaskDetailEditProposal.PastSameDayTime ->
+                beginPastTimeClarification(proposal.proposedTime, proposal.tomorrowDate)
+            TaskDetailEditProposal.Cancel -> endLocalInteraction("Edit cancelled.")
+            TaskDetailEditProposal.Unknown -> {
+                val question = pendingFieldClarification
+                    ?: TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
+                pendingFieldClarification = question
+                assistantSession.speakThenListenAgain(question)
+            }
+        }
+    }
+
+    private fun applyValidatedFieldResult(result: TaskFieldEditResult) {
+        val controller = draftController ?: return
         when (result) {
             is TaskFieldEditResult.Title -> {
                 if (!controller.changeTitle(result.value)) {
@@ -744,31 +852,124 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
                 endLocalInteraction(TaskDetailEditSpeechRenderer.titleChanged(result.value))
             }
             is TaskFieldEditResult.Schedule -> {
-                val field = editInteraction
+                val oldDraft = controller.draft
                 if (!controller.changeSchedule(result.dueDate, result.dueTime)) {
                     endLocalInteraction("That schedule is already set.")
                     return
                 }
                 renderCurrentDraft()
-                val speech = if (field == TaskDetailEditInteraction.WAITING_FOR_DATE) {
-                    TaskDetailEditSpeechRenderer.dateChanged(result.dueDate)
-                } else {
-                    TaskDetailEditSpeechRenderer.timeChanged(result.dueTime)
-                }
-                endLocalInteraction(speech)
+                endLocalInteraction(
+                    TaskDetailEditSpeechRenderer.scheduleChanged(
+                        oldDate = oldDraft.dueDate,
+                        oldTime = oldDraft.dueTime,
+                        newDate = result.dueDate,
+                        newTime = result.dueTime
+                    )
+                )
             }
-            is TaskFieldEditResult.NeedsClarification ->
+            is TaskFieldEditResult.NeedsClarification -> {
+                pendingFieldClarification = result.prompt
                 assistantSession.speakThenListenAgain(result.prompt)
-            TaskFieldEditResult.PastSchedule ->
+            }
+            is TaskFieldEditResult.PastSameDayTime ->
+                beginPastTimeClarification(result.proposedTime, result.tomorrowDate)
+            TaskFieldEditResult.PastSchedule -> {
+                val question = TaskDetailEditSpeechRenderer.pastScheduleRetry(editInteraction)
+                pendingFieldClarification = question
                 assistantSession.speakThenListenAgain(
-                    TaskDetailEditSpeechRenderer.pastScheduleRetry(editInteraction)
+                    question
                 )
-            TaskFieldEditResult.Invalid ->
+            }
+            TaskFieldEditResult.Invalid -> {
+                val question = pendingFieldClarification
+                    ?: TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
+                pendingFieldClarification = question
                 assistantSession.speakThenListenAgain(
-                    TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
+                    question
                 )
+            }
         }
     }
+
+    private fun beginPastTimeClarification(proposedTime: String, tomorrowDate: String) {
+        val draft = draftController?.draft ?: return
+        pendingPastTimeProposal = TaskDetailPastTimeProposal(
+            proposedTime = proposedTime,
+            tomorrowDate = tomorrowDate,
+            sourceDraftRevision = draft.revision,
+            interactionGeneration = editInteractionGeneration
+        )
+        editInteraction = TaskDetailEditInteraction.WAITING_FOR_PAST_TIME_CONFIRMATION
+        val question = TaskDetailEditSpeechRenderer.pastSameDayQuestion(proposedTime)
+        pendingFieldClarification = question
+        assistantSession.expectConfirmation()
+        assistantSession.speakThenListenAgain(question)
+    }
+
+    private fun handlePastTimeConfirmationResponse(text: String) {
+        when (TaskDetailPastTimeConfirmationResolver.resolve(text)) {
+            TaskDetailPastTimeConfirmationMove.APPLY_TOMORROW -> applyPendingTomorrowTime()
+            TaskDetailPastTimeConfirmationMove.ASK_DATE_AND_TIME -> {
+                val draft = draftController?.draft ?: return
+                pendingPastTimeProposal = null
+                editInteraction = TaskDetailEditInteraction.WAITING_FOR_TIME
+                interactionRevision = draft.revision
+                val question = TaskDetailEditSpeechRenderer.askDateAndTime()
+                pendingFieldClarification = question
+                assistantSession.speakThenListenAgain(question)
+            }
+            TaskDetailPastTimeConfirmationMove.CANCEL -> endLocalInteraction("Time edit cancelled.")
+            TaskDetailPastTimeConfirmationMove.REPEAT_QUESTION -> {
+                val question = pendingFieldClarification
+                    ?: return endLocalInteraction("That clarification is no longer current.")
+                assistantSession.expectConfirmation()
+                assistantSession.speakThenListenAgain(question)
+            }
+        }
+    }
+
+    private fun applyPendingTomorrowTime() {
+        val controller = draftController ?: return
+        val pending = pendingPastTimeProposal
+        if (pending == null || !pending.isCurrent(controller.draft.revision, editInteractionGeneration)) {
+            endLocalInteraction("That clarification is no longer current. Please try the edit again.")
+            return
+        }
+        applyValidatedFieldResult(
+            fieldResolver.resolveScheduleProposal(
+                dateText = pending.tomorrowDate,
+                timeText = pending.proposedTime,
+                draft = controller.draft
+            )
+        )
+    }
+
+    private fun requestedField(interaction: TaskDetailEditInteraction): TaskDetailEditField? =
+        when (interaction) {
+            TaskDetailEditInteraction.WAITING_FOR_TITLE -> TaskDetailEditField.TITLE
+            TaskDetailEditInteraction.WAITING_FOR_DATE -> TaskDetailEditField.DATE
+            TaskDetailEditInteraction.WAITING_FOR_TIME -> TaskDetailEditField.TIME
+            else -> null
+        }
+
+    private fun localCandidate(result: TaskFieldEditResult): TaskDetailEditLocalCandidate =
+        when (result) {
+            is TaskFieldEditResult.Title -> TaskDetailEditLocalCandidate.Title(result.value)
+            is TaskFieldEditResult.Schedule ->
+                TaskDetailEditLocalCandidate.Schedule(result.dueDate, result.dueTime)
+            is TaskFieldEditResult.NeedsClarification ->
+                TaskDetailEditLocalCandidate.Clarification(result.prompt)
+            is TaskFieldEditResult.PastSameDayTime ->
+                TaskDetailEditLocalCandidate.PastSameDayTime(result.proposedTime, result.tomorrowDate)
+            TaskFieldEditResult.Invalid,
+            TaskFieldEditResult.PastSchedule -> TaskDetailEditLocalCandidate.Invalid
+        }
+
+    private fun formatContextDate(now: Calendar): String =
+        SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { timeZone = now.timeZone }.format(now.time)
+
+    private fun formatContextTime(now: Calendar): String =
+        SimpleDateFormat("hh:mm a", Locale.UK).apply { timeZone = now.timeZone }.format(now.time)
 
     private fun handleConfirmationResponse(text: String) {
         when (TaskDetailConfirmationInterpreter.interpret(text)) {
@@ -973,10 +1174,13 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
     }
 
     private fun clearLocalInteraction() {
+        editInteractionGeneration += 1L
         editInteraction = TaskDetailEditInteraction.IDLE
         interactionRevision = -1L
         pendingSaveClaim = null
         pendingExitAfterSave = null
+        pendingFieldClarification = null
+        pendingPastTimeProposal = null
     }
 
     override fun onAssistantCancelled() {

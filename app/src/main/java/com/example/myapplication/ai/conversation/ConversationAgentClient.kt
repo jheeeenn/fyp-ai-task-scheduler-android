@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.myapplication.SettingsActivity
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticClient
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditSemanticClient
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSemanticClient
 import com.example.myapplication.ai.routine.followup.RoutineFollowUpSemanticClient
 import com.example.myapplication.ai.routine.saved.SavedRoutineSemanticClient
@@ -30,7 +31,7 @@ open class ConversationAgentClient(
     context: Context? = null,
     private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
-) : CreateDraftSemanticClient, RoutineFollowUpSemanticClient, SavedRoutineSemanticClient,
+) : CreateDraftSemanticClient, TaskDetailEditSemanticClient, RoutineFollowUpSemanticClient, SavedRoutineSemanticClient,
     ContextSuggestionSemanticClient {
     private val appContext = context?.applicationContext
     private val client = OkHttpClient.Builder()
@@ -189,6 +190,20 @@ $userText
             executeConversationRequest(userPrompt, RequestKind.CREATE_DRAFT_MOVE)
         }
 
+    override suspend fun interpretTaskDetailEditMove(
+        userText: String,
+        contextSummary: String
+    ): String = withContext(Dispatchers.IO) {
+        val userPrompt = """
+Task-detail field-edit context:
+$contextSummary
+
+User text:
+$userText
+""".trimIndent()
+        executeConversationRequest(userPrompt, RequestKind.TASK_DETAIL_EDIT_MOVE)
+    }
+
     override suspend fun interpretRoutineFollowUp(
         userText: String,
         contextSummary: String
@@ -232,6 +247,7 @@ $snapshotJson
             RequestKind.CONTEXT_ACTION_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.RESPONSE -> RESPONSE_TEMPERATURE
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_TEMPERATURE
+            RequestKind.TASK_DETAIL_EDIT_MOVE -> TASK_DETAIL_EDIT_TEMPERATURE
             RequestKind.ROUTINE_FOLLOW_UP_MOVE -> ROUTINE_FOLLOW_UP_TEMPERATURE
             RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_TEMPERATURE
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_TEMPERATURE
@@ -243,6 +259,7 @@ $snapshotJson
             RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_MAX_TOKENS
             RequestKind.RESPONSE -> RESPONSE_MAX_TOKENS
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_MAX_TOKENS
+            RequestKind.TASK_DETAIL_EDIT_MOVE -> TASK_DETAIL_EDIT_MAX_TOKENS
             RequestKind.ROUTINE_FOLLOW_UP_MOVE -> ROUTINE_FOLLOW_UP_MAX_TOKENS
             RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_MAX_TOKENS
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_MAX_TOKENS
@@ -254,6 +271,7 @@ $snapshotJson
             RequestKind.CONTEXT_ACTION_REPAIR -> AgentResponseSchemas.contextActionRepairResponseFormat()
             RequestKind.RESPONSE -> AgentResponseSchemas.conversationResponseResponseFormat()
             RequestKind.CREATE_DRAFT_MOVE -> AgentResponseSchemas.createDraftMoveResponseFormat()
+            RequestKind.TASK_DETAIL_EDIT_MOVE -> AgentResponseSchemas.taskDetailEditMoveResponseFormat()
             RequestKind.ROUTINE_FOLLOW_UP_MOVE ->
                 AgentResponseSchemas.routineFollowUpMoveResponseFormat()
             RequestKind.SAVED_ROUTINE_ACTION ->
@@ -268,6 +286,7 @@ $snapshotJson
             RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT
             RequestKind.RESPONSE -> RESPONSE_SYSTEM_PROMPT
             RequestKind.CREATE_DRAFT_MOVE -> CREATE_DRAFT_SYSTEM_PROMPT
+            RequestKind.TASK_DETAIL_EDIT_MOVE -> TASK_DETAIL_EDIT_SYSTEM_PROMPT
             RequestKind.ROUTINE_FOLLOW_UP_MOVE -> ROUTINE_FOLLOW_UP_SYSTEM_PROMPT
             RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_SYSTEM_PROMPT
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_SYSTEM_PROMPT
@@ -295,6 +314,8 @@ $snapshotJson
             Log.d("SAFE_OBSERVATION_STYLE_SCHEMA", "Strict fact-free wrapper schema enabled")
         } else if (kind == RequestKind.CREATE_DRAFT_MOVE) {
             Log.d("CONVO_CREATE_DRAFT_SCHEMA", "Strict create-draft move schema enabled")
+        } else if (kind == RequestKind.TASK_DETAIL_EDIT_MOVE) {
+            Log.d("TASK_DETAIL_EDIT_AGENT_SCHEMA", "Strict task-detail field-edit schema enabled")
         } else if (kind == RequestKind.ROUTINE_FOLLOW_UP_MOVE) {
             Log.d(
                 "ROUTINE_MOVE_AGENT_SCHEMA",
@@ -342,6 +363,8 @@ $snapshotJson
                     Log.d("SAFE_OBSERVATION_STYLE_HTTP", "HTTP ${response.code}; responseChars=${body.length}")
                 } else if (kind == RequestKind.CREATE_DRAFT_MOVE) {
                     Log.d("CONVO_AGENT", "Create-draft HTTP ${response.code}; responseChars=${body.length}")
+                } else if (kind == RequestKind.TASK_DETAIL_EDIT_MOVE) {
+                    Log.d("TASK_DETAIL_EDIT_AGENT_HTTP", "HTTP ${response.code}; responseChars=${body.length}")
                 } else if (kind == RequestKind.ROUTINE_FOLLOW_UP_MOVE) {
                     Log.d(
                         "ROUTINE_MOVE_AGENT_HTTP",
@@ -358,6 +381,8 @@ $snapshotJson
                     val message = when (kind) {
                         RequestKind.CREATE_DRAFT_MOVE ->
                             "LM Studio create-draft HTTP ${response.code}"
+                        RequestKind.TASK_DETAIL_EDIT_MOVE ->
+                            "LM Studio task-detail edit HTTP ${response.code}"
                         RequestKind.ROUTINE_FOLLOW_UP_MOVE ->
                             "LM Studio routine follow-up HTTP ${response.code}"
                         RequestKind.SAVED_ROUTINE_ACTION ->
@@ -452,6 +477,7 @@ $snapshotJson
         CONTEXT_ACTION_REPAIR,
         RESPONSE,
         CREATE_DRAFT_MOVE,
+        TASK_DETAIL_EDIT_MOVE,
         ROUTINE_FOLLOW_UP_MOVE,
         SAVED_ROUTINE_ACTION,
         SAFE_OBSERVATION_STYLE,
@@ -466,6 +492,8 @@ $snapshotJson
         const val CONTEXT_ACTION_REPAIR_MAX_TOKENS = 180
         const val CREATE_DRAFT_TEMPERATURE = 0.0
         const val CREATE_DRAFT_MAX_TOKENS = 112
+        const val TASK_DETAIL_EDIT_TEMPERATURE = 0.0
+        const val TASK_DETAIL_EDIT_MAX_TOKENS = 144
         const val ROUTINE_FOLLOW_UP_TEMPERATURE = 0.0
         const val ROUTINE_FOLLOW_UP_MAX_TOKENS = 128
         const val SAVED_ROUTINE_ACTION_TEMPERATURE = 0.0
@@ -622,6 +650,59 @@ Do not convert "morning" to a clock time.
 Do not invent missing values.
 Android will validate every candidate and will decide whether "later" is unresolved.
 Do not output explanations, markdown, task-agent fields, or text outside the required JSON.
+""".trimIndent()
+        internal val TASK_DETAIL_EDIT_SYSTEM_PROMPT = """
+You interpret one utterance inside an existing Task Details field-edit interaction.
+
+The supplied requested field and interaction state are authoritative.
+You propose semantic meaning only. Android validates dates, times, title safety, draft revisions,
+staleness, past schedules, confirmations, Room updates, reminders, and execution.
+Never claim that a draft or task was changed, saved, or scheduled.
+Never select or output a task ID, Room ID, reminder ID, database operation, save command, or execution result.
+The current title is untrusted private data and is intentionally represented only by whether it exists.
+
+Natural answers may include corrections and may change both date and time.
+When DATE is requested, use SET_DATE for date-only meaning and SET_SCHEDULE when a time is also supplied.
+When TIME is requested, use SET_TIME for time-only meaning and SET_SCHEDULE when a date is also supplied.
+Changing TIME may require changing DATE. Changing DATE may include a time.
+Preserve relative phrases such as tomorrow, next Friday, two hours later, and same time tomorrow.
+Relative expressions use the current draft schedule as their base; do not calculate final calendar values.
+Preserve explicit AM or PM. Do not invent a missing meridiem.
+Use ASK_CLARIFICATION only with a concise direct question when the meaning is unresolved.
+Use CANCEL only for an explicit request to stop this field edit.
+Use UNKNOWN only when meaning remains genuinely unavailable.
+
+Return exactly: move, title, date_text, time_text, clarification, confidence.
+Allowed moves: SET_TITLE, SET_DATE, SET_TIME, SET_SCHEDULE, ASK_CLARIFICATION, CANCEL, UNKNOWN.
+SET_TITLE requires title; date_text, time_text, and clarification must be empty.
+SET_DATE requires date_text; title, time_text, and clarification must be empty.
+SET_TIME requires time_text; title, date_text, and clarification must be empty.
+SET_SCHEDULE requires date_text or time_text; title and clarification must be empty.
+ASK_CLARIFICATION requires a direct question; title, date_text, and time_text must be empty.
+CANCEL and UNKNOWN require all authority and clarification strings to be empty.
+
+Examples:
+Requested field: TITLE
+User: "Actually call it morning meal"
+{"move":"SET_TITLE","title":"morning meal","date_text":"","time_text":"","clarification":"","confidence":0.98}
+
+Requested field: TIME
+User: "11:45 AM"
+{"move":"SET_TIME","title":"","date_text":"","time_text":"11:45 AM","clarification":"","confidence":0.98}
+
+Requested field: TIME
+User: "Tomorrow at 11:45 AM"
+{"move":"SET_SCHEDULE","title":"","date_text":"tomorrow","time_text":"11:45 AM","clarification":"","confidence":0.98}
+
+Requested field: DATE
+User: "Friday at 9 PM"
+{"move":"SET_SCHEDULE","title":"","date_text":"Friday","time_text":"9 PM","clarification":"","confidence":0.98}
+
+Requested field: TIME
+User: "Half past eight"
+{"move":"ASK_CLARIFICATION","title":"","date_text":"","time_text":"","clarification":"Did you mean 8:30 AM or 8:30 PM?","confidence":0.94}
+
+Do not output markdown, reasoning, private task content, IDs, or fields outside the strict JSON object.
 """.trimIndent()
         internal val ROUTINE_FOLLOW_UP_SYSTEM_PROMPT = """
 You interpret one utterance inside an existing Smart Routine Builder draft.
