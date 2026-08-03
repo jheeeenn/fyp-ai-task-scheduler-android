@@ -36,14 +36,16 @@ object TaskDetailSpeechRenderer {
         dueDate: String?,
         dueTime: String?,
         completedSubtasks: Int,
-        totalSubtasks: Int
+        totalSubtasks: Int,
+        hasUnsavedChanges: Boolean = false
     ): String = listOf(
         title(title),
         status(status),
         date(dueDate),
         time(dueTime),
-        subtaskProgress(completedSubtasks, totalSubtasks)
-    ).joinToString(" ")
+        subtaskProgress(completedSubtasks, totalSubtasks),
+        "These changes are not saved.".takeIf { hasUnsavedChanges }
+    ).filterNotNull().joinToString(" ")
 
     private fun spokenNumber(number: Int): String = when (number) {
         0 -> "Zero"

@@ -110,6 +110,7 @@ class TaskScreenSpeechRenderersTest {
         assertEquals("Assistant button.", TaskScreenControlSpeechRenderer.assistantDescription())
         assertEquals("Assistant button.", TaskScreenControlSpeechRenderer.taskAssistantDescription())
         assertEquals("Read all button.", TaskScreenControlSpeechRenderer.readAllDescription())
+        assertEquals("Save button.", TaskScreenControlSpeechRenderer.saveDescription())
         assertEquals("Mark done button.", TaskScreenControlSpeechRenderer.toggleDescription(false))
         assertEquals("Undo button.", TaskScreenControlSpeechRenderer.toggleDescription(true))
         assertEquals("Edit button.", TaskScreenControlSpeechRenderer.editDescription())

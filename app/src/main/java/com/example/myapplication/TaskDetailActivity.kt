@@ -1,28 +1,44 @@
 package com.example.myapplication
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
 import com.example.myapplication.accessibility.AccessibilityStateHelper
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.reminder.ReminderEligibilityPolicy
+import com.example.myapplication.reminder.ReminderSchedulingEligibility
+import com.example.myapplication.voice.AssistantResponseManager
+import com.example.myapplication.voice.AssistantVoiceHost
+import com.example.myapplication.voice.AssistantVoiceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
-class TaskDetailActivity : AppCompatActivity() {
+class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
     companion object {
         const val EXTRA_TASK_ID = "task_id"
         private const val TASK_DETAIL_UPDATE_TAG = "TASK_DETAIL_UPDATE"
@@ -44,18 +60,34 @@ class TaskDetailActivity : AppCompatActivity() {
     private lateinit var subtaskProgressText: TextView
     private lateinit var readAllButton: Button
     private lateinit var toggleDoneButton: Button
-    private lateinit var editButton: Button
+    private lateinit var saveButton: Button
     private lateinit var deleteButton: Button
     private lateinit var homeButton: Button
     private lateinit var assistantButton: Button
+    private lateinit var unsavedChangesText: TextView
     private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
+    private lateinit var assistantSession: AssistantVoiceSession
+    private lateinit var responseManager: AssistantResponseManager
 
     private var taskId: Long = -1L
     private var currentTask: TaskEntity? = null
     private var currentSubtasks: List<TaskEntity> = emptyList()
+    private var draftController: TaskDetailDraftController? = null
+    private val fieldResolver = TaskFieldEditResolver()
+    private var editInteraction = TaskDetailEditInteraction.IDLE
+    private var interactionRevision = -1L
+    private var pendingSaveClaim: TaskDetailSaveClaim? = null
+    private var pendingExitAfterSave: (() -> Unit)? = null
     private var taskMutationInProgress = false
     private var missingTaskSpeechPending = false
+    private var activityStopped = false
     private val screenSpeechState = TaskDetailScreenSpeechState()
+
+    private val audioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) assistantSession.onAudioPermissionGranted()
+            else assistantSession.onAudioPermissionDenied()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,7 +104,25 @@ class TaskDetailActivity : AppCompatActivity() {
             }
         )
         bindViews()
+        responseManager = AssistantResponseManager.fromPreferences(this)
+        assistantSession = AssistantVoiceSession(
+            activity = this,
+            host = this,
+            voiceHelper = voiceHelper,
+            responseManager = responseManager,
+            audioPermissionLauncher = audioPermissionLauncher,
+            normalizeFinalTextForHost = false,
+            onAccessibilityStateChanged = { state ->
+                AccessibilityStateHelper.updateAssistantState(assistantButton, state, announce = false)
+            }
+        )
+        assistantSession.bindAssistantControl(assistantButton)
         bindInteractions()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                handleHomeOrBackExit()
+            }
+        })
 
         taskId = intent.getLongExtra(EXTRA_TASK_ID, -1L)
         if (!intent.hasExtra(EXTRA_TASK_ID) || taskId <= 0L) {
@@ -85,14 +135,26 @@ class TaskDetailActivity : AppCompatActivity() {
         if (taskId > 0L) loadAuthoritativeTask()
     }
 
+    override fun onStart() {
+        super.onStart()
+        activityStopped = false
+    }
+
     override fun onDestroy() {
         navigationCoordinator.cancelPending()
+        assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()
     }
 
     override fun onStop() {
+        activityStopped = true
         navigationCoordinator.cancelPending()
+        if (!isChangingConfigurations) {
+            assistantSession.prepareForContextEntry()
+            assistantSession.dismissPanel()
+            clearLocalInteraction()
+        }
         super.onStop()
     }
 
@@ -111,33 +173,40 @@ class TaskDetailActivity : AppCompatActivity() {
         subtaskProgressText = findViewById(R.id.detailSubtaskProgressText)
         readAllButton = findViewById(R.id.btnReadAll)
         toggleDoneButton = findViewById(R.id.btnToggleDone)
-        editButton = findViewById(R.id.btnEditTask)
+        saveButton = findViewById(R.id.btnSaveChanges)
         deleteButton = findViewById(R.id.btnDeleteTask)
         homeButton = findViewById(R.id.btnGoHome)
         assistantButton = findViewById(R.id.btnTalkAssistant)
+        unsavedChangesText = findViewById(R.id.detailUnsavedChanges)
     }
 
     private fun bindInteractions() {
-        VoiceFirstGestureBinder.bindInformation(
+        VoiceFirstGestureBinder.bindAction(
             titleSurface,
-            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.title(it.title) } },
-            speak = ::speakIdentification
+            speechProvider = { draftController?.draft?.let { TaskDetailSpeechRenderer.title(it.title) } },
+            speak = ::speakIdentification,
+            activate = { startFieldEdit(TaskDetailEditInteraction.WAITING_FOR_TITLE) }
         )
+        titleSurface.setOnLongClickListener { showManualTitleEditor(); true }
         VoiceFirstGestureBinder.bindInformation(
             statusSurface,
-            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.status(statusFor(it)) } },
+            speechProvider = { draftStatus()?.let(TaskDetailSpeechRenderer::status) },
             speak = ::speakIdentification
         )
-        VoiceFirstGestureBinder.bindInformation(
+        VoiceFirstGestureBinder.bindAction(
             dateSurface,
-            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.date(it.dueDate) } },
-            speak = ::speakIdentification
+            speechProvider = { draftController?.draft?.let { TaskDetailSpeechRenderer.date(it.dueDate) } },
+            speak = ::speakIdentification,
+            activate = { startFieldEdit(TaskDetailEditInteraction.WAITING_FOR_DATE) }
         )
-        VoiceFirstGestureBinder.bindInformation(
+        dateSurface.setOnLongClickListener { showManualDatePicker(); true }
+        VoiceFirstGestureBinder.bindAction(
             timeSurface,
-            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.time(it.dueTime) } },
-            speak = ::speakIdentification
+            speechProvider = { draftController?.draft?.let { TaskDetailSpeechRenderer.time(it.dueTime) } },
+            speak = ::speakIdentification,
+            activate = { startFieldEdit(TaskDetailEditInteraction.WAITING_FOR_TIME) }
         )
+        timeSurface.setOnLongClickListener { showManualTimePicker(); true }
         VoiceFirstGestureBinder.bindInformation(
             subtaskProgressSurface,
             speechProvider = {
@@ -165,27 +234,16 @@ class TaskDetailActivity : AppCompatActivity() {
             doubleTapHaptic = null
         )
         VoiceFirstGestureBinder.bindAction(
-            editButton,
-            speechProvider = TaskScreenControlSpeechRenderer::editDescription,
+            saveButton,
+            speechProvider = TaskScreenControlSpeechRenderer::saveDescription,
             speak = ::speakIdentification,
-            activate = {
-                navigationCoordinator.request(
-                    TaskScreenControlSpeechRenderer.openingTaskEditor(),
-                    ::editTask
-                )
-            }
+            activate = ::requestSave
         )
         VoiceFirstGestureBinder.bindAction(
             deleteButton,
             speechProvider = TaskScreenControlSpeechRenderer::deleteDescription,
             speak = ::speakIdentification,
-            activate = {
-                navigationCoordinator.request(
-                    TaskScreenControlSpeechRenderer.openingDeleteConfirmation()
-                ) {
-                    launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION)
-                }
-            }
+            activate = ::handleDelete
         )
 
         AccessibilityStateHelper.updateAssistantState(
@@ -197,24 +255,13 @@ class TaskDetailActivity : AppCompatActivity() {
             homeButton,
             speechProvider = TaskScreenControlSpeechRenderer::homeDescription,
             speak = ::speakIdentification,
-            activate = {
-                navigationCoordinator.request(TaskScreenControlSpeechRenderer.returningHome()) {
-                    returnHome()
-                }
-            }
+            activate = ::handleHomeOrBackExit
         )
         VoiceFirstGestureBinder.bindAction(
             assistantButton,
             speechProvider = TaskScreenControlSpeechRenderer::taskAssistantDescription,
             speak = ::speakIdentification,
-            activate = {
-                val title = currentTask?.title ?: return@bindAction
-                navigationCoordinator.request(
-                    TaskScreenControlSpeechRenderer.openingTaskAssistant(title)
-                ) {
-                    launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT)
-                }
-            }
+            activate = ::handleContextualAssistant
         )
     }
 
@@ -229,9 +276,7 @@ class TaskDetailActivity : AppCompatActivity() {
                     showMissingTaskAndFinish()
                     return@launch
                 }
-                applySnapshot(snapshot)
-                screenSpeechState.onAuthoritativeLoad(snapshot.first.title, snapshot)
-                    ?.let(::speakIdentification)
+                reconcileAuthoritativeSnapshot(snapshot)
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
@@ -260,22 +305,53 @@ class TaskDetailActivity : AppCompatActivity() {
         render(snapshot.first, snapshot.second)
     }
 
+    private fun reconcileAuthoritativeSnapshot(snapshot: Pair<TaskEntity, List<TaskEntity>>) {
+        val existing = draftController
+        val latest = snapshot.first
+        var dirtyDraftInvalidated = false
+        val fieldsChangedExternally = existing != null && (
+            existing.base.title != latest.title ||
+                existing.base.dueDate != latest.dueDate ||
+                existing.base.dueTime != latest.dueTime
+            )
+        when {
+            existing == null -> draftController = TaskDetailDraftController.from(latest)
+            fieldsChangedExternally -> {
+                val wasDirty = existing.isDirty
+                existing.replaceFromRoom(latest)
+                if (wasDirty) {
+                    dirtyDraftInvalidated = true
+                    voiceHelper.speak("This task changed elsewhere. Your unsaved draft was cleared.")
+                }
+            }
+            else -> existing.updateAuthoritativeCompletion(latest.isDone)
+        }
+        applySnapshot(snapshot)
+        if (dirtyDraftInvalidated) {
+            screenSpeechState.synchronize(snapshot)
+        } else {
+            screenSpeechState.onAuthoritativeLoad(latest.title, snapshot)?.let(::speakIdentification)
+        }
+    }
+
     private fun render(task: TaskEntity, subtasks: List<TaskEntity>) {
-        val status = statusFor(task)
+        val draft = draftController?.draft ?: return
+        val status = statusFor(task.isDone, draft.dueDate, draft.dueTime)
         val completedSubtasks = subtasks.count { it.isDone }
 
-        titleText.text = task.title.ifBlank { getString(R.string.untitled_task) }
+        titleText.text = draft.title.ifBlank { getString(R.string.untitled_task) }
         statusText.text = status.visibleText
-        dateText.text = TaskCardAccessibilitySemantics.spokenDate(task.dueDate)
-        timeText.text = TaskCardAccessibilitySemantics.spokenTime(task.dueTime)
+        dateText.text = TaskCardAccessibilitySemantics.spokenDate(draft.dueDate)
+        timeText.text = TaskCardAccessibilitySemantics.spokenTime(draft.dueTime)
         toggleDoneButton.setText(if (task.isDone) R.string.undo else R.string.mark_done)
 
-        titleSurface.contentDescription = TaskDetailSpeechRenderer.title(task.title)
+        titleSurface.contentDescription = TaskDetailSpeechRenderer.title(draft.title)
         statusSurface.contentDescription = TaskDetailSpeechRenderer.status(status)
-        dateSurface.contentDescription = TaskDetailSpeechRenderer.date(task.dueDate)
-        timeSurface.contentDescription = TaskDetailSpeechRenderer.time(task.dueTime)
+        dateSurface.contentDescription = TaskDetailSpeechRenderer.date(draft.dueDate)
+        timeSurface.contentDescription = TaskDetailSpeechRenderer.time(draft.dueTime)
         applyStatusTreatment(status.visualStatus)
         renderSubtasks(subtasks, completedSubtasks)
+        renderDirtyState()
     }
 
     private fun renderSubtasks(subtasks: List<TaskEntity>, completedCount: Int) {
@@ -336,14 +412,17 @@ class TaskDetailActivity : AppCompatActivity() {
     private fun readAll() {
         navigationCoordinator.cancelPending()
         val task = currentTask ?: return
+        val draftState = draftController ?: return
+        val draft = draftState.draft
         voiceHelper.speak(
             TaskDetailSpeechRenderer.readAll(
-                title = task.title,
-                status = statusFor(task),
-                dueDate = task.dueDate,
-                dueTime = task.dueTime,
+                title = draft.title,
+                status = statusFor(task.isDone, draft.dueDate, draft.dueTime),
+                dueDate = draft.dueDate,
+                dueTime = draft.dueTime,
                 completedSubtasks = currentSubtasks.count { it.isDone },
-                totalSubtasks = currentSubtasks.size
+                totalSubtasks = currentSubtasks.size,
+                hasUnsavedChanges = draftState.isDirty
             )
         )
     }
@@ -367,6 +446,7 @@ class TaskDetailActivity : AppCompatActivity() {
                 }
                 val refreshed = loadAuthoritativeSnapshot()
                     ?: throw IllegalStateException("Task unavailable after completion update")
+                synchronizeDraftAfterCompletion(refreshed.first)
                 applySnapshot(refreshed)
                 screenSpeechState.synchronize(refreshed)
                 syncReminderAfterCompletionChange(refreshed.first)
@@ -410,15 +490,17 @@ class TaskDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun editTask() {
-        val task = currentTask ?: return
-        startActivity(Intent(this, EditTaskActivity::class.java).apply {
-            putExtra("task_id", task.id)
-            putExtra("task_title", task.title)
-            putExtra("task_date", task.dueDate)
-            putExtra("task_time", task.dueTime)
-            putExtra("task_is_done", task.isDone)
-        })
+    private fun synchronizeDraftAfterCompletion(task: TaskEntity) {
+        draftController?.let { controller ->
+            val savedFieldsChanged = controller.base.title != task.title ||
+                controller.base.dueDate != task.dueDate ||
+                controller.base.dueTime != task.dueTime
+            if (!controller.isDirty && savedFieldsChanged) {
+                controller.replaceFromRoom(task)
+            } else {
+                controller.updateAuthoritativeCompletion(task.isDone)
+            }
+        }
     }
 
     private fun launchHomeAssistant(entryMode: HomeAssistantEntryMode) {
@@ -442,7 +524,19 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     private fun statusFor(task: TaskEntity): TaskStatusPresentation =
-        TaskStatusPresenter.present(task.isDone, task.dueDate, task.dueTime)
+        statusFor(task.isDone, task.dueDate, task.dueTime)
+
+    private fun statusFor(
+        isDone: Boolean,
+        dueDate: String?,
+        dueTime: String?
+    ): TaskStatusPresentation = TaskStatusPresenter.present(isDone, dueDate, dueTime)
+
+    private fun draftStatus(): TaskStatusPresentation? {
+        val task = currentTask ?: return null
+        val draft = draftController?.draft ?: return null
+        return statusFor(task.isDone, draft.dueDate, draft.dueTime)
+    }
 
     private fun applyStatusTreatment(visualStatus: TaskVisualStatus) {
         val (background, textColor) = when (visualStatus) {
@@ -457,11 +551,538 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     private fun setActionButtonsEnabled(enabled: Boolean) {
-        listOf(readAllButton, toggleDoneButton, editButton, deleteButton).forEach { button ->
+        listOf(
+            readAllButton,
+            toggleDoneButton,
+            saveButton,
+            deleteButton,
+            homeButton,
+            assistantButton
+        ).forEach { button ->
             button.isEnabled = enabled
             button.alpha = if (enabled) 1f else 0.55f
         }
     }
+
+    private fun renderDirtyState() {
+        val dirty = draftController?.isDirty == true
+        unsavedChangesText.visibility = if (dirty) View.VISIBLE else View.GONE
+        saveButton.setBackgroundResource(
+            if (dirty) R.drawable.bg_save_changes_dirty else R.drawable.bg_action_button
+        )
+        saveButton.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (dirty) R.color.white else R.color.ui_text_primary_light
+            )
+        )
+    }
+
+    private fun startFieldEdit(interaction: TaskDetailEditInteraction) {
+        if (taskMutationInProgress) return
+        val draft = draftController?.draft ?: run {
+            voiceHelper.speak(getString(R.string.task_no_longer_available_spoken))
+            return
+        }
+        navigationCoordinator.cancelPending()
+        editInteraction = interaction
+        interactionRevision = draft.revision
+        pendingSaveClaim = null
+        pendingExitAfterSave = null
+        assistantSession.prepareForContextEntry()
+        assistantSession.startPassiveSession()
+        assistantSession.speakThenListenAgain(
+            when (interaction) {
+                TaskDetailEditInteraction.WAITING_FOR_TITLE -> TaskDetailEditSpeechRenderer.askTitle()
+                TaskDetailEditInteraction.WAITING_FOR_DATE -> TaskDetailEditSpeechRenderer.askDate()
+                TaskDetailEditInteraction.WAITING_FOR_TIME -> TaskDetailEditSpeechRenderer.askTime()
+                else -> return
+            }
+        )
+    }
+
+    private fun requestSave() {
+        if (taskMutationInProgress) return
+        val controller = draftController ?: return
+        val claim = controller.freezeSaveClaim()
+        if (claim == null) {
+            voiceHelper.speak("There are no unsaved changes.")
+            return
+        }
+        beginConfirmation(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
+            prompt = TaskDetailEditSpeechRenderer.confirmSave(claim.draft.title),
+            claim = claim
+        )
+    }
+
+    private fun handleHomeOrBackExit() {
+        if (taskMutationInProgress) return
+        val controller = draftController ?: return
+        if (!controller.isDirty) {
+            navigationCoordinator.request(TaskScreenControlSpeechRenderer.returningHome()) {
+                returnHome()
+            }
+            return
+        }
+        beginConfirmation(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
+            prompt = TaskDetailEditSpeechRenderer.confirmHomeExit(),
+            claim = controller.freezeSaveClaim(),
+            afterSave = ::returnHome
+        )
+    }
+
+    private fun handleContextualAssistant() {
+        if (taskMutationInProgress) return
+        val task = currentTask ?: return
+        val controller = draftController ?: return
+        if (!controller.isDirty) {
+            navigationCoordinator.request(
+                TaskScreenControlSpeechRenderer.openingTaskAssistant(task.title)
+            ) { launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT) }
+            return
+        }
+        beginConfirmation(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION,
+            prompt = TaskDetailEditSpeechRenderer.confirmAssistantExit(),
+            claim = controller.freezeSaveClaim(),
+            afterSave = { launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT) }
+        )
+    }
+
+    private fun handleDelete() {
+        if (taskMutationInProgress) return
+        val controller = draftController ?: return
+        if (!controller.isDirty) {
+            navigationCoordinator.request(
+                TaskScreenControlSpeechRenderer.openingDeleteConfirmation()
+            ) { launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION) }
+            return
+        }
+        beginConfirmation(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION,
+            prompt = TaskDetailEditSpeechRenderer.confirmDeleteDiscard(),
+            claim = null
+        )
+    }
+
+    private fun beginConfirmation(
+        interaction: TaskDetailEditInteraction,
+        prompt: String,
+        claim: TaskDetailSaveClaim?,
+        afterSave: (() -> Unit)? = null
+    ) {
+        navigationCoordinator.cancelPending()
+        editInteraction = interaction
+        interactionRevision = draftController?.draft?.revision ?: -1L
+        pendingSaveClaim = claim
+        pendingExitAfterSave = afterSave
+        assistantSession.prepareForContextEntry()
+        assistantSession.startPassiveSession()
+        assistantSession.expectConfirmation()
+        assistantSession.speakThenListenAgain(prompt)
+    }
+
+    override fun onAssistantFinalText(text: String) {
+        when (editInteraction) {
+            TaskDetailEditInteraction.WAITING_FOR_TITLE,
+            TaskDetailEditInteraction.WAITING_FOR_DATE,
+            TaskDetailEditInteraction.WAITING_FOR_TIME -> handleFieldResponse(text)
+            TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION ->
+                handleConfirmationResponse(text)
+            TaskDetailEditInteraction.IDLE,
+            TaskDetailEditInteraction.SAVING -> Unit
+        }
+    }
+
+    private fun handleFieldResponse(text: String) {
+        val controller = draftController ?: return
+        if (controller.draft.revision != interactionRevision) {
+            endLocalInteraction("That edit is no longer current. Please try again.")
+            return
+        }
+        val result = when (editInteraction) {
+            TaskDetailEditInteraction.WAITING_FOR_TITLE -> fieldResolver.resolveTitle(text)
+            TaskDetailEditInteraction.WAITING_FOR_DATE ->
+                fieldResolver.resolveDate(text, controller.draft)
+            TaskDetailEditInteraction.WAITING_FOR_TIME ->
+                fieldResolver.resolveTime(text, controller.draft)
+            else -> return
+        }
+        when (result) {
+            is TaskFieldEditResult.Title -> {
+                if (!controller.changeTitle(result.value)) {
+                    endLocalInteraction("That title is already set.")
+                    return
+                }
+                renderCurrentDraft()
+                endLocalInteraction(TaskDetailEditSpeechRenderer.titleChanged(result.value))
+            }
+            is TaskFieldEditResult.Schedule -> {
+                val field = editInteraction
+                if (!controller.changeSchedule(result.dueDate, result.dueTime)) {
+                    endLocalInteraction("That schedule is already set.")
+                    return
+                }
+                renderCurrentDraft()
+                val speech = if (field == TaskDetailEditInteraction.WAITING_FOR_DATE) {
+                    TaskDetailEditSpeechRenderer.dateChanged(result.dueDate)
+                } else {
+                    TaskDetailEditSpeechRenderer.timeChanged(result.dueTime)
+                }
+                endLocalInteraction(speech)
+            }
+            is TaskFieldEditResult.NeedsClarification ->
+                assistantSession.speakThenListenAgain(result.prompt)
+            TaskFieldEditResult.PastSchedule ->
+                assistantSession.speakThenListenAgain("That schedule is in the past. Please choose another value.")
+            TaskFieldEditResult.Invalid -> assistantSession.speakThenListenAgain(
+                when (editInteraction) {
+                    TaskDetailEditInteraction.WAITING_FOR_TITLE -> "Please provide a valid task title."
+                    TaskDetailEditInteraction.WAITING_FOR_DATE -> "I could not understand that date. Please try again."
+                    else -> "I could not understand that time. Please try again."
+                }
+            )
+        }
+    }
+
+    private fun handleConfirmationResponse(text: String) {
+        when (TaskDetailConfirmationInterpreter.interpret(text)) {
+            TaskDetailConfirmation.YES -> handleConfirmationYes()
+            TaskDetailConfirmation.NO -> handleConfirmationNo()
+            TaskDetailConfirmation.CANCEL -> handleConfirmationCancel()
+            TaskDetailConfirmation.UNCLEAR -> {
+                assistantSession.expectConfirmation()
+                assistantSession.speakThenListenAgain("Please say yes, no, or cancel.")
+            }
+        }
+    }
+
+    private fun handleConfirmationYes() {
+        when (editInteraction) {
+            TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION -> {
+                val claim = pendingSaveClaim ?: return
+                performAuthoritativeSave(claim, pendingExitAfterSave)
+            }
+            TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION -> {
+                draftController?.discard()
+                renderCurrentDraft()
+                clearLocalInteraction()
+                assistantSession.speakThenRun(
+                    TaskScreenControlSpeechRenderer.openingDeleteConfirmation()
+                ) { launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION) }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun handleConfirmationNo() {
+        when (editInteraction) {
+            TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION ->
+                endLocalInteraction("Changes not saved.")
+            TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION -> {
+                draftController?.discard()
+                renderCurrentDraft()
+                clearLocalInteraction()
+                assistantSession.speakThenRun("Changes discarded. Returning home.", ::returnHome)
+            }
+            TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION -> {
+                draftController?.discard()
+                renderCurrentDraft()
+                val title = currentTask?.title.orEmpty()
+                clearLocalInteraction()
+                assistantSession.speakThenRun(
+                    "Changes discarded. ${TaskScreenControlSpeechRenderer.openingTaskAssistant(title)}"
+                ) { launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT) }
+            }
+            TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION ->
+                endLocalInteraction("Deletion cancelled. Your changes are not saved.")
+            else -> Unit
+        }
+    }
+
+    private fun handleConfirmationCancel() {
+        val speech = if (editInteraction == TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION) {
+            "Save cancelled."
+        } else {
+            "Cancelled."
+        }
+        endLocalInteraction(speech)
+    }
+
+    private fun performAuthoritativeSave(
+        claim: TaskDetailSaveClaim,
+        afterSuccess: (() -> Unit)?
+    ) {
+        val controller = draftController ?: return
+        if (!controller.isCurrent(claim)) {
+            endLocalInteraction("That confirmation is no longer current. Please review your changes.")
+            return
+        }
+        when (fieldResolver.validateDraft(claim.draft)) {
+            TaskFieldEditResult.Invalid -> {
+                endLocalInteraction("The task title or schedule is invalid. Your changes were not saved.")
+                return
+            }
+            TaskFieldEditResult.PastSchedule -> {
+                endLocalInteraction("That schedule is in the past. Your changes were not saved.")
+                return
+            }
+            else -> Unit
+        }
+        editInteraction = TaskDetailEditInteraction.SAVING
+        taskMutationInProgress = true
+        setActionButtonsEnabled(false)
+        assistantSession.prepareForContextEntry()
+        lifecycleScope.launch {
+            try {
+                val updated = withContext(Dispatchers.IO) {
+                    dao.updateTaskAndSubtasksIfAuthoritativeSnapshotMatches(
+                        id = claim.base.taskId,
+                        expectedTitle = claim.base.title,
+                        expectedDueDate = claim.base.dueDate,
+                        expectedDueTime = claim.base.dueTime,
+                        expectedIsDone = claim.base.isDone,
+                        newTitle = claim.draft.title,
+                        newDueDate = claim.draft.dueDate,
+                        newDueTime = claim.draft.dueTime
+                    )
+                }
+                if (!updated) {
+                    if (reloadAfterSaveConflict()) {
+                        finishSaveSpeech(
+                            "This task changed elsewhere. Your changes were not saved.",
+                            afterSuccess = null
+                        )
+                    } else {
+                        finishSaveSpeech(
+                            getString(R.string.task_no_longer_available_spoken),
+                            afterSuccess = ::finish
+                        )
+                    }
+                    return@launch
+                }
+                val refreshed = loadAuthoritativeSnapshot()
+                    ?: throw IllegalStateException("Task unavailable after save")
+                controller.replaceFromRoom(refreshed.first)
+                applySnapshot(refreshed)
+                screenSpeechState.synchronize(refreshed)
+                val reminderRestored = synchronizeReminderAfterSave(refreshed.first)
+                saveButton.performConfirmationHapticFeedback()
+                finishSaveSpeech(
+                    if (reminderRestored) {
+                        "Task changes saved."
+                    } else {
+                        "Task changes saved, but the reminder could not be scheduled."
+                    },
+                    afterSuccess
+                )
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.w(
+                    TASK_DETAIL_UPDATE_TAG,
+                    "operation=SAVE outcome=FAILED type=${exception.javaClass.simpleName}"
+                )
+                finishSaveSpeech("I could not save the task. Please try again.", null)
+            } finally {
+                taskMutationInProgress = false
+                if (!isFinishing) setActionButtonsEnabled(true)
+            }
+        }
+    }
+
+    private suspend fun reloadAfterSaveConflict(): Boolean {
+        val latest = loadAuthoritativeSnapshot() ?: return false
+        draftController?.replaceFromRoom(latest.first)
+        applySnapshot(latest)
+        screenSpeechState.synchronize(latest)
+        return true
+    }
+
+    private fun synchronizeReminderAfterSave(task: TaskEntity): Boolean {
+        return runCatching {
+            ReminderHelper.cancelReminder(this, task.id)
+            if (task.isDone || task.parentTaskId != null) return@runCatching true
+            val expectsReminder = !task.dueDate.isNullOrBlank() && !task.dueTime.isNullOrBlank()
+            if (!expectsReminder) return@runCatching true
+            when (ReminderEligibilityPolicy.evaluateForScheduling(task, System.currentTimeMillis())) {
+                is ReminderSchedulingEligibility.Eligible ->
+                    ReminderHelper.scheduleReminderFromTask(this, task)
+                is ReminderSchedulingEligibility.Rejected -> false
+            }
+        }.getOrElse { exception ->
+            Log.w(
+                TASK_DETAIL_UPDATE_TAG,
+                "operation=SAVE_REMINDER_SYNC outcome=FAILED type=${exception.javaClass.simpleName}"
+            )
+            false
+        }
+    }
+
+    private fun finishSaveSpeech(text: String, afterSuccess: (() -> Unit)?) {
+        clearLocalInteraction()
+        if (activityStopped || isDestroyed) return
+        if (afterSuccess == null) {
+            assistantSession.startPassiveSession(clearConversation = false)
+            assistantSession.speakThenStop(text)
+        } else {
+            assistantSession.startPassiveSession(clearConversation = false)
+            assistantSession.speakThenRun(text, afterSuccess)
+        }
+    }
+
+    private fun endLocalInteraction(text: String) {
+        clearLocalInteraction()
+        assistantSession.speakThenStop(text)
+    }
+
+    private fun clearLocalInteraction() {
+        editInteraction = TaskDetailEditInteraction.IDLE
+        interactionRevision = -1L
+        pendingSaveClaim = null
+        pendingExitAfterSave = null
+    }
+
+    override fun onAssistantCancelled() {
+        clearLocalInteraction()
+    }
+
+    override fun onAssistantSessionStopped() {
+        clearLocalInteraction()
+    }
+
+    override fun onAssistantTypedInputRequested() {
+        AccessibleAssistantInputDialog.show(
+            activity = this,
+            title = "Type assistant response",
+            message = "Typed and voice responses use the same task detail flow.",
+            emptyError = "Please type a response",
+            onCancel = assistantSession::onTypedInputCancelled
+        ) { typedText ->
+            assistantSession.submitTypedText(typedText, clearConversation = false)
+        }
+    }
+
+    private fun showManualTitleEditor() {
+        if (taskMutationInProgress) return
+        val controller = draftController ?: return
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(controller.draft.title)
+            setSelection(text.length)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Edit task title")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Apply", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val title = input.text.toString().trim()
+                if (title.isBlank()) {
+                    input.error = "Enter a valid title"
+                    return@setOnClickListener
+                }
+                if (!controller.changeTitle(title)) {
+                    input.error = "That title is already set"
+                    return@setOnClickListener
+                }
+                renderCurrentDraft()
+                dialog.dismiss()
+                voiceHelper.speak(TaskDetailEditSpeechRenderer.titleChanged(title))
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showManualDatePicker() {
+        if (taskMutationInProgress) return
+        val controller = draftController ?: return
+        val start = parseStoredDate(controller.draft.dueDate) ?: Calendar.getInstance()
+        DatePickerDialog(
+            this,
+            { _, year, month, day ->
+                val selected = String.format(Locale.UK, "%02d/%02d/%04d", day, month + 1, year)
+                applyManualScheduleResult(
+                    fieldResolver.resolveDate(selected, controller.draft),
+                    isDate = true
+                )
+            },
+            start.get(Calendar.YEAR),
+            start.get(Calendar.MONTH),
+            start.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    private fun showManualTimePicker() {
+        if (taskMutationInProgress) return
+        val controller = draftController ?: return
+        val start = parseStoredTime(controller.draft.dueTime) ?: Calendar.getInstance()
+        TimePickerDialog(
+            this,
+            { _, hour, minute ->
+                val selected = formatStoredTime(hour, minute)
+                applyManualScheduleResult(
+                    fieldResolver.resolveTime(selected, controller.draft),
+                    isDate = false
+                )
+            },
+            start.get(Calendar.HOUR_OF_DAY),
+            start.get(Calendar.MINUTE),
+            false
+        ).show()
+    }
+
+    private fun applyManualScheduleResult(result: TaskFieldEditResult, isDate: Boolean) {
+        val controller = draftController ?: return
+        when (result) {
+            is TaskFieldEditResult.Schedule -> {
+                if (!controller.changeSchedule(result.dueDate, result.dueTime)) {
+                    voiceHelper.speak("That schedule is already set.")
+                    return
+                }
+                renderCurrentDraft()
+                voiceHelper.speak(
+                    if (isDate) TaskDetailEditSpeechRenderer.dateChanged(result.dueDate)
+                    else TaskDetailEditSpeechRenderer.timeChanged(result.dueTime)
+                )
+            }
+            TaskFieldEditResult.PastSchedule -> voiceHelper.speak("That schedule is in the past.")
+            else -> voiceHelper.speak("That value could not be used.")
+        }
+    }
+
+    private fun renderCurrentDraft() {
+        val task = currentTask ?: return
+        render(task, currentSubtasks)
+    }
+
+    private fun parseStoredDate(value: String?): Calendar? = parseStored("dd/MM/yyyy", value)
+
+    private fun parseStoredTime(value: String?): Calendar? = parseStored("hh:mm a", value)
+
+    private fun parseStored(pattern: String, value: String?): Calendar? = runCatching {
+        if (value.isNullOrBlank()) return@runCatching null
+        SimpleDateFormat(pattern, Locale.UK).apply { isLenient = false }
+            .parse(value)
+            ?.let { Calendar.getInstance().apply { time = it } }
+    }.getOrNull()
+
+    private fun formatStoredTime(hour: Int, minute: Int): String =
+        SimpleDateFormat("hh:mm a", Locale.UK).format(
+            Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+            }.time
+        ).uppercase(Locale.UK)
 
     private fun showMissingTaskAndFinish() {
         if (isFinishing || missingTaskSpeechPending) return

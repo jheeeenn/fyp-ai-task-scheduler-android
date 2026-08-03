@@ -24,6 +24,7 @@ class AssistantVoiceSession(
     private val voiceHelper: VoiceHelper,
     private val responseManager: AssistantResponseManager,
     private val audioPermissionLauncher: ActivityResultLauncher<String>,
+    private val normalizeFinalTextForHost: Boolean = true,
     private val onAccessibilityStateChanged: (AssistantAccessibilityState) -> Unit = {}
 ) {
     private var suppressNextRecognizerError = false
@@ -141,7 +142,9 @@ class AssistantVoiceSession(
                             )
                             assistantBottomSheet?.showUserSpeech(spokenText)
                             assistantBottomSheet?.setProcessingState()
-                            host.onAssistantFinalText(spokenText)
+                            host.onAssistantFinalText(
+                                if (normalizeFinalTextForHost) spokenText else finalRecognizedText
+                            )
                         } else {
                             handleListenFailure(responseManager.listenFailure())
                         }
@@ -233,7 +236,9 @@ class AssistantVoiceSession(
         assistantBottomSheet?.setProcessingState()
 
         logUserTranscript(typedText, source = "TYPED")
-        host.onAssistantFinalText(typedText.lowercase())
+        host.onAssistantFinalText(
+            if (normalizeFinalTextForHost) typedText.lowercase() else typedText
+        )
     }
 
     fun onTypedInputCancelled() {

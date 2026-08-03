@@ -48,4 +48,6 @@
     <string name="assistant_next_action_label">What you can do next</string>
     <string name="type_to_assistant">Type to Assistant</string>
     <string name="stop_assistant">Stop Assistant</string>
+    <string name="save_changes">Save Changes</string>
+    <string name="unsaved_changes">Unsaved changes</string>
 </resources>

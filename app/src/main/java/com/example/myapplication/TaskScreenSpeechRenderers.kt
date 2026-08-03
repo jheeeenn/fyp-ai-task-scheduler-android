@@ -50,6 +50,7 @@ object TaskScreenControlSpeechRenderer {
     fun assistantDescription(): String = "Assistant button."
     fun openingAssistant(): String = "Opening assistant."
     fun readAllDescription(): String = "Read all button."
+    fun saveDescription(): String = "Save button."
     fun toggleDescription(isDone: Boolean): String = if (isDone) {
         "Undo button."
     } else {
@@ -62,4 +63,21 @@ object TaskScreenControlSpeechRenderer {
     fun taskAssistantDescription(): String = "Assistant button."
     fun openingTaskAssistant(title: String): String =
         "Opening assistant for ${title.ifBlank { "this task" }}."
+}
+
+object TaskDetailEditSpeechRenderer {
+    fun askTitle(): String = "What title would you like to use?"
+    fun askDate(): String = "What date would you like to use?"
+    fun askTime(): String = "What time would you like to use?"
+    fun titleChanged(title: String): String = "Title changed to $title. Not saved."
+    fun dateChanged(date: String?): String =
+        "Date changed to ${com.example.myapplication.accessibility.TaskCardAccessibilitySemantics.spokenDate(date)}. Not saved."
+    fun timeChanged(time: String?): String =
+        "Time changed to ${com.example.myapplication.accessibility.TaskCardAccessibilitySemantics.spokenTime(time)}. Not saved."
+    fun confirmSave(title: String): String = "Save changes to ${title.ifBlank { "this task" }}?"
+    fun confirmHomeExit(): String = "You have unsaved changes. Save them before returning home?"
+    fun confirmAssistantExit(): String =
+        "You have unsaved changes. Save them before opening the assistant?"
+    fun confirmDeleteDiscard(): String =
+        "Unsaved changes will be discarded if this task is deleted. Continue?"
 }

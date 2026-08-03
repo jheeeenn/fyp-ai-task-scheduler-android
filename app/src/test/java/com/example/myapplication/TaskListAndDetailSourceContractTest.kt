@@ -101,20 +101,17 @@ class TaskListAndDetailSourceContractTest {
     }
 
     @Test
-    fun detailActionsPreserveCompletionReminderEditAndCentralDeleteContracts() {
+    fun detailActionsPreserveCompletionReminderSaveAndCentralDeleteContracts() {
         val detail = mainRoot.resolve("TaskDetailActivity.kt").readText()
 
         assertTrue(detail.contains("TaskDetailSpeechRenderer.readAll"))
         assertTrue(detail.contains("dao.updateDoneStatusForTaskAndSubtasks"))
         assertTrue(detail.contains("ReminderHelper.cancelReminder"))
         assertTrue(detail.contains("ReminderHelper.scheduleReminderFromTask"))
-        assertTrue(detail.contains("putExtra(\"task_title\", task.title)"))
-        assertTrue(detail.contains("putExtra(\"task_date\", task.dueDate)"))
-        assertTrue(detail.contains("putExtra(\"task_time\", task.dueTime)"))
+        assertTrue(detail.contains("updateTaskAndSubtasksIfAuthoritativeSnapshotMatches"))
+        assertTrue(detail.contains("btnSaveChanges"))
         assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION"))
         assertTrue(detail.contains("HomeAssistantEntryContract.putTaskDetail"))
-        assertFalse(detail.contains("AlertDialog"))
-        assertFalse(detail.contains("setPositiveButton"))
         assertFalse(detail.contains("dao.deleteTaskAndSubtasks"))
     }
 
@@ -130,14 +127,14 @@ class TaskListAndDetailSourceContractTest {
             "detailSubtaskProgressSurface",
             "btnReadAll",
             "btnToggleDone",
-            "btnEditTask",
+            "btnSaveChanges",
             "btnDeleteTask",
             "btnGoHome",
             "btnTalkAssistant"
         ).forEach { id -> assertTrue(layout.contains("@+id/$id")) }
         assertTrue(layout.contains("<ScrollView"))
-        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/detailActionGrid\""))
         assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnGoHome\""))
+        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnTalkAssistant\""))
     }
 
     @Test

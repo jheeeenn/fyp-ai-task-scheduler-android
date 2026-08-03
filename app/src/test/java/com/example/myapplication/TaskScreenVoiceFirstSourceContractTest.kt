@@ -72,13 +72,16 @@ class TaskScreenVoiceFirstSourceContractTest {
     fun taskDetailEntryAndInformationUseAuthoritativeCurrentState() {
         val detail = root.resolve("TaskDetailActivity.kt").readText()
 
-        assertTrue(detail.contains("screenSpeechState.onAuthoritativeLoad(snapshot.first.title, snapshot)"))
+        assertTrue(detail.contains("screenSpeechState.onAuthoritativeLoad(latest.title, snapshot)"))
         assertTrue(detail.contains("screenSpeechState.synchronize(refreshed)"))
+        listOf("titleSurface", "dateSurface", "timeSurface").forEach { view ->
+            assertTrue(
+                Regex("VoiceFirstGestureBinder\\.bindAction\\(\\s*$view,")
+                    .containsMatchIn(detail)
+            )
+        }
         listOf(
-            "titleSurface",
             "statusSurface",
-            "dateSurface",
-            "timeSurface",
             "subtaskProgressSurface",
             "subtaskView"
         ).forEach { view ->
@@ -87,7 +90,7 @@ class TaskScreenVoiceFirstSourceContractTest {
                     .containsMatchIn(detail)
             )
         }
-        assertTrue(detail.contains("currentTask?.let { TaskDetailSpeechRenderer.title(it.title) }"))
+        assertTrue(detail.contains("draftController?.draft?.let { TaskDetailSpeechRenderer.title(it.title) }"))
         assertTrue(detail.contains("TaskDetailSpeechRenderer.subtask(subtask.title, subtask.isDone)"))
         assertFalse(detail.contains("contentDescription = subtask.id"))
     }
@@ -100,14 +103,14 @@ class TaskScreenVoiceFirstSourceContractTest {
         assertTrue(detail.contains("activate = ::readAll"))
         assertTrue(detail.contains("TaskScreenControlSpeechRenderer.toggleDescription(it.isDone)"))
         assertTrue(detail.contains("activate = ::toggleDone"))
-        assertTrue(detail.contains("TaskScreenControlSpeechRenderer.openingTaskEditor()"))
-        assertTrue(detail.contains("::editTask"))
+        assertTrue(detail.contains("speechProvider = TaskScreenControlSpeechRenderer::saveDescription"))
+        assertTrue(detail.contains("activate = ::requestSave"))
         assertTrue(detail.contains("TaskScreenControlSpeechRenderer.openingDeleteConfirmation()"))
         assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION"))
         assertTrue(detail.contains("TaskScreenControlSpeechRenderer.returningHome()"))
-        assertTrue(detail.contains("TaskScreenControlSpeechRenderer.openingTaskAssistant(title)"))
+        assertTrue(detail.contains("TaskScreenControlSpeechRenderer.openingTaskAssistant(task.title)"))
         assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_CONTEXT"))
-        assertFalse(detail.contains("AlertDialog"))
+        assertFalse(detail.contains("Intent(this, EditTaskActivity::class.java)"))
     }
 
     @Test

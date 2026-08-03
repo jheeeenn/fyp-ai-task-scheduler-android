@@ -105,7 +105,7 @@ class TaskDetailVoiceInteractionSourceContractTest {
             .substringBefore("private suspend fun beginBreakdownTargetResolution")
 
         assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION"))
-        assertFalse(detail.contains("AlertDialog"))
+        assertFalse(detail.contains("dao.deleteTaskAndSubtasks"))
         assertTrue(loader.contains("dao.getById(taskId)"))
         assertTrue(loader.contains("askDeleteConfirmation(task)"))
         assertFalse(loader.contains("TaskMatcher"))
@@ -135,7 +135,7 @@ class TaskDetailVoiceInteractionSourceContractTest {
     fun completionFeedbackOccursOnlyAfterRoomReloadAndHasFailureRecovery() {
         val detail = mainRoot.resolve("TaskDetailActivity.kt").readText()
         val toggle = detail.substringAfter("private fun toggleDone()")
-            .substringBefore("private fun editTask")
+            .substringBefore("private fun launchHomeAssistant")
 
         assertOrdered(
             toggle,
@@ -162,10 +162,11 @@ class TaskDetailVoiceInteractionSourceContractTest {
     }
 
     @Test
-    fun taskDetailsDoNotHostASecondAssistantImplementation() {
+    fun taskDetailsHostOnlyTheBoundedSharedEditAssistant() {
         val detail = mainRoot.resolve("TaskDetailActivity.kt").readText()
 
-        assertFalse(detail.contains("AssistantVoiceSession"))
+        assertTrue(detail.contains("AssistantVoiceSession("))
+        assertTrue(detail.contains("TaskDetailEditInteraction"))
         assertFalse(detail.contains("SpeechRecognizer"))
         assertFalse(detail.contains("ConversationOrchestrator"))
         assertTrue(detail.contains("Intent(this, HomeActivity::class.java)"))

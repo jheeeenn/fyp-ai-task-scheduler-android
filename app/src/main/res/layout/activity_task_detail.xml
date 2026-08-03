@@ -31,7 +31,7 @@
         android:layout_marginBottom="12dp"
         android:clipToPadding="false"
         android:fillViewport="true"
-        app:layout_constraintBottom_toTopOf="@id/detailActionGrid"
+        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/taskDetailHeading">
@@ -77,6 +77,86 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/detailDateTimeRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/detailDateSurface"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_info_panel"
+                android:clickable="true"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
+                android:importantForAccessibility="yes"
+                android:minHeight="82dp"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
+                    android:text="@string/detail_due_date_label"
+                    android:textColor="@color/ui_text_secondary_dark"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/detailDateText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/no_date_set"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="21sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/detailTimeSurface"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_info_panel"
+                android:clickable="true"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
+                android:importantForAccessibility="yes"
+                android:minHeight="82dp"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
+                    android:text="@string/detail_due_time_label"
+                    android:textColor="@color/ui_text_secondary_dark"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/detailTimeText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/no_time_set"
+                    android:textColor="@color/ui_text_primary_dark"
+                    android:textSize="21sp" />
+            </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/detailStatusSurface"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -109,74 +189,6 @@
                     android:textColor="@color/task_status_unscheduled_text"
                     android:textSize="21sp"
                     android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/detailDateSurface"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_info_panel"
-                android:clickable="true"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:importantForAccessibility="yes"
-                android:minHeight="82dp"
-                android:orientation="vertical"
-                android:padding="18dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="@string/detail_due_date_label"
-                    android:textColor="@color/ui_text_secondary_dark"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/detailDateText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/no_date_set"
-                    android:textColor="@color/ui_text_primary_dark"
-                    android:textSize="21sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/detailTimeSurface"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_info_panel"
-                android:clickable="true"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:importantForAccessibility="yes"
-                android:minHeight="82dp"
-                android:orientation="vertical"
-                android:padding="18dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="@string/detail_due_time_label"
-                    android:textColor="@color/ui_text_secondary_dark"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/detailTimeText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/no_time_set"
-                    android:textColor="@color/ui_text_primary_dark"
-                    android:textSize="21sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -239,100 +251,109 @@
                     android:orientation="vertical" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/detailActionGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="vertical"
+                tools:ignore="ButtonStyle">
+
+                <TextView
+                    android:id="@+id/detailUnsavedChanges"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:gravity="center"
+                    android:text="@string/unsaved_changes"
+                    android:textColor="@color/ui_success"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnReadAll"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="5dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_action_button"
+                        android:backgroundTint="@null"
+                        android:minHeight="64dp"
+                        android:text="@string/read_all"
+                        android:textAllCaps="false"
+                        android:textColor="@color/ui_text_primary_light"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+
+                    <Button
+                        android:id="@+id/btnToggleDone"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_action_button"
+                        android:backgroundTint="@null"
+                        android:minHeight="64dp"
+                        android:text="@string/mark_done"
+                        android:textAllCaps="false"
+                        android:textColor="@color/ui_text_primary_light"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnSaveChanges"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="5dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_action_button"
+                        android:backgroundTint="@null"
+                        android:minHeight="64dp"
+                        android:text="@string/save_changes"
+                        android:textAllCaps="false"
+                        android:textColor="@color/ui_text_primary_light"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+
+                    <Button
+                        android:id="@+id/btnDeleteTask"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_action_button"
+                        android:backgroundTint="@null"
+                        android:minHeight="64dp"
+                        android:text="@string/delete"
+                        android:textAllCaps="false"
+                        android:textColor="@color/ui_danger"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+                </LinearLayout>
+            </LinearLayout>
+
             <Space
                 android:layout_width="match_parent"
-                android:layout_height="4dp" />
+                android:layout_height="12dp" />
         </LinearLayout>
     </ScrollView>
-
-    <LinearLayout
-        android:id="@+id/detailActionGrid"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:orientation="vertical"
-        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        tools:ignore="ButtonStyle">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnReadAll"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/read_all"
-                android:textAllCaps="false"
-                android:textColor="@color/ui_text_primary_light"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-
-            <Button
-                android:id="@+id/btnToggleDone"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/mark_done"
-                android:textAllCaps="false"
-                android:textColor="@color/ui_text_primary_light"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnEditTask"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/edit"
-                android:textAllCaps="false"
-                android:textColor="@color/ui_text_primary_light"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-
-            <Button
-                android:id="@+id/btnDeleteTask"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/delete"
-                android:textAllCaps="false"
-                android:textColor="@color/ui_danger"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-        </LinearLayout>
-    </LinearLayout>
 
     <Button
         android:id="@+id/btnGoHome"
