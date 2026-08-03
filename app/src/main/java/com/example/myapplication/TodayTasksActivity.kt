@@ -26,7 +26,6 @@ class TodayTasksActivity : AppCompatActivity() {
     private lateinit var voiceHelper: VoiceHelper
     private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
     private lateinit var accessibilityController: TaskListAccessibilityController
-    private val screenSpeechState = TaskListScreenSpeechState()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,15 +121,15 @@ class TodayTasksActivity : AppCompatActivity() {
             val taskData = withContext(Dispatchers.IO) {
                 val roots = dao.getRootTasksForDate(today)
                 val subtasks = roots.associate { root -> root.id to dao.getSubtasks(root.id) }
-                TaskListOrdering.byUrgency(roots) to subtasks
+                TaskListOrdering.today(roots) to subtasks
             }
             adapter.setTasksWithSubtasks(taskData.first, taskData.second)
             accessibilityController.render(taskData.first.size)
-            screenSpeechState.onAuthoritativeLoad(
-                pageTitle = getString(R.string.today_tasks_title),
-                count = taskData.first.size,
-                snapshot = taskData
-            )?.let(::speakIdentification)
+            speakIdentification(
+                TaskListScreenSpeechRenderer.today(
+                    TaskListScreenSpeechRenderer.activeCount(taskData.first)
+                )
+            )
         }
     }
 

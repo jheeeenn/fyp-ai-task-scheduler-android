@@ -61,9 +61,9 @@ class TaskListAndDetailSourceContractTest {
             assertTrue(source.contains("runOnUiThread"))
         }
         assertTrue(scheduled.contains("dao.getRootTasks()"))
-        assertTrue(scheduled.contains("TaskListOrdering.byUrgency(roots)"))
+        assertTrue(scheduled.contains("TaskListOrdering.scheduled(roots)"))
         assertTrue(today.contains("dao.getRootTasksForDate(today)"))
-        assertTrue(today.contains("TaskListOrdering.byUrgency(roots)"))
+        assertTrue(today.contains("TaskListOrdering.today(roots)"))
     }
 
     @Test

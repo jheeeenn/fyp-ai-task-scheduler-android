@@ -1,42 +1,27 @@
 package com.example.myapplication
 
+import com.example.myapplication.data.TaskEntity
+
 object TaskListScreenSpeechRenderer {
-    fun orientation(pageTitle: String, count: Int): String =
-        "$pageTitle. ${countPhrase(count)} " +
-            "Single tap an item to hear it. " +
-            "Double tap to open or activate it. " +
-            "Home and Assistant are at the bottom."
-
-    fun refreshedCount(pageTitle: String, count: Int): String =
-        "$pageTitle updated. ${countPhrase(count)}"
-
-    fun countPhrase(count: Int): String = when (count.coerceAtLeast(0)) {
-        0 -> "No tasks."
-        1 -> "One task."
-        2 -> "Two tasks."
-        else -> "${count.coerceAtLeast(0)} tasks."
+    fun scheduled(activeCount: Int): String = when (val count = activeCount.coerceAtLeast(0)) {
+        0 -> "You have no active scheduled tasks."
+        1 -> "You have 1 active scheduled task."
+        else -> "You have $count active scheduled tasks."
     }
-}
 
-class TaskListScreenSpeechState {
-    private var lastSnapshot: Any? = null
-
-    fun onAuthoritativeLoad(pageTitle: String, count: Int, snapshot: Any): String? {
-        val previous = lastSnapshot
-        lastSnapshot = snapshot
-        return when {
-            previous == null -> TaskListScreenSpeechRenderer.orientation(pageTitle, count)
-            previous != snapshot -> TaskListScreenSpeechRenderer.refreshedCount(pageTitle, count)
-            else -> null
-        }
+    fun today(activeCount: Int): String = when (val count = activeCount.coerceAtLeast(0)) {
+        0 -> "You have no tasks today."
+        1 -> "You have 1 task today."
+        else -> "You have $count tasks today."
     }
+
+    fun activeCount(tasks: List<TaskEntity>): Int =
+        tasks.count { !it.isDone }
 }
 
 object TaskDetailScreenSpeechRenderer {
     fun entry(title: String): String =
-        "Task details for ${title.ifBlank { "Untitled task" }}. " +
-            "Single tap information or buttons to hear them. " +
-            "Double tap a button to activate it."
+        "Task details for ${title.ifBlank { "Untitled task" }}."
 
     fun updated(): String = "Task details updated."
 }
@@ -60,26 +45,21 @@ class TaskDetailScreenSpeechState {
 }
 
 object TaskScreenControlSpeechRenderer {
-    fun homeDescription(): String = "Home. Double tap to return to the Home screen."
-    fun returningHome(): String = "Returning Home."
-    fun assistantDescription(): String =
-        "Assistant. Double tap to open the voice assistant."
-    fun openingAssistant(): String = "Opening Assistant."
-    fun readAllDescription(): String =
-        "Read all. Double tap to hear the complete task details."
+    fun homeDescription(): String = "Home button."
+    fun returningHome(): String = "Returning home."
+    fun assistantDescription(): String = "Assistant button."
+    fun openingAssistant(): String = "Opening assistant."
+    fun readAllDescription(): String = "Read all button."
     fun toggleDescription(isDone: Boolean): String = if (isDone) {
-        "Undo completion. Double tap to mark this task incomplete."
+        "Undo button."
     } else {
-        "Mark task complete. Double tap to mark this task complete."
+        "Mark done button."
     }
-    fun editDescription(): String = "Edit task. Double tap to open the task editor."
+    fun editDescription(): String = "Edit button."
     fun openingTaskEditor(): String = "Opening task editor."
-    fun deleteDescription(): String =
-        "Delete task. Double tap to begin voice confirmation."
-    fun openingDeleteConfirmation(): String =
-        "Opening the assistant to confirm deletion."
-    fun taskAssistantDescription(): String =
-        "Assistant for this task. Double tap to ask about this task."
+    fun deleteDescription(): String = "Delete button."
+    fun openingDeleteConfirmation(): String = "Opening assistant to confirm deletion."
+    fun taskAssistantDescription(): String = "Assistant button."
     fun openingTaskAssistant(title: String): String =
-        "Opening the assistant for ${title.ifBlank { "this task" }}."
+        "Opening assistant for ${title.ifBlank { "this task" }}."
 }

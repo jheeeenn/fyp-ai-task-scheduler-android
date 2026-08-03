@@ -22,7 +22,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var voiceHelper: VoiceHelper
     private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
     private lateinit var accessibilityController: TaskListAccessibilityController
-    private val screenSpeechState = TaskListScreenSpeechState()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,15 +115,15 @@ class MainActivity : AppCompatActivity() {
                 val roots = dao.getRootTasks()
                     .filter { !it.dueDate.isNullOrBlank() && !it.dueTime.isNullOrBlank() }
                 val subtasks = roots.associate { root -> root.id to dao.getSubtasks(root.id) }
-                TaskListOrdering.byUrgency(roots) to subtasks
+                TaskListOrdering.scheduled(roots) to subtasks
             }
             adapter.setTasksWithSubtasks(taskData.first, taskData.second)
             accessibilityController.render(taskData.first.size)
-            screenSpeechState.onAuthoritativeLoad(
-                pageTitle = getString(R.string.scheduled_tasks_title),
-                count = taskData.first.size,
-                snapshot = taskData
-            )?.let(::speakIdentification)
+            speakIdentification(
+                TaskListScreenSpeechRenderer.scheduled(
+                    TaskListScreenSpeechRenderer.activeCount(taskData.first)
+                )
+            )
         }
     }
 

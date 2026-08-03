@@ -9,8 +9,11 @@ class TaskScreenVoiceFirstSourceContractTest {
     private val root = File("src/main/java/com/example/myapplication")
 
     @Test
-    fun taskListsSpeakAuthoritativeEntryAndChangedCounts() {
-        listOf("MainActivity.kt", "TodayTasksActivity.kt").forEach { filename ->
+    fun taskListsSpeakActiveOnlyCountAfterEachAuthoritativeLoad() {
+        listOf(
+            "MainActivity.kt" to "TaskListScreenSpeechRenderer.scheduled(",
+            "TodayTasksActivity.kt" to "TaskListScreenSpeechRenderer.today("
+        ).forEach { (filename, rendererCall) ->
             val source = root.resolve(filename).readText()
             val load = source.substringAfter("private fun loadTasks()")
                 .substringBefore("private fun navigateToTaskDetails")
@@ -20,8 +23,9 @@ class TaskScreenVoiceFirstSourceContractTest {
                 "withContext(Dispatchers.IO)",
                 "adapter.setTasksWithSubtasks",
                 "accessibilityController.render",
-                "screenSpeechState.onAuthoritativeLoad",
-                "?.let(::speakIdentification)"
+                "speakIdentification(",
+                rendererCall,
+                "TaskListScreenSpeechRenderer.activeCount(taskData.first)"
             )
         }
     }
