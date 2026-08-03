@@ -10,17 +10,20 @@ class AccessibilitySourceContractTest {
     private val mainRoot = File("src/main/java/com/example/myapplication")
 
     @Test
-    fun taskCardIsOneFocusableClickableNodeWithProgrammaticSelection() {
+    fun taskCardIsOneFocusableClickableNodeWithReadAndOpenInteractions() {
         val layout = layoutRoot.resolve("item_task.xml").readText()
         val adapter = mainRoot.resolve("TaskAdapter.kt").readText()
 
         assertTrue(layout.contains("android:focusable=\"true\""))
         assertTrue(layout.contains("android:clickable=\"true\""))
         assertTrue(layout.contains("android:importantForAccessibility=\"yes\""))
-        assertTrue(layout.countOccurrences("android:importantForAccessibility=\"no\"") >= 6)
-        assertTrue(adapter.contains("holder.itemView.isSelected = isSelected"))
-        assertTrue(adapter.contains("TaskCardAccessibilitySemantics.summary"))
-        assertTrue(adapter.contains("onTaskSelected(tasks.find"))
+        assertTrue(layout.countOccurrences("android:importantForAccessibility=\"no\"") >= 2)
+        assertTrue(adapter.contains("GestureDetector"))
+        assertTrue(adapter.contains("onSingleTapConfirmed"))
+        assertTrue(adapter.contains("onDoubleTap"))
+        assertTrue(adapter.contains("R.string.open_task_details"))
+        assertFalse(adapter.contains("selectedTaskId"))
+        assertFalse(adapter.contains("isSelected"))
         assertFalse(adapter.contains("contentDescription = task.id"))
     }
 
@@ -43,6 +46,7 @@ class AccessibilitySourceContractTest {
         val create = layoutRoot.resolve("activity_create_task.xml").readText()
         val edit = layoutRoot.resolve("activity_edit_task.xml").readText()
         val list = layoutRoot.resolve("activity_task_list.xml").readText()
+        val detail = layoutRoot.resolve("activity_task_detail.xml").readText()
         val assistant = layoutRoot.resolve("bottomsheet_assistant.xml").readText()
         val strings = File("src/main/res/values/strings.xml").readText()
 
@@ -50,6 +54,7 @@ class AccessibilitySourceContractTest {
         assertTrue(create.contains("android:accessibilityHeading=\"true\""))
         assertTrue(edit.contains("android:accessibilityHeading=\"true\""))
         assertTrue(list.contains("android:accessibilityHeading=\"true\""))
+        assertTrue(detail.contains("android:accessibilityHeading=\"true\""))
         assertTrue(assistant.contains("android:accessibilityHeading=\"true\""))
         assertTrue(
             mainRoot.resolve("accessibility/AccessibilityStateHelper.kt").readText()
@@ -61,7 +66,7 @@ class AccessibilitySourceContractTest {
         assertTrue(list.contains("@string/no_scheduled_tasks"))
         assertTrue(strings.contains("No scheduled tasks"))
 
-        listOf(home, create, edit, list, assistant).forEach { xml ->
+        listOf(home, create, edit, list, detail, assistant).forEach { xml ->
             assertTrue(xml.contains("android:minHeight=\""))
         }
     }
@@ -72,7 +77,8 @@ class AccessibilitySourceContractTest {
             "activity_home.xml",
             "activity_create_task.xml",
             "activity_edit_task.xml",
-            "activity_task_list.xml"
+            "activity_task_list.xml",
+            "activity_task_detail.xml"
         ).map { layoutRoot.resolve(it).readText() }
 
         layouts.forEach { xml ->

@@ -10,8 +10,6 @@
 
     <color name="ui_surface">#F4F7FF</color>
     <color name="ui_surface_alt">#E8EEFF</color>
-    <color name="ui_surface_selected">#DDE7FF</color>
-
     <color name="ui_text_primary_dark">#F6F8FF</color>
     <color name="ui_text_secondary_dark">#C9D5FF</color>
     <color name="ui_text_muted_dark">#9EB1E8</color>
@@ -29,4 +27,25 @@
 
     <color name="ui_outline">#89A4F0</color>
     <color name="ui_outline_soft">#5069A8</color>
+
+    <!-- Soft task-state surfaces keep wording, rather than colour, authoritative. -->
+    <color name="task_status_overdue_surface">#F1D9D6</color>
+    <color name="task_status_overdue_outline">#A8514A</color>
+    <color name="task_status_overdue_text">#742F2B</color>
+
+    <color name="task_status_today_surface">#EEE2C5</color>
+    <color name="task_status_today_outline">#957023</color>
+    <color name="task_status_today_text">#65480C</color>
+
+    <color name="task_status_upcoming_surface">#DCE5F0</color>
+    <color name="task_status_upcoming_outline">#54718F</color>
+    <color name="task_status_upcoming_text">#304D68</color>
+
+    <color name="task_status_completed_surface">#DDE8DD</color>
+    <color name="task_status_completed_outline">#608066</color>
+    <color name="task_status_completed_text">#39553E</color>
+
+    <color name="task_status_unscheduled_surface">#E2E2E0</color>
+    <color name="task_status_unscheduled_outline">#777873</color>
+    <color name="task_status_unscheduled_text">#494A47</color>
 </resources>

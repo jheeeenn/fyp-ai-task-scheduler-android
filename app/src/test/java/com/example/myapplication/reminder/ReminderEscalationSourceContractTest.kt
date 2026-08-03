@@ -41,12 +41,15 @@ class ReminderEscalationSourceContractTest {
     fun completionDeletionRescheduleAndReopenUseCentralApis() {
         val main = source("MainActivity.kt")
         val today = source("TodayTasksActivity.kt")
+        val detail = source("TaskDetailActivity.kt")
         val edit = source("EditTaskActivity.kt")
         val home = source("HomeActivity.kt")
-        val combined = listOf(main, today, edit, home).joinToString("\n")
+        val combined = listOf(main, today, detail, edit, home).joinToString("\n")
 
-        assertTrue(main.contains("ReminderHelper.cancelReminder(this@MainActivity, task.id)"))
-        assertTrue(today.contains("ReminderHelper.cancelReminder(this@TodayTasksActivity, task.id)"))
+        assertFalse(main.contains("ReminderHelper.cancelReminder"))
+        assertFalse(today.contains("ReminderHelper.cancelReminder"))
+        assertTrue(detail.contains("ReminderHelper.cancelReminder(this@TaskDetailActivity, task.id)"))
+        assertTrue(detail.contains("ReminderHelper.scheduleReminderFromTask"))
         assertTrue(edit.contains("ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)"))
         assertTrue(edit.contains("ReminderHelper.scheduleReminderFromTask"))
         assertTrue(edit.contains("existingTask.copy("))
@@ -55,6 +58,7 @@ class ReminderEscalationSourceContractTest {
         assertTrue(home.contains("ReminderHelper.scheduleReminderFromTask"))
         assertFalse(combined.contains("cancelReminder(this@MainActivity, task.id.toInt())"))
         assertFalse(combined.contains("cancelReminder(this@TodayTasksActivity, task.id.toInt())"))
+        assertFalse(combined.contains("cancelReminder(this@TaskDetailActivity, task.id.toInt())"))
         assertFalse(combined.contains("cancelReminder(this@HomeActivity, taskId.toInt())"))
     }
 

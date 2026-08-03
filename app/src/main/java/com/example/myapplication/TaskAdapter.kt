@@ -1,35 +1,32 @@
 package com.example.myapplication
 
-
+import android.annotation.SuppressLint
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.recyclerview.widget.RecyclerView
-import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
-import com.example.myapplication.accessibility.TaskCardAccessibilityContent
-import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
+import androidx.recyclerview.widget.DiffUtil
 import com.example.myapplication.data.TaskEntity
+import java.util.Date
 
 class TaskAdapter(
     private val tasks: MutableList<TaskEntity>,
-    private val onTaskSelected: (TaskEntity?) -> Unit
+    private val onReadTask: (String) -> Unit,
+    private val onOpenTask: (TaskEntity) -> Unit,
+    private val nowProvider: () -> Date = { Date() }
 ) : RecyclerView.Adapter<TaskAdapter.TaskViewHolder>() {
 
-    private var selectedTaskId: Long? = null
     private var subtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
 
     class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val taskCardRoot: LinearLayout = itemView.findViewById(R.id.taskCardRoot)
         val taskText: TextView = itemView.findViewById(R.id.taskText)
-        val taskDateText: TextView = itemView.findViewById(R.id.taskDateText)
-        val taskTimeText: TextView = itemView.findViewById(R.id.taskTimeText)
         val taskStatusText: TextView = itemView.findViewById(R.id.taskStatusText)
-        val taskSubtaskSummaryText: TextView = itemView.findViewById(R.id.taskSubtaskSummaryText)
-        val taskSubtaskTitlesText: TextView = itemView.findViewById(R.id.taskSubtaskTitlesText)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TaskViewHolder {
@@ -38,113 +35,119 @@ class TaskAdapter(
         return TaskViewHolder(view)
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onBindViewHolder(holder: TaskViewHolder, position: Int) {
         val task = tasks[position]
-
-        holder.taskText.text = if (task.isDone) "✓ ${task.title}" else task.title
-        holder.taskDateText.text = task.dueDate ?: "No date set"
-        holder.taskTimeText.text = task.dueTime ?: "No time set"
-        val taskStatus = TaskCardAccessibilitySemantics.status(
+        val subtasks = subtasksByParentId[task.id].orEmpty()
+        val completedSubtasks = subtasks.count { it.isDone }
+        val status = TaskStatusPresenter.present(
             isDone = task.isDone,
             dueDate = task.dueDate,
-            dueTime = task.dueTime
+            dueTime = task.dueTime,
+            now = nowProvider()
         )
-        holder.taskStatusText.text = taskStatus
+        val card = TaskListCardSpeechRenderer.render(
+            title = task.title,
+            status = status,
+            completedSubtasks = completedSubtasks,
+            totalSubtasks = subtasks.size
+        )
 
-        val subtasks = subtasksByParentId[task.id].orEmpty()
-        if (subtasks.isNotEmpty()) {
-            val completedCount = subtasks.count { it.isDone }
-            holder.taskSubtaskSummaryText.visibility = View.VISIBLE
-            holder.taskSubtaskSummaryText.text = "Subtasks: $completedCount of ${subtasks.size} completed"
-            holder.taskSubtaskTitlesText.visibility = View.VISIBLE
-            holder.taskSubtaskTitlesText.text = subtasks.joinToString("\n") { subtask ->
-                val prefix = if (subtask.isDone) "✓" else "•"
-                "$prefix ${subtask.title}"
-            }
-        } else {
-            holder.taskSubtaskSummaryText.visibility = View.GONE
-            holder.taskSubtaskTitlesText.visibility = View.GONE
+        holder.taskText.text = task.title.ifBlank {
+            holder.itemView.context.getString(R.string.untitled_task)
         }
+        holder.taskStatusText.text = card.visibleStatus
+        holder.itemView.contentDescription = card.contentDescription
+        applyStatusTreatment(holder, status.visualStatus)
 
-        val isSelected = task.id == selectedTaskId
-        holder.itemView.isSelected = isSelected
-        holder.taskCardRoot.setBackgroundResource(
-            if (isSelected) R.drawable.bg_task_card_selected
-            else R.drawable.bg_task_card
-        )
-        holder.itemView.contentDescription = TaskCardAccessibilitySemantics.summary(
-            TaskCardAccessibilityContent(
-                title = task.title,
-                date = task.dueDate,
-                time = task.dueTime,
-                status = taskStatus,
-                completedSubtasks = subtasks.count { it.isDone },
-                totalSubtasks = subtasks.size,
-                isSelected = isSelected
-            )
-        )
+        holder.itemView.setOnClickListener { view ->
+            val clickedPosition = holder.bindingAdapterPosition
+            if (clickedPosition == RecyclerView.NO_POSITION) return@setOnClickListener
+            view.performTapHapticFeedback()
+            onOpenTask(tasks[clickedPosition])
+        }
         ViewCompat.replaceAccessibilityAction(
             holder.itemView,
             AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
-            if (isSelected) "Deselect task" else "Select task"
+            holder.itemView.context.getString(R.string.open_task_details)
         ) { view, _ ->
             view.performClick()
             true
         }
 
-        holder.itemView.setOnClickListenerWithHaptic {
-            val clickedPosition = holder.bindingAdapterPosition
-            if (clickedPosition == RecyclerView.NO_POSITION) return@setOnClickListenerWithHaptic
-            val clickedTask = tasks[clickedPosition]
-            val previousSelectedId = selectedTaskId
-            selectedTaskId = if (previousSelectedId == clickedTask.id) null else clickedTask.id
-            val previousPosition = tasks.indexOfFirst { it.id == previousSelectedId }
-            if (previousPosition >= 0 && previousPosition != clickedPosition) {
-                notifyItemChanged(previousPosition)
+        val actions = TaskCardGestureActions(
+            read = {
+                holder.itemView.performTapHapticFeedback()
+                onReadTask(card.spokenSummary)
+            },
+            openDetails = { holder.itemView.performClick() }
+        )
+        val gestureDetector = GestureDetector(
+            holder.itemView.context,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(event: MotionEvent): Boolean = true
+
+                override fun onSingleTapConfirmed(event: MotionEvent): Boolean =
+                    actions.onSingleTapConfirmed()
+
+                override fun onDoubleTap(event: MotionEvent): Boolean =
+                    actions.onDoubleTap()
+
+                override fun onScroll(
+                    firstEvent: MotionEvent?,
+                    currentEvent: MotionEvent,
+                    distanceX: Float,
+                    distanceY: Float
+                ): Boolean = actions.onScroll()
             }
-            notifyItemChanged(clickedPosition)
-            onTaskSelected(tasks.find { it.id == selectedTaskId })
-            AccessibilityAnnouncementHelper.announce(
-                holder.itemView,
-                screen = "TASK_LIST",
-                event = "TASK_SELECTION_CHANGED",
-                message = if (selectedTaskId == null) "Task deselected" else "Task selected"
-            )
+        )
+        holder.itemView.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
         }
     }
 
     override fun getItemCount(): Int = tasks.size
 
-    fun setTasks(newTasks: List<TaskEntity>) {
-        setTasksWithSubtasks(newTasks, emptyMap())
-    }
-
     fun setTasksWithSubtasks(
         newTasks: List<TaskEntity>,
         newSubtasksByParentId: Map<Long, List<TaskEntity>>
     ) {
-        tasks.clear()
-        tasks.addAll(newTasks)
-        subtasksByParentId = newSubtasksByParentId
-
-        if (selectedTaskId != null && tasks.none { it.id == selectedTaskId }) {
-            selectedTaskId = null
+        val incomingTasks = newTasks.toList()
+        val incomingSubtasks = newSubtasksByParentId.mapValues { (_, subtasks) ->
+            subtasks.toList()
         }
+        val previousTasks = tasks.toList()
+        val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize(): Int = previousTasks.size
 
-        notifyDataSetChanged()
+            override fun getNewListSize(): Int = incomingTasks.size
+
+            override fun areItemsTheSame(oldPosition: Int, newPosition: Int): Boolean =
+                previousTasks[oldPosition].id == incomingTasks[newPosition].id
+
+            // A reload must also refresh time-relative wording even when Room data is unchanged.
+            override fun areContentsTheSame(oldPosition: Int, newPosition: Int): Boolean = false
+        })
+        tasks.clear()
+        tasks.addAll(incomingTasks)
+        subtasksByParentId = incomingSubtasks
+        diff.dispatchUpdatesTo(this)
     }
 
-    fun getSelectedTask(): TaskEntity? {
-        return tasks.find { it.id == selectedTaskId }
+    private fun applyStatusTreatment(
+        holder: TaskViewHolder,
+        visualStatus: TaskVisualStatus
+    ) {
+        val (background, statusColor) = when (visualStatus) {
+            TaskVisualStatus.OVERDUE -> R.drawable.bg_task_status_overdue to R.color.task_status_overdue_text
+            TaskVisualStatus.DUE_TODAY -> R.drawable.bg_task_status_today to R.color.task_status_today_text
+            TaskVisualStatus.UPCOMING -> R.drawable.bg_task_status_upcoming to R.color.task_status_upcoming_text
+            TaskVisualStatus.COMPLETED -> R.drawable.bg_task_status_completed to R.color.task_status_completed_text
+            TaskVisualStatus.UNSCHEDULED -> R.drawable.bg_task_status_unscheduled to R.color.task_status_unscheduled_text
+        }
+        holder.itemView.setBackgroundResource(background)
+        holder.taskStatusText.setTextColor(
+            ContextCompat.getColor(holder.itemView.context, statusColor)
+        )
     }
-
-    fun getSelectedTaskId(): Long? {
-        return selectedTaskId
-    }
-
-    fun setSelectedTaskId(taskId: Long?) {
-        selectedTaskId = taskId
-        notifyDataSetChanged()
-    }
-
 }

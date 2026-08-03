@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/ui_surface_selected" />
+    <solid android:color="@color/task_status_today_surface" />
     <corners android:radius="20dp" />
-    <stroke android:width="2dp" android:color="@color/ui_accent_primary" />
+    <stroke android:width="2dp" android:color="@color/task_status_today_outline" />
 </shape>
