@@ -81,6 +81,12 @@ class AccessibilitySourceContractTest {
             assertFalse(xml.contains("android:layout_height=\"70dp\""))
             assertFalse(xml.contains("android:layout_height=\"112dp\""))
             Regex("<Button[\\s\\S]*?/>").findAll(xml).forEach { button ->
+                val isConstrainedHomeAssistant = button.value.contains("@+id/btnTalkAssistant") &&
+                    button.value.contains("layout_constraintTop_toBottomOf=\"@id/homeAssistantSplit\"")
+                if (isConstrainedHomeAssistant) {
+                    assertTrue(button.value.contains("android:layout_height=\"0dp\""))
+                    return@forEach
+                }
                 val minimum = Regex("android:minHeight=\"(\\d+)dp\"")
                     .find(button.value)
                     ?.groupValues
@@ -93,35 +99,41 @@ class AccessibilitySourceContractTest {
     }
 
     @Test
-    fun homeAssistantActionRemainsDominantFixedAndAccessible() {
+    fun homeAssistantActionFillsConstrainedLowerRegionAndRemainsAccessible() {
         val home = layoutRoot.resolve("activity_home.xml").readText()
         val activity = mainRoot.resolve("HomeActivity.kt").readText()
+        val splitGuideline = home
+            .substringAfter("android:id=\"@+id/homeAssistantSplit\"")
+            .substringBefore("/>")
         val scrollView = home
             .substringAfter("<ScrollView")
             .substringBefore("</ScrollView>")
         val assistantButton = home
             .substringAfter("android:id=\"@+id/btnTalkAssistant\"")
             .substringBefore("/>")
-        val assistantMinimumHeight = Regex("android:minHeight=\"(\\d+)dp\"")
-            .find(assistantButton)
-            ?.groupValues
-            ?.get(1)
-            ?.toInt()
 
+        assertTrue(home.contains("<androidx.constraintlayout.widget.Guideline"))
+        assertTrue(splitGuideline.contains("android:orientation=\"horizontal\""))
+        assertTrue(splitGuideline.contains("app:layout_constraintGuide_percent=\"0.52\""))
         assertTrue(scrollView.contains("android:id=\"@+id/homeScrollView\""))
         assertTrue(scrollView.contains("android:layout_height=\"0dp\""))
-        assertTrue(scrollView.contains("app:layout_constraintBottom_toTopOf=\"@id/btnTalkAssistant\""))
+        assertTrue(scrollView.contains("app:layout_constraintTop_toTopOf=\"parent\""))
+        assertTrue(scrollView.contains("app:layout_constraintBottom_toTopOf=\"@id/homeAssistantSplit\""))
         assertTrue(assistantButton.contains("android:layout_width=\"0dp\""))
-        assertTrue(assistantButton.contains("android:layout_height=\"wrap_content\""))
+        assertTrue(assistantButton.contains("android:layout_height=\"0dp\""))
+        assertFalse(assistantButton.contains("android:layout_height=\"wrap_content\""))
+        assertFalse(assistantButton.contains("android:minHeight="))
+        assertTrue(assistantButton.contains("app:layout_constraintTop_toBottomOf=\"@id/homeAssistantSplit\""))
         assertTrue(assistantButton.contains("app:layout_constraintStart_toStartOf=\"parent\""))
         assertTrue(assistantButton.contains("app:layout_constraintEnd_toEndOf=\"parent\""))
         assertTrue(assistantButton.contains("app:layout_constraintBottom_toBottomOf=\"parent\""))
-        assertTrue("Home assistant action must be taller than 112dp navigation cards", assistantMinimumHeight != null)
-        assertTrue("Home assistant action must be substantially taller than navigation cards", assistantMinimumHeight!! >= 180)
+        assertTrue(assistantButton.contains("android:gravity=\"center\""))
+        assertTrue(assistantButton.contains("android:hapticFeedbackEnabled=\"true\""))
         assertTrue(activity.contains("btnTalkAssistant.setOnClickListenerWithHaptic"))
         assertTrue(activity.contains("btnTalkAssistant.setOnLongClickListener"))
         assertTrue(activity.contains("AccessibilityStateHelper.updateAssistantState"))
         assertTrue(activity.contains("AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)"))
+        assertTrue(activity.contains("assistantSession.bindAssistantControl(btnTalkAssistant)"))
     }
 
     @Test
