@@ -1,9 +1,6 @@
 package com.example.myapplication
 
-import android.annotation.SuppressLint
-import android.view.GestureDetector
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -35,7 +32,6 @@ class TaskAdapter(
         return TaskViewHolder(view)
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     override fun onBindViewHolder(holder: TaskViewHolder, position: Int) {
         val task = tasks[position]
         val subtasks = subtasksByParentId[task.id].orEmpty()
@@ -60,12 +56,17 @@ class TaskAdapter(
         holder.itemView.contentDescription = card.contentDescription
         applyStatusTreatment(holder, status.visualStatus)
 
-        holder.itemView.setOnClickListener { view ->
-            val clickedPosition = holder.bindingAdapterPosition
-            if (clickedPosition == RecyclerView.NO_POSITION) return@setOnClickListener
-            view.performTapHapticFeedback()
-            onOpenTask(tasks[clickedPosition])
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = holder.itemView,
+            speechProvider = { currentCardPresentation(holder)?.spokenSummary },
+            speak = onReadTask,
+            activate = {
+                val clickedPosition = holder.bindingAdapterPosition
+                if (clickedPosition != RecyclerView.NO_POSITION) {
+                    onOpenTask(tasks[clickedPosition])
+                }
+            }
+        )
         ViewCompat.replaceAccessibilityAction(
             holder.itemView,
             AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
@@ -75,35 +76,6 @@ class TaskAdapter(
             true
         }
 
-        val actions = TaskCardGestureActions(
-            read = {
-                holder.itemView.performTapHapticFeedback()
-                onReadTask(card.spokenSummary)
-            },
-            openDetails = { holder.itemView.performClick() }
-        )
-        val gestureDetector = GestureDetector(
-            holder.itemView.context,
-            object : GestureDetector.SimpleOnGestureListener() {
-                override fun onDown(event: MotionEvent): Boolean = true
-
-                override fun onSingleTapConfirmed(event: MotionEvent): Boolean =
-                    actions.onSingleTapConfirmed()
-
-                override fun onDoubleTap(event: MotionEvent): Boolean =
-                    actions.onDoubleTap()
-
-                override fun onScroll(
-                    firstEvent: MotionEvent?,
-                    currentEvent: MotionEvent,
-                    distanceX: Float,
-                    distanceY: Float
-                ): Boolean = actions.onScroll()
-            }
-        )
-        holder.itemView.setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-        }
     }
 
     override fun getItemCount(): Int = tasks.size
@@ -148,6 +120,24 @@ class TaskAdapter(
         holder.itemView.setBackgroundResource(background)
         holder.taskStatusText.setTextColor(
             ContextCompat.getColor(holder.itemView.context, statusColor)
+        )
+    }
+
+    private fun currentCardPresentation(holder: TaskViewHolder): TaskListCardPresentation? {
+        val position = holder.bindingAdapterPosition
+        if (position == RecyclerView.NO_POSITION) return null
+        val task = tasks[position]
+        val subtasks = subtasksByParentId[task.id].orEmpty()
+        return TaskListCardSpeechRenderer.render(
+            title = task.title,
+            status = TaskStatusPresenter.present(
+                isDone = task.isDone,
+                dueDate = task.dueDate,
+                dueTime = task.dueTime,
+                now = nowProvider()
+            ),
+            completedSubtasks = subtasks.count { it.isDone },
+            totalSubtasks = subtasks.size
         )
     }
 }

@@ -56,7 +56,7 @@ class TaskListAndDetailSourceContractTest {
             assertFalse(source.contains("putExtra(\"task_time\""))
             assertTrue(source.contains("voiceHelper.shutdown()"))
             assertTrue(source.contains("HomeAssistantEntryContract.putGeneric"))
-            assertTrue(source.contains("detailNavigation.cancelPending()"))
+            assertTrue(source.contains("navigationCoordinator.cancelPending()"))
             assertTrue(source.contains("voiceHelper.speakWithResult"))
             assertTrue(source.contains("runOnUiThread"))
         }
@@ -67,18 +67,22 @@ class TaskListAndDetailSourceContractTest {
     }
 
     @Test
-    fun gestureDetectorMapsConfirmedSingleDoubleAndScrollSeparately() {
+    fun taskCardsUseSharedConfirmedSingleDoubleAndScrollBinding() {
         val adapter = mainRoot.resolve("TaskAdapter.kt").readText()
+        val binder = mainRoot.resolve("VoiceFirstGestureBinder.kt").readText()
+        val interaction = mainRoot.resolve("VoiceFirstTouchInteraction.kt").readText()
 
-        assertTrue(adapter.contains("GestureDetector"))
-        assertTrue(adapter.contains("override fun onSingleTapConfirmed"))
-        assertTrue(adapter.contains("actions.onSingleTapConfirmed()"))
-        assertTrue(adapter.contains("override fun onDoubleTap"))
-        assertTrue(adapter.contains("actions.onDoubleTap()"))
-        assertTrue(adapter.contains("override fun onScroll"))
-        assertTrue(adapter.contains("actions.onScroll()"))
-        assertTrue(adapter.contains("holder.itemView.performClick()"))
-        assertFalse(adapter.contains("System.currentTimeMillis"))
+        assertTrue(adapter.contains("VoiceFirstGestureBinder.bindAction"))
+        assertTrue(binder.contains("GestureDetector"))
+        assertTrue(binder.contains("override fun onSingleTapConfirmed"))
+        assertTrue(binder.contains("interaction.onSingleTapConfirmed()"))
+        assertTrue(binder.contains("override fun onDoubleTap"))
+        assertTrue(binder.contains("interaction.onDoubleTap()"))
+        assertTrue(binder.contains("override fun onScroll"))
+        assertTrue(binder.contains("interaction.onScroll()"))
+        assertTrue(binder.contains("view.performClick()"))
+        assertTrue(interaction.contains("fun onScroll(): Boolean = false"))
+        assertFalse(binder.contains("System.currentTimeMillis"))
     }
 
     @Test

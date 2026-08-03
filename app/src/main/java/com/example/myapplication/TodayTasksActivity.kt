@@ -24,8 +24,9 @@ class TodayTasksActivity : AppCompatActivity() {
     private lateinit var adapter: TaskAdapter
     private lateinit var dao: com.example.myapplication.data.TaskDao
     private lateinit var voiceHelper: VoiceHelper
-    private lateinit var detailNavigation: TaskDetailNavigationCoordinator
+    private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
     private lateinit var accessibilityController: TaskListAccessibilityController
+    private val screenSpeechState = TaskListScreenSpeechState()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,13 +46,12 @@ class TodayTasksActivity : AppCompatActivity() {
 
         dao = AppDatabase.getInstance(this).taskDao()
         voiceHelper = VoiceHelper(this)
-        detailNavigation = TaskDetailNavigationCoordinator(
+        navigationCoordinator = VoiceFirstNavigationCoordinator(
             speak = { text, onFinished ->
                 voiceHelper.speakWithResult(text) { success ->
                     runOnUiThread { onFinished(success) }
                 }
-            },
-            openDetails = ::navigateToTaskDetails
+            }
         )
         accessibilityController = TaskListAccessibilityController(
             activity = this,
@@ -59,20 +59,45 @@ class TodayTasksActivity : AppCompatActivity() {
         )
         adapter = TaskAdapter(
             tasks = mutableListOf(),
-            onReadTask = voiceHelper::speak,
-            onOpenTask = { task -> detailNavigation.request(task) }
+            onReadTask = ::speakIdentification,
+            onOpenTask = { task ->
+                navigationCoordinator.request(
+                    TaskNavigationSpeechRenderer.openingDetails(task.title)
+                ) { navigateToTaskDetails(task) }
+            }
         )
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
 
-        btnGoHome.setOnClickListenerWithHaptic { finish() }
-        btnTalkAssistant.setOnClickListenerWithHaptic {
-            startActivity(
-                HomeAssistantEntryContract.putGeneric(
-                    Intent(this, HomeActivity::class.java)
-                )
-            )
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnGoHome,
+            speechProvider = TaskScreenControlSpeechRenderer::homeDescription,
+            speak = ::speakIdentification,
+            activate = {
+                navigationCoordinator.request(TaskScreenControlSpeechRenderer.returningHome()) {
+                    finish()
+                }
+            }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = btnTalkAssistant,
+            speechProvider = TaskScreenControlSpeechRenderer::assistantDescription,
+            speak = ::speakIdentification,
+            activate = {
+                navigationCoordinator.request(TaskScreenControlSpeechRenderer.openingAssistant()) {
+                    startActivity(
+                        HomeAssistantEntryContract.putGeneric(
+                            Intent(this, HomeActivity::class.java).apply {
+                                addFlags(
+                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                )
+                            }
+                        )
+                    )
+                }
+            }
+        )
     }
 
     override fun onResume() {
@@ -81,12 +106,13 @@ class TodayTasksActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        navigationCoordinator.cancelPending()
         voiceHelper.shutdown()
         super.onDestroy()
     }
 
     override fun onStop() {
-        detailNavigation.cancelPending()
+        navigationCoordinator.cancelPending()
         super.onStop()
     }
 
@@ -100,7 +126,17 @@ class TodayTasksActivity : AppCompatActivity() {
             }
             adapter.setTasksWithSubtasks(taskData.first, taskData.second)
             accessibilityController.render(taskData.first.size)
+            screenSpeechState.onAuthoritativeLoad(
+                pageTitle = getString(R.string.today_tasks_title),
+                count = taskData.first.size,
+                snapshot = taskData
+            )?.let(::speakIdentification)
         }
+    }
+
+    private fun speakIdentification(text: String) {
+        navigationCoordinator.cancelPending()
+        voiceHelper.speak(text)
     }
 
     private fun navigateToTaskDetails(task: TaskEntity) {

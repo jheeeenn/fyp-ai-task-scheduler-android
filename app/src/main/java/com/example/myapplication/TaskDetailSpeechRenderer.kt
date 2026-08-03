@@ -26,6 +26,10 @@ object TaskDetailSpeechRenderer {
         return "${spokenNumber(safeCompleted)} of ${spokenNumber(total).lowercase()} $stepWording completed."
     }
 
+    fun subtask(title: String, isDone: Boolean): String =
+        "${if (isDone) "Completed" else "Not completed"}. " +
+            "${title.ifBlank { "Untitled step" }}."
+
     fun readAll(
         title: String,
         status: TaskStatusPresentation,

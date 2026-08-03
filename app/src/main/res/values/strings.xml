@@ -35,6 +35,7 @@
     <string name="delete_task_message">Are you sure you want to delete:\n\n%1$s</string>
     <string name="cancel">Cancel</string>
     <string name="task_no_longer_available">Task is no longer available</string>
+    <string name="task_no_longer_available_spoken">That task is no longer available.</string>
     <string name="no_subtasks">No subtasks</string>
     <string name="open_task_details">Open task details</string>
     <string name="task_marked_complete">Task marked complete.</string>

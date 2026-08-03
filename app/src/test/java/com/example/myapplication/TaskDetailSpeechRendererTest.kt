@@ -20,6 +20,14 @@ class TaskDetailSpeechRendererTest {
         assertTrue(TaskDetailSpeechRenderer.date(null).contains("No date set"))
         assertTrue(TaskDetailSpeechRenderer.time(null).contains("No time set"))
         assertTrue(TaskDetailSpeechRenderer.subtaskProgress(0, 0).contains("No subtasks"))
+        assertTrue(
+            TaskDetailSpeechRenderer.subtask("Create timeline", false)
+                .contains("Not completed. Create timeline.")
+        )
+        assertTrue(
+            TaskDetailSpeechRenderer.subtask("Create timeline", true)
+                .contains("Completed. Create timeline.")
+        )
     }
 
     @Test

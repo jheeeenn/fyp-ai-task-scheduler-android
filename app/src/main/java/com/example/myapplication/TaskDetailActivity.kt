@@ -46,11 +46,16 @@ class TaskDetailActivity : AppCompatActivity() {
     private lateinit var toggleDoneButton: Button
     private lateinit var editButton: Button
     private lateinit var deleteButton: Button
+    private lateinit var homeButton: Button
+    private lateinit var assistantButton: Button
+    private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
 
     private var taskId: Long = -1L
     private var currentTask: TaskEntity? = null
     private var currentSubtasks: List<TaskEntity> = emptyList()
     private var taskMutationInProgress = false
+    private var missingTaskSpeechPending = false
+    private val screenSpeechState = TaskDetailScreenSpeechState()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +64,13 @@ class TaskDetailActivity : AppCompatActivity() {
 
         dao = AppDatabase.getInstance(this).taskDao()
         voiceHelper = VoiceHelper(this)
+        navigationCoordinator = VoiceFirstNavigationCoordinator(
+            speak = { text, onFinished ->
+                voiceHelper.speakWithResult(text) { success ->
+                    runOnUiThread { onFinished(success) }
+                }
+            }
+        )
         bindViews()
         bindInteractions()
 
@@ -74,8 +86,14 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        navigationCoordinator.cancelPending()
         voiceHelper.shutdown()
         super.onDestroy()
+    }
+
+    override fun onStop() {
+        navigationCoordinator.cancelPending()
+        super.onStop()
     }
 
     private fun bindViews() {
@@ -95,55 +113,109 @@ class TaskDetailActivity : AppCompatActivity() {
         toggleDoneButton = findViewById(R.id.btnToggleDone)
         editButton = findViewById(R.id.btnEditTask)
         deleteButton = findViewById(R.id.btnDeleteTask)
+        homeButton = findViewById(R.id.btnGoHome)
+        assistantButton = findViewById(R.id.btnTalkAssistant)
     }
 
     private fun bindInteractions() {
-        titleSurface.setOnClickListenerWithHaptic {
-            currentTask?.let { task -> voiceHelper.speak(TaskDetailSpeechRenderer.title(task.title)) }
-        }
-        statusSurface.setOnClickListenerWithHaptic {
-            currentTask?.let { task ->
-                voiceHelper.speak(TaskDetailSpeechRenderer.status(statusFor(task)))
-            }
-        }
-        dateSurface.setOnClickListenerWithHaptic {
-            currentTask?.let { task -> voiceHelper.speak(TaskDetailSpeechRenderer.date(task.dueDate)) }
-        }
-        timeSurface.setOnClickListenerWithHaptic {
-            currentTask?.let { task -> voiceHelper.speak(TaskDetailSpeechRenderer.time(task.dueTime)) }
-        }
-        subtaskProgressSurface.setOnClickListenerWithHaptic {
-            voiceHelper.speak(
+        VoiceFirstGestureBinder.bindInformation(
+            titleSurface,
+            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.title(it.title) } },
+            speak = ::speakIdentification
+        )
+        VoiceFirstGestureBinder.bindInformation(
+            statusSurface,
+            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.status(statusFor(it)) } },
+            speak = ::speakIdentification
+        )
+        VoiceFirstGestureBinder.bindInformation(
+            dateSurface,
+            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.date(it.dueDate) } },
+            speak = ::speakIdentification
+        )
+        VoiceFirstGestureBinder.bindInformation(
+            timeSurface,
+            speechProvider = { currentTask?.let { TaskDetailSpeechRenderer.time(it.dueTime) } },
+            speak = ::speakIdentification
+        )
+        VoiceFirstGestureBinder.bindInformation(
+            subtaskProgressSurface,
+            speechProvider = {
                 TaskDetailSpeechRenderer.subtaskProgress(
                     currentSubtasks.count { it.isDone },
                     currentSubtasks.size
                 )
-            )
-        }
+            },
+            speak = ::speakIdentification
+        )
 
-        readAllButton.setOnClickListenerWithHaptic { readAll() }
-        toggleDoneButton.setOnClickListenerWithHaptic { toggleDone() }
-        editButton.setOnClickListenerWithHaptic { editTask() }
-        deleteButton.setOnClickListenerWithHaptic {
-            launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION)
-        }
+        VoiceFirstGestureBinder.bindAction(
+            readAllButton,
+            speechProvider = TaskScreenControlSpeechRenderer::readAllDescription,
+            speak = ::speakIdentification,
+            activate = ::readAll
+        )
+        VoiceFirstGestureBinder.bindAction(
+            toggleDoneButton,
+            speechProvider = {
+                currentTask?.let { TaskScreenControlSpeechRenderer.toggleDescription(it.isDone) }
+            },
+            speak = ::speakIdentification,
+            activate = ::toggleDone,
+            doubleTapHaptic = null
+        )
+        VoiceFirstGestureBinder.bindAction(
+            editButton,
+            speechProvider = TaskScreenControlSpeechRenderer::editDescription,
+            speak = ::speakIdentification,
+            activate = {
+                navigationCoordinator.request(
+                    TaskScreenControlSpeechRenderer.openingTaskEditor(),
+                    ::editTask
+                )
+            }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            deleteButton,
+            speechProvider = TaskScreenControlSpeechRenderer::deleteDescription,
+            speak = ::speakIdentification,
+            activate = {
+                navigationCoordinator.request(
+                    TaskScreenControlSpeechRenderer.openingDeleteConfirmation()
+                ) {
+                    launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION)
+                }
+            }
+        )
 
-        val btnGoHome = findViewById<Button>(R.id.btnGoHome)
-        val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
         AccessibilityStateHelper.updateAssistantState(
-            btnTalkAssistant,
+            assistantButton,
             AssistantAccessibilityState.READY,
             announce = false
         )
-        btnGoHome.setOnClickListenerWithHaptic {
-            startActivity(Intent(this, HomeActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            })
-            finish()
-        }
-        btnTalkAssistant.setOnClickListenerWithHaptic {
-            launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT)
-        }
+        VoiceFirstGestureBinder.bindAction(
+            homeButton,
+            speechProvider = TaskScreenControlSpeechRenderer::homeDescription,
+            speak = ::speakIdentification,
+            activate = {
+                navigationCoordinator.request(TaskScreenControlSpeechRenderer.returningHome()) {
+                    returnHome()
+                }
+            }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            assistantButton,
+            speechProvider = TaskScreenControlSpeechRenderer::taskAssistantDescription,
+            speak = ::speakIdentification,
+            activate = {
+                val title = currentTask?.title ?: return@bindAction
+                navigationCoordinator.request(
+                    TaskScreenControlSpeechRenderer.openingTaskAssistant(title)
+                ) {
+                    launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT)
+                }
+            }
+        )
     }
 
     private fun loadAuthoritativeTask() {
@@ -152,10 +224,14 @@ class TaskDetailActivity : AppCompatActivity() {
             try {
                 val snapshot = loadAuthoritativeSnapshot()
                 if (snapshot == null) {
+                    currentTask = null
+                    currentSubtasks = emptyList()
                     showMissingTaskAndFinish()
                     return@launch
                 }
                 applySnapshot(snapshot)
+                screenSpeechState.onAuthoritativeLoad(snapshot.first.title, snapshot)
+                    ?.let(::speakIdentification)
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
@@ -165,7 +241,7 @@ class TaskDetailActivity : AppCompatActivity() {
                 )
                 voiceHelper.speak(getString(R.string.task_update_failed))
             } finally {
-                if (!isFinishing && !taskMutationInProgress) {
+                if (!isFinishing && !taskMutationInProgress && !missingTaskSpeechPending) {
                     setActionButtonsEnabled(true)
                 }
             }
@@ -238,6 +314,13 @@ class TaskDetailActivity : AppCompatActivity() {
                 setTextColor(ContextCompat.getColor(context, R.color.ui_text_primary_light))
                 textSize = 18f
             }
+            VoiceFirstGestureBinder.bindInformation(
+                subtaskView,
+                speechProvider = {
+                    TaskDetailSpeechRenderer.subtask(subtask.title, subtask.isDone)
+                },
+                speak = ::speakIdentification
+            )
             subtaskList.addView(
                 subtaskView,
                 LinearLayout.LayoutParams(
@@ -251,6 +334,7 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     private fun readAll() {
+        navigationCoordinator.cancelPending()
         val task = currentTask ?: return
         voiceHelper.speak(
             TaskDetailSpeechRenderer.readAll(
@@ -264,7 +348,13 @@ class TaskDetailActivity : AppCompatActivity() {
         )
     }
 
+    private fun speakIdentification(text: String) {
+        navigationCoordinator.cancelPending()
+        voiceHelper.speak(text)
+    }
+
     private fun toggleDone() {
+        navigationCoordinator.cancelPending()
         if (taskMutationInProgress) return
         val task = currentTask ?: return
         val newDoneState = !task.isDone
@@ -278,6 +368,7 @@ class TaskDetailActivity : AppCompatActivity() {
                 val refreshed = loadAuthoritativeSnapshot()
                     ?: throw IllegalStateException("Task unavailable after completion update")
                 applySnapshot(refreshed)
+                screenSpeechState.synchronize(refreshed)
                 syncReminderAfterCompletionChange(refreshed.first)
                 toggleDoneButton.performConfirmationHapticFeedback()
                 voiceHelper.speak(
@@ -334,11 +425,20 @@ class TaskDetailActivity : AppCompatActivity() {
         val task = currentTask ?: return
         startActivity(
             HomeAssistantEntryContract.putTaskDetail(
-                intent = Intent(this, HomeActivity::class.java),
+                intent = Intent(this, HomeActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                },
                 taskId = task.id,
                 entryMode = entryMode
             )
         )
+    }
+
+    private fun returnHome() {
+        startActivity(Intent(this, HomeActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+        finish()
     }
 
     private fun statusFor(task: TaskEntity): TaskStatusPresentation =
@@ -364,9 +464,15 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     private fun showMissingTaskAndFinish() {
-        if (isFinishing) return
+        if (isFinishing || missingTaskSpeechPending) return
+        missingTaskSpeechPending = true
         Toast.makeText(this, R.string.task_no_longer_available, Toast.LENGTH_SHORT).show()
-        finish()
+        voiceHelper.speakWithResult(getString(R.string.task_no_longer_available_spoken)) {
+            runOnUiThread {
+                missingTaskSpeechPending = false
+                if (!isFinishing) finish()
+            }
+        }
     }
 
     private fun dp(value: Int): Int =
