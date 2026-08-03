@@ -12,7 +12,7 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
     private var isReady = false
 
     private var pendingText: String? = null
-    private var pendingOnDone: (() -> Unit)? = null
+    private var pendingOnFinished: ((Boolean) -> Unit)? = null
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -24,15 +24,26 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
 
             if (isReady) {
                 val text = pendingText
-                val callback = pendingOnDone
+                val callback = pendingOnFinished
                 pendingText = null
-                pendingOnDone = null
+                pendingOnFinished = null
 
                 if (!text.isNullOrBlank()) {
                     speakInternal(text, callback)
                 }
+            } else {
+                failPendingSpeech()
             }
+        } else {
+            failPendingSpeech()
         }
+    }
+
+    private fun failPendingSpeech() {
+        val callback = pendingOnFinished
+        pendingText = null
+        pendingOnFinished = null
+        callback?.invoke(false)
     }
 
     fun speak(text: String) {
@@ -40,32 +51,36 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun speak(text: String, onDone: (() -> Unit)?) {
+        speakWithResult(text) { onDone?.invoke() }
+    }
+
+    fun speakWithResult(text: String, onFinished: (Boolean) -> Unit) {
         if (!isReady) {
             pendingText = text
-            pendingOnDone = onDone
+            pendingOnFinished = onFinished
             return
         }
 
-        speakInternal(text, onDone)
+        speakInternal(text, onFinished)
     }
 
-    private fun speakInternal(text: String, onDone: (() -> Unit)?) {
+    private fun speakInternal(text: String, onFinished: ((Boolean) -> Unit)?) {
         val utteranceId = "voice_helper_${System.currentTimeMillis()}"
 
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
 
             override fun onDone(utteranceId: String?) {
-                onDone?.invoke()
+                onFinished?.invoke(true)
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                onDone?.invoke()
+                onFinished?.invoke(false)
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                onDone?.invoke()
+                onFinished?.invoke(false)
             }
         })
 
@@ -75,7 +90,7 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
 
     fun shutdown() {
         pendingText = null
-        pendingOnDone = null
+        pendingOnFinished = null
         tts.stop()
         tts.shutdown()
     }

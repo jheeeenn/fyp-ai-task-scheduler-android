@@ -22,8 +22,10 @@ object ReadOnlyTaskContextResponseRenderer {
             } else {
                 "$title is scheduled at ${item.dueTime}."
             }
-            ConversationContextDetail.STATUS ->
-                "$title is ${if (item.isDone) "completed" else "active"}."
+            ConversationContextDetail.STATUS -> {
+                val status = if (item.isDone) "Completed" else item.relativeStatus
+                "$title is ${status.replaceFirstChar { it.lowercase() }}."
+            }
             ConversationContextDetail.SUBTASKS -> renderSubtasks(item, title)
             ConversationContextDetail.NONE ->
                 throw IllegalArgumentException("A validated context detail is required")

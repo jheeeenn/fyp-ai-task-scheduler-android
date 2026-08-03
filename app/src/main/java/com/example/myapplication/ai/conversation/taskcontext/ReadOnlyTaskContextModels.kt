@@ -5,7 +5,8 @@ enum class TaskContextScope {
     RECENT_QUERY_RESULTS,
     DAILY_BRIEFING,
     CONTEXT_SUGGESTION,
-    TASK_MATCH_CHOICES
+    TASK_MATCH_CHOICES,
+    TASK_DETAIL
 }
 
 data class ReadOnlyTaskContextItem(
@@ -15,7 +16,8 @@ data class ReadOnlyTaskContextItem(
     val dueTime: String,
     val isDone: Boolean,
     val subtaskCount: Int,
-    val unfinishedSubtaskCount: Int
+    val unfinishedSubtaskCount: Int,
+    val relativeStatus: String = if (isDone) "Completed" else "Active"
 )
 
 data class ReadOnlyTaskContextSnapshot(

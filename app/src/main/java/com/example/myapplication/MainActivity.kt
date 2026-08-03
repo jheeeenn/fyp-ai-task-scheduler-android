@@ -20,6 +20,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: TaskAdapter
     private lateinit var dao: com.example.myapplication.data.TaskDao
     private lateinit var voiceHelper: VoiceHelper
+    private lateinit var detailNavigation: TaskDetailNavigationCoordinator
     private lateinit var accessibilityController: TaskListAccessibilityController
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +39,14 @@ class MainActivity : AppCompatActivity() {
 
         dao = AppDatabase.getInstance(this).taskDao()
         voiceHelper = VoiceHelper(this)
+        detailNavigation = TaskDetailNavigationCoordinator(
+            speak = { text, onFinished ->
+                voiceHelper.speakWithResult(text) { success ->
+                    runOnUiThread { onFinished(success) }
+                }
+            },
+            openDetails = ::navigateToTaskDetails
+        )
         accessibilityController = TaskListAccessibilityController(
             activity = this,
             emptyMessage = "No scheduled tasks"
@@ -45,16 +54,18 @@ class MainActivity : AppCompatActivity() {
         adapter = TaskAdapter(
             tasks = mutableListOf(),
             onReadTask = voiceHelper::speak,
-            onOpenTask = ::openTaskDetails
+            onOpenTask = { task -> detailNavigation.request(task) }
         )
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
 
         btnGoHome.setOnClickListenerWithHaptic { finish() }
         btnTalkAssistant.setOnClickListenerWithHaptic {
-            startActivity(Intent(this, HomeActivity::class.java).apply {
-                putExtra("open_assistant_on_arrival", true)
-            })
+            startActivity(
+                HomeAssistantEntryContract.putGeneric(
+                    Intent(this, HomeActivity::class.java)
+                )
+            )
         }
     }
 
@@ -66,6 +77,11 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         voiceHelper.shutdown()
         super.onDestroy()
+    }
+
+    override fun onStop() {
+        detailNavigation.cancelPending()
+        super.onStop()
     }
 
     private fun loadTasks() {
@@ -81,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openTaskDetails(task: TaskEntity) {
+    private fun navigateToTaskDetails(task: TaskEntity) {
         startActivity(Intent(this, TaskDetailActivity::class.java).apply {
             putExtra(TaskDetailActivity.EXTRA_TASK_ID, task.id)
         })

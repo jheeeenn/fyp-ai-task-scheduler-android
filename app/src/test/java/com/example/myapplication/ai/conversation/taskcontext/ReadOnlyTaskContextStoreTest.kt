@@ -176,6 +176,27 @@ class ReadOnlyTaskContextStoreTest {
         assertFalse(capture.promptText.contains("\"id\""))
     }
 
+    @Test
+    fun taskDetailResultExposesExactlyOneTemporaryT1WithoutRoomId() {
+        val parent = task(8642097531, "Private appointment")
+        val subtasks = listOf(
+            task(51, "Finished preparation", isDone = true),
+            task(52, "Bring documents", isDone = false)
+        )
+        val store = ReadOnlyTaskContextStore()
+
+        store.replaceTaskDetailResult(parent, subtasks)
+
+        val capture = store.capture()
+        assertEquals(TaskContextScope.TASK_DETAIL, capture.snapshot.scope)
+        assertEquals(listOf("T1"), capture.snapshot.items.map { it.ref })
+        assertEquals(2, capture.snapshot.items.single().subtaskCount)
+        assertEquals(1, capture.snapshot.items.single().unfinishedSubtaskCount)
+        assertEquals(parent.id, store.resolveRef("T1", capture.snapshot.generation))
+        assertFalse(capture.promptText.contains(parent.id.toString()))
+        assertFalse(capture.promptText.contains("\"id\""))
+    }
+
     private fun task(id: Long, title: String, isDone: Boolean = false) = TaskEntity(
         id = id,
         title = title,

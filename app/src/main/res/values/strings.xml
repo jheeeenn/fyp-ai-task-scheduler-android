@@ -37,6 +37,9 @@
     <string name="task_no_longer_available">Task is no longer available</string>
     <string name="no_subtasks">No subtasks</string>
     <string name="open_task_details">Open task details</string>
+    <string name="task_marked_complete">Task marked complete.</string>
+    <string name="task_marked_incomplete">Task marked incomplete.</string>
+    <string name="task_update_failed">I could not update the task. Please try again.</string>
     <string name="assistant_title">Assistant</string>
     <string name="assistant_ready">Ready</string>
     <string name="assistant_user_label">You said</string>

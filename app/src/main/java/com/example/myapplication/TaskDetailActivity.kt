@@ -2,13 +2,13 @@ package com.example.myapplication
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -18,12 +18,14 @@ import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class TaskDetailActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_TASK_ID = "task_id"
+        private const val TASK_DETAIL_UPDATE_TAG = "TASK_DETAIL_UPDATE"
     }
 
     private lateinit var dao: com.example.myapplication.data.TaskDao
@@ -48,6 +50,7 @@ class TaskDetailActivity : AppCompatActivity() {
     private var taskId: Long = -1L
     private var currentTask: TaskEntity? = null
     private var currentSubtasks: List<TaskEntity> = emptyList()
+    private var taskMutationInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,7 +124,9 @@ class TaskDetailActivity : AppCompatActivity() {
         readAllButton.setOnClickListenerWithHaptic { readAll() }
         toggleDoneButton.setOnClickListenerWithHaptic { toggleDone() }
         editButton.setOnClickListenerWithHaptic { editTask() }
-        deleteButton.setOnClickListenerWithHaptic { confirmDelete() }
+        deleteButton.setOnClickListenerWithHaptic {
+            launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION)
+        }
 
         val btnGoHome = findViewById<Button>(R.id.btnGoHome)
         val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
@@ -137,28 +142,46 @@ class TaskDetailActivity : AppCompatActivity() {
             finish()
         }
         btnTalkAssistant.setOnClickListenerWithHaptic {
-            startActivity(Intent(this, HomeActivity::class.java).apply {
-                putExtra("open_assistant_on_arrival", true)
-            })
+            launchHomeAssistant(HomeAssistantEntryMode.TASK_DETAIL_CONTEXT)
         }
     }
 
     private fun loadAuthoritativeTask() {
         setActionButtonsEnabled(false)
         lifecycleScope.launch {
-            val snapshot = withContext(Dispatchers.IO) {
-                val task = dao.getById(taskId) ?: return@withContext null
-                task to dao.getSubtasks(taskId)
+            try {
+                val snapshot = loadAuthoritativeSnapshot()
+                if (snapshot == null) {
+                    showMissingTaskAndFinish()
+                    return@launch
+                }
+                applySnapshot(snapshot)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.w(
+                    TASK_DETAIL_UPDATE_TAG,
+                    "operation=LOAD outcome=FAILED type=${exception.javaClass.simpleName}"
+                )
+                voiceHelper.speak(getString(R.string.task_update_failed))
+            } finally {
+                if (!isFinishing && !taskMutationInProgress) {
+                    setActionButtonsEnabled(true)
+                }
             }
-            if (snapshot == null) {
-                showMissingTaskAndFinish()
-                return@launch
-            }
-            currentTask = snapshot.first
-            currentSubtasks = snapshot.second
-            render(snapshot.first, snapshot.second)
-            setActionButtonsEnabled(true)
         }
+    }
+
+    private suspend fun loadAuthoritativeSnapshot(): Pair<TaskEntity, List<TaskEntity>>? =
+        withContext(Dispatchers.IO) {
+            val task = dao.getById(taskId) ?: return@withContext null
+            task to dao.getSubtasks(taskId)
+        }
+
+    private fun applySnapshot(snapshot: Pair<TaskEntity, List<TaskEntity>>) {
+        currentTask = snapshot.first
+        currentSubtasks = snapshot.second
+        render(snapshot.first, snapshot.second)
     }
 
     private fun render(task: TaskEntity, subtasks: List<TaskEntity>) {
@@ -242,22 +265,57 @@ class TaskDetailActivity : AppCompatActivity() {
     }
 
     private fun toggleDone() {
+        if (taskMutationInProgress) return
         val task = currentTask ?: return
         val newDoneState = !task.isDone
+        taskMutationInProgress = true
         setActionButtonsEnabled(false)
         lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                dao.updateDoneStatusForTaskAndSubtasks(task.id, newDoneState)
+            try {
+                withContext(Dispatchers.IO) {
+                    dao.updateDoneStatusForTaskAndSubtasks(task.id, newDoneState)
+                }
+                val refreshed = loadAuthoritativeSnapshot()
+                    ?: throw IllegalStateException("Task unavailable after completion update")
+                applySnapshot(refreshed)
+                syncReminderAfterCompletionChange(refreshed.first)
+                toggleDoneButton.performConfirmationHapticFeedback()
+                voiceHelper.speak(
+                    getString(
+                        if (newDoneState) {
+                            R.string.task_marked_complete
+                        } else {
+                            R.string.task_marked_incomplete
+                        }
+                    )
+                )
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.w(
+                    TASK_DETAIL_UPDATE_TAG,
+                    "operation=TOGGLE_DONE outcome=FAILED type=${exception.javaClass.simpleName}"
+                )
+                voiceHelper.speak(getString(R.string.task_update_failed))
+            } finally {
+                taskMutationInProgress = false
+                if (!isFinishing) setActionButtonsEnabled(true)
             }
-            if (newDoneState) {
+        }
+    }
+
+    private fun syncReminderAfterCompletionChange(task: TaskEntity) {
+        try {
+            if (task.isDone) {
                 ReminderHelper.cancelReminder(this@TaskDetailActivity, task.id)
             } else {
-                ReminderHelper.scheduleReminderFromTask(
-                    this@TaskDetailActivity,
-                    task.copy(isDone = false)
-                )
+                ReminderHelper.scheduleReminderFromTask(this@TaskDetailActivity, task)
             }
-            loadAuthoritativeTask()
+        } catch (exception: Exception) {
+            Log.w(
+                TASK_DETAIL_UPDATE_TAG,
+                "operation=REMINDER_SYNC outcome=FAILED type=${exception.javaClass.simpleName}"
+            )
         }
     }
 
@@ -272,25 +330,15 @@ class TaskDetailActivity : AppCompatActivity() {
         })
     }
 
-    private fun confirmDelete() {
+    private fun launchHomeAssistant(entryMode: HomeAssistantEntryMode) {
         val task = currentTask ?: return
-        AlertDialog.Builder(this)
-            .setTitle(R.string.delete_task_title)
-            .setMessage(getString(R.string.delete_task_message, task.title))
-            .setPositiveButton(R.string.delete) { _, _ -> deleteTask(task) }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun deleteTask(task: TaskEntity) {
-        setActionButtonsEnabled(false)
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                dao.deleteTaskAndSubtasks(task.id)
-            }
-            ReminderHelper.cancelReminder(this@TaskDetailActivity, task.id)
-            finish()
-        }
+        startActivity(
+            HomeAssistantEntryContract.putTaskDetail(
+                intent = Intent(this, HomeActivity::class.java),
+                taskId = task.id,
+                entryMode = entryMode
+            )
+        )
     }
 
     private fun statusFor(task: TaskEntity): TaskStatusPresentation =
@@ -323,4 +371,5 @@ class TaskDetailActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
+
 }

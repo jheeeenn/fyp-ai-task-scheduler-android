@@ -60,7 +60,7 @@
                     android:layout_height="wrap_content"
                     android:importantForAccessibility="no"
                     android:text="@string/detail_title_label"
-                    android:textColor="@color/ui_text_secondary_light"
+                    android:textColor="@color/ui_text_secondary_dark"
                     android:textSize="17sp"
                     android:textStyle="bold" />
 
@@ -71,7 +71,7 @@
                     android:layout_marginTop="6dp"
                     android:importantForAccessibility="no"
                     android:text="@string/untitled_task"
-                    android:textColor="@color/ui_text_primary_light"
+                    android:textColor="@color/ui_text_primary_dark"
                     android:textSize="24sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -130,7 +130,7 @@
                     android:layout_height="wrap_content"
                     android:importantForAccessibility="no"
                     android:text="@string/detail_due_date_label"
-                    android:textColor="@color/ui_text_secondary_light"
+                    android:textColor="@color/ui_text_secondary_dark"
                     android:textSize="17sp"
                     android:textStyle="bold" />
 
@@ -141,7 +141,7 @@
                     android:layout_marginTop="6dp"
                     android:importantForAccessibility="no"
                     android:text="@string/no_date_set"
-                    android:textColor="@color/ui_text_primary_light"
+                    android:textColor="@color/ui_text_primary_dark"
                     android:textSize="21sp" />
             </LinearLayout>
 
@@ -164,7 +164,7 @@
                     android:layout_height="wrap_content"
                     android:importantForAccessibility="no"
                     android:text="@string/detail_due_time_label"
-                    android:textColor="@color/ui_text_secondary_light"
+                    android:textColor="@color/ui_text_secondary_dark"
                     android:textSize="17sp"
                     android:textStyle="bold" />
 
@@ -175,7 +175,7 @@
                     android:layout_marginTop="6dp"
                     android:importantForAccessibility="no"
                     android:text="@string/no_time_set"
-                    android:textColor="@color/ui_text_primary_light"
+                    android:textColor="@color/ui_text_primary_dark"
                     android:textSize="21sp" />
             </LinearLayout>
 
@@ -216,7 +216,7 @@
                         android:layout_height="wrap_content"
                         android:importantForAccessibility="no"
                         android:text="@string/detail_progress_label"
-                        android:textColor="@color/ui_text_secondary_light"
+                        android:textColor="@color/ui_text_secondary_dark"
                         android:textSize="17sp"
                         android:textStyle="bold" />
 
@@ -227,7 +227,7 @@
                         android:layout_marginTop="6dp"
                         android:importantForAccessibility="no"
                         android:text="@string/no_subtasks"
-                        android:textColor="@color/ui_text_primary_light"
+                        android:textColor="@color/ui_text_primary_dark"
                         android:textSize="20sp" />
                 </LinearLayout>
 

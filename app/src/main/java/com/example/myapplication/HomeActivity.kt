@@ -197,7 +197,8 @@ import com.example.myapplication.reminder.ReminderBootstrapTaskSource
 import com.example.myapplication.reminder.ReminderEscalationBootstrapper
 import com.example.myapplication.reminder.SharedPreferencesReminderBootstrapVersionStore
 class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
-    private var shouldOpenAssistantOnResume = false
+    private var pendingAssistantEntry: HomeAssistantEntry? = null
+    private var assistantEntryGeneration: Long = 0
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
     private lateinit var responseManager: AssistantResponseManager
@@ -422,18 +423,18 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
         btnTalkAssistant.setOnClickListenerWithHaptic {
-            assistantSession.startSession()
+            startGenericAssistantSession()
         }
 
         btnTalkAssistant.setOnLongClickListener {
             btnTalkAssistant.performLongClickHapticFeedback()
+            prepareGenericAssistantSession()
             showTypedAssistantInputDialog()
             true
         }
         AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)
 
-        // to open the assistant from today task and scheduled task pages
-        shouldOpenAssistantOnResume = intent.getBooleanExtra("open_assistant_on_arrival", false)
+        acceptAssistantEntry(intent)
 
 
     } // end of onCreate
@@ -498,13 +499,135 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             showReminderSetupDialog()
         }
 
-        if (shouldOpenAssistantOnResume) {
-            shouldOpenAssistantOnResume = false
-            window.decorView.post {
-                assistantSession.startSession()
+        processPendingAssistantEntry()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        acceptAssistantEntry(intent)
+        processPendingAssistantEntry()
+    }
+
+    private fun acceptAssistantEntry(intent: Intent) {
+        val entry = HomeAssistantEntryContract.read(intent) ?: return
+        HomeAssistantEntryContract.consume(intent)
+        assistantEntryGeneration += 1
+        pendingAssistantEntry = entry
+        if (entry.openAssistant && entry.entryMode != HomeAssistantEntryMode.GENERIC) {
+            assistantSession.prepareForContextEntry()
+        }
+    }
+
+    private fun processPendingAssistantEntry() {
+        val entry = pendingAssistantEntry ?: return
+        pendingAssistantEntry = null
+        if (!entry.openAssistant) return
+        val capturedEntryGeneration = assistantEntryGeneration
+        when (entry.entryMode) {
+            HomeAssistantEntryMode.GENERIC -> startGenericAssistantSession()
+            HomeAssistantEntryMode.TASK_DETAIL_CONTEXT,
+            HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION -> {
+                loadTaskDetailAssistantEntry(entry, capturedEntryGeneration)
             }
         }
     }
+
+    private fun startGenericAssistantSession() {
+        prepareGenericAssistantSession()
+        assistantSession.startSession()
+    }
+
+    private fun prepareGenericAssistantSession() {
+        invalidateAssistantRequest(AssistantRequestInvalidationReason.NEW_COMMAND)
+        clearConversationSessionContext()
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        clearPendingTaskMatchState()
+        clearPendingDeleteState()
+    }
+
+    private fun loadTaskDetailAssistantEntry(
+        entry: HomeAssistantEntry,
+        capturedEntryGeneration: Long
+    ) {
+        lifecycleScope.launch {
+            val taskId = entry.contextTaskId
+            val roomData = if (taskId == null) {
+                null
+            } else {
+                withContext(Dispatchers.IO) {
+                    val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+                    val task = dao.getById(taskId) ?: return@withContext null
+                    task to dao.getSubtasks(taskId)
+                }
+            }
+            if (capturedEntryGeneration != assistantEntryGeneration) return@launch
+            if (roomData == null) {
+                handleUnavailableTaskDetailEntry(entry.entryMode)
+                return@launch
+            }
+
+            invalidateAssistantRequest(AssistantRequestInvalidationReason.NEW_COMMAND)
+            clearConversationSessionContext()
+            clearPendingTaskMatchState()
+            clearPendingDeleteState()
+            val task = roomData.first
+            val subtasks = roomData.second
+            currentSubtasksByParentId = mapOf(task.id to subtasks)
+
+            when (entry.entryMode) {
+                HomeAssistantEntryMode.TASK_DETAIL_CONTEXT -> {
+                    readOnlyTaskContextStore.replaceTaskDetailResult(task, subtasks)
+                    val capture = readOnlyTaskContextStore.capture()
+                    val item = capture.snapshot.items.single()
+                    conversationOrchestrator.setAuthoritativeContextFocus(
+                        item = item,
+                        selectedRef = "T1",
+                        capturedGeneration = capture.snapshot.generation
+                    )
+                    homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
+                    Log.d(
+                        TASK_DETAIL_ENTRY_TAG,
+                        "entryMode=TASK_DETAIL_CONTEXT taskAvailable=true " +
+                            "contextGeneration=${capture.snapshot.generation}"
+                    )
+                    assistantSession.startPassiveSession()
+                    assistantSession.speak(
+                        "You are asking about ${task.title}. What would you like to know?",
+                        listenAgain = true
+                    )
+                }
+
+                HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION -> {
+                    Log.d(
+                        TASK_DETAIL_ENTRY_TAG,
+                        "entryMode=TASK_DETAIL_DELETE_CONFIRMATION taskAvailable=true " +
+                            "contextGeneration=${readOnlyTaskContextStore.currentGeneration()}"
+                    )
+                    assistantSession.startPassiveSession()
+                    askDeleteConfirmation(task)
+                }
+
+                HomeAssistantEntryMode.GENERIC -> Unit
+            }
+        }
+    }
+
+    private fun handleUnavailableTaskDetailEntry(entryMode: HomeAssistantEntryMode) {
+        invalidateAssistantRequest(AssistantRequestInvalidationReason.NEW_COMMAND)
+        clearConversationSessionContext()
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        clearPendingTaskMatchState()
+        clearPendingDeleteState()
+        Log.d(
+            TASK_DETAIL_ENTRY_TAG,
+            "entryMode=${entryMode.name} taskAvailable=false " +
+                "contextGeneration=${readOnlyTaskContextStore.currentGeneration()}"
+        )
+        assistantSession.startPassiveSession()
+        assistantSession.speak("That task is no longer available.", listenAgain = false)
+    }
+
     private fun refreshOverview(){
         val overviewText = findViewById<TextView>(R.id.overviewText)
         val dao = AppDatabase.getInstance(this).taskDao()
@@ -4825,17 +4948,28 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
 
-            withContext(Dispatchers.IO) {
+            val authoritativeTitle = withContext(Dispatchers.IO) {
+                val authoritativeTask = dao.getById(taskId) ?: return@withContext null
                 dao.deleteTaskAndSubtasks(taskId)
+                authoritativeTask.title
+            }
+
+            if (authoritativeTitle == null) {
+                clearPendingDeleteState()
+                clearConversationSessionContext()
+                homeFollowUpContext = HomeFollowUpContext.NONE
+                assistantSession.speak("That task is no longer available.", listenAgain = false)
+                return@launch
             }
 
             ReminderHelper.cancelReminder(this@HomeActivity, taskId)
             refreshOverview()
 
             clearPendingDeleteState()
+            clearConversationSessionContext()
             homeFollowUpContext = HomeFollowUpContext.NONE
 
-            speakObservation(ExecutionObservation(ExecutionOperation.DELETE_TASK, ExecutionOutcome.SUCCESS, taskTitle = title, listenAgain = false, fallbackSpeech = responseManager.deleteSuccess(title)))
+            speakObservation(ExecutionObservation(ExecutionOperation.DELETE_TASK, ExecutionOutcome.SUCCESS, taskTitle = authoritativeTitle, listenAgain = false, fallbackSpeech = responseManager.deleteSuccess(authoritativeTitle)))
         }
     }
     private suspend fun beginBreakdownTargetResolution(
@@ -5930,6 +6064,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     ConversationIntent.STOP_CONVERSATION -> {
                         val title = pendingDeleteTaskTitle
                         clearPendingDeleteState()
+                        clearConversationSessionContext()
                         homeFollowUpContext = HomeFollowUpContext.NONE
 
                         lifecycleScope.launch {
@@ -5990,6 +6125,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         super.onDestroy()
         assistantSession.destroy()
         voiceHelper.shutdown()
+    }
+
+    private companion object {
+        const val TASK_DETAIL_ENTRY_TAG = "TASK_DETAIL_ENTRY"
     }
 }
 

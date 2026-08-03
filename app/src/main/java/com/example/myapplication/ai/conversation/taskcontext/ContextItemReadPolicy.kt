@@ -88,20 +88,21 @@ object ContextItemReadPolicy {
     private val SUPPORTED_SCOPES = setOf(
         TaskContextScope.RECENT_QUERY_RESULTS,
         TaskContextScope.DAILY_BRIEFING,
-        TaskContextScope.CONTEXT_SUGGESTION
+        TaskContextScope.CONTEXT_SUGGESTION,
+        TaskContextScope.TASK_DETAIL
     )
     private val TIME_QUESTION = Regex(
-        "(?i)\\b(?:what|which)\\s+time\\b"
+        "(?i)\\b(?:what|which)(?:'s|\\s+is)?\\s+(?:(?:its|the)\\s+)?time\\b"
     )
     private val DATE_QUESTION = Regex(
-        "(?i)\\b(?:what|which)\\s+date\\b"
+        "(?i)\\b(?:what|which)(?:'s|\\s+is)?\\s+(?:(?:its|the)\\s+)?date\\b"
     )
     private val MIXED_DATE_TIME_QUESTION = Regex(
         "(?i)\\b(?:what|which)\\b[^.!?]*\\btime\\b[^.!?]*\\bdate\\b|" +
             "\\b(?:what|which)\\b[^.!?]*\\bdate\\b[^.!?]*\\btime\\b"
     )
     private val STATUS_QUESTION = Regex(
-        "(?i)^\\s*(?:is|was)\\b[^.!?]*\\b(?:complete|completed|done|active|unfinished)\\b"
+        "(?i)^\\s*(?:is|was)\\b[^.!?]*\\b(?:complete|completed|done|active|unfinished|overdue)\\b"
     )
     private val SUBTASK_QUESTION = Regex(
         "(?i)\\b(?:what|which|how\\s+many)\\b[^.!?]*\\bsubtasks?\\b"

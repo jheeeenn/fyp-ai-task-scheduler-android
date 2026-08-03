@@ -55,7 +55,10 @@ class TaskListAndDetailSourceContractTest {
             assertFalse(source.contains("putExtra(\"task_date\""))
             assertFalse(source.contains("putExtra(\"task_time\""))
             assertTrue(source.contains("voiceHelper.shutdown()"))
-            assertTrue(source.contains("open_assistant_on_arrival"))
+            assertTrue(source.contains("HomeAssistantEntryContract.putGeneric"))
+            assertTrue(source.contains("detailNavigation.cancelPending()"))
+            assertTrue(source.contains("voiceHelper.speakWithResult"))
+            assertTrue(source.contains("runOnUiThread"))
         }
         assertTrue(scheduled.contains("dao.getRootTasks()"))
         assertTrue(scheduled.contains("TaskListOrdering.byUrgency(roots)"))
@@ -94,19 +97,21 @@ class TaskListAndDetailSourceContractTest {
     }
 
     @Test
-    fun detailActionsPreserveCompletionReminderEditAndDeleteContracts() {
+    fun detailActionsPreserveCompletionReminderEditAndCentralDeleteContracts() {
         val detail = mainRoot.resolve("TaskDetailActivity.kt").readText()
 
         assertTrue(detail.contains("TaskDetailSpeechRenderer.readAll"))
         assertTrue(detail.contains("dao.updateDoneStatusForTaskAndSubtasks"))
         assertTrue(detail.contains("ReminderHelper.cancelReminder"))
         assertTrue(detail.contains("ReminderHelper.scheduleReminderFromTask"))
-        assertTrue(detail.contains("task.copy(isDone = false)"))
         assertTrue(detail.contains("putExtra(\"task_title\", task.title)"))
         assertTrue(detail.contains("putExtra(\"task_date\", task.dueDate)"))
         assertTrue(detail.contains("putExtra(\"task_time\", task.dueTime)"))
-        assertTrue(detail.contains("setPositiveButton(R.string.delete)"))
-        assertTrue(detail.contains("dao.deleteTaskAndSubtasks(task.id)"))
+        assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION"))
+        assertTrue(detail.contains("HomeAssistantEntryContract.putTaskDetail"))
+        assertFalse(detail.contains("AlertDialog"))
+        assertFalse(detail.contains("setPositiveButton"))
+        assertFalse(detail.contains("dao.deleteTaskAndSubtasks"))
     }
 
     @Test

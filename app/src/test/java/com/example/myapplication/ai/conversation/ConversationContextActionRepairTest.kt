@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation
 
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import com.example.myapplication.ai.conversation.taskcontext.TaskContextScope
@@ -120,6 +121,50 @@ class ConversationContextActionRepairTest {
         assertEquals(setOf("NONE"), moveValues)
         assertEquals(setOf("NONE"), hintValues)
         assertEquals(false, schema.getBoolean("additionalProperties"))
+    }
+
+    @Test
+    fun taskDetailFocusGroundsMoveItToItsOnlyTemporaryRef() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Dentist"))
+        )
+        val detailFocus = ConversationContextFocus(
+            available = true,
+            ref = "T1",
+            generation = detailSnapshot.generation,
+            detail = ConversationContextDetail.SUMMARY,
+            title = "Dentist"
+        )
+        val primary = ConversationDecision(
+            route = ConversationRoute.TASK_COMMAND,
+            taskText = "move it one hour later",
+            source = "conversation_agent"
+        )
+
+        assertTrue(
+            ContextActionRepairPolicy.shouldAttempt(
+                "move it one hour later",
+                primary,
+                detailSnapshot,
+                isResultInteraction = true,
+                contextFocus = detailFocus
+            )
+        )
+        assertTrue(
+            ContextActionReferenceGroundingValidator.validate(
+                normalizedText = "move it one hour later",
+                decision = primary.copy(
+                    route = ConversationRoute.CONTEXT_ACTION,
+                    taskText = "",
+                    contextRef = "T1",
+                    contextAction = ConversationContextAction.RESCHEDULE,
+                    confidence = 0.97
+                ),
+                capturedSnapshot = detailSnapshot,
+                currentFocus = detailFocus
+            ).isValid
+        )
     }
 
     private class RepairClient(

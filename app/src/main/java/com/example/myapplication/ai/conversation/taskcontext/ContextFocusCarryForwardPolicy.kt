@@ -51,10 +51,15 @@ object ContextFocusCarryForwardPolicy {
         else -> null
     }
 
-    private val TIME_QUESTION = Regex("(?i)\\bwhat\\s+time\\b")
-    private val DATE_QUESTION = Regex("(?i)\\b(?:what|which)\\s+(?:date|day)\\b")
+    private val TIME_QUESTION = Regex(
+        "(?i)\\bwhat(?:'s|\\s+is)?\\s+(?:(?:its|the)\\s+)?time\\b"
+    )
+    private val DATE_QUESTION = Regex(
+        "(?i)\\b(?:what|which)(?:'s|\\s+is)?\\s+(?:(?:its|the)\\s+)?(?:date|day)\\b"
+    )
     private val STATUS_QUESTION = Regex(
-        "(?i)\\b(?:is\\s+it\\s+(?:completed|done|active)|what(?:'s|\\s+is)\\s+(?:its|the)\\s+status)\\b"
+        "(?i)\\b(?:is\\s+it\\s+(?:completed|done|active|overdue)|" +
+            "what(?:'s|\\s+is)\\s+(?:its|the)\\s+status)\\b"
     )
     private val SUBTASK_QUESTION = Regex(
         "(?i)\\b(?:how\\s+many\\s+subtasks|what\\s+subtasks|subtasks?\\s+does\\s+it\\s+have)\\b"
@@ -63,6 +68,7 @@ object ContextFocusCarryForwardPolicy {
         "(?i)\\b(?:what\\s+(?:was|is)\\s+it\\s+called|what(?:'s|\\s+is)\\s+its\\s+(?:name|title))\\b"
     )
     private val SUMMARY_QUESTION = Regex(
-        "(?i)\\b(?:what\\s+was\\s+it|tell\\s+me\\s+about\\s+it|read\\s+its\\s+details)\\b"
+        "(?i)\\b(?:what\\s+was\\s+it|tell\\s+me\\s+about\\s+it|" +
+            "read\\s+(?:its\\s+details|the\\s+task|it))\\b"
     )
 }

@@ -97,7 +97,8 @@ object ContextItemRestatementPolicy {
     private val SUPPORTED_SCOPES = setOf(
         TaskContextScope.RECENT_QUERY_RESULTS,
         TaskContextScope.DAILY_BRIEFING,
-        TaskContextScope.CONTEXT_SUGGESTION
+        TaskContextScope.CONTEXT_SUGGESTION,
+        TaskContextScope.TASK_DETAIL
     )
     private val RESTATEMENT_WORDING = Regex(
         "(?i)\\b(?:repeat|what\\s+was)\\b|" +

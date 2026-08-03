@@ -89,6 +89,37 @@ class ContextFocusCarryForwardPolicyTest {
         )
     }
 
+    @Test
+    fun seededTaskDetailFocusResolvesDeviceTestQuestionsToT1() {
+        val taskDetailSnapshot = snapshot().copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(
+                item("T1", "Dentist").copy(relativeStatus = "Overdue")
+            )
+        )
+        val taskDetailFocus = focus().copy(ref = "T1", title = "Dentist")
+        val expected = mapOf(
+            "what is the time" to ConversationContextDetail.TIME,
+            "what date is it" to ConversationContextDetail.DATE,
+            "is it overdue" to ConversationContextDetail.STATUS,
+            "how many subtasks are unfinished" to ConversationContextDetail.SUBTASKS,
+            "read the task" to ConversationContextDetail.SUMMARY
+        )
+
+        expected.forEach { (utterance, detail) ->
+            val decision = requireNotNull(
+                ContextFocusCarryForwardPolicy.resolve(
+                    utterance,
+                    taskDetailFocus,
+                    taskDetailSnapshot,
+                    isResultInteraction = true
+                )
+            )
+            assertEquals("T1", decision.contextRef)
+            assertEquals(detail, decision.contextDetail)
+        }
+    }
+
     private fun resolve(text: String) = ContextFocusCarryForwardPolicy.resolve(
         text,
         focus(),

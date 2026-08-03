@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.taskcontext
 
 import com.example.myapplication.data.TaskEntity
+import com.example.myapplication.TaskStatusPresenter
 import java.util.Collections
 import java.util.Locale
 
@@ -59,6 +60,18 @@ class ReadOnlyTaskContextStore {
     }
 
     @Synchronized
+    fun replaceTaskDetailResult(
+        task: TaskEntity,
+        subtasks: List<TaskEntity> = emptyList()
+    ) {
+        replace(
+            scope = TaskContextScope.TASK_DETAIL,
+            tasks = listOf(task),
+            subtasksByParentId = mapOf(task.id to subtasks)
+        )
+    }
+
+    @Synchronized
     fun clear() {
         generation += 1
         roomIdByRef = emptyMap()
@@ -110,7 +123,18 @@ class ReadOnlyTaskContextStore {
                 dueTime = sanitizeField(task.dueTime.orEmpty()),
                 isDone = task.isDone,
                 subtaskCount = subtasks.size,
-                unfinishedSubtaskCount = subtasks.count { !it.isDone }
+                unfinishedSubtaskCount = subtasks.count { !it.isDone },
+                relativeStatus = if (scope == TaskContextScope.TASK_DETAIL) {
+                    TaskStatusPresenter.present(
+                        task.isDone,
+                        task.dueDate,
+                        task.dueTime
+                    ).visibleText
+                } else if (task.isDone) {
+                    "Completed"
+                } else {
+                    "Active"
+                }
             )
         }
         roomIdByRef = boundedTasks.mapIndexed { index, task ->
@@ -138,6 +162,7 @@ class ReadOnlyTaskContextStore {
                         "\"date\":${jsonString(item.dueDate)}," +
                         "\"time\":${jsonString(item.dueTime)}," +
                         "\"status\":${jsonString(if (item.isDone) "COMPLETED" else "ACTIVE")}," +
+                        "\"relative_status\":${jsonString(item.relativeStatus)}," +
                         "\"subtasks\":${item.subtaskCount}," +
                         "\"unfinished_subtasks\":${item.unfinishedSubtaskCount}}"
                 )

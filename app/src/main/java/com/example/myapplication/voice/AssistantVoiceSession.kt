@@ -182,6 +182,19 @@ class AssistantVoiceSession(
         assistantBottomSheet?.setIdleState()
     }
 
+    fun prepareForContextEntry() {
+        ensureInitialized()
+        suppressNextRecognizerError = true
+        isListening = false
+        waitingForConfirmation = false
+        assistantSessionActive = false
+        isForceStopping = false
+        try {
+            speechRecognizer?.cancel()
+        } catch (_: Exception) {
+        }
+    }
+
     fun startSession(clearConversation: Boolean = true) {
         ensureInitialized()
 
