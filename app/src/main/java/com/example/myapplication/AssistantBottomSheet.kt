@@ -39,6 +39,11 @@ class AssistantBottomSheet(
     private var focusReturnView: View? = null
     private var restoreFocusOnDismiss = true
 
+    val isContentReady: Boolean
+        get() = ::stateContainer.isInitialized &&
+            ::assistantRoot.isInitialized &&
+            ::tvState.isInitialized
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -121,34 +126,39 @@ class AssistantBottomSheet(
         tvAssistantHint.contentDescription = "No next action suggested"
     }
     fun setIdleState() {
+        if (!isContentReady) return
         stopStateAnimation()
         applyState(AssistantAccessibilityState.READY, announce = false)
     }
 
     fun setListeningState() {
+        if (!isContentReady) return
         applyState(AssistantAccessibilityState.LISTENING, announce = true)
         startListeningAnimation()
     }
 
     fun setProcessingState() {
+        if (!isContentReady) return
         applyState(AssistantAccessibilityState.PROCESSING, announce = true)
         startProcessingAnimation()
     }
 
     fun setErrorState(@Suppress("UNUSED_PARAMETER") text: String) {
+        if (!isContentReady) return
         stopStateAnimation()
         applyState(AssistantAccessibilityState.ERROR, announce = false)
     }
 
     fun setSpeakingState() {
+        if (!isContentReady) return
         applyState(AssistantAccessibilityState.SPEAKING, announce = false)
         startSpeakingAnimation()
     }
     fun setWaitingForConfirmationState() {
-        stopStateAnimation()
-        applyState(AssistantAccessibilityState.WAITING_FOR_CONFIRMATION, announce = true)
+        setProcessingState()
     }
     fun setStoppedState() {
+        if (!isContentReady) return
         stopStateAnimation()
         applyState(AssistantAccessibilityState.STOPPED, announce = false)
     }
@@ -190,6 +200,7 @@ class AssistantBottomSheet(
     private fun stopStateAnimation() {
         stateAnimator?.cancel()
         stateAnimator = null
+        if (!isContentReady) return
         stateContainer.setBackgroundColor(defaultStateColor)
         updatePanelBorder(defaultBorderColor)
     }

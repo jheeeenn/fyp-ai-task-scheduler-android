@@ -120,7 +120,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         bindInteractions()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                handleHomeOrBackExit()
+                handleBackExit()
             }
         })
 
@@ -151,8 +151,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         activityStopped = true
         navigationCoordinator.cancelPending()
         if (!isChangingConfigurations) {
-            assistantSession.prepareForContextEntry()
-            assistantSession.dismissPanel()
+            assistantSession.stopForLifecycle()
             clearLocalInteraction()
         }
         super.onStop()
@@ -255,7 +254,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             homeButton,
             speechProvider = TaskScreenControlSpeechRenderer::homeDescription,
             speak = ::speakIdentification,
-            activate = ::handleHomeOrBackExit
+            activate = ::handleHomeExit
         )
         VoiceFirstGestureBinder.bindAction(
             assistantButton,
@@ -523,6 +522,10 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         finish()
     }
 
+    private fun returnBack() {
+        finish()
+    }
+
     private fun statusFor(task: TaskEntity): TaskStatusPresentation =
         statusFor(task.isDone, task.dueDate, task.dueTime)
 
@@ -616,10 +619,10 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         )
     }
 
-    private fun handleHomeOrBackExit() {
+    private fun handleHomeExit() {
         if (taskMutationInProgress) return
-        val controller = draftController ?: return
-        if (!controller.isDirty) {
+        val controller = draftController
+        if (controller?.isDirty != true) {
             navigationCoordinator.request(TaskScreenControlSpeechRenderer.returningHome()) {
                 returnHome()
             }
@@ -630,6 +633,23 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             prompt = TaskDetailEditSpeechRenderer.confirmHomeExit(),
             claim = controller.freezeSaveClaim(),
             afterSave = ::returnHome
+        )
+    }
+
+    private fun handleBackExit() {
+        if (taskMutationInProgress) return
+        val controller = draftController
+        if (controller?.isDirty != true) {
+            navigationCoordinator.request(TaskScreenControlSpeechRenderer.goingBack()) {
+                returnBack()
+            }
+            return
+        }
+        beginConfirmation(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION,
+            prompt = TaskDetailEditSpeechRenderer.confirmBackExit(),
+            claim = controller.freezeSaveClaim(),
+            afterSave = ::returnBack
         )
     }
 
@@ -691,6 +711,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             TaskDetailEditInteraction.WAITING_FOR_TIME -> handleFieldResponse(text)
             TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION ->
                 handleConfirmationResponse(text)
@@ -739,14 +760,13 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             is TaskFieldEditResult.NeedsClarification ->
                 assistantSession.speakThenListenAgain(result.prompt)
             TaskFieldEditResult.PastSchedule ->
-                assistantSession.speakThenListenAgain("That schedule is in the past. Please choose another value.")
-            TaskFieldEditResult.Invalid -> assistantSession.speakThenListenAgain(
-                when (editInteraction) {
-                    TaskDetailEditInteraction.WAITING_FOR_TITLE -> "Please provide a valid task title."
-                    TaskDetailEditInteraction.WAITING_FOR_DATE -> "I could not understand that date. Please try again."
-                    else -> "I could not understand that time. Please try again."
-                }
-            )
+                assistantSession.speakThenListenAgain(
+                    TaskDetailEditSpeechRenderer.pastScheduleRetry(editInteraction)
+                )
+            TaskFieldEditResult.Invalid ->
+                assistantSession.speakThenListenAgain(
+                    TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
+                )
         }
     }
 
@@ -757,7 +777,9 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             TaskDetailConfirmation.CANCEL -> handleConfirmationCancel()
             TaskDetailConfirmation.UNCLEAR -> {
                 assistantSession.expectConfirmation()
-                assistantSession.speakThenListenAgain("Please say yes, no, or cancel.")
+                assistantSession.speakThenListenAgain(
+                    TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
+                )
             }
         }
     }
@@ -766,6 +788,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
         when (editInteraction) {
             TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION -> {
                 val claim = pendingSaveClaim ?: return
                 performAuthoritativeSave(claim, pendingExitAfterSave)
@@ -791,6 +814,12 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
                 renderCurrentDraft()
                 clearLocalInteraction()
                 assistantSession.speakThenRun("Changes discarded. Returning home.", ::returnHome)
+            }
+            TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION -> {
+                draftController?.discard()
+                renderCurrentDraft()
+                clearLocalInteraction()
+                assistantSession.speakThenRun("Changes discarded. Going back.", ::returnBack)
             }
             TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION -> {
                 draftController?.discard()

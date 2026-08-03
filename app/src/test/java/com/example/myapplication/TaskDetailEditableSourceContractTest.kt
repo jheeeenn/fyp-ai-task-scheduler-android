@@ -74,8 +74,10 @@ class TaskDetailEditableSourceContractTest {
     @Test
     fun dirtyHomeBackAssistantAndDeleteUseBoundedConfirmationStates() {
         assertTrue(detail.contains("onBackPressedDispatcher.addCallback"))
-        assertTrue(detail.contains("handleHomeOrBackExit()"))
+        assertTrue(detail.contains("handleHomeExit()"))
+        assertTrue(detail.contains("handleBackExit()"))
         assertTrue(detail.contains("WAITING_FOR_HOME_CONFIRMATION"))
+        assertTrue(detail.contains("WAITING_FOR_BACK_CONFIRMATION"))
         assertTrue(detail.contains("WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION"))
         assertTrue(detail.contains("WAITING_FOR_DELETE_DISCARD_CONFIRMATION"))
         assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_CONTEXT"))
@@ -86,12 +88,15 @@ class TaskDetailEditableSourceContractTest {
     }
 
     @Test
-    fun onlyHomeAndAssistantAreAnchoredWhileTaskContentAndActionsScroll() {
+    fun detailsScrollWhileActionGridHomeAndAssistantStayAnchored() {
         val scrollEnd = layout.indexOf("</ScrollView>")
-        assertTrue(layout.indexOf("@+id/detailActionGrid") in 0 until scrollEnd)
+        assertTrue(layout.indexOf("@+id/detailActionGrid") > scrollEnd)
         assertTrue(layout.indexOf("@+id/btnGoHome") > scrollEnd)
         assertTrue(layout.indexOf("@+id/btnTalkAssistant") > scrollEnd)
+        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/detailActionGrid\""))
+        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnGoHome\""))
         assertTrue(layout.contains("@+id/detailDateTimeRow"))
+        assertFalse(layout.contains("<Space"))
     }
 
     @Test

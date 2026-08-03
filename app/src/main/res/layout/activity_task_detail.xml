@@ -28,10 +28,9 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginTop="12dp"
-        android:layout_marginBottom="12dp"
         android:clipToPadding="false"
         android:fillViewport="true"
-        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        app:layout_constraintBottom_toTopOf="@id/detailActionGrid"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/taskDetailHeading">
@@ -251,109 +250,109 @@
                     android:orientation="vertical" />
             </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/detailActionGrid"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:orientation="vertical"
-                tools:ignore="ButtonStyle">
-
-                <TextView
-                    android:id="@+id/detailUnsavedChanges"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    android:gravity="center"
-                    android:text="@string/unsaved_changes"
-                    android:textColor="@color/ui_success"
-                    android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btnReadAll"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="5dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_action_button"
-                        android:backgroundTint="@null"
-                        android:minHeight="64dp"
-                        android:text="@string/read_all"
-                        android:textAllCaps="false"
-                        android:textColor="@color/ui_text_primary_light"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        app:backgroundTint="@null" />
-
-                    <Button
-                        android:id="@+id/btnToggleDone"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="5dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_action_button"
-                        android:backgroundTint="@null"
-                        android:minHeight="64dp"
-                        android:text="@string/mark_done"
-                        android:textAllCaps="false"
-                        android:textColor="@color/ui_text_primary_light"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        app:backgroundTint="@null" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btnSaveChanges"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="5dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_action_button"
-                        android:backgroundTint="@null"
-                        android:minHeight="64dp"
-                        android:text="@string/save_changes"
-                        android:textAllCaps="false"
-                        android:textColor="@color/ui_text_primary_light"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        app:backgroundTint="@null" />
-
-                    <Button
-                        android:id="@+id/btnDeleteTask"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="5dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_action_button"
-                        android:backgroundTint="@null"
-                        android:minHeight="64dp"
-                        android:text="@string/delete"
-                        android:textAllCaps="false"
-                        android:textColor="@color/ui_danger"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        app:backgroundTint="@null" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <Space
-                android:layout_width="match_parent"
-                android:layout_height="12dp" />
         </LinearLayout>
     </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/detailActionGrid"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        tools:ignore="ButtonStyle">
+
+        <TextView
+            android:id="@+id/detailUnsavedChanges"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:gravity="center"
+            android:text="@string/unsaved_changes"
+            android:textColor="@color/ui_success"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnReadAll"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_action_button"
+                android:backgroundTint="@null"
+                android:minHeight="64dp"
+                android:text="@string/read_all"
+                android:textAllCaps="false"
+                android:textColor="@color/ui_text_primary_light"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null" />
+
+            <Button
+                android:id="@+id/btnToggleDone"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_action_button"
+                android:backgroundTint="@null"
+                android:minHeight="64dp"
+                android:text="@string/mark_done"
+                android:textAllCaps="false"
+                android:textColor="@color/ui_text_primary_light"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnSaveChanges"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_action_button"
+                android:backgroundTint="@null"
+                android:minHeight="64dp"
+                android:text="@string/save_changes"
+                android:textAllCaps="false"
+                android:textColor="@color/ui_text_primary_light"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null" />
+
+            <Button
+                android:id="@+id/btnDeleteTask"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_action_button"
+                android:backgroundTint="@null"
+                android:minHeight="64dp"
+                android:text="@string/delete"
+                android:textAllCaps="false"
+                android:textColor="@color/ui_danger"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null" />
+        </LinearLayout>
+    </LinearLayout>
 
     <Button
         android:id="@+id/btnGoHome"

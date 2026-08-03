@@ -186,15 +186,45 @@ class AssistantVoiceSession(
     }
 
     fun prepareForContextEntry() {
-        ensureInitialized()
-        suppressNextRecognizerError = true
         isListening = false
         waitingForConfirmation = false
         assistantSessionActive = false
         isForceStopping = false
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
+        speechRecognizer?.let { recognizer ->
+            suppressNextRecognizerError = true
+            try {
+                recognizer.cancel()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Stops only resources that already exist. This is safe from onStop even when the
+     * assistant has never been opened and must never initialize session UI or recognition.
+     */
+    fun stopForLifecycle() {
+        assistantSessionActive = false
+        waitingForConfirmation = false
+        isListening = false
+        retryCount = 0
+        isForceStopping = false
+
+        speechRecognizer?.let { recognizer ->
+            suppressNextRecognizerError = true
+            try {
+                recognizer.cancel()
+            } catch (_: Exception) {
+            }
+        }
+
+        assistantBottomSheet?.let { panel ->
+            if (panel.isShowing) {
+                if (panel.isContentReady) {
+                    panel.setStoppedState()
+                }
+                panel.dismissWithoutFocusReturn()
+            }
         }
     }
 
@@ -438,8 +468,13 @@ class AssistantVoiceSession(
     }
 
     fun dismissPanel() {
-        assistantBottomSheet?.setStoppedState()
-        assistantBottomSheet?.dismissWithoutFocusReturn()
+        assistantBottomSheet?.let { panel ->
+            if (!panel.isShowing) return@let
+            if (panel.isContentReady) {
+                panel.setStoppedState()
+            }
+            panel.dismissWithoutFocusReturn()
+        }
     }
 
     fun bindAssistantControl(view: View) {
@@ -518,7 +553,7 @@ class AssistantVoiceSession(
 
     private fun updateListeningAccessibilityState() {
         if (waitingForConfirmation) {
-            assistantBottomSheet?.setWaitingForConfirmationState()
+            assistantBottomSheet?.setProcessingState()
         } else {
             assistantBottomSheet?.setListeningState()
         }

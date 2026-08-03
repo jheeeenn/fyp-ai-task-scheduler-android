@@ -120,6 +120,7 @@ class TaskScreenSpeechRenderersTest {
     @Test
     fun doubleTapDestinationsRemainConcise() {
         assertEquals("Returning home.", TaskScreenControlSpeechRenderer.returningHome())
+        assertEquals("Going back.", TaskScreenControlSpeechRenderer.goingBack())
         assertEquals("Opening assistant.", TaskScreenControlSpeechRenderer.openingAssistant())
         assertEquals("Opening task editor.", TaskScreenControlSpeechRenderer.openingTaskEditor())
         assertEquals(
@@ -130,6 +131,52 @@ class TaskScreenSpeechRenderersTest {
             "Opening assistant for Final Year Project.",
             TaskScreenControlSpeechRenderer.openingTaskAssistant("Final Year Project")
         )
+    }
+
+    @Test
+    fun taskDetailRetryQuestionsNameTheExpectedAnswer() {
+        assertEquals(
+            "I couldn't use that title. What title would you like to use?",
+            TaskDetailEditSpeechRenderer.retryQuestion(TaskDetailEditInteraction.WAITING_FOR_TITLE)
+        )
+        assertEquals(
+            "I couldn't understand that date. What date would you like to use?",
+            TaskDetailEditSpeechRenderer.retryQuestion(TaskDetailEditInteraction.WAITING_FOR_DATE)
+        )
+        assertEquals(
+            "I couldn't understand that time. What time would you like to use?",
+            TaskDetailEditSpeechRenderer.retryQuestion(TaskDetailEditInteraction.WAITING_FOR_TIME)
+        )
+        assertEquals(
+            "That date and time would be in the past. What date would you like to use instead?",
+            TaskDetailEditSpeechRenderer.pastScheduleRetry(TaskDetailEditInteraction.WAITING_FOR_DATE)
+        )
+        assertEquals(
+            "That time would be in the past. What time would you like to use instead?",
+            TaskDetailEditSpeechRenderer.pastScheduleRetry(TaskDetailEditInteraction.WAITING_FOR_TIME)
+        )
+    }
+
+    @Test
+    fun unclearConfirmationsRepeatEachPendingQuestion() {
+        val expectedQuestionFragments = mapOf(
+            TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION to
+                "Would you like to save the changes?",
+            TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION to
+                "Would you like to save the changes before returning home?",
+            TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION to
+                "Would you like to save the changes before going back?",
+            TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION to
+                "Would you like to save the changes before opening the assistant?",
+            TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION to
+                "Continue and discard the unsaved changes?"
+        )
+
+        expectedQuestionFragments.forEach { (interaction, question) ->
+            val retry = TaskDetailEditSpeechRenderer.retryQuestion(interaction)
+            assertEquals(true, retry.contains(question))
+            assertEquals(true, retry.endsWith("Please say yes, no, or cancel."))
+        }
     }
 
     private fun task(id: Long, isDone: Boolean = false) = TaskEntity(

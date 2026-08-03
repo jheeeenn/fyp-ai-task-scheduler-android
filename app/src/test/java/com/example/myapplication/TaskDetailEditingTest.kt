@@ -133,8 +133,14 @@ class TaskDetailEditingTest {
             TaskFieldEditResult.Schedule("10/08/2026", "08:30 PM"),
             resolver.resolveTime("Half past eight PM", draft, now)
         )
-        assertTrue(resolver.resolveTime("Half past eight", draft, now) is TaskFieldEditResult.NeedsClarification)
-        assertTrue(resolver.resolveTime("Move it to the morning", draft, now) is TaskFieldEditResult.NeedsClarification)
+        assertEquals(
+            TaskFieldEditResult.NeedsClarification("Did you mean 8:30 AM or 8:30 PM?"),
+            resolver.resolveTime("Half past eight", draft, now)
+        )
+        assertEquals(
+            TaskFieldEditResult.NeedsClarification("What exact time would you like to use?"),
+            resolver.resolveTime("Move it to the morning", draft, now)
+        )
     }
 
     @Test

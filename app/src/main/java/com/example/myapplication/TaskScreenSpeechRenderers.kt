@@ -47,6 +47,7 @@ class TaskDetailScreenSpeechState {
 object TaskScreenControlSpeechRenderer {
     fun homeDescription(): String = "Home button."
     fun returningHome(): String = "Returning home."
+    fun goingBack(): String = "Going back."
     fun assistantDescription(): String = "Assistant button."
     fun openingAssistant(): String = "Opening assistant."
     fun readAllDescription(): String = "Read all button."
@@ -75,9 +76,46 @@ object TaskDetailEditSpeechRenderer {
     fun timeChanged(time: String?): String =
         "Time changed to ${com.example.myapplication.accessibility.TaskCardAccessibilitySemantics.spokenTime(time)}. Not saved."
     fun confirmSave(title: String): String = "Save changes to ${title.ifBlank { "this task" }}?"
-    fun confirmHomeExit(): String = "You have unsaved changes. Save them before returning home?"
+    fun confirmHomeExit(): String =
+        "You have unsaved changes. Would you like to save them before returning home?"
+    fun confirmBackExit(): String =
+        "You have unsaved changes. Would you like to save them before going back?"
     fun confirmAssistantExit(): String =
-        "You have unsaved changes. Save them before opening the assistant?"
+        "You have unsaved changes. Would you like to save them before opening the assistant?"
     fun confirmDeleteDiscard(): String =
         "Unsaved changes will be discarded if this task is deleted. Continue?"
+
+    fun retryQuestion(interaction: TaskDetailEditInteraction): String = when (interaction) {
+        TaskDetailEditInteraction.WAITING_FOR_TITLE ->
+            "I couldn't use that title. What title would you like to use?"
+        TaskDetailEditInteraction.WAITING_FOR_DATE ->
+            "I couldn't understand that date. What date would you like to use?"
+        TaskDetailEditInteraction.WAITING_FOR_TIME ->
+            "I couldn't understand that time. What time would you like to use?"
+        TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION ->
+            "I didn't catch that. Would you like to save the changes?\n" +
+                "Please say yes, no, or cancel."
+        TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION ->
+            "I didn't catch that. Would you like to save the changes before returning home?\n" +
+                "Please say yes, no, or cancel."
+        TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION ->
+            "I didn't catch that. Would you like to save the changes before going back?\n" +
+                "Please say yes, no, or cancel."
+        TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION ->
+            "I didn't catch that. Would you like to save the changes before opening the assistant?\n" +
+                "Please say yes, no, or cancel."
+        TaskDetailEditInteraction.WAITING_FOR_DELETE_DISCARD_CONFIRMATION ->
+            "I didn't catch that. Continue and discard the unsaved changes?\n" +
+                "Please say yes, no, or cancel."
+        TaskDetailEditInteraction.IDLE,
+        TaskDetailEditInteraction.SAVING -> error("No retry question for $interaction")
+    }
+
+    fun pastScheduleRetry(interaction: TaskDetailEditInteraction): String = when (interaction) {
+        TaskDetailEditInteraction.WAITING_FOR_DATE ->
+            "That date and time would be in the past. What date would you like to use instead?"
+        TaskDetailEditInteraction.WAITING_FOR_TIME ->
+            "That time would be in the past. What time would you like to use instead?"
+        else -> error("No past-schedule retry for $interaction")
+    }
 }

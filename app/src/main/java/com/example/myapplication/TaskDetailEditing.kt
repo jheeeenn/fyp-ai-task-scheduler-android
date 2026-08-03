@@ -114,6 +114,7 @@ enum class TaskDetailEditInteraction {
     WAITING_FOR_TIME,
     WAITING_FOR_SAVE_CONFIRMATION,
     WAITING_FOR_HOME_CONFIRMATION,
+    WAITING_FOR_BACK_CONFIRMATION,
     WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION,
     WAITING_FOR_DELETE_DISCARD_CONFIRMATION,
     SAVING
@@ -199,7 +200,7 @@ class TaskFieldEditResolver(
             val meridiem = halfPast.groupValues[2]
             if (meridiem.isBlank()) {
                 return TaskFieldEditResult.NeedsClarification(
-                    "Please say whether you mean ${hour}:30 A M or P M."
+                    "Did you mean ${hour}:30 AM or ${hour}:30 PM?"
                 )
             }
             "$hour:30 $meridiem"
