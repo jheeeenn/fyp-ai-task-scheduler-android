@@ -42,6 +42,7 @@ object ContextFocusCarryForwardPolicy {
     }
 
     private fun requestedDetail(text: String): ConversationContextDetail? = when {
+        DATE_TIME_QUESTION.containsMatchIn(text) -> ConversationContextDetail.DATE_TIME
         TIME_QUESTION.containsMatchIn(text) -> ConversationContextDetail.TIME
         DATE_QUESTION.containsMatchIn(text) -> ConversationContextDetail.DATE
         STATUS_QUESTION.containsMatchIn(text) -> ConversationContextDetail.STATUS
@@ -53,6 +54,11 @@ object ContextFocusCarryForwardPolicy {
 
     private val TIME_QUESTION = Regex(
         "(?i)\\bwhat(?:'s|\\s+is)?\\s+(?:(?:its|the)\\s+)?time\\b"
+    )
+    private val DATE_TIME_QUESTION = Regex(
+        "(?i)\\b(?:date|day)\\b[^.!?]*\\btime\\b|" +
+            "\\btime\\b[^.!?]*\\b(?:date|day)\\b|" +
+            "\\bwhen\\s+(?:is|was)\\s+(?:it|the\\s+task|this\\s+task)\\b"
     )
     private val DATE_QUESTION = Regex(
         "(?i)\\b(?:what|which)(?:'s|\\s+is)?\\s+(?:(?:its|the)\\s+)?(?:date|day)\\b"

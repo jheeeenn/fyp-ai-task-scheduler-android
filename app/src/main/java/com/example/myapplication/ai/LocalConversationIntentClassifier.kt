@@ -52,6 +52,12 @@ class LocalConversationIntentClassifier(context: Context) {
     }
 
     fun classify(normalizedText: String): ConversationIntentResult {
+        if (shouldDeferToSemanticRouting(normalizedText)) {
+            return ConversationIntentResult(
+                intent = ConversationIntent.UNKNOWN,
+                confidence = 1.0f
+            )
+        }
         val vector = buildTfidfVector(normalizedText)
         val scores = DoubleArray(classes.size)
 
@@ -105,5 +111,17 @@ class LocalConversationIntentClassifier(context: Context) {
         val expScores = scores.map { exp(it - max) }
         val sum = expScores.sum()
         return expScores.map { it / sum }.toDoubleArray()
+    }
+
+    companion object {
+        /** Combined schedule questions need the bounded context-detail contract, not READ_ALL. */
+        internal fun shouldDeferToSemanticRouting(normalizedText: String): Boolean =
+            COMBINED_DATE_TIME_QUESTION.containsMatchIn(normalizedText)
+
+        private val COMBINED_DATE_TIME_QUESTION = Regex(
+            "(?i)\\b(?:date|day|when)\\b[^.!?]*\\btime\\b|" +
+                "\\btime\\b[^.!?]*\\b(?:date|day)\\b|" +
+                "\\bwhen\\s+(?:is|was)\\s+(?:it|this\\s+task|the\\s+task|task)\\b"
+        )
     }
 }

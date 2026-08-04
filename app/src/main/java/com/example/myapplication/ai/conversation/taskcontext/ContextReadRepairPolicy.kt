@@ -48,7 +48,8 @@ object ContextReadRepairPolicy {
         val validation = ReadOnlyTaskContextReadValidator.validate(
             decision = repairedDecision,
             capturedSnapshot = capturedSnapshot,
-            currentGeneration = currentGeneration
+            currentGeneration = currentGeneration,
+            normalizedText = normalizedText
         )
         return ContextReadRepairEvaluation(
             disposition = if (validation.isValid) {

@@ -85,6 +85,9 @@ QUERY_READING_CONTROL always requires an empty context_ref. Never combine query-
 with T1, T2, an ordinal, or another contextual selector. A repeat, read-again, or say-again
 request with exactly one supplied task selector is CONTEXT_READ with context_detail SUMMARY,
 not QUERY_READING_CONTROL.
+Use context_detail DATE_TIME when the user asks for both the date and time or asks precisely when
+one supplied task is scheduled. DATE and TIME remain for single-field questions; SUMMARY is for
+broad task-detail requests.
 """.trimIndent()
 
             executeConversationRequest(repairPrompt, RequestKind.ROUTING)
@@ -860,6 +863,8 @@ Never invent a ref, title, fact or Room ID.
 Natural grammatical variation alone is not ambiguity.
 "the second", "second one", "second task" and "T2" may identify T2 when supplied.
 The noun may be omitted, and flexible word order such as "what time it is for the second" may request TIME.
+A request for both date and time, or precisely when one task is scheduled, requests DATE_TIME.
+DATE and TIME remain single-field details. SUMMARY is reserved for broad task-detail requests.
 A unique supplied task title may identify its ref. Match titles case-insensitively using only supplied items.
 If more than one supplied title plausibly matches, use ASK_CLARIFICATION.
 The separate Current validated task focus section is authoritative Android-validated conversational focus.
@@ -1153,8 +1158,12 @@ Read-only task context rules:
 - Never invent a task, ref, title, date, time, completion state, ordering, subtask value or count.
 - Use CONTEXT_READ for a read-only question whose answer exists in one supplied task-context item.
 - For CONTEXT_READ, select exactly one supplied temporary ref and only the requested context_detail. Keep task_text and reply empty.
-- Allowed context_detail values are SUMMARY, TITLE, DATE, TIME, STATUS and SUBTASKS. NONE is not valid for CONTEXT_READ.
-- Explicit detail wording controls context_detail: "what time" uses TIME, "what date" uses DATE, completion questions use STATUS, and subtask questions use SUBTASKS. Do not use SUMMARY when one of those details is explicitly requested.
+- Allowed context_detail values are SUMMARY, TITLE, DATE, TIME, DATE_TIME, STATUS and SUBTASKS. NONE is not valid for CONTEXT_READ.
+- Explicit detail wording controls context_detail: "what time" uses TIME, "what date" uses DATE,
+  asking for both date and time or precisely when the task is scheduled uses DATE_TIME, completion
+  questions use STATUS, and subtask questions use SUBTASKS. Do not use SUMMARY when one of those details is explicitly requested.
+- Do not use SUMMARY when both schedule details are explicitly requested; use DATE_TIME.
+- Use SUMMARY for broad requests such as "read the task" or "tell me the task details".
 - Never invent a temporary ref and never copy or infer a Room ID.
 - Android will verify the ref against the captured snapshot and render the factual reply. You do not write factual task replies.
 - Read-only contextual questions include asking what a supplied result was or asking for its title, date, time, status or subtask summary.
@@ -1175,6 +1184,12 @@ User: What was the second one?
 
 User: What time is the first task?
 {"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: What is the date and time for the first task?
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: When is the first task?
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Is the second one completed?
 {"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"STATUS","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}

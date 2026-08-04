@@ -18,7 +18,7 @@ class AssistantVoiceSessionTerminalDeliverySourceTest {
     fun terminalSpeechDismissesOnlyFromTheFinalTtsCallbackAndStopsOnce() {
         val body = voiceSource
             .substringAfter("fun speakThenStop(text: String, dismissPanel: Boolean = true)")
-            .substringBefore("fun speakThenListenAgain")
+            .substringBefore("fun endConversation(reply: String)")
         val beforeTtsCallback = body.substringBefore("voiceHelper.speak(text) {")
         val finalTtsCallback = body.substringAfter("voiceHelper.speak(text) {")
 

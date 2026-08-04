@@ -86,6 +86,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepair
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionTargetValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
+import com.example.myapplication.ai.conversation.taskcontext.ContextReadDetailCompatibilityPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairDisposition
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextFocusCarryForwardPolicy
@@ -1168,6 +1169,25 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     )
                     return@launch
                 }
+                if (
+                    conversationDecision.route == ConversationRoute.CONTEXT_READ &&
+                    !ContextReadDetailCompatibilityPolicy.isCompatible(
+                        normalized,
+                        conversationDecision.contextDetail
+                    )
+                ) {
+                    Log.d(
+                        "HOME_CONTEXT_READ",
+                        "detail rejected for explicit request; attempting bounded repair"
+                    )
+                    conversationDecision = ConversationDecision(
+                        route = ConversationRoute.ASK_CLARIFICATION,
+                        reply = "",
+                        confidence = conversationDecision.confidence,
+                        listenAgain = true,
+                        source = conversationDecision.source
+                    )
+                }
                 val contextRepairEligible = ContextReadRepairPolicy.shouldAttempt(
                     primaryDecision = conversationDecision,
                     capturedSnapshot = taskContextCapture.snapshot,
@@ -1312,7 +1332,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         ReadOnlyTaskContextReadValidator.validate(
                             decision = candidate,
                             capturedSnapshot = taskContextCapture.snapshot,
-                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration(),
+                            normalizedText = normalized
                         )
                     }
                     if (focusFallback != null && fallbackValidation?.isValid == true) {
@@ -1379,7 +1400,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         val validation = ReadOnlyTaskContextReadValidator.validate(
                             decision = conversationDecision,
                             capturedSnapshot = taskContextCapture.snapshot,
-                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration(),
+                            normalizedText = normalized
                         )
                         executeContextRead(
                             decision = conversationDecision,
@@ -1680,9 +1702,6 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     ConversationRoute.END_SESSION -> {
                         Log.d("CONVO_ORCH", "handled directly as END_SESSION")
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
-                        if (conversationDecision.reply.isNotBlank()) {
-                            assistantSession.speak(conversationDecision.reply, listenAgain = false)
-                        }
                         logQueryPageEndIfActive("USER_STOPPED")
                         invalidateAssistantRequest(
                             AssistantRequestInvalidationReason.CONVERSATION_ENDED
@@ -1691,6 +1710,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         routineDraftController.clear()
                         savedRoutineInteractionController.clear()
                         homeFollowUpContext = HomeFollowUpContext.NONE
+                        assistantSession.endConversation(conversationDecision.reply)
                         return@launch
                     }
                     ConversationRoute.TASK_COMMAND -> {
@@ -6122,9 +6142,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     override fun onDestroy() {
         savedRoutineInteractionController.clearForActivityDestruction()
-        super.onDestroy()
         assistantSession.destroy()
         voiceHelper.shutdown()
+        super.onDestroy()
     }
 
     private companion object {

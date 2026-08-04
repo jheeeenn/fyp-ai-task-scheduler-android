@@ -40,6 +40,10 @@ class AssistantVoiceSession(
     private var isForceStopping = false
     private var waitingForConfirmation = false
     private var assistantControl: View? = null
+    private var recognitionRequestActive = false
+    private var sessionGeneration = 0L
+    private var pendingRecognitionRestart: Runnable? = null
+    private var terminalDeliveryActive = false
     private val typedInputCancellationRecovery = TypedInputCancellationRecoveryPolicy()
 
     fun ensureInitialized() {
@@ -69,12 +73,19 @@ class AssistantVoiceSession(
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
                         Log.d("VOICE_SESSION", "onReadyForSpeech")
+                        if (!assistantSessionActive || isForceStopping) {
+                            recognitionRequestActive = false
+                            isListening = false
+                            return
+                        }
                         suppressNextRecognizerError = false
                         updateListeningAccessibilityState()
                         isListening = true
+                        recognitionRequestActive = true
                     }
 
                     override fun onBeginningOfSpeech() {
+                        if (!assistantSessionActive || isForceStopping) return
                         updateListeningAccessibilityState()
                     }
 
@@ -82,13 +93,16 @@ class AssistantVoiceSession(
                     override fun onBufferReceived(buffer: ByteArray?) {}
 
                     override fun onEndOfSpeech() {
-                        assistantBottomSheet?.setProcessingState()
                         isListening = false
+                        recognitionRequestActive = false
+                        if (!assistantSessionActive || isForceStopping) return
+                        assistantBottomSheet?.setProcessingState()
                     }
 
                     override fun onError(error: Int) {
                         Log.d("VOICE_SESSION", "onError code=$error suppress=$suppressNextRecognizerError active=$assistantSessionActive")
                         isListening = false
+                        recognitionRequestActive = false
 
                         if (suppressNextRecognizerError) {
                             when (error) {
@@ -112,11 +126,7 @@ class AssistantVoiceSession(
 
                             SpeechRecognizer.ERROR_CLIENT,
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
-                                activity.window.decorView.postDelayed({
-                                    if (assistantSessionActive && !isForceStopping) {
-                                        startVoiceRecognition()
-                                    }
-                                }, 400)
+                                postRecognitionRestart(400L)
                             }
 
                             else -> {
@@ -127,6 +137,7 @@ class AssistantVoiceSession(
 
                     override fun onResults(results: Bundle?) {
                         isListening = false
+                        recognitionRequestActive = false
                         if (!assistantSessionActive || isForceStopping) return
 
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -171,6 +182,7 @@ class AssistantVoiceSession(
 
     fun startPassiveSession(clearConversation: Boolean = true) {
         ensureInitialized()
+        beginSessionGeneration()
 
         retryCount = 0
         isForceStopping = false
@@ -186,17 +198,13 @@ class AssistantVoiceSession(
     }
 
     fun prepareForContextEntry() {
+        invalidateSessionCallbacks()
         isListening = false
+        terminalDeliveryActive = false
         waitingForConfirmation = false
         assistantSessionActive = false
         isForceStopping = false
-        speechRecognizer?.let { recognizer ->
-            suppressNextRecognizerError = true
-            try {
-                recognizer.cancel()
-            } catch (_: Exception) {
-            }
-        }
+        cancelRecognitionIfActive()
     }
 
     /**
@@ -204,19 +212,15 @@ class AssistantVoiceSession(
      * assistant has never been opened and must never initialize session UI or recognition.
      */
     fun stopForLifecycle() {
+        invalidateSessionCallbacks()
         assistantSessionActive = false
         waitingForConfirmation = false
         isListening = false
         retryCount = 0
         isForceStopping = false
+        terminalDeliveryActive = false
 
-        speechRecognizer?.let { recognizer ->
-            suppressNextRecognizerError = true
-            try {
-                recognizer.cancel()
-            } catch (_: Exception) {
-            }
-        }
+        cancelRecognitionIfActive()
 
         assistantBottomSheet?.let { panel ->
             if (panel.isShowing) {
@@ -230,6 +234,7 @@ class AssistantVoiceSession(
 
     fun startSession(clearConversation: Boolean = true) {
         ensureInitialized()
+        beginSessionGeneration()
 
         retryCount = 0
         isForceStopping = false
@@ -252,6 +257,7 @@ class AssistantVoiceSession(
 
         ensureInitialized()
         stopListeningBeforeSpeak()
+        beginSessionGeneration()
 
         retryCount = 0
         isForceStopping = false
@@ -279,11 +285,7 @@ class AssistantVoiceSession(
         )
         if (!shouldRecover) return
 
-        activity.window.decorView.postDelayed({
-            if (!assistantSessionActive || isForceStopping || isListening) return@postDelayed
-            updateListeningAccessibilityState()
-            startVoiceFlow()
-        }, TYPED_INPUT_RECOVERY_DELAY_MS)
+        postRecognitionRestart(TYPED_INPUT_RECOVERY_DELAY_MS, useVoiceFlow = true)
     }
 
     fun startVoiceFlow() {
@@ -300,7 +302,7 @@ class AssistantVoiceSession(
     }
 
     fun onAudioPermissionGranted() {
-        if (assistantSessionActive) {
+        if (assistantSessionActive && !isForceStopping) {
             startVoiceRecognition()
         }
     }
@@ -312,8 +314,8 @@ class AssistantVoiceSession(
 
     fun startVoiceRecognition() {
         // log
-        Log.d("VOICE_SESSION", "startVoiceRecognition active=$assistantSessionActive forceStop=$isForceStopping isListening=$isListening")
-        if (!assistantSessionActive || isForceStopping || isListening) return
+        Log.d("VOICE_SESSION", "startVoiceRecognition active=$assistantSessionActive forceStop=$isForceStopping isListening=$isListening recognitionActive=$recognitionRequestActive")
+        if (!assistantSessionActive || isForceStopping || isListening || recognitionRequestActive) return
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -336,12 +338,20 @@ class AssistantVoiceSession(
             )
         }
 
-        speechRecognizer?.startListening(intent)
+        val recognizer = speechRecognizer ?: return
+        recognitionRequestActive = true
+        try {
+            recognizer.startListening(intent)
+        } catch (error: RuntimeException) {
+            recognitionRequestActive = false
+            throw error
+        }
     }
 
     fun speak(text: String, listenAgain: Boolean = true) {
 
         stopListeningBeforeSpeak()
+        val callbackGeneration = sessionGeneration
         // log
         Log.d("VOICE_SESSION", "speak listenAgain=$listenAgain active=$assistantSessionActive forceStop=$isForceStopping")
 
@@ -352,18 +362,12 @@ class AssistantVoiceSession(
         voiceHelper.speak(text) {
 
             activity.runOnUiThread {
+                if (callbackGeneration != sessionGeneration) return@runOnUiThread
                 Log.d("VOICE_SESSION", "tts finished, deciding whether to restart listening")
                 if (assistantSessionActive && !isForceStopping && listenAgain) {
                     // log
                     Log.d("VOICE_SESSION", "posting delayed restart")
-                    activity.window.decorView.postDelayed({
-
-                        Log.d("VOICE_SESSION", "restarting recognizer now")
-                        if (assistantSessionActive && !isForceStopping) {
-                            updateListeningAccessibilityState()
-                            startVoiceRecognition()
-                        }
-                    }, 350)
+                    postRecognitionRestart(350L)
                 } else {
                     assistantBottomSheet?.setIdleState()
                 }
@@ -373,10 +377,11 @@ class AssistantVoiceSession(
 
     fun speakThenStop(text: String, dismissPanel: Boolean = true) {
         stopListeningBeforeSpeak()
-
+        val callbackGeneration = sessionGeneration
 
         assistantSessionActive = false
         isForceStopping = true
+        terminalDeliveryActive = true
 
         assistantBottomSheet?.showAssistantReply(text)
         assistantBottomSheet?.setSpeakingState()
@@ -384,10 +389,45 @@ class AssistantVoiceSession(
         logAssistantTranscript(text, listenAgain = false)
         voiceHelper.speak(text) {
             activity.runOnUiThread {
+                if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
+                    return@runOnUiThread
+                }
                 assistantBottomSheet?.setStoppedState()
                 if (dismissPanel) {
                     assistantBottomSheet?.dismiss()
                 }
+                terminalDeliveryActive = false
+                isForceStopping = false
+                host.onAssistantSessionStopped()
+            }
+        }
+    }
+
+    /** Completes a model-routed END_SESSION without entering the user-cancel path. */
+    fun endConversation(reply: String) {
+        if (terminalDeliveryActive || (!assistantSessionActive && isForceStopping)) return
+
+        invalidateSessionCallbacks()
+        val callbackGeneration = sessionGeneration
+        cancelRecognitionIfActive()
+        waitingForConfirmation = false
+        retryCount = 0
+        isListening = false
+        assistantSessionActive = false
+        isForceStopping = true
+        terminalDeliveryActive = true
+
+        assistantBottomSheet?.showAssistantReply(reply)
+        assistantBottomSheet?.setSpeakingState()
+        logAssistantTranscript(reply, listenAgain = false)
+        voiceHelper.speak(reply) {
+            activity.runOnUiThread {
+                if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
+                    return@runOnUiThread
+                }
+                assistantBottomSheet?.setStoppedState()
+                assistantBottomSheet?.dismiss()
+                terminalDeliveryActive = false
                 isForceStopping = false
                 host.onAssistantSessionStopped()
             }
@@ -408,15 +448,15 @@ class AssistantVoiceSession(
             retryCount++
             speakThenListenAgain(reply)
         } else {
+            invalidateSessionCallbacks()
+            val callbackGeneration = sessionGeneration
             assistantSessionActive = false
             isForceStopping = true
+            terminalDeliveryActive = true
             retryCount = 0
             isListening = false
 
-            try {
-                speechRecognizer?.cancel()
-            } catch (_: Exception) {
-            }
+            cancelRecognitionIfActive()
 
             val finalReply = responseManager.stopListening()
             assistantBottomSheet?.showAssistantReply(finalReply)
@@ -425,8 +465,12 @@ class AssistantVoiceSession(
             logAssistantTranscript(finalReply, listenAgain = false)
             voiceHelper.speak(finalReply) {
                 activity.runOnUiThread {
+                    if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
+                        return@runOnUiThread
+                    }
                     assistantBottomSheet?.setStoppedState()
                     assistantBottomSheet?.dismiss()
+                    terminalDeliveryActive = false
                     isForceStopping = false
                     host.onAssistantSessionStopped()
                 }
@@ -435,6 +479,9 @@ class AssistantVoiceSession(
     }
 
     fun forceStop() {
+        if (terminalDeliveryActive) return
+        invalidateSessionCallbacks()
+        val callbackGeneration = sessionGeneration
         if (!assistantSessionActive && !isListening) {
             assistantBottomSheet?.setStoppedState()
             assistantBottomSheet?.dismiss()
@@ -444,13 +491,11 @@ class AssistantVoiceSession(
 
         assistantSessionActive = false
         isForceStopping = true
+        terminalDeliveryActive = true
         isListening = false
         retryCount = 0
 
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
+        cancelRecognitionIfActive()
 
         val reply = responseManager.stopListening()
         assistantBottomSheet?.showAssistantReply(reply)
@@ -459,8 +504,12 @@ class AssistantVoiceSession(
         logAssistantTranscript(reply, listenAgain = false)
         voiceHelper.speak(reply) {
             activity.runOnUiThread {
+                if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
+                    return@runOnUiThread
+                }
                 assistantBottomSheet?.setStoppedState()
                 assistantBottomSheet?.dismiss()
+                terminalDeliveryActive = false
                 isForceStopping = false
                 host.onAssistantCancelled()
             }
@@ -489,10 +538,12 @@ class AssistantVoiceSession(
     fun getBottomSheet(): AssistantBottomSheet? = assistantBottomSheet
 
     fun destroy() {
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
+        invalidateSessionCallbacks()
+        assistantSessionActive = false
+        waitingForConfirmation = false
+        isListening = false
+        terminalDeliveryActive = false
+        cancelRecognitionIfActive()
         try {
             speechRecognizer?.destroy()
         } catch (_: Exception) {
@@ -502,12 +553,10 @@ class AssistantVoiceSession(
     }
 
     private fun stopInternal() {
+        invalidateSessionCallbacks()
         retryCount = 0
         isListening = false
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
+        cancelRecognitionIfActive()
         assistantBottomSheet?.setStoppedState()
         assistantBottomSheet?.dismiss()
     }
@@ -515,6 +564,7 @@ class AssistantVoiceSession(
     fun speakThenRun(text: String, action: () -> Unit) {
 
         stopListeningBeforeSpeak()
+        val callbackGeneration = sessionGeneration
 
         assistantBottomSheet?.showAssistantReply(text)
         assistantBottomSheet?.setSpeakingState()
@@ -522,6 +572,7 @@ class AssistantVoiceSession(
         logAssistantTranscript(text, listenAgain = false)
         voiceHelper.speak(text) {
             activity.runOnUiThread {
+                if (callbackGeneration != sessionGeneration) return@runOnUiThread
                 assistantBottomSheet?.setStoppedState()
                 assistantBottomSheet?.dismissWithoutFocusReturn()
                 assistantSessionActive = false
@@ -532,16 +583,14 @@ class AssistantVoiceSession(
     }
 
     private fun stopListeningBeforeSpeak() {
-        suppressNextRecognizerError = true
+        invalidateSessionCallbacks()
         isListening = false
-        try {
-            speechRecognizer?.cancel()
-        } catch (_: Exception) {
-        }
+        cancelRecognitionIfActive()
     }
 
     fun pauseListeningForAssistantSpeech() {
-        stopListeningBeforeSpeak()}
+        stopListeningBeforeSpeak()
+    }
 
     private fun logUserTranscript(text: String, source: String) {
         AssistantTranscriptDiagnosticLogger.user(text, source)
@@ -556,6 +605,55 @@ class AssistantVoiceSession(
             assistantBottomSheet?.setProcessingState()
         } else {
             assistantBottomSheet?.setListeningState()
+        }
+    }
+
+    private fun beginSessionGeneration() {
+        invalidateSessionCallbacks()
+        terminalDeliveryActive = false
+    }
+
+    private fun invalidateSessionCallbacks() {
+        sessionGeneration += 1L
+        pendingRecognitionRestart?.let(activity.window.decorView::removeCallbacks)
+        pendingRecognitionRestart = null
+    }
+
+    private fun postRecognitionRestart(
+        delayMs: Long,
+        useVoiceFlow: Boolean = false
+    ) {
+        pendingRecognitionRestart?.let(activity.window.decorView::removeCallbacks)
+        val callbackGeneration = sessionGeneration
+        lateinit var restart: Runnable
+        restart = Runnable {
+            if (pendingRecognitionRestart === restart) pendingRecognitionRestart = null
+            if (
+                callbackGeneration != sessionGeneration ||
+                !assistantSessionActive ||
+                isForceStopping ||
+                isListening ||
+                recognitionRequestActive
+            ) {
+                return@Runnable
+            }
+            Log.d("VOICE_SESSION", "restarting recognizer now generation=$callbackGeneration")
+            updateListeningAccessibilityState()
+            if (useVoiceFlow) startVoiceFlow() else startVoiceRecognition()
+        }
+        pendingRecognitionRestart = restart
+        activity.window.decorView.postDelayed(restart, delayMs)
+    }
+
+    private fun cancelRecognitionIfActive() {
+        val recognizer = speechRecognizer ?: return
+        if (!recognitionRequestActive && !isListening) return
+        suppressNextRecognizerError = true
+        recognitionRequestActive = false
+        isListening = false
+        try {
+            recognizer.cancel()
+        } catch (_: Exception) {
         }
     }
 

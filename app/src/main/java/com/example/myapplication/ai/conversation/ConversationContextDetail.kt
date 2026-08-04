@@ -6,6 +6,7 @@ enum class ConversationContextDetail {
     TITLE,
     DATE,
     TIME,
+    DATE_TIME,
     STATUS,
     SUBTASKS
 }

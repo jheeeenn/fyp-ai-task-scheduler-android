@@ -11,7 +11,8 @@ enum class ContextReadValidationResult {
     NO_CAPTURED_ITEMS,
     STALE_GENERATION,
     UNKNOWN_REF,
-    INVALID_DETAIL
+    INVALID_DETAIL,
+    INCOMPATIBLE_DETAIL
 }
 
 data class ValidatedContextRead(
@@ -29,7 +30,8 @@ object ReadOnlyTaskContextReadValidator {
     fun validate(
         decision: ConversationDecision,
         capturedSnapshot: ReadOnlyTaskContextSnapshot,
-        currentGeneration: Long
+        currentGeneration: Long,
+        normalizedText: String = ""
     ): ValidatedContextRead {
         if (decision.route != ConversationRoute.CONTEXT_READ) {
             return ValidatedContextRead(ContextReadValidationResult.INVALID_ROUTE)
@@ -45,6 +47,9 @@ object ReadOnlyTaskContextReadValidator {
         }
         if (decision.contextDetail == ConversationContextDetail.NONE) {
             return ValidatedContextRead(ContextReadValidationResult.INVALID_DETAIL)
+        }
+        if (!ContextReadDetailCompatibilityPolicy.isCompatible(normalizedText, decision.contextDetail)) {
+            return ValidatedContextRead(ContextReadValidationResult.INCOMPATIBLE_DETAIL)
         }
 
         val item = capturedSnapshot.items.firstOrNull {

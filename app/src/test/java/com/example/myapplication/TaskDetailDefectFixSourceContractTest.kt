@@ -25,7 +25,7 @@ class TaskDetailDefectFixSourceContractTest {
         assertFalse(stop.contains("ensureInitialized()"))
         assertTrue(stop.contains("assistantSessionActive = false"))
         assertTrue(stop.contains("waitingForConfirmation = false"))
-        assertTrue(stop.contains("speechRecognizer?.let"))
+        assertTrue(stop.contains("cancelRecognitionIfActive()"))
         assertTrue(stop.contains("if (panel.isShowing)"))
         assertFalse(stop.contains("onAssistantCancelled"))
     }
@@ -36,7 +36,7 @@ class TaskDetailDefectFixSourceContractTest {
             .substringBefore("fun stopForLifecycle")
 
         assertFalse(prepare.contains("ensureInitialized()"))
-        assertTrue(prepare.contains("speechRecognizer?.let"))
+        assertTrue(prepare.contains("cancelRecognitionIfActive()"))
     }
 
     @Test

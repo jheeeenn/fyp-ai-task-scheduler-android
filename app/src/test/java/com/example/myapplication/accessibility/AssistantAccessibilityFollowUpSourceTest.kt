@@ -30,8 +30,15 @@ class AssistantAccessibilityFollowUpSourceTest {
         assertTrue(session.contains("typedInputCancellationRecovery.onPanelTypedInputRequested"))
         assertTrue(session.contains("typedInputCancellationRecovery.onTypedInputSubmitted()"))
         assertTrue(recovery.contains("claimRecovery"))
-        assertTrue(recovery.contains("!assistantSessionActive || isForceStopping || isListening"))
-        assertEquals(1, Regex("startVoiceFlow\\(\\)").findAll(recovery).count())
+        assertTrue(recovery.contains("postRecognitionRestart"))
+        assertTrue(recovery.contains("useVoiceFlow = true"))
+        val guardedRestart = session
+            .substringAfter("private fun postRecognitionRestart(")
+            .substringBefore("private fun cancelRecognitionIfActive")
+        assertTrue(guardedRestart.contains("!assistantSessionActive"))
+        assertTrue(guardedRestart.contains("isForceStopping"))
+        assertTrue(guardedRestart.contains("isListening"))
+        assertEquals(1, Regex("startVoiceFlow\\(\\)").findAll(guardedRestart).count())
     }
 
     @Test

@@ -56,7 +56,7 @@ class RoutineDiagnosticLoggingContractTest {
             .findAll(voice)
             .count() - 1 // private helper declaration
 
-        assertEquals(5, directSpeechCalls)
+        assertEquals(6, directSpeechCalls)
         assertEquals(directSpeechCalls, transcriptCalls)
         assertTrue(transcriptLog.contains("role=ASSISTANT\\ndelivery=SPEAK"))
         assertTrue(transcriptLog.contains("content=REDACTED"))

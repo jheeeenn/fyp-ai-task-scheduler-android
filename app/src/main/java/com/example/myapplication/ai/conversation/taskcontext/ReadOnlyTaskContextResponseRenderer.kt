@@ -22,6 +22,7 @@ object ReadOnlyTaskContextResponseRenderer {
             } else {
                 "$title is scheduled at ${item.dueTime}."
             }
+            ConversationContextDetail.DATE_TIME -> renderDateTime(item, title)
             ConversationContextDetail.STATUS -> {
                 val status = if (item.isDone) "Completed" else item.relativeStatus
                 "$title is ${status.replaceFirstChar { it.lowercase() }}."
@@ -30,6 +31,17 @@ object ReadOnlyTaskContextResponseRenderer {
             ConversationContextDetail.NONE ->
                 throw IllegalArgumentException("A validated context detail is required")
         }
+    }
+
+    private fun renderDateTime(item: ReadOnlyTaskContextItem, title: String): String = when {
+        item.dueDate.isNotBlank() && item.dueTime.isNotBlank() ->
+            "$title is scheduled for ${spokenDate(item.dueDate)} at ${item.dueTime}."
+        item.dueDate.isBlank() && item.dueTime.isBlank() ->
+            "$title does not have a date or time set."
+        item.dueDate.isBlank() ->
+            "$title has no date set. Its time is ${item.dueTime}."
+        else ->
+            "$title is scheduled for ${spokenDate(item.dueDate)}, with no time set."
     }
 
     private fun renderSummary(item: ReadOnlyTaskContextItem, title: String): String {
