@@ -26,7 +26,7 @@ object AssistantExitInterpreter {
             "i don'?t need anything else|" +
             "i(?:'m|m| am) finished for now|" +
             "stop listening|" +
-            "goodbye|bye|stop|cancel|no thanks|thank you|thanks|exit|quit|close|end|" +
+            "goodbye|bye|stop|cancel|no thanks|exit|quit|close|end|" +
             "done|all done|finished|that(?:'s|s| is) it" +
         ")"
     )

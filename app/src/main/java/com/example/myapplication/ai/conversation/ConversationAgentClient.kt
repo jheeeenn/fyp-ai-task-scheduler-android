@@ -1248,7 +1248,7 @@ User: Move it to Friday.
 {"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: Delete the second one.
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Please say the task name you want to delete.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"DELETE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Guidance and execution distinction:
 - "How do I create a task?" is DIRECT_REPLY. "Create a task called revision" is TASK_COMMAND.

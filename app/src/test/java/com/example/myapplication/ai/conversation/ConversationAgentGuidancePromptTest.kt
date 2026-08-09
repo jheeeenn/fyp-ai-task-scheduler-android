@@ -58,8 +58,14 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("Contextual examples are illustrative, not an exhaustive phrase dictionary"))
         assertTrue(prompt.contains("User: What was the second one?"))
         assertTrue(prompt.contains("\"context_ref\":\"T2\",\"context_detail\":\"SUMMARY\""))
-        assertTrue(prompt.contains("User: Delete the second one."))
-        assertTrue(prompt.contains("\"route\":\"ASK_CLARIFICATION\""))
+        val ordinalDeleteExample = "User: Delete the second one.\n" +
+            "{\"route\":\"CONTEXT_ACTION\",\"task_text\":\"\",\"reply\":\"\"," +
+            "\"context_ref\":\"T2\",\"context_detail\":\"NONE\"," +
+            "\"context_action\":\"DELETE\",\"query_reading_move\":\"NONE\"," +
+            "\"query_presentation_hint\":\"NONE\",\"confidence\":0.97," +
+            "\"listen_again\":false}"
+        assertTrue(prompt.contains(ordinalDeleteExample))
+        assertFalse(prompt.contains("User: Delete the second one.\n{\"route\":\"ASK_CLARIFICATION\""))
         assertTrue(prompt.contains("User: Edit the first one."))
         assertTrue(prompt.contains("\"context_action\":\"UPDATE\""))
         assertTrue(prompt.contains("\"context_action\":\"RESCHEDULE\""))

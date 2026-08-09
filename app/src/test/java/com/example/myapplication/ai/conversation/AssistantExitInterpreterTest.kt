@@ -43,4 +43,11 @@ class AssistantExitInterpreterTest {
         assertFalse(AssistantExitInterpreter.isExitUtterance("no"))
         assertTrue(AssistantExitInterpreter.isFollowUpExitUtterance("no"))
     }
+
+    @Test
+    fun bareThanksRemainAvailableForNormalConversationRouting() {
+        assertFalse(AssistantExitInterpreter.isExitUtterance("Thanks."))
+        assertFalse(AssistantExitInterpreter.isExitUtterance("Thank you."))
+        assertTrue(AssistantExitInterpreter.isExitUtterance("No thanks."))
+    }
 }
