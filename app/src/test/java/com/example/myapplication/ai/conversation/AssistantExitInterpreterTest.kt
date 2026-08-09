@@ -28,6 +28,7 @@ class AssistantExitInterpreterTest {
     fun questionsTaskRequestsAndContradictionsDoNotEndLocally() {
         listOf(
             "Is that all?",
+            "Is that",
             "Show all tasks.",
             "That's all the tasks for tomorrow?",
             "No, that's all wrong.",

@@ -894,10 +894,11 @@ is valid only for the captured generation. Never invent a ref or compare against
 When exactly two items are supplied, "former" may identify the first and "latter" the second;
 otherwise those pair-relative selectors require clarification.
 "it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated
-task focus says Available: true. When focus is unavailable, these pronouns are unresolved and
-require ASK_CLARIFICATION. Never choose T1 as a default. Reading all results does not establish
-focus. Focus is established only by a previously Android-validated CONTEXT_READ selection or by
-Android's validated single-task context suggestion.
+task focus says Available: true. Bare "this" or "that" may identify that focus only when the
+supplied scope is TASK_DETAIL or contains one strict focused item. When focus is unavailable,
+these expressions are unresolved and require ASK_CLARIFICATION. Never choose T1 as a default.
+Reading all results does not establish focus. Focus is established only by a previously Android-validated CONTEXT_READ
+selection or by Android's validated single-task context suggestion.
 
 Use UPDATE for opening or editing general task details and explicit replacement titles.
 Use RESCHEDULE for an absolute or relative date or time change, including an earlier/later offset
@@ -1093,9 +1094,23 @@ Route rules:
 - Use ASK_CLARIFICATION when the user may refer to a prior result but no authoritative read-only task context supplies the answer, the intended task operation cannot be determined safely, or speech recognition may have distorted the request.
 - Use END_SESSION when the user wants to stop or exit the assistant. Natural closing statements
   such as "Okay, that's all", "No, that's all", "I don't need anything else", and
-  "I'm finished for now" are END_SESSION, never DIRECT_REPLY. Do not ask whether anything else
-  is needed after a clear closing statement.
+  "I'm finished for now" are END_SESSION, never DIRECT_REPLY. Natural declarative variants such
+  as "I think I'm done for now" and "That will be all" are also END_SESSION.
+  Do not ask whether anything else is needed after a clear closing statement.
+- Questions such as "Is that all?", "Is that all", "Are those all the tasks?", and
+  "Is that everything?" are not END_SESSION. Use a context/query route when safely grounded;
+  otherwise ask a clarification question. A question is not a closing command.
 - Use UNKNOWN for unsupported off-topic requests.
+
+Fresh temporal task-query precedence:
+- A fresh task query with an explicit new temporal scope and no contextual selector is TASK_COMMAND,
+  even when prior read-only task context or an AFTER_DAILY_BRIEFING interaction is present.
+- Generic singular wording such as "the task" does not identify a supplied context item.
+- Previous context takes precedence only with a grounded temporary ref, ordinal, deictic task
+  reference backed by validated focus, or one unique supplied title.
+- "What is the task for next week?" and "What are my tasks next week?" are TASK_COMMAND with
+  OVERVIEW. "Do I have anything next week?" is TASK_COMMAND with COUNT_ONLY. "Show my tasks next
+  month." is TASK_COMMAND with OVERVIEW.
 
 Query-reading control rules:
 - Use QUERY_READING_CONTROL only when the App context's exact Interaction state field is QUERY_COUNT or QUERY_PAGE, or when it is AFTER_DAILY_BRIEFING or AFTER_CONTEXT_SUGGESTION and the user semantically requests REPEAT_LAST or STOP.
@@ -1132,6 +1147,8 @@ Query-presentation hint rules:
 - Every non-TASK_COMMAND route requires query_presentation_hint NONE.
 - "Do I have any tomorrow?", "Anything scheduled tomorrow?", and "How many this week?" are TASK_COMMAND with COUNT_ONLY.
 - "What do I have tomorrow?" and "Show my tasks tomorrow." are TASK_COMMAND with OVERVIEW.
+- "Do I have anything this month?" and "Are there any tasks tomorrow?" are TASK_COMMAND with COUNT_ONLY.
+- "What are my tasks this month?" and "Show my tasks this month." are TASK_COMMAND with OVERVIEW.
 - "Read the full details for tomorrow." is TASK_COMMAND with DETAILS.
 
 Context-action rules:
@@ -1148,6 +1165,7 @@ Context-action rules:
   "latter" identifies the second.
 - Current focus is valid only while its generation matches the supplied snapshot.
 - "it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated task focus says Available: true.
+- Bare "this" or "that" may use current focus only in TASK_DETAIL or another supplied single-focused-item context. Never resolve bare "this" or "that" to T1 by default.
 - When focus is unavailable, those pronouns are unresolved. Never choose T1 or any snapshot item as a default.
 - Reading all task results does not establish current focus. Focus is established only by a previously Android-validated CONTEXT_READ selection or Android's validated single-task context suggestion.
 - For CONTEXT_ACTION keep task_text and reply empty, context_detail NONE, and context_action UPDATE, RESCHEDULE, or DELETE.
@@ -1308,11 +1326,23 @@ User: what tasks do i have today
 User: do i have any tomorrow
 {"route":"TASK_COMMAND","task_text":"do i have any tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
 
+User: Do I have anything this month?
+{"route":"TASK_COMMAND","task_text":"Do I have anything this month?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
+
+User: Are there any tasks tomorrow?
+{"route":"TASK_COMMAND","task_text":"Are there any tasks tomorrow?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
+
 User: anything tomorrow
 {"route":"TASK_COMMAND","task_text":"anything tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
 
 User: what do i have tomorrow
 {"route":"TASK_COMMAND","task_text":"what do i have tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
+
+User: What are my tasks this month?
+{"route":"TASK_COMMAND","task_text":"What are my tasks this month?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
+
+User: Show my tasks this month.
+{"route":"TASK_COMMAND","task_text":"Show my tasks this month.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
 
 User: read the full details for tomorrow
 {"route":"TASK_COMMAND","task_text":"read the full details for tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"DETAILS","confidence":0.97,"listen_again":true}
@@ -1354,6 +1384,20 @@ User: Can you say that again?
 
 App context:
 Interaction state:
+AFTER_DAILY_BRIEFING
+Supplied context includes T1 through T5, with no current utterance selector.
+User: What is the task for next week?
+{"route":"TASK_COMMAND","task_text":"What is the task for next week?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.98,"listen_again":true}
+
+App context:
+Interaction state:
+AFTER_DAILY_BRIEFING
+Supplied context includes T1 through T5, with no current utterance selector.
+User: Do I have anything next week?
+{"route":"TASK_COMMAND","task_text":"Do I have anything next week?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.98,"listen_again":true}
+
+App context:
+Interaction state:
 AFTER_CONTEXT_SUGGESTION
 User: Say that again.
 {"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
@@ -1384,6 +1428,24 @@ User: I don't need anything else.
 
 User: I'm finished for now.
 {"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+
+User: Is that all?
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Are you asking whether there are more tasks, or would you like to end the assistant?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Is that all
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Are you asking whether there are more tasks, or would you like to end the assistant?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Thanks.
+{"route":"DIRECT_REPLY","task_text":"","reply":"You're welcome. What else can I help you with?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Thank you.
+{"route":"DIRECT_REPLY","task_text":"","reply":"You're welcome. What else can I help you with?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: What is the weather today?
+{"route":"UNKNOWN","task_text":"","reply":"I can't provide weather information, but I can help with your tasks.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: What do you know about me?
+{"route":"DIRECT_REPLY","task_text":"","reply":"I can use the task information stored in this app and the current assistant context. I don't have a separate personal profile.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Rules:
 - For TASK_COMMAND, copy the user's task-related request into task_text and keep reply empty.

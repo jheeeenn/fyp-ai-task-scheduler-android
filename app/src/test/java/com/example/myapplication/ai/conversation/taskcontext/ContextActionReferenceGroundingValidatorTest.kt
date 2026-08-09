@@ -110,6 +110,45 @@ class ContextActionReferenceGroundingValidatorTest {
     }
 
     @Test
+    fun taskDetailBareThisGroundsOnlyTheModelSelectedCurrentFocus() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Medicine"))
+        )
+        val detailFocus = focus("T1")
+        val modelDelete = ConversationDecision(
+            route = ConversationRoute.CONTEXT_ACTION,
+            contextRef = "T1",
+            contextAction = ConversationContextAction.DELETE,
+            confidence = 0.97
+        )
+
+        val result = ContextActionReferenceGroundingValidator.validate(
+            normalizedText = "delete this",
+            decision = modelDelete,
+            capturedSnapshot = detailSnapshot,
+            currentFocus = detailFocus
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS, result.result)
+        assertEquals("T1", result.ref)
+    }
+
+    @Test
+    fun bareThisNeverDefaultsToT1InAnUnfocusedOrMultiItemContext() {
+        val noFocus = validate("delete this", "T1", focus = null)
+        val multiItemFocus = validate("delete this", "T1", focus = focus("T1"))
+
+        assertEquals(ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS, noFocus.result)
+        assertEquals(
+            ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE,
+            multiItemFocus.result
+        )
+        assertFalse(noFocus.isValid)
+        assertFalse(multiItemFocus.isValid)
+    }
+
+    @Test
     fun ordinalDeterministicallyRequiresSecondRef() {
         val accepted = validate("move the second one to Friday", "T2")
         val rejected = validate("move the second one to Friday", "T1")

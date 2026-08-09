@@ -114,6 +114,12 @@ class LocalConversationIntentClassifier(context: Context) {
     }
 
     companion object {
+        const val EXECUTION_CONFIDENCE_THRESHOLD = 0.80f
+
+        fun shouldExecuteLocally(result: ConversationIntentResult): Boolean =
+            result.intent != ConversationIntent.UNKNOWN &&
+                result.confidence >= EXECUTION_CONFIDENCE_THRESHOLD
+
         /** Combined schedule questions need the bounded context-detail contract, not READ_ALL. */
         internal fun shouldDeferToSemanticRouting(normalizedText: String): Boolean =
             COMBINED_DATE_TIME_QUESTION.containsMatchIn(normalizedText)

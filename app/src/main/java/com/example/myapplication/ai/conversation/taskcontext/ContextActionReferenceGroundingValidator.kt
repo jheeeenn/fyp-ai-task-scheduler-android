@@ -90,7 +90,10 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
-        if (FOCUS_REFERENCE.containsMatchIn(normalizedText)) {
+        val hasQualifiedFocusReference = FOCUS_REFERENCE.containsMatchIn(normalizedText)
+        val hasBareFocusReference = !hasQualifiedFocusReference &&
+            BARE_FOCUS_REFERENCE.containsMatchIn(normalizedText)
+        if (hasQualifiedFocusReference || hasBareFocusReference) {
             if (currentFocus == null || !currentFocus.available) {
                 return GroundedContextActionReference(
                     ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS
@@ -102,6 +105,14 @@ object ContextActionReferenceGroundingValidator {
             if (currentFocus.generation != capturedSnapshot.generation || focusItem == null) {
                 return GroundedContextActionReference(
                     ContextActionReferenceGroundingResult.STALE_FOCUS
+                )
+            }
+            val isStrictSingleFocusContext =
+                capturedSnapshot.scope == TaskContextScope.TASK_DETAIL ||
+                    capturedSnapshot.items.size == 1
+            if (hasBareFocusReference && !isStrictSingleFocusContext) {
+                return GroundedContextActionReference(
+                    ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE
                 )
             }
             return compareSelected(
@@ -192,4 +203,5 @@ object ContextActionReferenceGroundingValidator {
     private val FOCUS_REFERENCE = Regex(
         "(?i)\\b(?:it|its|that\\s+(?:task|one)|this\\s+(?:task|one))\\b"
     )
+    private val BARE_FOCUS_REFERENCE = Regex("(?i)\\b(?:this|that)\\b")
 }

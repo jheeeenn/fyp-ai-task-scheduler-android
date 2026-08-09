@@ -205,6 +205,42 @@ class ConversationAgentGuidancePromptTest {
     }
 
     @Test
+    fun freshTemporalQueriesOverrideOldDailyBriefingContext() {
+        assertTrue(prompt.contains("Fresh temporal task-query precedence:"))
+        assertTrue(prompt.contains("Generic singular wording such as \"the task\" does not identify"))
+        val dailyBriefingQuery = prompt
+            .substringAfter("Interaction state:\nAFTER_DAILY_BRIEFING\nSupplied context includes T1 through T5, with no current utterance selector.\nUser: What is the task for next week?")
+            .substringBefore("App context:")
+        assertTrue(dailyBriefingQuery.contains("\"route\":\"TASK_COMMAND\""))
+        assertTrue(dailyBriefingQuery.contains("\"query_presentation_hint\":\"OVERVIEW\""))
+        assertTrue(prompt.contains("User: Do I have anything next week?"))
+        assertTrue(prompt.contains("User: Do I have anything this month?"))
+        assertTrue(prompt.contains("User: Are there any tasks tomorrow?"))
+        assertTrue(prompt.contains("User: What are my tasks this month?"))
+        assertTrue(prompt.contains("User: Show my tasks this month."))
+    }
+
+    @Test
+    fun questionLikeEndingsAndBoundedSmallTalkHaveExplicitRoutes() {
+        listOf("User: Is that all?\n", "User: Is that all\n").forEach { marker ->
+            val example = prompt.substringAfter(marker).substringBefore("User:")
+            assertTrue(example.contains("\"route\":\"ASK_CLARIFICATION\""))
+            assertFalse(example.contains("\"route\":\"END_SESSION\""))
+        }
+        listOf("User: Thanks.", "User: Thank you.").forEach { marker ->
+            val example = prompt.substringAfter(marker).substringBefore("User:")
+            assertTrue(example.contains("\"route\":\"DIRECT_REPLY\""))
+            assertTrue(example.contains("\"listen_again\":true"))
+        }
+        val weather = prompt.substringAfter("User: What is the weather today?").substringBefore("User:")
+        assertTrue(weather.contains("\"route\":\"UNKNOWN\""))
+        assertTrue(weather.contains("I can't provide weather information"))
+        val personalContext = prompt.substringAfter("User: What do you know about me?").substringBefore("Rules:")
+        assertTrue(personalContext.contains("\"route\":\"DIRECT_REPLY\""))
+        assertTrue(personalContext.contains("I don't have a separate personal profile"))
+    }
+
+    @Test
     fun repairPromptIsReadOnlyAndGenerationBounded() {
         val repairPrompt = ConversationAgentClient.CONTEXT_READ_REPAIR_SYSTEM_PROMPT
 

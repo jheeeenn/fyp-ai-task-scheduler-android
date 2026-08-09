@@ -30,4 +30,23 @@ class LocalConversationIntentClassifierTest {
         assertFalse(LocalConversationIntentClassifier.shouldDeferToSemanticRouting("what is the time"))
         assertFalse(LocalConversationIntentClassifier.shouldDeferToSemanticRouting("read the task"))
     }
+
+    @Test
+    fun onlyHighConfidenceNonUnknownResultsMayExecuteLocally() {
+        assertFalse(
+            LocalConversationIntentClassifier.shouldExecuteLocally(
+                ConversationIntentResult(ConversationIntent.CONFIRM_NO, 0.79f)
+            )
+        )
+        assertTrue(
+            LocalConversationIntentClassifier.shouldExecuteLocally(
+                ConversationIntentResult(ConversationIntent.CONFIRM_NO, 0.80f)
+            )
+        )
+        assertFalse(
+            LocalConversationIntentClassifier.shouldExecuteLocally(
+                ConversationIntentResult(ConversationIntent.UNKNOWN, 1.0f)
+            )
+        )
+    }
 }

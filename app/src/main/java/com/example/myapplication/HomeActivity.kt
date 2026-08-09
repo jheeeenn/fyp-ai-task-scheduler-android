@@ -74,6 +74,7 @@ import com.example.myapplication.ai.conversation.SafeStyleTurnAuthorization
 import com.example.myapplication.ai.conversation.AssistantRequestToken
 import com.example.myapplication.ai.conversation.AssistantRequestTokenPolicy
 import com.example.myapplication.ai.conversation.AssistantExitInterpreter
+import com.example.myapplication.ai.conversation.ConversationEndSessionSafetyPolicy
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationPolicy
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationStatus
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
@@ -83,6 +84,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextItemReadDisp
 import com.example.myapplication.ai.conversation.taskcontext.ContextItemReadPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionDecisionValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionValidationResult
+import com.example.myapplication.ai.conversation.taskcontext.ContextDeleteFailureFallbackPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionTargetValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
@@ -1089,8 +1091,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     )
                 }
 
-                if (convoResult.intent != ConversationIntent.UNKNOWN &&
-                    convoResult.confidence >= 0.30f) {
+                if (LocalConversationIntentClassifier.shouldExecuteLocally(convoResult)) {
                     // log
                     Log.d("HOME_CONVO", "conversation intent accepted locally")
 
@@ -1156,19 +1157,27 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 } catch (e: ConversationOrchestratorException) {
                     Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
                     val fallbackReply = "I could not understand that request correctly. Please try again."
-                    conversationOrchestrator.commitFinalDecision(
-                        ConversationDecision(
-                            route = ConversationRoute.UNKNOWN,
-                            reply = fallbackReply,
-                            listenAgain = true,
-                            source = "android_conversation_failure"
+                    val failureDecision = ConversationDecision(
+                        route = ConversationRoute.UNKNOWN,
+                        reply = fallbackReply,
+                        listenAgain = true,
+                        source = "android_conversation_failure"
+                    )
+                    ContextDeleteFailureFallbackPolicy.resolve(
+                        normalizedText = normalized,
+                        currentDecision = failureDecision,
+                        capturedSnapshot = taskContextCapture.snapshot,
+                        currentGeneration = readOnlyTaskContextStore.currentGeneration(),
+                        currentFocus = contextFocus,
+                        agentAttempted = true
+                    ) ?: run {
+                        conversationOrchestrator.commitFinalDecision(failureDecision)
+                        assistantSession.speak(
+                            fallbackReply,
+                            listenAgain = true
                         )
-                    )
-                    assistantSession.speak(
-                        fallbackReply,
-                        listenAgain = true
-                    )
-                    return@launch
+                        return@launch
+                    }
                 }
                 if (
                     conversationDecision.route == ConversationRoute.CONTEXT_READ &&
@@ -1311,6 +1320,59 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         listenAgain = true,
                         source = "android_context_action_fail_closed"
                     )
+                }
+
+                val contextDeleteFallback = ContextDeleteFailureFallbackPolicy.resolve(
+                    normalizedText = normalized,
+                    currentDecision = conversationDecision,
+                    capturedSnapshot = taskContextCapture.snapshot,
+                    currentGeneration = readOnlyTaskContextStore.currentGeneration(),
+                    currentFocus = contextFocus,
+                    agentAttempted = true
+                )
+                if (contextDeleteFallback != null) {
+                    val fallbackValidation = ContextActionDecisionValidator.validate(
+                        decision = contextDeleteFallback,
+                        capturedSnapshot = taskContextCapture.snapshot,
+                        currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                    )
+                    val fallbackGrounding = if (fallbackValidation.isValid) {
+                        ContextActionReferenceGroundingValidator.validate(
+                            normalizedText = normalized,
+                            decision = contextDeleteFallback,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentFocus = contextFocus
+                        )
+                    } else {
+                        null
+                    }
+                    if (fallbackValidation.isValid && fallbackGrounding?.isValid == true) {
+                        conversationDecision = contextDeleteFallback
+                        Log.d(
+                            "HOME_CONTEXT_DELETE_FALLBACK",
+                            "source=${ContextDeleteFailureFallbackPolicy.SOURCE} " +
+                                "generation=${taskContextCapture.snapshot.generation} accepted=true"
+                        )
+                    } else {
+                        Log.d(
+                            "HOME_CONTEXT_DELETE_FALLBACK",
+                            "source=${ContextDeleteFailureFallbackPolicy.SOURCE} " +
+                                "generation=${taskContextCapture.snapshot.generation} accepted=false"
+                        )
+                    }
+                }
+
+                if (conversationDecision.route == ConversationRoute.END_SESSION &&
+                    ConversationEndSessionSafetyPolicy.shouldRejectModelEndSession(normalized)
+                ) {
+                    conversationDecision = ConversationDecision(
+                        route = ConversationRoute.ASK_CLARIFICATION,
+                        reply = ConversationEndSessionSafetyPolicy.CLARIFICATION,
+                        confidence = 1.0,
+                        listenAgain = true,
+                        source = "android_end_session_semantic_guard"
+                    )
+                    Log.d("HOME_END_SESSION_GUARD", "questionLike=true rejected=true")
                 }
 
                 if (
@@ -3212,6 +3274,32 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         "read them"
     )
 
+    private fun isBoundedCreateFollowUpControl(normalized: String): Boolean = normalized in setOf(
+        "yes",
+        "yes please",
+        "yeah",
+        "yep",
+        "sure",
+        "okay",
+        "ok",
+        "create",
+        "create one"
+    )
+
+    private fun isBoundedConfirmationAgreement(normalized: String): Boolean = normalized in setOf(
+        "yes",
+        "yes please",
+        "yeah",
+        "yep",
+        "confirm",
+        "please do",
+        "do it"
+    )
+
+    private fun isBoundedConfirmationRejection(normalized: String): Boolean =
+        isSimpleFollowUpEndCommand(normalized) ||
+            normalized in setOf("never mind", "nevermind")
+
     private fun handleContextItemRestatement(normalized: String): Boolean {
         val isResultInteraction = homeFollowUpContext in setOf(
             HomeFollowUpContext.AFTER_TASK_SUMMARY,
@@ -4761,9 +4849,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return when (homeFollowUpContext) {
             HomeFollowUpContext.AFTER_NO_TASKS -> {
                 when {
-                    normalized.contains("create one") ||
-                            normalized == "create" ||
-                            normalized == "yes" -> {
+                    isBoundedCreateFollowUpControl(normalized) -> {
                         openCreateTaskFromFollowUp()
                         true
                     }
@@ -5942,6 +6028,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 when (intent) {
                     ConversationIntent.CONFIRM_YES,
                     ConversationIntent.CREATE_ONE -> {
+                        if (!isBoundedCreateFollowUpControl(normalized)) return false
                         // log
                         Log.d("HOME_CONVO_ACTION", "opening create from follow-up")
                         openCreateTaskFromFollowUp()
@@ -5950,6 +6037,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
+                        if (!isSimpleFollowUpEndCommand(normalized)) return false
                         // log
                         Log.d("HOME_CONVO_ACTION", "ending conversation from follow-up")
                         endAssistantConversation()
@@ -6026,6 +6114,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             HomeFollowUpContext.DELETE_CONFIRMATION -> {
                 when (intent) {
                     ConversationIntent.CONFIRM_YES -> {
+                        if (!isBoundedConfirmationAgreement(normalized)) return false
                         Log.d("HOME_CONVO_ACTION", "delete confirmed")
                         confirmPendingDelete()
                         true
@@ -6033,6 +6122,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
+                        if (!isBoundedConfirmationRejection(normalized)) return false
                         val title = pendingDeleteTaskTitle
                         clearPendingDeleteState()
                         clearConversationSessionContext()
@@ -6070,6 +6160,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 when (intent) {
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
+                        if (!isSimpleFollowUpEndCommand(normalized)) return false
                         clearPendingTaskMatchState()
                         endAssistantConversation()
                         true
