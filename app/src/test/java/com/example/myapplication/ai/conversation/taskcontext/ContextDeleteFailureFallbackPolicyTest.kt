@@ -41,6 +41,75 @@ class ContextDeleteFailureFallbackPolicyTest {
     }
 
     @Test
+    fun unknownOrAgentFailureMayFallBackToFocusedContextualDelete() {
+        val result = resolve(
+            text = "delete this task",
+            decision = ConversationDecision(
+                route = ConversationRoute.UNKNOWN,
+                source = "android_conversation_failure"
+            )
+        )
+
+        requireNotNull(result)
+        assertEquals(ConversationContextAction.DELETE, result.contextAction)
+        assertEquals(ContextDeleteFailureFallbackPolicy.SOURCE, result.source)
+    }
+
+    @Test
+    fun onlyBoundedImperativeDeleteCommandsAreEligible() {
+        listOf(
+            "delete this",
+            "delete this task",
+            "delete this one",
+            "delete that",
+            "delete that task",
+            "delete that one",
+            "delete it",
+            "remove this",
+            "remove this task",
+            "remove that task",
+            "remove it",
+            "please delete this task",
+            "delete this task please"
+        ).forEach { assertTrue(it, resolve(it) != null) }
+    }
+
+    @Test
+    fun guidanceQuestionsAndNegationNeverTriggerFallback() {
+        listOf(
+            "Can you delete this task?",
+            "How do I delete this task?",
+            "Don't delete this task.",
+            "Do not delete this task.",
+            "I don't want to delete this task.",
+            "Why would I delete this task?"
+        ).forEach { assertNull(it, resolve(it)) }
+    }
+
+    @Test
+    fun validSemanticRoutesAreNeverReplacedByFallback() {
+        listOf(
+            ConversationRoute.DIRECT_REPLY,
+            ConversationRoute.END_SESSION,
+            ConversationRoute.DAILY_BRIEFING,
+            ConversationRoute.CONTEXT_READ,
+            ConversationRoute.QUERY_READING_CONTROL,
+            ConversationRoute.SMART_ROUTINE_BUILDER,
+            ConversationRoute.SAVED_ROUTINE_ACTION,
+            ConversationRoute.CONTEXT_AWARE_SUGGESTION,
+            ConversationRoute.TASK_COMMAND
+        ).forEach { route ->
+            assertNull(
+                route.name,
+                resolve(
+                    text = "delete this task",
+                    decision = ConversationDecision(route = route, source = "conversation_agent")
+                )
+            )
+        }
+    }
+
+    @Test
     fun fallbackRequiresPriorAgentAttemptDeleteWordingAndFocusExpression() {
         assertNull(resolve("delete this task", agentAttempted = false))
         assertNull(resolve("open this task"))

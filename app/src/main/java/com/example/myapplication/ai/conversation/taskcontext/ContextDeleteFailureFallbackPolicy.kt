@@ -5,6 +5,7 @@ import com.example.myapplication.ai.conversation.ConversationContextDetail
 import com.example.myapplication.ai.conversation.ConversationContextFocus
 import com.example.myapplication.ai.conversation.ConversationDecision
 import com.example.myapplication.ai.conversation.ConversationRoute
+import java.util.Locale
 
 /** Narrow fail-closed fallback after semantic contextual-action routing has been attempted. */
 object ContextDeleteFailureFallbackPolicy {
@@ -19,8 +20,8 @@ object ContextDeleteFailureFallbackPolicy {
         agentAttempted: Boolean
     ): ConversationDecision? {
         if (!agentAttempted ||
-            !DELETE_WORDING.containsMatchIn(normalizedText) ||
-            !FOCUS_EXPRESSION.containsMatchIn(normalizedText)
+            currentDecision.route !in FAILURE_ROUTES ||
+            !DELETE_COMMAND.matches(canonicalize(normalizedText))
         ) {
             return null
         }
@@ -36,17 +37,6 @@ object ContextDeleteFailureFallbackPolicy {
         }
         if (focusedItems.size != 1) return null
 
-        if (isUsableContextualDelete(
-                normalizedText = normalizedText,
-                decision = currentDecision,
-                capturedSnapshot = capturedSnapshot,
-                currentGeneration = currentGeneration,
-                currentFocus = focus
-            )
-        ) {
-            return null
-        }
-
         return ConversationDecision(
             route = ConversationRoute.CONTEXT_ACTION,
             contextRef = focusedItems.single().ref,
@@ -58,34 +48,20 @@ object ContextDeleteFailureFallbackPolicy {
         )
     }
 
-    private fun isUsableContextualDelete(
-        normalizedText: String,
-        decision: ConversationDecision,
-        capturedSnapshot: ReadOnlyTaskContextSnapshot,
-        currentGeneration: Long,
-        currentFocus: ConversationContextFocus
-    ): Boolean {
-        if (decision.route != ConversationRoute.CONTEXT_ACTION ||
-            decision.contextAction != ConversationContextAction.DELETE
-        ) {
-            return false
-        }
-        val validation = ContextActionDecisionValidator.validate(
-            decision = decision,
-            capturedSnapshot = capturedSnapshot,
-            currentGeneration = currentGeneration
-        )
-        if (!validation.isValid) return false
-        return ContextActionReferenceGroundingValidator.validate(
-            normalizedText = normalizedText,
-            decision = decision,
-            capturedSnapshot = capturedSnapshot,
-            currentFocus = currentFocus
-        ).isValid
-    }
+    private fun canonicalize(text: String): String = text
+        .lowercase(Locale.ROOT)
+        .replace(PUNCTUATION, " ")
+        .replace(WHITESPACE, " ")
+        .trim()
 
-    private val DELETE_WORDING = Regex("(?i)\\b(?:delete|remove)\\b")
-    private val FOCUS_EXPRESSION = Regex(
-        "(?i)\\b(?:this(?:\\s+(?:task|one))?|that(?:\\s+(?:task|one))?|it)\\b"
+    private val FAILURE_ROUTES = setOf(
+        ConversationRoute.ASK_CLARIFICATION,
+        ConversationRoute.UNKNOWN
     )
+    private val DELETE_COMMAND = Regex(
+        "(?:please\\s+)?(?:delete|remove)\\s+" +
+            "(?:(?:this|that)(?:\\s+(?:task|one))?|it)(?:\\s+please)?"
+    )
+    private val PUNCTUATION = Regex("[.,!?]+")
+    private val WHITESPACE = Regex("\\s+")
 }
