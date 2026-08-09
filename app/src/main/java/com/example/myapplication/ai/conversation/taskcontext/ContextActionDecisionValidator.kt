@@ -49,7 +49,8 @@ object ContextActionDecisionValidator {
             return ValidatedContextAction(ContextActionValidationResult.STALE_GENERATION)
         }
         if (decision.contextAction != ConversationContextAction.UPDATE &&
-            decision.contextAction != ConversationContextAction.RESCHEDULE
+            decision.contextAction != ConversationContextAction.RESCHEDULE &&
+            decision.contextAction != ConversationContextAction.DELETE
         ) {
             return ValidatedContextAction(ContextActionValidationResult.INVALID_ACTION)
         }

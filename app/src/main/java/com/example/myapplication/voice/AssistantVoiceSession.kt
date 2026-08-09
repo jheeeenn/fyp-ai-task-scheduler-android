@@ -407,6 +407,7 @@ class AssistantVoiceSession(
     fun endConversation(reply: String) {
         if (terminalDeliveryActive || (!assistantSessionActive && isForceStopping)) return
 
+        val closingReply = reply.trim().ifBlank { "Okay, stopping the assistant." }
         invalidateSessionCallbacks()
         val callbackGeneration = sessionGeneration
         cancelRecognitionIfActive()
@@ -417,10 +418,10 @@ class AssistantVoiceSession(
         isForceStopping = true
         terminalDeliveryActive = true
 
-        assistantBottomSheet?.showAssistantReply(reply)
+        assistantBottomSheet?.showAssistantReply(closingReply)
         assistantBottomSheet?.setSpeakingState()
-        logAssistantTranscript(reply, listenAgain = false)
-        voiceHelper.speak(reply) {
+        logAssistantTranscript(closingReply, listenAgain = false)
+        voiceHelper.speak(closingReply) {
             activity.runOnUiThread {
                 if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
                     return@runOnUiThread

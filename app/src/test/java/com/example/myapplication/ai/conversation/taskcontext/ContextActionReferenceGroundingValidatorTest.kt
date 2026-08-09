@@ -91,6 +91,25 @@ class ContextActionReferenceGroundingValidatorTest {
     }
 
     @Test
+    fun contextualDeletePronounsRequireAndUseCurrentFocus() {
+        listOf("delete this task", "remove it").forEach { utterance ->
+            val accepted = validate(utterance, "T1", focus = focus("T1"))
+            assertEquals(
+                ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS,
+                accepted.result
+            )
+            assertEquals("T1", accepted.ref)
+        }
+
+        val missingFocus = validate("delete this task", "T1", focus = null)
+        assertEquals(
+            ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS,
+            missingFocus.result
+        )
+        assertFalse(missingFocus.isValid)
+    }
+
+    @Test
     fun ordinalDeterministicallyRequiresSecondRef() {
         val accepted = validate("move the second one to Friday", "T2")
         val rejected = validate("move the second one to Friday", "T1")

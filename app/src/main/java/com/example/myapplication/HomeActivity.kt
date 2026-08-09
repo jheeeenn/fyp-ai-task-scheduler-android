@@ -73,6 +73,7 @@ import com.example.myapplication.ai.conversation.SafeObservationInteraction
 import com.example.myapplication.ai.conversation.SafeStyleTurnAuthorization
 import com.example.myapplication.ai.conversation.AssistantRequestToken
 import com.example.myapplication.ai.conversation.AssistantRequestTokenPolicy
+import com.example.myapplication.ai.conversation.AssistantExitInterpreter
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationPolicy
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationStatus
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
@@ -1270,14 +1271,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                     if (repairValidation.isValid && repairGrounding != null) {
                                         conversationDecision = ConversationDecision(
                                             route = ConversationRoute.ASK_CLARIFICATION,
-                                            reply = if (
-                                                repairedDecision.contextAction ==
-                                                ConversationContextAction.RESCHEDULE
-                                            ) {
-                                                "Which task do you want to reschedule?"
-                                            } else {
-                                                "Which task do you want to edit?"
-                                            },
+                                            reply = contextActionTargetQuestion(
+                                                repairedDecision.contextAction
+                                            ),
                                             listenAgain = true,
                                             source = "android_context_action_reference_grounding"
                                         )
@@ -1447,15 +1443,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             "ref=${conversationDecision.contextRef} result=${grounding.result}"
                         )
                         if (!grounding.isValid) {
-                            val clarification = if (
-                                conversationDecision.contextAction == ConversationContextAction.RESCHEDULE
-                            ) {
-                                "Which task do you want to reschedule?"
-                            } else {
-                                "Which task do you want to edit?"
-                            }
                             rejectContextAction(
-                                clarification,
+                                contextActionTargetQuestion(conversationDecision.contextAction),
                                 "android_context_action_reference_grounding"
                             )
                             return@launch
@@ -1474,13 +1463,28 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         val initiallyFetchedTask = withContext(Dispatchers.IO) {
                             taskDao.getById(privateTaskId)
                         }
-                        val initiallyEligible = isEligibleContextActionTarget(initiallyFetchedTask)
+                        val initiallyEligible = isEligibleContextActionTarget(
+                            initiallyFetchedTask,
+                            validation.action
+                        ) && initiallyFetchedTask != null &&
+                            readOnlyTaskContextStore.matchesResolvedTask(
+                                ref = grounding.ref,
+                                expectedGeneration = capturedGeneration,
+                                task = initiallyFetchedTask
+                            )
                         Log.d(
                             "CONTEXT_ACTION_TARGET_RESOLVED",
                             "generation=$capturedGeneration eligible=$initiallyEligible"
                         )
                         if (!initiallyEligible) {
                             rejectUnavailableContextAction()
+                            return@launch
+                        }
+
+                        if (validation.action == ConversationContextAction.DELETE) {
+                            if (!isAssistantRequestCurrent(requestToken)) return@launch
+                            conversationOrchestrator.commitFinalDecision(conversationDecision)
+                            askDeleteConfirmation(requireNotNull(initiallyFetchedTask))
                             return@launch
                         }
 
@@ -1547,7 +1551,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 "AFTER_CALCULATION"
                             )
                         ) return@launch
-                        if (!isEligibleContextActionTarget(calculationTask) ||
+                        if (!isEligibleContextActionTarget(calculationTask, validation.action) ||
                             !sameContextActionTaskSnapshot(initiallyFetchedTask, calculationTask)
                         ) {
                             rejectUnavailableContextAction()
@@ -1633,7 +1637,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 "BEFORE_OPEN"
                             )
                         ) return@launch
-                        if (!isEligibleContextActionTarget(openingTask) ||
+                        if (!isEligibleContextActionTarget(openingTask, validation.action) ||
                             !sameContextActionTaskSnapshot(calculationTask, openingTask)
                         ) {
                             rejectUnavailableContextAction()
@@ -2789,8 +2793,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         return current
     }
 
-    private fun isEligibleContextActionTarget(task: TaskEntity?): Boolean =
-        ContextActionTargetValidator.isEligible(task)
+    private fun isEligibleContextActionTarget(
+        task: TaskEntity?,
+        action: ConversationContextAction
+    ): Boolean = ContextActionTargetValidator.isEligible(task, action)
+
+    private fun contextActionTargetQuestion(action: ConversationContextAction): String = when (action) {
+        ConversationContextAction.RESCHEDULE -> "Which task do you want to reschedule?"
+        ConversationContextAction.DELETE -> "Which task do you want to delete?"
+        else -> "Which task do you want to edit?"
+    }
 
     private fun sameContextActionTaskSnapshot(first: TaskEntity?, second: TaskEntity?): Boolean =
         first != null && second != null &&
@@ -3184,72 +3196,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
 
-    // --> temproray functions before adding this exit intent in Ai router
-    private fun isConversationExitCommand(normalized: String): Boolean {
-        val taskActionHints = listOf(
-            "mark ",
-            " as done",
-            "complete ",
-            "completed",
-            "delete ",
-            "remove ",
-            "edit ",
-            "update ",
-            "reschedule",
-            "break down",
-            "remind me",
-            "create ",
-            "what task",
-            "what tasks",
-            "show task",
-            "show tasks"
-        )
+    private fun isConversationExitCommand(normalized: String): Boolean =
+        AssistantExitInterpreter.isExitUtterance(normalized)
 
-        if (taskActionHints.any { normalized.contains(it) }) {
-            return false
-        }
-
-        val exactExitCommands = setOf(
-            "nothing else",
-            "that's all",
-            "thats all",
-            "goodbye",
-            "bye",
-            "stop",
-            "cancel",
-            "no thanks",
-            "thank you",
-            "thanks",
-            "exit",
-            "quit",
-            "close",
-            "end",
-            "stop listening",
-            "done",
-            "i'm done",
-            "im done",
-            "all done",
-            "finished",
-            "that's it",
-            "thats it"
-        )
-
-        return normalized in exactExitCommands
-    }
-
-    private fun isSimpleFollowUpEndCommand(normalized: String): Boolean {
-        return normalized == "no" ||
-                normalized == "nothing else" ||
-                normalized == "that's all" ||
-                normalized == "thats all" ||
-                normalized == "done" ||
-                normalized == "i'm done" ||
-                normalized == "im done" ||
-                normalized == "all done" ||
-                normalized == "finished" ||
-                normalized == "that's it" ||
-                normalized == "thats it"
-    }
+    private fun isSimpleFollowUpEndCommand(normalized: String): Boolean =
+        AssistantExitInterpreter.isFollowUpExitUtterance(normalized)
 
     private fun isSimpleFollowUpAgreement(normalized: String): Boolean = normalized in setOf(
         "yes",
@@ -3608,7 +3559,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
-        assistantSession.speakThenStop(responseManager.stopListening())
+        assistantSession.endConversation(responseManager.stopListening())
     }
 
     private fun clearConversationSessionContext() {
@@ -4943,7 +4894,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     requiredInput = RequiredInput.CONFIRMATION,
                     allowedUserMoves = listOf(AllowedUserMove.CONFIRM, AllowedUserMove.REJECT, AllowedUserMove.CANCEL),
                     listenAgain = true,
-                    fallbackSpeech = "Are you sure you want to delete ${task.title}?"
+                    fallbackSpeech = "Delete ${task.title}? Please say yes or no."
                 )
             )
         }

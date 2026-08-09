@@ -15,8 +15,8 @@ class AssistantVoiceSessionEndConversationSourceTest {
     @Test
     fun endSessionHasOneClosingDeliveryAndDismissesAfterTts() {
         val body = functionBody("fun endConversation(reply: String)", "fun speakThenListenAgain")
-        val beforeTts = body.substringBefore("voiceHelper.speak(reply) {")
-        val afterTts = body.substringAfter("voiceHelper.speak(reply) {")
+        val beforeTts = body.substringBefore("voiceHelper.speak(closingReply) {")
+        val afterTts = body.substringAfter("voiceHelper.speak(closingReply) {")
 
         assertTrue(beforeTts.contains("invalidateSessionCallbacks()"))
         assertTrue(beforeTts.contains("cancelRecognitionIfActive()"))
@@ -27,10 +27,25 @@ class AssistantVoiceSessionEndConversationSourceTest {
         assertTrue(afterTts.contains("assistantBottomSheet?.setStoppedState()"))
         assertTrue(afterTts.contains("assistantBottomSheet?.dismiss()"))
         assertTrue(afterTts.contains("host.onAssistantSessionStopped()"))
-        assertEquals(1, body.split("voiceHelper.speak(reply)").size - 1)
+        assertEquals(1, body.split("voiceHelper.speak(closingReply)").size - 1)
         assertFalse(body.contains("host.onAssistantCancelled()"))
         assertFalse(body.contains("responseManager.stopListening()"))
         assertFalse(body.contains("startVoiceRecognition()"))
+    }
+
+    @Test
+    fun blankEndSessionReplyUsesOneSafeClosingReplyEverywhere() {
+        val body = functionBody("fun endConversation(reply: String)", "fun speakThenListenAgain")
+
+        assertTrue(
+            body.contains(
+                "val closingReply = reply.trim().ifBlank { \"Okay, stopping the assistant.\" }"
+            )
+        )
+        assertTrue(body.contains("showAssistantReply(closingReply)"))
+        assertTrue(body.contains("logAssistantTranscript(closingReply, listenAgain = false)"))
+        assertTrue(body.contains("voiceHelper.speak(closingReply)"))
+        assertFalse(body.contains("voiceHelper.speak(reply)"))
     }
 
     @Test

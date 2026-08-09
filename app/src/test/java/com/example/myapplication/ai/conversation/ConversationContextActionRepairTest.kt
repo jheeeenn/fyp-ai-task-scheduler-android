@@ -41,6 +41,30 @@ class ConversationContextActionRepairTest {
     }
 
     @Test
+    fun validTaskDetailFocusRepairsDeleteThisTaskToContextualDelete() = runBlocking {
+        val client = RepairClient(
+            primary = decision("ASK_CLARIFICATION", reply = "Which task?"),
+            repaired = decision(
+                "CONTEXT_ACTION",
+                contextRef = "T1",
+                contextAction = "DELETE"
+            )
+        )
+        val orchestrator = ConversationOrchestrator(client, ConversationDecisionParser())
+        val primary = orchestrator.process("delete this task", "AFTER_TASK_DETAILS", prompt)
+        val repaired = orchestrator.processContextActionRepair(
+            "delete this task",
+            prompt,
+            primary.route,
+            "AFTER_TASK_DETAILS"
+        )
+
+        assertEquals(ConversationRoute.CONTEXT_ACTION, repaired.route)
+        assertEquals(ConversationContextAction.DELETE, repaired.contextAction)
+        assertEquals(2, client.calls)
+    }
+
+    @Test
     fun repairEligibilityRequiresMutationAndAValidContextSelector() {
         val primary = ConversationDecision(
             route = ConversationRoute.TASK_COMMAND,
@@ -74,25 +98,53 @@ class ConversationContextActionRepairTest {
                 null
             )
         )
+        val focus = ConversationContextFocus(
+            available = true,
+            ref = "T2",
+            generation = 4,
+            detail = ConversationContextDetail.SUMMARY,
+            title = "Software"
+        )
         assertTrue(
             ContextActionRepairPolicy.shouldAttempt(
                 "change its title to Revision",
                 primary,
                 snapshot,
                 true,
-                ConversationContextFocus(
-                    available = true,
-                    ref = "T2",
-                    generation = 4,
-                    detail = ConversationContextDetail.SUMMARY,
-                    title = "Software"
-                )
+                focus
+            )
+        )
+        assertTrue(
+            ContextActionRepairPolicy.shouldAttempt(
+                "delete this task",
+                primary,
+                snapshot,
+                true,
+                focus
+            )
+        )
+        assertTrue(
+            ContextActionRepairPolicy.shouldAttempt(
+                "remove it",
+                primary,
+                snapshot,
+                true,
+                focus
+            )
+        )
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "delete this task",
+                primary,
+                snapshot,
+                true,
+                null
             )
         )
     }
 
     @Test
-    fun unsupportedContextMutationsRemainClarificationAndRepairSchemaIsBounded() {
+    fun noFocusDeleteCanClarifyAndDeleteSchemaRemainsBounded() {
         val repairedDelete = ConversationDecisionParser().parse(
             decision(
                 route = "ASK_CLARIFICATION",
@@ -101,6 +153,14 @@ class ConversationContextActionRepairTest {
         )
         assertEquals(ConversationRoute.ASK_CLARIFICATION, repairedDelete.route)
         assertEquals(ConversationContextAction.NONE, repairedDelete.contextAction)
+        val acceptedDelete = ConversationDecisionParser().parse(
+            decision(
+                route = "CONTEXT_ACTION",
+                contextRef = "T1",
+                contextAction = "DELETE"
+            )
+        )
+        assertEquals(ConversationContextAction.DELETE, acceptedDelete.contextAction)
 
         val schema = AgentResponseSchemas.contextActionRepairResponseFormat()
             .getJSONObject("json_schema")
@@ -117,9 +177,22 @@ class ConversationContextActionRepairTest {
             .getJSONObject("query_presentation_hint")
             .getJSONArray("enum")
             .toStrings()
+        val actionValues = schema.getJSONObject("properties")
+            .getJSONObject("context_action")
+            .getJSONArray("enum")
+            .toStrings()
         assertEquals(setOf("CONTEXT_ACTION", "ASK_CLARIFICATION"), routes)
         assertEquals(setOf("NONE"), moveValues)
         assertEquals(setOf("NONE"), hintValues)
+        assertEquals(setOf("NONE", "UPDATE", "RESCHEDULE", "DELETE"), actionValues)
+        val routingActions = AgentResponseSchemas.conversationDecisionResponseFormat()
+            .getJSONObject("json_schema")
+            .getJSONObject("schema")
+            .getJSONObject("properties")
+            .getJSONObject("context_action")
+            .getJSONArray("enum")
+            .toStrings()
+        assertEquals(setOf("NONE", "UPDATE", "RESCHEDULE", "DELETE"), routingActions)
         assertEquals(false, schema.getBoolean("additionalProperties"))
     }
 

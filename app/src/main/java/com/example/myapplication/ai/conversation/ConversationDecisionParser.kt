@@ -374,12 +374,13 @@ object ConversationDecisionContractValidator {
                 }
                 if (decision.contextAction !in setOf(
                         ConversationContextAction.UPDATE,
-                        ConversationContextAction.RESCHEDULE
+                        ConversationContextAction.RESCHEDULE,
+                        ConversationContextAction.DELETE
                     )
                 ) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_ACTION,
-                        "CONTEXT_ACTION requires UPDATE or RESCHEDULE context_action"
+                        "CONTEXT_ACTION requires UPDATE, RESCHEDULE, or DELETE context_action"
                     )
                 }
             }

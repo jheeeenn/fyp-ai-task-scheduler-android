@@ -13,6 +13,7 @@ class ReadOnlyTaskContextStore {
     private var generation: Long = 0
     private var currentSnapshot = emptySnapshot(generation)
     private var roomIdByRef: Map<String, Long> = emptyMap()
+    private var taskSignatureByRef: Map<String, TaskSignature> = emptyMap()
 
     @Synchronized
     fun replaceRecentQueryResults(
@@ -75,6 +76,7 @@ class ReadOnlyTaskContextStore {
     fun clear() {
         generation += 1
         roomIdByRef = emptyMap()
+        taskSignatureByRef = emptyMap()
         currentSnapshot = emptySnapshot(generation)
     }
 
@@ -105,6 +107,15 @@ class ReadOnlyTaskContextStore {
     fun resolveRef(ref: String, expectedGeneration: Long): Long? {
         if (expectedGeneration != generation) return null
         return roomIdByRef[ref.trim().uppercase(Locale.ROOT)]
+    }
+
+    /** Verifies a private ref still identifies the exact Room snapshot captured for this generation. */
+    @Synchronized
+    fun matchesResolvedTask(ref: String, expectedGeneration: Long, task: TaskEntity): Boolean {
+        if (expectedGeneration != generation) return false
+        val normalizedRef = ref.trim().uppercase(Locale.ROOT)
+        return roomIdByRef[normalizedRef] == task.id &&
+            taskSignatureByRef[normalizedRef] == TaskSignature.from(task)
     }
 
     private fun replace(
@@ -139,6 +150,9 @@ class ReadOnlyTaskContextStore {
         }
         roomIdByRef = boundedTasks.mapIndexed { index, task ->
             "T${index + 1}" to task.id
+        }.toMap()
+        taskSignatureByRef = boundedTasks.mapIndexed { index, task ->
+            "T${index + 1}" to TaskSignature.from(task)
         }.toMap()
         currentSnapshot = ReadOnlyTaskContextSnapshot(
             scope = scope,
@@ -210,5 +224,27 @@ class ReadOnlyTaskContextStore {
             items = emptyList(),
             truncated = false
         )
+    }
+
+    private data class TaskSignature(
+        val id: Long,
+        val title: String,
+        val dueDate: String?,
+        val dueTime: String?,
+        val isDone: Boolean,
+        val parentTaskId: Long?,
+        val subtaskOrder: Int
+    ) {
+        companion object {
+            fun from(task: TaskEntity) = TaskSignature(
+                id = task.id,
+                title = task.title,
+                dueDate = task.dueDate,
+                dueTime = task.dueTime,
+                isDone = task.isDone,
+                parentTaskId = task.parentTaskId,
+                subtaskOrder = task.subtaskOrder
+            )
+        }
     }
 }

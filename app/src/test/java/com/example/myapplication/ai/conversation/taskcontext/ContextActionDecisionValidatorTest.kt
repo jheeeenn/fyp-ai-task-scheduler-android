@@ -50,20 +50,80 @@ class ContextActionDecisionValidatorTest {
     }
 
     @Test
+    fun contextualDeleteIsValidOnlyForCurrentKnownRef() {
+        val store = ReadOnlyTaskContextStore()
+        store.replaceTaskDetailResult(task(1))
+        val capture = store.capture()
+
+        assertTrue(
+            validate(
+                capture,
+                store,
+                "T1",
+                action = ConversationContextAction.DELETE
+            ).isValid
+        )
+        assertEquals(
+            ContextActionValidationResult.UNKNOWN_REF,
+            validate(
+                capture,
+                store,
+                "T9",
+                action = ConversationContextAction.DELETE
+            ).result
+        )
+        store.clear()
+        assertEquals(
+            ContextActionValidationResult.STALE_GENERATION,
+            validate(
+                capture,
+                store,
+                "T1",
+                action = ConversationContextAction.DELETE
+            ).result
+        )
+    }
+
+    @Test
+    fun privateRefSnapshotMustStillMatchTheRefetchedRoomTask() {
+        val store = ReadOnlyTaskContextStore()
+        val original = task(42).copy(title = "Private title", dueDate = "09/08/2026")
+        store.replaceTaskDetailResult(original)
+        val generation = store.currentGeneration()
+
+        assertTrue(store.matchesResolvedTask("T1", generation, original))
+        assertFalse(
+            store.matchesResolvedTask(
+                "T1",
+                generation,
+                original.copy(title = "Changed elsewhere")
+            )
+        )
+        assertFalse(store.snapshotForPrompt().contains("42"))
+    }
+
+    @Test
     fun targetEligibilityRejectsDeletedCompletedAndSubtask() {
         assertFalse(ContextActionTargetValidator.isEligible(null))
         assertFalse(ContextActionTargetValidator.isEligible(task(1).copy(isDone = true)))
         assertFalse(ContextActionTargetValidator.isEligible(task(2).copy(parentTaskId = 1)))
         assertTrue(ContextActionTargetValidator.isEligible(task(3)))
+        assertTrue(
+            ContextActionTargetValidator.isEligible(
+                task(4).copy(isDone = true),
+                ConversationContextAction.DELETE
+            )
+        )
     }
 
     private fun validate(
         capture: ReadOnlyTaskContextCapture,
         store: ReadOnlyTaskContextStore,
         ref: String,
-        confidence: Double = 0.97
+        confidence: Double = 0.97,
+        action: ConversationContextAction = ConversationContextAction.RESCHEDULE
     ) = ContextActionDecisionValidator.validate(
-        decision(ref).copy(confidence = confidence),
+        decision(ref).copy(confidence = confidence, contextAction = action),
         capture.snapshot,
         store.currentGeneration()
     )
