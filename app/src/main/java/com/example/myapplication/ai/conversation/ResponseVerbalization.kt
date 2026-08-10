@@ -248,7 +248,7 @@ data class ResponseVerbalizationValidationResult(
 )
 
 object ResponseVerbalizationValidator {
-    private val placeholder = Regex("""\{([a-z][a-z0-9_]*)}""")
+    private val placeholder = Regex("""\{([a-z][a-z0-9_]*)\}""")
     private val url = Regex("""(?i)\b(?:https?://|www\.)\S+""")
     private val markdown = Regex("""(?:^|\s)(?:#{1,6}|[-+*]\s|>\s|```)|[*_~`]""")
     private val temporaryRef = Regex("""\bT\d+\b""", RegexOption.IGNORE_CASE)

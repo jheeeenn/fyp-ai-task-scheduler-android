@@ -209,7 +209,13 @@ class ConversationOrchestrator(
                 memorySnapshot = routingMemory,
                 appContextSummary = appContextSummary
             )
-            parseCanonicalDecision(rawContent)
+            parseCanonicalDecision(rawContent).also {
+                validateContextActionAuthority(
+                    decision = it,
+                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
+                    contextFocus = contextFocus
+                )
+            }
         } catch (e: ConversationSchemaException) {
             retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, contextFocus, e)
         } catch (e: ConversationAgentResponseException) {
@@ -260,6 +266,11 @@ class ConversationOrchestrator(
             val repairedDecision = parseCanonicalDecision(
                 rawContent = repairContent,
                 source = SOURCE_SCHEMA_REPAIR
+            )
+            validateContextActionAuthority(
+                decision = repairedDecision,
+                readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
+                contextFocus = contextFocus
             )
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
             repairedDecision
@@ -409,6 +420,33 @@ class ConversationOrchestrator(
         else -> FAILURE_CODE_UNEXPECTED
     }
 
+    /** CONTEXT_ACTION may select only authority already supplied by Android. */
+    private fun validateContextActionAuthority(
+        decision: ConversationDecision,
+        readOnlyTaskContextSnapshot: String,
+        contextFocus: ConversationContextFocus?
+    ) {
+        if (decision.route != ConversationRoute.CONTEXT_ACTION) return
+        val suppliedRefs = suppliedContextRefs(readOnlyTaskContextSnapshot)
+        val focusRef = contextFocus
+            ?.takeIf { it.available }
+            ?.ref
+            ?.uppercase(Locale.ROOT)
+        val selectedRef = decision.contextRef.uppercase(Locale.ROOT)
+        if (selectedRef !in suppliedRefs && selectedRef != focusRef) {
+            throw ConversationSchemaException(
+                message = "CONTEXT_ACTION selected a ref not supplied by Android",
+                decisionFailureCode = ConversationDecisionFailureCode.INVALID_CONTEXT_REF
+            )
+        }
+    }
+
+    private fun suppliedContextRefs(readOnlyTaskContextSnapshot: String): List<String> =
+        SUPPLIED_CONTEXT_REF.findAll(readOnlyTaskContextSnapshot)
+            .map { it.groupValues[1].uppercase(Locale.ROOT) }
+            .distinct()
+            .toList()
+
     private fun boundedRepairContext(
         appContextSummary: String,
         readOnlyTaskContextSnapshot: String,
@@ -418,17 +456,20 @@ class ConversationOrchestrator(
         appendLine()
         appendLine()
         appendLine("Bounded decision-repair context:")
-        val refs = SUPPLIED_CONTEXT_REF.findAll(readOnlyTaskContextSnapshot)
-            .map { it.groupValues[1].uppercase(Locale.ROOT) }
-            .distinct()
-            .toList()
+        val refs = suppliedContextRefs(readOnlyTaskContextSnapshot)
+        val focusRef = contextFocus?.takeIf { it.available }?.ref
         appendLine(
             "Supplied temporary refs: " +
                 refs.takeIf { it.isNotEmpty() }?.joinToString(",").orEmpty()
+                    .ifBlank { "NONE" }
+        )
+        appendLine(
+            "Current validated focus ref: " +
+                focusRef.orEmpty().ifBlank { "NONE" }
         )
         append(
-            "Current validated focus ref: " +
-                contextFocus?.takeIf { it.available }?.ref.orEmpty()
+            "Context action authority available: " +
+                (refs.isNotEmpty() || !focusRef.isNullOrBlank())
         )
     }
 

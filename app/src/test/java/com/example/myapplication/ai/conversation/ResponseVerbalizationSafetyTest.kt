@@ -65,6 +65,41 @@ class ResponseVerbalizationSafetyTest {
     }
 
     @Test
+    fun literalPlaceholderPatternKeepsClosingBraceEscapedForAndroidRuntime() {
+        val source = File(
+            "src/main/java/com/example/myapplication/ai/conversation/ResponseVerbalization.kt"
+        ).readText()
+        assertTrue(
+            source.contains(
+                "Regex(\"\"\"\\{([a-z][a-z0-9_]*)\\}\"\"\")"
+            )
+        )
+        assertFalse(
+            source.contains(
+                "Regex(\"\"\"\\{([a-z][a-z0-9_]*)}\"\"\")"
+            )
+        )
+
+        val confirmation = plan(
+            ExecutionObservation(
+                operation = ExecutionOperation.DELETE_TASK,
+                outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
+                taskTitle = "private title",
+                requiredInput = RequiredInput.CONFIRMATION,
+                allowedUserMoves = listOf(AllowedUserMove.CONFIRM, AllowedUserMove.REJECT),
+                listenAgain = true,
+                fallbackSpeech = "Delete private title?"
+            )
+        )
+        assertTrue(
+            evaluate(
+                confirmation,
+                "Would you like me to delete {task_title}?"
+            ).accepted
+        )
+    }
+
+    @Test
     fun validatorRejectsFactsControlsInternalsAndLowConfidence() {
         val plan = messageSuccessPlan()
         listOf(

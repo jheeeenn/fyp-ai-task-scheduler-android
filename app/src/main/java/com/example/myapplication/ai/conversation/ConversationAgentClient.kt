@@ -111,6 +111,25 @@ broad task-detail requests.
             appendLine()
             appendLine("Conversation decision contract failure code:")
             append(failureCode)
+            if (failureCode == ConversationDecisionFailureCode.INVALID_CONTEXT_REF.name) {
+                appendLine()
+                appendLine()
+                appendLine("INVALID_CONTEXT_REF repair rule:")
+                appendLine(
+                    "Use the bounded context above. When Supplied temporary refs is NONE and " +
+                        "Current validated focus ref is NONE, the previous CONTEXT_ACTION was " +
+                        "structurally impossible because Android supplied no temporary target."
+                )
+                appendLine(
+                    "For a clear named update, reschedule, or delete request, return " +
+                        "TASK_COMMAND and copy the original normalized User text exactly into " +
+                        "task_text."
+                )
+                append(
+                    "For an unresolved deictic request such as delete this, return " +
+                        "ASK_CLARIFICATION with no context_ref. Never invent T1 or T2."
+                )
+            }
         }
     )
 
@@ -1171,6 +1190,19 @@ Query-presentation hint rules:
 - "What are my tasks this month?" and "Show my tasks this month." are TASK_COMMAND with OVERVIEW.
 - "Read the full details for tomorrow." is TASK_COMMAND with DETAILS.
 
+No-context named-operation precedence:
+- First inspect the labelled Read-only task context and Current validated task focus supplied by Android.
+- When the task context has Scope: NONE or contains no temporary refs and Current validated task
+  focus says Available: false, CONTEXT_ACTION is structurally impossible. Never emit CONTEXT_ACTION
+  in that state, even for update, reschedule, or delete wording.
+- In that no-context state, a clear operation naming its task, such as "Delete buy groceries",
+  "Delete my dentist appointment", "Reschedule medical checkup", or "Update buy groceries", is
+  TASK_COMMAND. Copy the original normalized request into task_text and keep context_ref empty.
+- In that no-context state, a deictic request such as "delete this", "remove it", or "update that
+  one" has no grounded target. Use ASK_CLARIFICATION with an empty context_ref; never invent T1 or T2.
+- A title in the user's named command is task_text for the Task Agent. Do not reinterpret or default
+  that title to a temporary context ref, and do not perform local or model-side task matching here.
+
 Context-action rules:
 - Use CONTEXT_ACTION when the user asks to update, edit, reschedule, or delete exactly one supplied context item.
 - Select exactly one supplied temporary ref. Never invent a ref.
@@ -1224,6 +1256,18 @@ Read-only task context rules:
 
 Contextual examples are illustrative, not an exhaustive phrase dictionary.
 Example supplied snapshot: T1 is Take medicine at 11:00 AM. T2 is Buy groceries at 8:30 PM.
+
+No supplied task context. Current validated focus Available: false. User: Delete buy groceries.
+{"route":"TASK_COMMAND","task_text":"Delete buy groceries.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+No supplied task context. Current validated focus Available: false. User: Reschedule medical checkup.
+{"route":"TASK_COMMAND","task_text":"Reschedule medical checkup.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+No supplied task context. Current validated focus Available: false. User: Update buy groceries.
+{"route":"TASK_COMMAND","task_text":"Update buy groceries.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+No supplied task context. Current validated focus Available: false. User: Delete this.
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to delete?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What was the second one?
 {"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"SUMMARY","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
