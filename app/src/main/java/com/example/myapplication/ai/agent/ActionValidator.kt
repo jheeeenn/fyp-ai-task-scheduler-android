@@ -36,11 +36,9 @@ class ActionValidator {
                 }
             }
 
-            AiIntent.CREATE_TASK.name -> {
-                if (command.taskTitle.isNullOrBlank()) {
-                    fail("CREATE_TASK requires taskTitle")
-                }
-            }
+            // CREATE_TASK opens an Android-owned draft. Its title and temporal prefills are
+            // optional here; CreateTaskActivity remains responsible for completion and saving.
+            AiIntent.CREATE_TASK.name -> Unit
 
             AiIntent.BREAKDOWN_TASK.name -> {
                 if (command.taskTitle.isNullOrBlank()) {

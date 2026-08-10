@@ -525,6 +525,8 @@ CREATE_TASK, QUERY_TASK, RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, M
 
 Action rules:
 Use CREATE_TASK for new tasks or reminders.
+This includes a generic operational request to open a new task draft when the user has not
+supplied a title, date, or time.
 Use QUERY_TASK when the user asks what tasks they have.
 Use RESCHEDULE_TASK when the user changes the date or time of an existing task.
 Use UPDATE_TASK when the user edits an existing task.
@@ -535,7 +537,16 @@ Use UNKNOWN only when the request is not about task scheduling.
 Use BREAKDOWN_TASK only when the user asks to break down, split, divide, or plan a large task into smaller subtasks.
 
 Field rules:
-For CREATE_TASK, put the new task name in task_title and keep target_task_title empty.
+For CREATE_TASK, put the new task name in task_title when the user supplied one and keep
+target_task_title empty. These are valid generic operational CREATE_TASK requests:
+"Create a task."
+"Create a task for me."
+"Can you create a task for me?"
+"Please create a task for me."
+For these requests use task_title="" and empty optional temporal fields. Do not invent a task
+title. Do not return UNKNOWN merely because the title is missing. Use need_clarification=false
+and missing_fields=[]; Android will open the create-task draft so the user can complete missing
+fields there.
 For RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, put the existing task name in target_task_title and keep task_title empty.
 For QUERY_TASK, keep task_title and target_task_title empty unless the user asks about one specific task.
 For QUERY_TASK, query_presentation must describe how Android should present the matching tasks:
@@ -575,6 +586,8 @@ UNKNOWN is only for genuinely non-task requests.
 Keep both date and time empty only when no temporal restriction was supplied.
 Never access, request, or filter the task database.
 Temporal extraction examples:
+User: "Create a task" -> action=CREATE_TASK, task_title="", new_date="", new_time="", need_clarification=false, missing_fields=[]
+User: "Can you create a task for me?" -> action=CREATE_TASK, task_title="", new_date="", new_time="", need_clarification=false, missing_fields=[]
 User: "Create revision next week in the morning" -> action=CREATE_TASK, task_title="revision", new_date="next week", new_time="morning"
 User: "Reschedule tomorrow's appointment to Friday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="appointment", target_date="tomorrow", target_time="", new_date="Friday", new_time="10 AM"
 User: "Reschedule medical checkup to next Monday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="medical checkup", target_date="", target_time="", new_date="next Monday", new_time="10 AM"
