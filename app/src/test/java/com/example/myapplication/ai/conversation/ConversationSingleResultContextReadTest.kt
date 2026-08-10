@@ -137,7 +137,7 @@ class ConversationSingleResultContextReadTest {
     }
 
     @Test
-    fun soleQueryResultDoesNotGrantDeicticMutationAuthority() {
+    fun soleUnpresentedQueryResultDoesNotGrantDeicticMutationAuthority() {
         val capture = capture("T1")
         val generatedAction = ConversationDecision(
             route = ConversationRoute.CONTEXT_ACTION,

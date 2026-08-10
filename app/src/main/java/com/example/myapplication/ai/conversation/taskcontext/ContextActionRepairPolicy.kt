@@ -38,7 +38,8 @@ object ContextActionRepairPolicy {
         val validFocus = contextFocus?.available == true &&
             contextFocus.generation == capturedSnapshot.generation &&
             capturedSnapshot.items.any { it.ref.equals(contextFocus.ref, ignoreCase = true) } &&
-            ContextReferenceMutationGuard.hasFocusReference(normalizedText)
+            (ContextReferenceMutationGuard.hasFocusReference(normalizedText) ||
+                ContextFocusActionEllipsisPolicy.isBoundedActionOnly(normalizedText))
         return explicit || uniqueTitle || validFocus
     }
 }

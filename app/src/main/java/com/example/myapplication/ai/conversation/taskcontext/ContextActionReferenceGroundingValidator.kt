@@ -122,6 +122,27 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
+        if (ContextFocusActionEllipsisPolicy.isBoundedActionOnly(normalizedText)) {
+            if (currentFocus == null || !currentFocus.available) {
+                return GroundedContextActionReference(
+                    ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS
+                )
+            }
+            val focusItem = capturedSnapshot.items.firstOrNull {
+                it.ref.equals(currentFocus.ref, ignoreCase = true)
+            }
+            if (currentFocus.generation != capturedSnapshot.generation || focusItem == null) {
+                return GroundedContextActionReference(
+                    ContextActionReferenceGroundingResult.STALE_FOCUS
+                )
+            }
+            return compareSelected(
+                selectedRef = selectedRef,
+                expectedRef = focusItem.ref,
+                validResult = ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS
+            )
+        }
+
         val titleMatches = suppliedTitleMatches(normalizedText, capturedSnapshot)
         if (titleMatches.size > 1) {
             return GroundedContextActionReference(

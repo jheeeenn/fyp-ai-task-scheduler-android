@@ -324,6 +324,38 @@ object AgentResponseSchemas {
         )
     }
 
+    fun queryCountFollowUpResponseFormat(): JSONObject = responseFormat(
+        name = "query_count_follow_up",
+        properties = JSONObject().apply {
+            put(
+                "move",
+                stringEnum("START_OVERVIEW", "STOP", "NOT_A_QUERY_READING_CONTROL")
+            )
+            put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+        },
+        required = JSONArray().apply {
+            put("move")
+            put("confidence")
+        }
+    )
+
+    fun pendingContextActionTargetResponseFormat(): JSONObject = responseFormat(
+        name = "pending_context_action_target",
+        properties = JSONObject().apply {
+            put(
+                "move",
+                stringEnum("SELECT_TARGET", "ASK_CLARIFICATION", "NOT_A_TARGET_ANSWER")
+            )
+            put("context_ref", stringType())
+            put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+        },
+        required = JSONArray().apply {
+            put("move")
+            put("context_ref")
+            put("confidence")
+        }
+    )
+
     fun contextActionExtractionResponseFormat(): JSONObject {
         return responseFormat(
             name = "context_action_extraction",

@@ -3,6 +3,10 @@ package com.example.myapplication.ai.conversation
 import android.util.Log
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
+import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetDecision
+import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetParser
+import com.example.myapplication.ai.conversation.query.QueryCountFollowUpDecision
+import com.example.myapplication.ai.conversation.query.QueryCountFollowUpParser
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import kotlinx.coroutines.CancellationException
 import java.util.Locale
@@ -367,6 +371,10 @@ class ConversationOrchestrator(
         memory.commitFinalDecision(decision)
     }
 
+    fun clearPendingDialogueAction() {
+        memory.clearPendingDialogueAction()
+    }
+
     suspend fun processContextReadRepair(
         normalizedText: String,
         readOnlyTaskContextSnapshot: String,
@@ -406,6 +414,23 @@ class ConversationOrchestrator(
             source = SOURCE_CONTEXT_ACTION_REPAIR
         )
     }
+
+    suspend fun processQueryCountFollowUp(normalizedText: String): QueryCountFollowUpDecision =
+        QueryCountFollowUpParser.parse(
+            conversationAgentClient.processQueryCountFollowUp(normalizedText)
+        )
+
+    suspend fun processPendingContextActionTarget(
+        normalizedText: String,
+        readOnlyTaskContextSnapshot: String,
+        pendingAction: ConversationContextAction
+    ): PendingContextActionTargetDecision = PendingContextActionTargetParser.parse(
+        conversationAgentClient.processPendingContextActionTarget(
+            userText = normalizedText,
+            taskContextSnapshot = readOnlyTaskContextSnapshot,
+            pendingAction = pendingAction
+        )
+    )
 
     private fun parseCanonicalDecision(
         rawContent: String,

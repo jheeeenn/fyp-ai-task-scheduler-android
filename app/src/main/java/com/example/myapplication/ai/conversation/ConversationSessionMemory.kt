@@ -166,6 +166,10 @@ class ConversationSessionMemory {
         }
     }
 
+    fun clearPendingDialogueAction() {
+        pendingAction = null
+    }
+
     fun snapshotForPrompt(): String {
         return buildString {
             appendLine("Recent turns:")
