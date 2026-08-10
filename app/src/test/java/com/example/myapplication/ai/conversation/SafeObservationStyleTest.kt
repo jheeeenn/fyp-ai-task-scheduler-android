@@ -365,7 +365,7 @@ class SafeObservationStyleTest {
     }
 
     @Test
-    fun styleAttemptDoesNotRecordCandidateAndFinalSpeechRecordsOnce() = runBlocking {
+    fun styleAttemptRecordsPresentationSinkButNeverRoutesOnGeneratedWording() = runBlocking {
         val memory = ConversationSessionMemory()
         val client = FakeStyleClient(
             Result.success(
@@ -381,9 +381,11 @@ class SafeObservationStyleTest {
         val response = orchestrator.styleTaskQuerySpeech(queryPlan(), true)
         assertFalse(memory.snapshotForPrompt().contains("Certainly."))
 
-        orchestrator.recordDeterministicObservation(observation, response)
+        orchestrator.recordDeliveredObservationResponse(observation, response)
         val snapshot = memory.snapshotForPrompt()
-        assertEquals(1, occurrences(snapshot, "Assistant: ${response.speech}"))
+        assertEquals(response.speech, memory.finalSpokenResponse)
+        assertFalse(snapshot.contains(response.speech))
+        assertTrue(snapshot.contains("latestExecutionOperation=QUERY_TASK"))
         assertFalse(snapshot.contains("lead_in"))
         assertFalse(snapshot.contains("confidence"))
     }
@@ -403,11 +405,12 @@ class SafeObservationStyleTest {
         )
         val observation = queryObservation()
         val response = orchestrator.styleTaskQuerySpeech(queryPlan(), true)
-        orchestrator.recordDeterministicObservation(observation, response)
+        orchestrator.recordDeliveredObservationResponse(observation, response)
 
         assertEquals("android_deterministic", response.source)
         assertFalse(memory.snapshotForPrompt().contains("Please continue."))
-        assertEquals(1, occurrences(memory.snapshotForPrompt(), "Assistant: ${response.speech}"))
+        assertEquals(response.speech, memory.finalSpokenResponse)
+        assertFalse(memory.snapshotForPrompt().contains(response.speech))
     }
 
     @Test

@@ -52,15 +52,17 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(body.contains("ExecutionOutcome.CANCELLED"))
     }
 
-    @Test fun operationalResponsesUseAndroidRendererWithoutResponseAgent() {
+    @Test fun operationalResponsesUseProtectedConversationVerbalizationWithAndroidFallback() {
         val body = source
             .substringAfter("private fun renderObservationResponse")
             .substringBefore("private fun deliverObservationResponse")
 
         assertTrue(body.contains("AndroidObservationResponseRenderer.render(observation)"))
-        assertTrue(body.contains("conversationOrchestrator.recordDeterministicObservation(observation, response)"))
+        assertTrue(body.contains("conversationOrchestrator.respondToObservation("))
+        assertTrue(body.contains("responseVerbalizationTone()"))
+        assertTrue(body.contains("responseVerbalizationVerbosity()"))
+        assertTrue(body.contains("conversationOrchestrator.recordDeliveredObservationResponse(observation, response)"))
         assertTrue(body.contains("source=${'$'}{response.source}"))
-        assertFalse(source.contains("conversationOrchestrator.respondToObservation("))
     }
 
     @Test fun observationDeliveryPreservesHintListenAgainAndNavigationCallback() {
@@ -86,6 +88,7 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(speakBody.contains("recordObservationResponse(observation, response)"))
         assertTrue(speakBody.contains("deliverObservationResponse(observation, response)"))
         assertTrue(speakBody.contains("deliverObservationResponse(observation, response, action)"))
+        assertTrue(speakBody.contains("ResponseVerbalizationDeliveryGuard.runIfCurrent("))
     }
 
     @Test fun naturalConversationAndLocalFollowUpInfrastructureRemainPresent() {

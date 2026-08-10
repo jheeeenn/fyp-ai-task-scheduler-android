@@ -59,8 +59,13 @@ class ConversationSessionMemory {
     }
 
     fun recordFinalSpokenResponse(text: String) {
-        finalSpokenResponse = text.takeIf { it.isNotBlank() }
+        recordPresentationSink(text)
         recordAssistant(text)
+    }
+
+    /** Stores the delivered presentation payload without exposing its wording to routing memory. */
+    fun recordPresentationSink(text: String) {
+        finalSpokenResponse = text.takeIf { it.isNotBlank() }
     }
 
     fun recordAuthoritativeContextRead(

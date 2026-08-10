@@ -90,6 +90,7 @@ class ContextSuggestionContractTest {
         assertTrue(execution.contains("ContextSuggestionSpeechRenderer.render("))
         assertTrue(execution.contains("ExecutionOperation.CONTEXT_SUGGESTION"))
         assertTrue(execution.contains("AndroidObservationResponseRenderer.render(observation)"))
+        assertTrue(execution.contains("renderObservationResponse(observation)"))
     }
 
     @Test
@@ -185,7 +186,7 @@ class ContextSuggestionContractTest {
     }
 
     @Test
-    fun singleResultFocusIsEstablishedOnlyAfterObservationRecording() {
+    fun singleResultFocusIsEstablishedBeforePresentationVerbalization() {
         val execution = homeSource
             .substringAfter("private suspend fun executeContextSuggestion(")
             .substringBefore("private fun selectedContextSuggestionCandidates(")
@@ -194,8 +195,12 @@ class ContextSuggestionContractTest {
             .substringBefore("private fun deliverChangedContextSuggestion(")
 
         assertTrue(
-            execution.indexOf("recordObservationResponse(observation, response)") <
-                execution.indexOf("establishContextSuggestionFocus(")
+            execution.indexOf("establishContextSuggestionFocus(") <
+                execution.indexOf("renderObservationResponse(observation)")
+        )
+        assertTrue(
+            execution.indexOf("renderObservationResponse(observation)") <
+                execution.indexOf("recordObservationResponse(observation, response)")
         )
         assertTrue(focusHelper.contains("isContextSuggestionRequestCurrent(requestToken)"))
         assertTrue(focusHelper.contains("ContextSuggestionFocusPolicy.authoritativeItemOrNull("))

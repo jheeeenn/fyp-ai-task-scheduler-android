@@ -72,7 +72,9 @@ class HomeActivityAppGuidanceSourceTest {
         assertTrue(taskCommandBody.contains("conversationDecision.taskText"))
         assertTrue(source.contains("agentOrchestrator.process(taskAgentInput)"))
         assertTrue(observationBody.contains("AndroidObservationResponseRenderer.render(observation)"))
-        assertFalse(source.contains("conversationOrchestrator.respondToObservation("))
+        assertTrue(observationBody.contains("conversationOrchestrator.respondToObservation("))
+        assertTrue(observationBody.contains("responseVerbalizationTone()"))
+        assertTrue(observationBody.contains("responseVerbalizationVerbosity()"))
     }
 
     @Test

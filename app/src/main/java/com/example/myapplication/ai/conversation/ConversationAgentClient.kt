@@ -46,6 +46,12 @@ open class ConversationAgentClient(
         .writeTimeout(SAFE_STYLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(SAFE_STYLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
+    private val responseVerbalizationClient = client.newBuilder()
+        .connectTimeout(RESPONSE_VERBALIZATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(RESPONSE_VERBALIZATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(RESPONSE_VERBALIZATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .callTimeout(RESPONSE_VERBALIZATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
     private val contextSuggestionClient = client.newBuilder()
         .connectTimeout(CONTEXT_SUGGESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(CONTEXT_SUGGESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -160,17 +166,8 @@ Current interaction: $currentInteraction
 
     open suspend fun respondToObservation(observationJson: String, memorySnapshot: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
-            val userPrompt = """
-Memory snapshot:
-$memorySnapshot
-
-App context:
-$appContextSummary
-
-Authoritative ExecutionObservation JSON:
-$observationJson
-""".trimIndent()
-            executeConversationRequest(userPrompt, RequestKind.RESPONSE)
+            // The safe plan deliberately excludes protected values, memory, and app/task facts.
+            executeConversationRequest(observationJson, RequestKind.RESPONSE)
         }
 
     open suspend fun requestSafeObservationStyle(styleContextJson: String): String =
@@ -272,7 +269,7 @@ $snapshotJson
             RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
             RequestKind.CONTEXT_READ_REPAIR -> AgentResponseSchemas.contextReadRepairResponseFormat()
             RequestKind.CONTEXT_ACTION_REPAIR -> AgentResponseSchemas.contextActionRepairResponseFormat()
-            RequestKind.RESPONSE -> AgentResponseSchemas.conversationResponseResponseFormat()
+            RequestKind.RESPONSE -> AgentResponseSchemas.responseVerbalizationResponseFormat()
             RequestKind.CREATE_DRAFT_MOVE -> AgentResponseSchemas.createDraftMoveResponseFormat()
             RequestKind.TASK_DETAIL_EDIT_MOVE -> AgentResponseSchemas.taskDetailEditMoveResponseFormat()
             RequestKind.ROUTINE_FOLLOW_UP_MOVE ->
@@ -313,7 +310,12 @@ $snapshotJson
             })
         }
 
-        if (kind == RequestKind.SAFE_OBSERVATION_STYLE) {
+        if (kind == RequestKind.RESPONSE) {
+            Log.d(
+                "RESPONSE_VERBALIZATION_SCHEMA",
+                "Strict protected-placeholder schema enabled"
+            )
+        } else if (kind == RequestKind.SAFE_OBSERVATION_STYLE) {
             Log.d("SAFE_OBSERVATION_STYLE_SCHEMA", "Strict fact-free wrapper schema enabled")
         } else if (kind == RequestKind.CREATE_DRAFT_MOVE) {
             Log.d("CONVO_CREATE_DRAFT_SCHEMA", "Strict create-draft move schema enabled")
@@ -356,6 +358,7 @@ $snapshotJson
 
         return try {
             val requestClient = when (kind) {
+                RequestKind.RESPONSE -> responseVerbalizationClient
                 RequestKind.SAFE_OBSERVATION_STYLE -> safeStyleClient
                 RequestKind.CONTEXT_SUGGESTION -> contextSuggestionClient
                 else -> client
@@ -491,6 +494,7 @@ $snapshotJson
         const val ROUTING_TEMPERATURE = 0.0
         const val RESPONSE_TEMPERATURE = 0.35
         const val RESPONSE_MAX_TOKENS = 128
+        const val RESPONSE_VERBALIZATION_TIMEOUT_SECONDS = 5L
         const val CONTEXT_READ_REPAIR_MAX_TOKENS = 160
         const val CONTEXT_ACTION_REPAIR_MAX_TOKENS = 180
         const val CREATE_DRAFT_TEMPERATURE = 0.0
@@ -916,30 +920,36 @@ and context_action NONE. Never claim that any mutation succeeded. Never output f
 Room IDs, markdown, explanations, or task-agent fields.
 """.trimIndent()
         val RESPONSE_SYSTEM_PROMPT = """
-You are the response-writing part of the Conversation Agent.
-Android has already interpreted the current operation state and may already have executed it. The ExecutionObservation states the exact authoritative outcome.
-The ExecutionObservation is trusted and authoritative.
-response_type must exactly equal expected_response_type from the authoritative ExecutionObservation.
-Do not infer, replace or reinterpret the expected response type.
-Do not reinterpret the user's command.
-Do not add facts that are absent from the observation.
-Do not change titles, dates, times, counts, options or outcomes.
-Do not claim success unless outcome is SUCCESS or PARTIAL_SUCCESS.
-NOT_FOUND is an informational result stating that no matching task was found.
-CANCELLED should acknowledge that the requested operation was cancelled.
-Cancellation of a task operation does not end the assistant session unless the observation explicitly represents an assistant-session termination.
-Android owns listen-again behaviour.
-For AMBIGUOUS, mention only the supplied choices.
-For NEEDS_CONFIRMATION, ask one clear confirmation question.
-For NEEDS_CLARIFICATION, clearly tell the user what value is required.
-When requiredInput is present, tell the user what they may say next.
-Keep speech concise and suitable for TTS.
-Prefer one or two short sentences.
-Avoid long introductions.
-Avoid visual phrases such as “as shown on screen”.
-Do not mention JSON, schemas, agents, Android internals or databases.
-Do not output markdown.
-Return only the required ConversationResponse JSON.
+You are the presentation-only response verbalizer for a spoken assistant.
+Android already owns and has finalized every fact, operation, outcome, required input, allowed user move, interaction state, listen-again decision, callback, and side effect.
+You receive only non-factual classifications plus required placeholder names.
+Every protected value is deliberately hidden from you.
+
+Return exactly these fields: use_verbalization, speech_template, confidence.
+For AUTHORITATIVE_MESSAGE, speech_template must contain {authoritative_message} exactly once.
+For TASK_ACTION_RESULT, speech_template must contain {task_title} and {authoritative_action} exactly once each. Use only generic acknowledgement and grammatical function words around them.
+Android will substitute protected placeholders one-way for presentation only.
+Never output another placeholder.
+Never guess, restate, paraphrase, or add a task title, date, time, count, ordinal, task fact, result, status, operation claim, or control instruction.
+Never claim that an operation succeeded, failed, was cancelled, needs confirmation, or needs clarification; the protected Android message already says exactly what is authoritative.
+Never ask a new question or tell the user to confirm, reject, cancel, choose, continue, repeat, stop, or retry; required control wording is already protected.
+Never mention tasks, pages, reminders, Room IDs, temporary refs such as T1 or T2, Android, models, agents, prompts, JSON, schemas, or databases outside the placeholder.
+Do not copy enum values into speech_template.
+Use only a short, generic conversational wrapper around the placeholder.
+Tone may be FRIENDLY, NEUTRAL, or PROFESSIONAL.
+Verbosity may be SHORT, NORMAL, or DETAILED, but even DETAILED must remain concise and must not duplicate the protected message.
+No markdown, code, raw JSON inside speech_template, URLs, digits, or line breaks.
+Prefer use_verbalization=true whenever a safe generic wrapper is possible.
+Use use_verbalization=false with an empty speech_template only if the input is malformed or you cannot comply safely.
+
+Safe examples:
+{"use_verbalization":true,"speech_template":"Sure — {authoritative_message}","confidence":0.96}
+{"use_verbalization":true,"speech_template":"Certainly. {authoritative_message}","confidence":0.97}
+For TASK_ACTION_RESULT only:
+{"use_verbalization":true,"speech_template":"All set — I've {authoritative_action} {task_title}.","confidence":0.96}
+
+Unsafe examples include placing a title or date outside the placeholder, changing the outcome, adding a confirmation request, or omitting or duplicating the placeholder.
+Return only the strict three-field JSON object and no explanation.
 """.trimIndent()
 
         internal val CONTEXT_SUGGESTION_SYSTEM_PROMPT = """

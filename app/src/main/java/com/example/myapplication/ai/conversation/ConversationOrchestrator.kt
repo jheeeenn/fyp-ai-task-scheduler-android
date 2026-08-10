@@ -16,7 +16,9 @@ class ConversationOrchestrator(
     private val conversationAgentClient: ConversationAgentClient,
     private val parser: ConversationDecisionParser,
     private val responseParser: ConversationResponseParser = ConversationResponseParser(),
-    private val memory: ConversationSessionMemory = ConversationSessionMemory()
+    private val memory: ConversationSessionMemory = ConversationSessionMemory(),
+    private val responseVerbalizationParser: ResponseVerbalizationParser =
+        ResponseVerbalizationParser()
 ) {
     suspend fun styleTaskQuerySpeech(
         plan: TaskQuerySpeechPlan,
@@ -83,54 +85,109 @@ class ConversationOrchestrator(
             source = "android_deterministic"
         )
 
-    /**
-     * Retained for controlled future experiments with model-based observation verbalization.
-     * HomeActivity renders authoritative production task responses deterministically for factual
-     * completeness and accessibility.
-     */
+    /** Returns presentation-only speech; the caller records it only after stale-delivery checks. */
     suspend fun respondToObservation(
         observation: ExecutionObservation,
-        appContextSummary: String
+        appContextSummary: String = "",
+        tone: ResponseVerbalizationTone = ResponseVerbalizationTone.NEUTRAL,
+        verbosity: ResponseVerbalizationVerbosity = ResponseVerbalizationVerbosity.NORMAL
     ): ConversationResponse {
-        memory.recordObservation(observation)
+        val plan = ResponseVerbalizationPlanner.createOrNull(
+            observation = observation,
+            tone = tone,
+            verbosity = verbosity
+        ) ?: return AndroidObservationResponseRenderer.render(observation)
+        val startedAt = System.currentTimeMillis()
+        Log.d(
+            "RESPONSE_VERBALIZATION_REQUEST",
+            "operation=${observation.operation} outcome=${observation.outcome} " +
+                "responseType=${plan.responseType} tone=$tone verbosity=$verbosity"
+        )
         return try {
             val rawContent = conversationAgentClient.respondToObservation(
-                observationJson = observation.toAgentJson(),
-                memorySnapshot = memory.snapshotForPrompt(),
-                appContextSummary = appContextSummary
+                observationJson = plan.toSafeAgentJson(),
+                memorySnapshot = "",
+                appContextSummary = ""
             )
-            val response = responseParser.parse(rawContent)
-            val expectedType = observation.outcome.toConversationResponseType()
-            if (response.responseType != expectedType) {
-                Log.e(
-                    "CONVO_OBSERVATION",
-                    "response type ${response.responseType} incompatible with authoritative outcome ${observation.outcome}; expected $expectedType"
+            val envelope = responseVerbalizationParser.parse(rawContent)
+            val validation = ResponseVerbalizationValidator.evaluate(plan, envelope)
+            val latencyMs = System.currentTimeMillis() - startedAt
+            Log.d(
+                "RESPONSE_VERBALIZATION_RESULT",
+                "operation=${observation.operation} outcome=${observation.outcome} " +
+                    "accepted=${validation.accepted} source=conversation_agent " +
+                    "validation=${validation.reason} latencyMs=$latencyMs"
+            )
+            if (!validation.accepted) {
+                verbalizationFallback(plan, validation.reason.name, latencyMs)
+            } else {
+                val response = plan.deterministicResponse.copy(
+                    speech = ResponseVerbalizationComposer.compose(plan, envelope),
+                    source = "conversation_agent_verbalization"
                 )
-                throw ConversationSchemaException("ConversationResponse response_type does not match ExecutionObservation outcome")
+                Log.d(
+                    "RESPONSE_VERBALIZATION_ACCEPTED",
+                    "operation=${observation.operation} outcome=${observation.outcome} " +
+                        "source=${response.source} latencyMs=$latencyMs"
+                )
+                response
             }
-            memory.recordFinalSpokenResponse(response.speech)
-            response
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            Log.e("CONVO_OBSERVATION", "response verbalization failed; using deterministic fallback", e)
-            val fallback = ConversationResponse(
-                speech = observation.fallbackSpeech,
-                hint = observation.fallbackHint,
-                responseType = observation.outcome.toConversationResponseType(),
-                source = "deterministic_fallback"
+        } catch (e: ConversationSchemaException) {
+            val latencyMs = System.currentTimeMillis() - startedAt
+            Log.d(
+                "RESPONSE_VERBALIZATION_RESULT",
+                "operation=${observation.operation} outcome=${observation.outcome} " +
+                    "accepted=false source=conversation_agent " +
+                    "validation=${ResponseVerbalizationValidationReason.INVALID_FORMAT} " +
+                    "latencyMs=$latencyMs"
             )
-            memory.recordFinalSpokenResponse(fallback.speech)
-            fallback
+            verbalizationFallback(
+                plan,
+                ResponseVerbalizationValidationReason.INVALID_FORMAT.name,
+                latencyMs
+            )
+        } catch (e: Exception) {
+            val latencyMs = System.currentTimeMillis() - startedAt
+            val reason = if (
+                e.message.orEmpty().contains("timed out", ignoreCase = true) ||
+                e.message.orEmpty().contains("timeout", ignoreCase = true)
+            ) {
+                "TIMEOUT"
+            } else {
+                "REQUEST_FAILURE"
+            }
+            Log.e(
+                "RESPONSE_VERBALIZATION_RESULT",
+                "operation=${observation.operation} outcome=${observation.outcome} " +
+                    "accepted=false source=conversation_agent validation=$reason " +
+                    "latencyMs=$latencyMs",
+                e
+            )
+            verbalizationFallback(plan, reason, latencyMs)
         }
     }
 
-    fun recordDeterministicObservation(
+    private fun verbalizationFallback(
+        plan: ResponseVerbalizationPlan,
+        reason: String,
+        latencyMs: Long
+    ): ConversationResponse {
+        Log.d(
+            "RESPONSE_VERBALIZATION_FALLBACK",
+            "operation=${plan.operation} outcome=${plan.outcome} reason=$reason " +
+                "source=android_deterministic latencyMs=$latencyMs"
+        )
+        return plan.deterministicResponse
+    }
+
+    fun recordDeliveredObservationResponse(
         observation: ExecutionObservation,
         response: ConversationResponse
     ) {
         memory.recordObservation(observation)
-        memory.recordFinalSpokenResponse(response.speech)
+        memory.recordPresentationSink(response.speech)
     }
 
     suspend fun process(

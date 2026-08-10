@@ -96,7 +96,7 @@ class DailyBriefingContractTest {
     }
 
     @Test
-    fun dailyBriefingRouteReturnsBeforeTaskAgentAndUsesOnlyDeterministicRendering() {
+    fun dailyBriefingRouteReturnsBeforeTaskAgentAndUsesProtectedRendering() {
         val routeBranch = homeSource
             .substringAfter("ConversationRoute.DAILY_BRIEFING -> {")
             .substringBefore("ConversationRoute.CONTEXT_READ ->")
@@ -109,6 +109,7 @@ class DailyBriefingContractTest {
         assertFalse(routeBranch.contains("agentOrchestrator"))
         assertTrue(execution.contains("DailyBriefingSpeechRenderer.render(snapshot)"))
         assertTrue(execution.contains("AndroidObservationResponseRenderer.render(observation)"))
+        assertTrue(execution.contains("renderObservationResponse(observation)"))
         assertTrue(execution.contains("ExecutionOperation.DAILY_BRIEFING"))
         assertFalse(execution.contains("agentOrchestrator"))
         assertFalse(execution.contains("styleTaskQuerySpeech"))

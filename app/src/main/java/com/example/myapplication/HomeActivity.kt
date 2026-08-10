@@ -17,6 +17,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.data.AppDatabase
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +62,11 @@ import com.example.myapplication.ai.conversation.ExecutionOperation
 import com.example.myapplication.ai.conversation.ExecutionOutcome
 import com.example.myapplication.ai.conversation.ObservedTask
 import com.example.myapplication.ai.conversation.RequiredInput
+import com.example.myapplication.ai.conversation.ResponseVerbalizationDeliveryGuard
+import com.example.myapplication.ai.conversation.ResponseVerbalizationDeliveryState
+import com.example.myapplication.ai.conversation.ResponseVerbalizationStaleReason
+import com.example.myapplication.ai.conversation.ResponseVerbalizationTone
+import com.example.myapplication.ai.conversation.ResponseVerbalizationVerbosity
 import com.example.myapplication.ai.conversation.TaskObservationMapper
 import com.example.myapplication.ai.conversation.TaskQueryPageObservation
 import com.example.myapplication.ai.conversation.TaskQueryPresentationLevel
@@ -2278,7 +2284,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                     .copy(hint = observation.fallbackHint)
             }
         } else {
-            AndroidObservationResponseRenderer.render(observation)
+            conversationOrchestrator.respondToObservation(
+                observation = observation,
+                tone = responseVerbalizationTone(),
+                verbosity = responseVerbalizationVerbosity()
+            )
         }
         val latencyMs = System.currentTimeMillis() - startedAt
         Log.d(
@@ -2293,7 +2303,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         observation: ExecutionObservation,
         response: ConversationResponse
     ) {
-        conversationOrchestrator.recordDeterministicObservation(observation, response)
+        conversationOrchestrator.recordDeliveredObservationResponse(observation, response)
     }
 
     private fun deliverObservationResponse(
@@ -2316,9 +2326,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private suspend fun speakObservation(observation: ExecutionObservation) {
+        val deliveryState = captureResponseVerbalizationDeliveryState()
+        if (!isResponseVerbalizationDeliveryCurrent(observation, deliveryState)) return
         val response = renderObservationResponse(observation)
-        recordObservationResponse(observation, response)
-        deliverObservationResponse(observation, response)
+        val staleReason = ResponseVerbalizationDeliveryGuard.runIfCurrent(
+            captured = deliveryState,
+            current = captureResponseVerbalizationDeliveryState()
+        ) {
+            recordObservationResponse(observation, response)
+            deliverObservationResponse(observation, response)
+        }
+        logStaleResponseVerbalization(observation, response, staleReason)
     }
 
     private suspend fun speakRepeatableObservation(
@@ -2363,9 +2381,58 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
 
     private suspend fun speakObservationThenRun(observation: ExecutionObservation, action: () -> Unit) {
+        val deliveryState = captureResponseVerbalizationDeliveryState()
+        if (!isResponseVerbalizationDeliveryCurrent(observation, deliveryState)) return
         val response = renderObservationResponse(observation)
-        recordObservationResponse(observation, response)
-        deliverObservationResponse(observation, response, action)
+        val staleReason = ResponseVerbalizationDeliveryGuard.runIfCurrent(
+            captured = deliveryState,
+            current = captureResponseVerbalizationDeliveryState()
+        ) {
+            recordObservationResponse(observation, response)
+            deliverObservationResponse(observation, response, action)
+        }
+        logStaleResponseVerbalization(observation, response, staleReason)
+    }
+
+    private fun captureResponseVerbalizationDeliveryState() =
+        ResponseVerbalizationDeliveryState(
+            requestGeneration = assistantRequestGeneration,
+            assistantRequestActive = assistantRequestActive,
+            activityActive = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                !isFinishing && !isDestroyed
+        )
+
+    private fun isResponseVerbalizationDeliveryCurrent(
+        observation: ExecutionObservation,
+        captured: ResponseVerbalizationDeliveryState
+    ): Boolean {
+        val reason = ResponseVerbalizationDeliveryGuard.staleReason(
+            captured,
+            captureResponseVerbalizationDeliveryState()
+        )
+        if (reason != null) {
+            Log.d(
+                "RESPONSE_VERBALIZATION_STALE",
+                "operation=${observation.operation} outcome=${observation.outcome} " +
+                    "reason=$reason source=before_request"
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun logStaleResponseVerbalization(
+        observation: ExecutionObservation,
+        response: ConversationResponse,
+        reason: ResponseVerbalizationStaleReason?
+    ) {
+        if (reason != null) {
+            Log.d(
+                "RESPONSE_VERBALIZATION_STALE",
+                "operation=${observation.operation} outcome=${observation.outcome} " +
+                    "reason=$reason source=${response.source}"
+            )
+        }
     }
 
     private fun captureSafeObservationDeliveryState(
@@ -2505,23 +2572,26 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             listenAgain = true,
             fallbackSpeech = speech
         )
-        val response = AndroidObservationResponseRenderer.render(observation)
+        val deterministicResponse = AndroidObservationResponseRenderer.render(observation)
 
         if (!isDailyBriefingRequestCurrent(requestToken)) return
         conversationOrchestrator.commitFinalDecision(decision)
         if (!isDailyBriefingRequestCurrent(requestToken)) return
-        recordObservationResponse(observation, response)
-        if (!isDailyBriefingRequestCurrent(requestToken)) return
         authoritativeRepeatState = AuthoritativeRepeatState(
-            speech = response.speech,
+            speech = deterministicResponse.speech,
             kind = RepeatableSpeechKind.DAILY_BRIEFING,
             contextGeneration = contextGeneration
         )
         homeFollowUpContext = HomeFollowUpContext.AFTER_DAILY_BRIEFING
         if (!isDailyBriefingRequestCurrent(requestToken)) return
+        val response = renderObservationResponse(observation)
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
+        recordObservationResponse(observation, response)
+        updateAuthoritativeRepeatSpeech(response.speech)
+        if (!isDailyBriefingRequestCurrent(requestToken)) return
         Log.d(
             "DAILY_BRIEFING_RESPONSE",
-            "source=android_deterministic speechLength=${response.speech.length}"
+            "source=${response.source} speechLength=${response.speech.length}"
         )
         deliverObservationResponse(observation, response)
     }
@@ -2737,23 +2807,26 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             listenAgain = true,
             fallbackSpeech = speech
         )
-        val response = AndroidObservationResponseRenderer.render(observation)
+        val deterministicResponse = AndroidObservationResponseRenderer.render(observation)
 
         if (!isContextSuggestionRequestCurrent(requestToken)) return
         conversationOrchestrator.commitFinalDecision(routingDecision)
-        if (!isContextSuggestionRequestCurrent(requestToken)) return
-        recordObservationResponse(observation, response)
         establishContextSuggestionFocus(
             suggestionType = selection.decision.suggestionType,
             capturedGeneration = contextGeneration,
             requestToken = requestToken
         )
         authoritativeRepeatState = AuthoritativeRepeatState(
-            speech = response.speech,
+            speech = deterministicResponse.speech,
             kind = RepeatableSpeechKind.CONTEXT_SUGGESTION,
             contextGeneration = contextGeneration
         )
         homeFollowUpContext = HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val response = renderObservationResponse(observation)
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        recordObservationResponse(observation, response)
+        updateAuthoritativeRepeatSpeech(response.speech)
         if (!isContextSuggestionRequestCurrent(requestToken)) return
         Log.d(
             "CONTEXT_SUGGESTION_RESPONSE",
@@ -2761,7 +2834,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "suggestionType=${selection.decision.suggestionType} " +
                 "primaryRef=${selection.decision.primaryRef} " +
                 "secondaryRef=${selection.decision.secondaryRef} " +
-                "source=${selection.source} outcome=$outcome"
+                "source=${selection.source} responseSource=${response.source} outcome=$outcome"
         )
         deliverObservationResponse(observation, response)
     }
@@ -2801,7 +2874,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         )
     }
 
-    private fun deliverChangedContextSuggestion(
+    private suspend fun deliverChangedContextSuggestion(
         requestToken: AssistantRequestToken,
         routingDecision: ConversationDecision,
         deliveryResult: ContextSuggestionDeliveryResult
@@ -2818,21 +2891,26 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             listenAgain = true,
             fallbackSpeech = speech
         )
-        val response = AndroidObservationResponseRenderer.render(observation)
+        val deterministicResponse = AndroidObservationResponseRenderer.render(observation)
         conversationOrchestrator.commitFinalDecision(routingDecision)
-        recordObservationResponse(observation, response)
         authoritativeRepeatState = AuthoritativeRepeatState(
-            speech = response.speech,
+            speech = deterministicResponse.speech,
             kind = RepeatableSpeechKind.CONTEXT_SUGGESTION,
             contextGeneration = readOnlyTaskContextStore.currentGeneration()
         )
         homeFollowUpContext = HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
         if (!isContextSuggestionRequestCurrent(requestToken)) return
+        val response = renderObservationResponse(observation)
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
+        recordObservationResponse(observation, response)
+        updateAuthoritativeRepeatSpeech(response.speech)
+        if (!isContextSuggestionRequestCurrent(requestToken)) return
         Log.d(
             "CONTEXT_SUGGESTION_RESPONSE",
             "requestGeneration=${requestToken.requestGeneration} " +
                 "suggestionType=NONE primaryRef= secondaryRef= " +
-                "source=ANDROID_STALE_GUARD outcome=${ExecutionOutcome.INFORMATION}"
+                "source=ANDROID_STALE_GUARD responseSource=${response.source} " +
+                "outcome=${ExecutionOutcome.INFORMATION}"
         )
         deliverObservationResponse(observation, response)
     }
@@ -3231,6 +3309,20 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         AssistantTone.PROFESSIONAL -> TaskQuerySpeechTone.PROFESSIONAL
     }
 
+    private fun responseVerbalizationTone(): ResponseVerbalizationTone =
+        when (responseManager.tone) {
+            AssistantTone.FRIENDLY -> ResponseVerbalizationTone.FRIENDLY
+            AssistantTone.NEUTRAL -> ResponseVerbalizationTone.NEUTRAL
+            AssistantTone.PROFESSIONAL -> ResponseVerbalizationTone.PROFESSIONAL
+        }
+
+    private fun responseVerbalizationVerbosity(): ResponseVerbalizationVerbosity =
+        when (responseManager.verbosity) {
+            AssistantVerbosity.BRIEF -> ResponseVerbalizationVerbosity.SHORT
+            AssistantVerbosity.BALANCED -> ResponseVerbalizationVerbosity.NORMAL
+            AssistantVerbosity.DETAILED -> ResponseVerbalizationVerbosity.DETAILED
+        }
+
     private fun taskQueryTemporalLabel(queryWindow: TemporalQueryWindow): String =
         spokenTemporalLabel(queryWindow)
             ?: if (
@@ -3602,6 +3694,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         authoritativeRepeatState = pageState
         assistantSession.speak(pageState.speech, listenAgain = true)
         check(readOnlyTaskContextStore.currentGeneration() == contextGeneration)
+    }
+
+    /** Updates only the repeatable presentation payload; kind and context stay Android-owned. */
+    private fun updateAuthoritativeRepeatSpeech(speech: String) {
+        authoritativeRepeatState = authoritativeRepeatState?.copy(speech = speech)
     }
 
     private fun repeatLastAuthoritativeSpeech() {
@@ -6182,7 +6279,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
 
 
+    override fun onStop() {
+        if (!isChangingConfigurations) {
+            invalidateAssistantRequest(AssistantRequestInvalidationReason.SESSION_STOPPED)
+            assistantSession.stopForLifecycle()
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        invalidateAssistantRequest(AssistantRequestInvalidationReason.SESSION_STOPPED)
         savedRoutineInteractionController.clearForActivityDestruction()
         assistantSession.destroy()
         voiceHelper.shutdown()

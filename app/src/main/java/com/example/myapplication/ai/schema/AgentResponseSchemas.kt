@@ -68,6 +68,22 @@ object AgentResponseSchemas {
         )
     }
 
+    fun responseVerbalizationResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "response_verbalization",
+            properties = JSONObject().apply {
+                put("use_verbalization", booleanType())
+                put("speech_template", stringType())
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            },
+            required = JSONArray().apply {
+                put("use_verbalization")
+                put("speech_template")
+                put("confidence")
+            }
+        )
+    }
+
     fun createDraftMoveResponseFormat(): JSONObject {
         return responseFormat(
             name = "create_draft_move",
