@@ -23,8 +23,9 @@ class PendingContextActionRequestContinuationTest {
 
         assertTrue(state.contains("val originalNormalizedRequest: String"))
         assertTrue(resolution.contains("normalizedText = normalizedText"))
-        assertTrue(resolution.contains("normalizedText = normalizedText,\n                decision = candidate"))
+        assertTrue(resolution.contains("interpretation = interpretation"))
         assertTrue(resolution.contains("originalActionRequest = pending.originalNormalizedRequest"))
+        assertTrue(resolution.contains("authorityValidatedRef = authority.ref"))
         assertTrue(homeSource.contains("pendingTargetResolution.originalActionRequest ?: normalized"))
         assertTrue(actionBranch.contains("normalizedText = contextActionRequestText"))
         assertFalse(actionBranch.contains("agentOrchestrator.processContextAction(\n                                normalizedText = normalized,"))
@@ -100,6 +101,38 @@ class PendingContextActionRequestContinuationTest {
         assertFalse(clientMethod.contains("originalNormalizedRequest"))
         assertTrue(homeSource.contains("contextAction = pending.action"))
         assertTrue(homeSource.contains("originalActionRequest = pending.originalNormalizedRequest"))
+    }
+
+    @Test
+    fun pendingTargetGetsTurnBeforeGenericLocalFollowUpClassification() {
+        val beforeLaunch = homeSource
+            .substringAfter("val pendingContextTargetOwnsTurn =")
+            .substringBefore("lifecycleScope.launch")
+
+        assertTrue(beforeLaunch.contains("!pendingContextTargetOwnsTurn && handleContextItemRead"))
+        assertTrue(
+            beforeLaunch.contains(
+                "homeFollowUpContext != HomeFollowUpContext.NONE && !pendingContextTargetOwnsTurn"
+            )
+        )
+        assertTrue(beforeLaunch.contains("if (pendingContextTargetOwnsTurn)"))
+        assertTrue(beforeLaunch.contains("dedicated semantic interpreter owns turn"))
+    }
+
+    @Test
+    fun pendingAuthorityIsScopedToExactAgentDecisionAndDoesNotBypassMutationPipeline() {
+        val actionBranch = contextActionBranch()
+        val authority = actionBranch.indexOf("pendingAuthorityValidatedRef != null")
+        val privateResolution = actionBranch.indexOf("readOnlyTaskContextStore.resolveRef(")
+        val roomFetch = actionBranch.indexOf("taskDao.getById(privateTaskId)")
+        val snapshotMatch = actionBranch.indexOf("matchesResolvedTask(")
+
+        assertTrue(authority >= 0)
+        assertTrue(actionBranch.contains("conversation_agent_pending_context_target"))
+        assertTrue(actionBranch.contains("VALID_PENDING_TARGET"))
+        assertTrue(privateResolution > authority)
+        assertTrue(roomFetch > privateResolution)
+        assertTrue(snapshotMatch > roomFetch)
     }
 
     private fun contextActionBranch(): String = homeSource

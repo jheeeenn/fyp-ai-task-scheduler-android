@@ -547,6 +547,12 @@ For these requests use task_title="" and empty optional temporal fields. Do not 
 title. Do not return UNKNOWN merely because the title is missing. Use need_clarification=false
 and missing_fields=[]; Android will open the create-task draft so the user can complete missing
 fields there.
+Blank task_title is allowed only when the user supplied no usable task or reminder content. When a
+creation or reminder request contains meaningful content, extract that content into task_title and
+exclude scheduling phrases from the title. In "remind me to ...", the meaningful phrase after
+"to" is normally the task title. In "remind me about ...", the meaningful subject after "about"
+is normally the task title. Do not drop clear content merely because the request is phrased as a
+reminder, and do not invent content when none was supplied.
 For RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, put the existing task name in target_task_title and keep task_title empty.
 For QUERY_TASK, keep task_title and target_task_title empty unless the user asks about one specific task.
 For QUERY_TASK, query_presentation must describe how Android should present the matching tasks:
@@ -589,6 +595,11 @@ Temporal extraction examples:
 User: "Create a task" -> action=CREATE_TASK, task_title="", new_date="", new_time="", need_clarification=false, missing_fields=[]
 User: "Can you create a task for me?" -> action=CREATE_TASK, task_title="", new_date="", new_time="", need_clarification=false, missing_fields=[]
 User: "Create revision next week in the morning" -> action=CREATE_TASK, task_title="revision", new_date="next week", new_time="morning"
+User: "Remind me to take medicine tomorrow at 9 PM" -> action=CREATE_TASK, task_title="take medicine", new_date="tomorrow", new_time="21:00"
+User: "Remind me to take breakfast tomorrow morning" -> action=CREATE_TASK, task_title="take breakfast", new_date="tomorrow", new_time="morning"
+User: "Remind me about my medical checkup tomorrow" -> action=CREATE_TASK, task_title="medical checkup", new_date="tomorrow", new_time=""
+User: "Create revision next Friday" -> action=CREATE_TASK, task_title="revision", new_date="next Friday", new_time=""
+User: "Remind me" -> action=CREATE_TASK, task_title="", new_date="", new_time="", need_clarification=false, missing_fields=[]
 User: "Reschedule tomorrow's appointment to Friday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="appointment", target_date="tomorrow", target_time="", new_date="Friday", new_time="10 AM"
 User: "Reschedule medical checkup to next Monday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="medical checkup", target_date="", target_time="", new_date="next Monday", new_time="10 AM"
 User: "Delete my task next week" -> action=DELETE_TASK, target_task_title="", target_date="next week", target_time=""

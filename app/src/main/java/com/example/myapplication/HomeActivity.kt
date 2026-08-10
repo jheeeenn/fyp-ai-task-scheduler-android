@@ -102,6 +102,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextReadRepairPo
 import com.example.myapplication.ai.conversation.taskcontext.ContextFocusCarryForwardPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextFocusActionEllipsisPolicy
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetMove
+import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetAuthorityValidator
 import com.example.myapplication.ai.conversation.taskcontext.PresentedQueryFocusPolicy
 import com.example.myapplication.ai.conversation.taskcontext.PresentedQueryFocusResult
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
@@ -258,7 +259,8 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     )
     private data class PendingContextActionResolution(
         val decision: ConversationDecision? = null,
-        val originalActionRequest: String? = null
+        val originalActionRequest: String? = null,
+        val authorityValidatedRef: String? = null
     )
     private enum class AssistantRequestInvalidationReason {
         NEW_COMMAND,
@@ -1084,15 +1086,17 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
 
-        if (handleContextItemRestatement(normalized)) {
+        val pendingContextTargetOwnsTurn =
+            homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION
+        if (!pendingContextTargetOwnsTurn && handleContextItemRestatement(normalized)) {
             return
         }
 
-        if (handleContextItemRead(normalized)) {
+        if (!pendingContextTargetOwnsTurn && handleContextItemRead(normalized)) {
             return
         }
 
-        if (handleQueryReadingFollowUp(
+        if (!pendingContextTargetOwnsTurn && handleQueryReadingFollowUp(
                 normalized,
                 requestToken,
                 localStyleAuthorization
@@ -1101,7 +1105,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             return
         }
 
-        if (homeFollowUpContext != HomeFollowUpContext.NONE) {
+        if (homeFollowUpContext != HomeFollowUpContext.NONE && !pendingContextTargetOwnsTurn) {
             val shouldDeferContextReference =
                 (homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_SUMMARY ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
@@ -1140,7 +1144,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             }
         }
 
-        if (handleHomeFollowUp(normalized)) {
+        if (pendingContextTargetOwnsTurn) {
+            Log.d("PENDING_CONTEXT_TARGET", "dedicated semantic interpreter owns turn")
+        }
+
+        if (!pendingContextTargetOwnsTurn && handleHomeFollowUp(normalized)) {
 
             // log
             if (BuildConfig.DEBUG) {
@@ -1197,6 +1205,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
                 val contextActionRequestText =
                     pendingTargetResolution.originalActionRequest ?: normalized
+                val pendingAuthorityValidatedRef = pendingTargetResolution.authorityValidatedRef
                 var conversationDecision = pendingTargetResolution.decision ?: try {
                     conversationOrchestrator.process(
                         normalizedText = normalized,
@@ -1586,17 +1595,35 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             return@launch
                         }
 
-                        val grounding = ContextActionReferenceGroundingValidator.validate(
-                            normalizedText = normalized,
-                            decision = conversationDecision,
-                            capturedSnapshot = taskContextCapture.snapshot,
-                            currentFocus = contextFocus
-                        )
+                        val pendingTargetAuthorityApplies =
+                            pendingAuthorityValidatedRef != null &&
+                            conversationDecision.source == "conversation_agent_pending_context_target" &&
+                            conversationDecision.contextRef.equals(
+                                pendingAuthorityValidatedRef,
+                                ignoreCase = true
+                            )
+                        val grounding = if (!pendingTargetAuthorityApplies) {
+                            ContextActionReferenceGroundingValidator.validate(
+                                normalizedText = normalized,
+                                decision = conversationDecision,
+                                capturedSnapshot = taskContextCapture.snapshot,
+                                currentFocus = contextFocus
+                            )
+                        } else {
+                            null
+                        }
+                        val groundedRef = pendingAuthorityValidatedRef
+                            .takeIf { pendingTargetAuthorityApplies } ?: grounding?.ref.orEmpty()
                         Log.d(
                             "HOME_CONTEXT_ACTION_GROUNDING",
-                            "ref=${conversationDecision.contextRef} result=${grounding.result}"
+                            "ref=${conversationDecision.contextRef} result=" +
+                                if (pendingTargetAuthorityApplies) {
+                                    "VALID_PENDING_TARGET"
+                                } else {
+                                    grounding?.result
+                                }
                         )
-                        if (!grounding.isValid) {
+                        if (!pendingTargetAuthorityApplies && grounding?.isValid != true) {
                             beginContextActionTargetClarification(
                                 action = conversationDecision.contextAction,
                                 capture = taskContextCapture,
@@ -1611,7 +1638,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         val capturedGeneration = taskContextCapture.snapshot.generation
                         val privateTaskId = readOnlyTaskContextStore.resolveRef(
-                            ref = grounding.ref,
+                            ref = groundedRef,
                             expectedGeneration = capturedGeneration
                         )
                         if (privateTaskId == null) {
@@ -1627,7 +1654,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             validation.action
                         ) && initiallyFetchedTask != null &&
                             readOnlyTaskContextStore.matchesResolvedTask(
-                                ref = grounding.ref,
+                                ref = groundedRef,
                                 expectedGeneration = capturedGeneration,
                                 task = initiallyFetchedTask
                             )
@@ -1695,7 +1722,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                             return@launch
                         }
                         val reResolvedTaskId = readOnlyTaskContextStore.resolveRef(
-                            ref = grounding.ref,
+                            ref = groundedRef,
                             expectedGeneration = capturedGeneration
                         )
                         if (reResolvedTaskId == null || reResolvedTaskId != privateTaskId) {
@@ -3165,6 +3192,11 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 )
             )
         }
+        Log.d(
+            "PENDING_CONTEXT_TARGET_RESULT",
+            "move=${interpretation.move.name} ref=${interpretation.contextRef} " +
+                "confidence=${interpretation.confidence}"
+        )
         if (!isAssistantRequestCurrent(requestToken) ||
             pendingContextActionClarification != pending
         ) {
@@ -3216,17 +3248,28 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             capturedSnapshot = taskContextCapture.snapshot,
             currentGeneration = currentGeneration
         )
-        val grounding = if (validation.isValid) {
-            ContextActionReferenceGroundingValidator.validate(
+        val authority = if (validation.isValid) {
+            PendingContextActionTargetAuthorityValidator.validate(
                 normalizedText = normalizedText,
-                decision = candidate,
+                interpretation = interpretation,
+                candidate = candidate,
+                pendingAction = pending.action,
+                pendingGeneration = pending.capturedGeneration,
+                pendingSuppliedRefs = pending.suppliedRefs,
                 capturedSnapshot = taskContextCapture.snapshot,
+                currentGeneration = currentGeneration,
                 currentFocus = contextFocus
             )
         } else {
             null
         }
-        if (!validation.isValid || grounding?.isValid != true) {
+        Log.d(
+            "PENDING_CONTEXT_TARGET_AUTHORITY",
+            "ref=${interpretation.contextRef} " +
+                "result=${if (authority?.isAccepted == true) "ACCEPTED" else "REJECTED"} " +
+                "reason=${authority?.result ?: validation.result}"
+        )
+        if (!validation.isValid || authority?.isAccepted != true) {
             return PendingContextActionResolution(
                 decision = ConversationDecision(
                     route = ConversationRoute.ASK_CLARIFICATION,
@@ -3240,11 +3283,12 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         clearPendingContextActionClarification(restoreContext = true)
         Log.d(
             "CONTEXT_ACTION_CLARIFICATION_RESOLVED",
-            "action=${pending.action.name} ref=${grounding.ref} generation=${pending.capturedGeneration}"
+            "action=${pending.action.name} ref=${authority.ref} generation=${pending.capturedGeneration}"
         )
         return PendingContextActionResolution(
-            decision = candidate.copy(contextRef = grounding.ref),
-            originalActionRequest = pending.originalNormalizedRequest
+            decision = candidate.copy(contextRef = authority.ref),
+            originalActionRequest = pending.originalNormalizedRequest,
+            authorityValidatedRef = authority.ref
         )
     }
 

@@ -172,6 +172,31 @@ class GenericCreateTaskDraftHandoffTest {
         assertTrue(normalizedTaskPrompt.contains("Android will open the create-task draft"))
         assertTrue(normalizedTaskPrompt.contains("need_clarification=false"))
         assertTrue(normalizedTaskPrompt.contains("missing_fields=[]"))
+        assertTrue(
+            normalizedTaskPrompt.contains(
+                "Blank task_title is allowed only when the user supplied no usable task or reminder content"
+            )
+        )
+        assertTrue(
+            normalizedTaskPrompt.contains(
+                "task_title=\"take medicine\", new_date=\"tomorrow\", new_time=\"21:00\""
+            )
+        )
+        assertTrue(
+            normalizedTaskPrompt.contains(
+                "task_title=\"take breakfast\", new_date=\"tomorrow\", new_time=\"morning\""
+            )
+        )
+        assertTrue(
+            normalizedTaskPrompt.contains(
+                "\"Create revision next Friday\" -> action=CREATE_TASK, task_title=\"revision\""
+            )
+        )
+        assertTrue(
+            normalizedTaskPrompt.contains(
+                "\"Remind me\" -> action=CREATE_TASK, task_title=\"\""
+            )
+        )
 
         val routingPrompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
         assertTrue(routingPrompt.contains("\"How do I create a task?\" is DIRECT_REPLY"))
