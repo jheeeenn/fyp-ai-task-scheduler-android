@@ -251,9 +251,14 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
     }
     private data class PendingContextActionClarification(
         val action: ConversationContextAction,
+        val originalNormalizedRequest: String,
         val capturedGeneration: Long,
         val suppliedRefs: Set<String>,
         val returnContext: HomeFollowUpContext
+    )
+    private data class PendingContextActionResolution(
+        val decision: ConversationDecision? = null,
+        val originalActionRequest: String? = null
     )
     private enum class AssistantRequestInvalidationReason {
         NEW_COMMAND,
@@ -1184,13 +1189,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         "itemCount=${taskContextCapture.snapshot.items.size} " +
                         "truncated=${taskContextCapture.snapshot.truncated}"
                 )
-                val pendingTargetDecision = resolvePendingContextActionTarget(
+                val pendingTargetResolution = resolvePendingContextActionTarget(
                     normalizedText = normalized,
                     taskContextCapture = taskContextCapture,
                     contextFocus = contextFocus,
                     requestToken = requestToken
                 )
-                var conversationDecision = pendingTargetDecision ?: try {
+                val contextActionRequestText =
+                    pendingTargetResolution.originalActionRequest ?: normalized
+                var conversationDecision = pendingTargetResolution.decision ?: try {
                     conversationOrchestrator.process(
                         normalizedText = normalized,
                         appContextSummary = buildConversationAppContextSummary(),
@@ -1322,8 +1329,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                                 } else {
                                     if (repairValidation.isValid && repairGrounding != null) {
                                         beginContextActionTargetClarification(
-                                            repairedDecision.contextAction,
-                                            taskContextCapture
+                                            action = repairedDecision.contextAction,
+                                            capture = taskContextCapture,
+                                            originalNormalizedRequest = normalized
                                         )
                                         conversationDecision = ConversationDecision(
                                             route = ConversationRoute.ASK_CLARIFICATION,
@@ -1590,8 +1598,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                         )
                         if (!grounding.isValid) {
                             beginContextActionTargetClarification(
-                                conversationDecision.contextAction,
-                                taskContextCapture
+                                action = conversationDecision.contextAction,
+                                capture = taskContextCapture,
+                                originalNormalizedRequest = normalized
                             )
                             rejectContextAction(
                                 contextActionTargetQuestion(conversationDecision.contextAction),
@@ -1640,7 +1649,7 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
                         val extractedChange = try {
                             agentOrchestrator.processContextAction(
-                                normalizedText = normalized,
+                                normalizedText = contextActionRequestText,
                                 expectedAction = validation.action
                             )
                         } catch (exception: CancellationException) {
@@ -3075,10 +3084,15 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
 
     private fun beginContextActionTargetClarification(
         action: ConversationContextAction,
-        capture: ReadOnlyTaskContextCapture
+        capture: ReadOnlyTaskContextCapture,
+        originalNormalizedRequest: String
     ) {
+        require(originalNormalizedRequest.isNotBlank()) {
+            "Pending context action requires the original normalized request"
+        }
         pendingContextActionClarification = PendingContextActionClarification(
             action = action,
+            originalNormalizedRequest = originalNormalizedRequest,
             capturedGeneration = capture.snapshot.generation,
             suppliedRefs = capture.snapshot.items.map { it.ref.uppercase(Locale.ROOT) }.toSet(),
             returnContext = homeFollowUpContext
@@ -3106,8 +3120,9 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         taskContextCapture: ReadOnlyTaskContextCapture,
         contextFocus: ConversationContextFocus?,
         requestToken: AssistantRequestToken
-    ): ConversationDecision? {
-        val pending = pendingContextActionClarification ?: return null
+    ): PendingContextActionResolution {
+        val pending = pendingContextActionClarification
+            ?: return PendingContextActionResolution()
         val currentGeneration = readOnlyTaskContextStore.currentGeneration()
         val currentRefs = taskContextCapture.snapshot.items
             .map { it.ref.uppercase(Locale.ROOT) }
@@ -3122,11 +3137,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "CONTEXT_ACTION_CLARIFICATION",
                 "action=${pending.action.name} generation=${pending.capturedGeneration} state=STALE"
             )
-            return ConversationDecision(
-                route = ConversationRoute.ASK_CLARIFICATION,
-                reply = "Those task results changed. Please repeat your task query.",
-                listenAgain = true,
-                source = "android_context_action_clarification_stale"
+            return PendingContextActionResolution(
+                decision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = "Those task results changed. Please repeat your task query.",
+                    listenAgain = true,
+                    source = "android_context_action_clarification_stale"
+                )
             )
         }
 
@@ -3139,11 +3156,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
-            return ConversationDecision(
-                route = ConversationRoute.ASK_CLARIFICATION,
-                reply = contextActionTargetQuestion(pending.action),
-                listenAgain = true,
-                source = "android_context_action_clarification_fallback"
+            return PendingContextActionResolution(
+                decision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = contextActionTargetQuestion(pending.action),
+                    listenAgain = true,
+                    source = "android_context_action_clarification_fallback"
+                )
             )
         }
         if (!isAssistantRequestCurrent(requestToken) ||
@@ -3154,11 +3173,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
         if (readOnlyTaskContextStore.currentGeneration() != pending.capturedGeneration) {
             clearPendingContextActionClarification(restoreContext = false)
             homeFollowUpContext = HomeFollowUpContext.NONE
-            return ConversationDecision(
-                route = ConversationRoute.ASK_CLARIFICATION,
-                reply = "Those task results changed. Please repeat your task query.",
-                listenAgain = true,
-                source = "android_context_action_clarification_stale"
+            return PendingContextActionResolution(
+                decision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = "Those task results changed. Please repeat your task query.",
+                    listenAgain = true,
+                    source = "android_context_action_clarification_stale"
+                )
             )
         }
 
@@ -3169,14 +3190,16 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
                 "CONTEXT_ACTION_CLARIFICATION",
                 "action=${pending.action.name} generation=${pending.capturedGeneration} state=ABANDONED"
             )
-            return null
+            return PendingContextActionResolution()
         }
         if (interpretation.move == PendingContextActionTargetMove.ASK_CLARIFICATION) {
-            return ConversationDecision(
-                route = ConversationRoute.ASK_CLARIFICATION,
-                reply = contextActionTargetQuestion(pending.action),
-                listenAgain = true,
-                source = "conversation_agent_pending_context_target"
+            return PendingContextActionResolution(
+                decision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = contextActionTargetQuestion(pending.action),
+                    listenAgain = true,
+                    source = "conversation_agent_pending_context_target"
+                )
             )
         }
 
@@ -3204,11 +3227,13 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             null
         }
         if (!validation.isValid || grounding?.isValid != true) {
-            return ConversationDecision(
-                route = ConversationRoute.ASK_CLARIFICATION,
-                reply = contextActionTargetQuestion(pending.action),
-                listenAgain = true,
-                source = "android_pending_context_target_validation"
+            return PendingContextActionResolution(
+                decision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = contextActionTargetQuestion(pending.action),
+                    listenAgain = true,
+                    source = "android_pending_context_target_validation"
+                )
             )
         }
 
@@ -3217,7 +3242,10 @@ class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
             "CONTEXT_ACTION_CLARIFICATION_RESOLVED",
             "action=${pending.action.name} ref=${grounding.ref} generation=${pending.capturedGeneration}"
         )
-        return candidate.copy(contextRef = grounding.ref)
+        return PendingContextActionResolution(
+            decision = candidate.copy(contextRef = grounding.ref),
+            originalActionRequest = pending.originalNormalizedRequest
+        )
     }
 
     private fun sameContextActionTaskSnapshot(first: TaskEntity?, second: TaskEntity?): Boolean =
