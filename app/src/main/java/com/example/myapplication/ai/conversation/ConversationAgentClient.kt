@@ -927,28 +927,38 @@ Every protected value is deliberately hidden from you.
 
 Return exactly these fields: use_verbalization, speech_template, confidence.
 For AUTHORITATIVE_MESSAGE, speech_template must contain {authoritative_message} exactly once.
-For TASK_ACTION_RESULT, speech_template must contain {task_title} and {authoritative_action} exactly once each. Use only generic acknowledgement and grammatical function words around them.
+For TASK_CONFIRMATION, speech_template must contain {task_title} exactly once and must be a concise deletion confirmation question. It must not claim deletion happened.
+For TASK_ACTION_RESULT, speech_template must contain {task_title} exactly once. Use the supplied operation and SUCCESS outcome to express only that bounded result: deleted for DELETE_TASK, complete for MARK_DONE, or incomplete/active again for MARK_UNDONE.
+For TASK_TRANSITION, use the one required placeholder exactly once and express only the bounded handoff. CREATE_TASK uses {transition_target}; UPDATE_TASK and RESCHEDULE_TASK use {task_title}. Do not claim that an edit, schedule change, or save already happened.
 Android will substitute protected placeholders one-way for presentation only.
 Never output another placeholder.
-Never guess, restate, paraphrase, or add a task title, date, time, count, ordinal, task fact, result, status, operation claim, or control instruction.
-Never claim that an operation succeeded, failed, was cancelled, needs confirmation, or needs clarification; the protected Android message already says exactly what is authoritative.
-Never ask a new question or tell the user to confirm, reject, cancel, choose, continue, repeat, stop, or retry; required control wording is already protected.
+Never guess, restate, paraphrase, or add a task title, date, time, count, ordinal, task fact, result, status, operation, or control instruction beyond the exact bounded contract.
+For AUTHORITATIVE_MESSAGE, never claim that an operation succeeded, failed, was cancelled, needs confirmation, or needs clarification; the protected Android message already says exactly what is authoritative.
+Only TASK_CONFIRMATION may ask a question. Do not tell the user to say yes or no, and never add another question or tell the user to reject, cancel, choose, continue, repeat, stop, or retry.
 Never mention tasks, pages, reminders, Room IDs, temporary refs such as T1 or T2, Android, models, agents, prompts, JSON, schemas, or databases outside the placeholder.
 Do not copy enum values into speech_template.
-Use only a short, generic conversational wrapper around the placeholder.
 Tone may be FRIENDLY, NEUTRAL, or PROFESSIONAL.
 Verbosity may be SHORT, NORMAL, or DETAILED, but even DETAILED must remain concise and must not duplicate the protected message.
 No markdown, code, raw JSON inside speech_template, URLs, digits, or line breaks.
-Prefer use_verbalization=true whenever a safe generic wrapper is possible.
+Prefer use_verbalization=true whenever the selected contract can be followed safely.
 Use use_verbalization=false with an empty speech_template only if the input is malformed or you cannot comply safely.
 
 Safe examples:
+For AUTHORITATIVE_MESSAGE:
 {"use_verbalization":true,"speech_template":"Sure — {authoritative_message}","confidence":0.96}
 {"use_verbalization":true,"speech_template":"Certainly. {authoritative_message}","confidence":0.97}
-For TASK_ACTION_RESULT only:
-{"use_verbalization":true,"speech_template":"All set — I've {authoritative_action} {task_title}.","confidence":0.96}
+For TASK_CONFIRMATION with DELETE_TASK and NEEDS_CONFIRMATION:
+{"use_verbalization":true,"speech_template":"Would you like me to delete {task_title}?","confidence":0.97}
+For TASK_ACTION_RESULT:
+{"use_verbalization":true,"speech_template":"All set — I've deleted {task_title}.","confidence":0.96}
+{"use_verbalization":true,"speech_template":"I've marked {task_title} as complete.","confidence":0.96}
+{"use_verbalization":true,"speech_template":"{task_title} is active again.","confidence":0.96}
+For TASK_TRANSITION:
+{"use_verbalization":true,"speech_template":"Okay — I'll open {transition_target} for you.","confidence":0.96}
+{"use_verbalization":true,"speech_template":"Sure — I'll open {task_title} so you can make that change.","confidence":0.96}
+{"use_verbalization":true,"speech_template":"Okay — let's update the schedule for {task_title}.","confidence":0.96}
 
-Unsafe examples include placing a title or date outside the placeholder, changing the outcome, adding a confirmation request, or omitting or duplicating the placeholder.
+Unsafe examples include placing a title or date outside the placeholder, changing the outcome, using completed wording for MARK_UNDONE, claiming deletion in TASK_CONFIRMATION, claiming an edit already happened in TASK_TRANSITION, or omitting or duplicating the placeholder.
 Return only the strict three-field JSON object and no explanation.
 """.trimIndent()
 

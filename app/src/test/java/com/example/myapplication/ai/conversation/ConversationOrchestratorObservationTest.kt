@@ -59,7 +59,7 @@ class ConversationOrchestratorObservationTest {
         )
         val client = FakeClient(
             Result.success(
-                verbalization("All set — I've {authoritative_action} {task_title}.")
+                verbalization("All set — I've deleted {task_title}.")
             )
         )
 
@@ -79,7 +79,7 @@ class ConversationOrchestratorObservationTest {
         val safePlan = JSONObject(client.capturedPlanJson)
         assertEquals("TASK_ACTION_RESULT", safePlan.getString("verbalization_contract"))
         assertTrue(safePlan.getJSONArray("required_placeholders").toString().contains("task_title"))
-        assertTrue(
+        assertFalse(
             safePlan.getJSONArray("required_placeholders").toString()
                 .contains("authoritative_action")
         )
@@ -91,11 +91,15 @@ class ConversationOrchestratorObservationTest {
     @Test
     fun confirmationStateAndListenAgainStayAndroidOwned() = runBlocking {
         val response = orchestrator(
-            FakeClient(Result.success(verbalization("Sure — {authoritative_message}")))
+            FakeClient(
+                Result.success(
+                    verbalization("Would you like me to delete {task_title}?")
+                )
+            )
         ).respondToObservation(confirmation)
 
         assertEquals(
-            "Sure — Delete buy groceries? Please say yes or no.",
+            "Would you like me to delete buy groceries?",
             response.speech
         )
         assertEquals(ConversationResponseType.REQUEST_CONFIRMATION, response.responseType)
@@ -121,7 +125,7 @@ class ConversationOrchestratorObservationTest {
         val response = orchestrator(
             FakeClient(
                 Result.success(
-                    verbalization("Done — {task_title} is now {authoritative_action}.")
+                    verbalization("Done — {task_title} is now marked as complete.")
                 )
             )
         ).respondToObservation(observation)
@@ -129,6 +133,40 @@ class ConversationOrchestratorObservationTest {
         assertEquals(ConversationResponseType.SUCCESS, response.responseType)
         assertEquals(ExecutionOutcome.SUCCESS, observation.outcome)
         assertEquals("Done — buy groceries is now marked as complete.", response.speech)
+    }
+
+    @Test
+    fun updateHandoffUsesNaturalProtectedTitleWithoutChangingControlState() = runBlocking {
+        val handoff = confirmation.copy(
+            operation = ExecutionOperation.UPDATE_TASK,
+            outcome = ExecutionOutcome.INFORMATION,
+            requiredInput = RequiredInput.NONE,
+            allowedUserMoves = emptyList(),
+            listenAgain = false,
+            fallbackSpeech = "Opening the task editor."
+        )
+        val client = FakeClient(
+            Result.success(
+                verbalization(
+                    "Sure — I'll open {task_title} so you can make that change."
+                )
+            )
+        )
+
+        val response = orchestrator(client).respondToObservation(handoff)
+
+        assertEquals(
+            "Sure — I'll open buy groceries so you can make that change.",
+            response.speech
+        )
+        assertEquals(ConversationResponseType.INFORMATION, response.responseType)
+        assertEquals(ExecutionOutcome.INFORMATION, handoff.outcome)
+        assertFalse(handoff.listenAgain)
+        assertFalse(client.capturedPlanJson.contains("buy groceries"))
+        assertEquals(
+            "TASK_TRANSITION",
+            JSONObject(client.capturedPlanJson).getString("verbalization_contract")
+        )
     }
 
     @Test
@@ -161,8 +199,11 @@ class ConversationOrchestratorObservationTest {
     fun malformedLowConfidenceUnknownAndMissingPlaceholderFallBack() = runBlocking {
         val cases = listOf(
             "not json",
-            verbalization("Sure — {authoritative_message}", confidence = 0.40),
-            verbalization("Sure — {task_title}"),
+            verbalization(
+                "Would you like me to delete {task_title}?",
+                confidence = 0.40
+            ),
+            verbalization("Would you like me to delete {unknown_title}?"),
             verbalization("Sure.")
         )
 
@@ -241,7 +282,9 @@ class ConversationOrchestratorObservationTest {
     fun candidateIsNotRecordedBeforeDeliveryGuardAcceptsIt() = runBlocking {
         val memory = ConversationSessionMemory()
         val client = FakeClient(
-            Result.success(verbalization("Sure — {authoritative_message}"))
+            Result.success(
+                verbalization("Would you like me to delete {task_title}?")
+            )
         )
         val orchestrator = ConversationOrchestrator(
             client,
@@ -277,7 +320,7 @@ class ConversationOrchestratorObservationTest {
         assertEquals("SHORT", json.getString("verbosity"))
         assertEquals("CONFIRMATION", json.getString("required_input"))
         assertEquals(
-            "AUTHORITATIVE_MESSAGE",
+            "TASK_CONFIRMATION",
             json.getString("verbalization_contract")
         )
         assertTrue(json.getJSONArray("allowed_user_moves").toString().contains("CONFIRM"))

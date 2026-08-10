@@ -100,7 +100,7 @@ class ResponseVerbalizationSafetyTest {
     }
 
     @Test
-    fun outcomeSpecificWrapperCannotTurnConfirmationIntoSuccess() {
+    fun deleteConfirmationIsNaturalButCannotTurnIntoSuccess() {
         val confirmationPlan = plan(
             ExecutionObservation(
                 operation = ExecutionOperation.DELETE_TASK,
@@ -115,9 +115,18 @@ class ResponseVerbalizationSafetyTest {
 
         assertEquals(
             ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT,
-            evaluate(confirmationPlan, "All set — {authoritative_message}").reason
+            evaluate(confirmationPlan, "I've deleted {task_title}.").reason
         )
-        assertTrue(evaluate(confirmationPlan, "Sure — {authoritative_message}").accepted)
+        assertTrue(
+            evaluate(
+                confirmationPlan,
+                "Would you like me to delete {task_title}?"
+            ).accepted
+        )
+        assertEquals(
+            ResponseVerbalizationContract.TASK_CONFIRMATION,
+            confirmationPlan.contract
+        )
         assertEquals(ExecutionOutcome.NEEDS_CONFIRMATION, confirmationPlan.outcome)
         assertEquals(RequiredInput.CONFIRMATION, confirmationPlan.requiredInput)
         assertTrue(confirmationPlan.continuedInteractionExpected)
@@ -127,15 +136,15 @@ class ResponseVerbalizationSafetyTest {
     fun compositionSubstitutesProtectedValueOnceWithoutChangingPlan() {
         val plan = successPlan()
         assertEquals(
-            ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT,
+            ResponseVerbalizationValidationReason.UNKNOWN_PLACEHOLDER,
             evaluate(
                 plan,
-                "All set — I've {task_title} {authoritative_action}."
+                "All set — I've {authoritative_action} {task_title}."
             ).reason
         )
         val envelope = ResponseVerbalizationEnvelope(
             true,
-            "All set — I've {authoritative_action} {task_title}.",
+            "All set — I've deleted {task_title}.",
             0.97
         )
 
@@ -147,10 +156,128 @@ class ResponseVerbalizationSafetyTest {
             plan.protectedValues.getValue(ResponseVerbalizationPlan.TASK_TITLE)
         )
         assertEquals(
-            "deleted",
-            plan.protectedValues.getValue(ResponseVerbalizationPlan.AUTHORITATIVE_ACTION)
+            setOf(ResponseVerbalizationPlan.TASK_TITLE),
+            plan.protectedValues.keys
         )
         assertEquals(ExecutionOutcome.SUCCESS, plan.outcome)
+    }
+
+    @Test
+    fun taskActionResultsUseOperationSpecificNaturalGrammar() {
+        val markDone = plan(
+            taskResultObservation(
+                operation = ExecutionOperation.MARK_DONE,
+                fallback = "private title was marked as complete."
+            )
+        )
+        val markUndone = plan(
+            taskResultObservation(
+                operation = ExecutionOperation.MARK_UNDONE,
+                fallback = "private title was marked as incomplete."
+            )
+        )
+
+        assertTrue(evaluate(markDone, "I've marked {task_title} as complete.").accepted)
+        assertTrue(evaluate(markDone, "{task_title} is now complete.").accepted)
+        assertFalse(evaluate(markDone, "I've marked as complete {task_title}.").accepted)
+        assertFalse(evaluate(markDone, "{task_title} is active again.").accepted)
+
+        assertTrue(evaluate(markUndone, "I've marked {task_title} as incomplete.").accepted)
+        assertTrue(evaluate(markUndone, "{task_title} is active again.").accepted)
+        assertFalse(evaluate(markUndone, "{task_title} is now complete.").accepted)
+    }
+
+    @Test
+    fun simpleHandoffsUseProtectedTargetsAndDoNotClaimCompletedChanges() {
+        val create = plan(
+            ExecutionObservation(
+                operation = ExecutionOperation.CREATE_TASK,
+                outcome = ExecutionOutcome.INFORMATION,
+                taskTitle = "private draft title",
+                dateText = "private date",
+                listenAgain = false,
+                fallbackSpeech = "Opening task creation."
+            )
+        )
+        val update = transitionPlan(ExecutionOperation.UPDATE_TASK, "Opening edit task.")
+        val reschedule = transitionPlan(
+            ExecutionOperation.RESCHEDULE_TASK,
+            "Opening reschedule task."
+        )
+
+        assertEquals(ResponseVerbalizationContract.TASK_TRANSITION, create.contract)
+        assertEquals(
+            setOf(ResponseVerbalizationPlan.TRANSITION_TARGET),
+            create.requiredPlaceholders
+        )
+        assertEquals(
+            "task creation",
+            create.protectedValues.getValue(ResponseVerbalizationPlan.TRANSITION_TARGET)
+        )
+        assertFalse(create.toSafeAgentJson().contains("task creation"))
+        assertFalse(create.toSafeAgentJson().contains("private draft title"))
+        assertFalse(create.toSafeAgentJson().contains("private date"))
+        assertTrue(
+            evaluate(create, "Okay — I'll open {transition_target} for you.").accepted
+        )
+        assertTrue(
+            evaluate(
+                update,
+                "Sure — I'll open {task_title} so you can make that change."
+            ).accepted
+        )
+        assertTrue(
+            evaluate(
+                reschedule,
+                "Okay — let's update the schedule for {task_title}."
+            ).accepted
+        )
+        assertFalse(evaluate(update, "I've updated {task_title}.").accepted)
+        assertFalse(evaluate(reschedule, "I've rescheduled {task_title}.").accepted)
+    }
+
+    @Test
+    fun complexBriefingAndSuggestionRemainOpaqueProtectedMessages() {
+        val briefing = plan(
+            ExecutionObservation(
+                operation = ExecutionOperation.DAILY_BRIEFING,
+                outcome = ExecutionOutcome.INFORMATION,
+                taskCount = 2,
+                tasks = listOf(ObservedTask("private first"), ObservedTask("private second")),
+                dateText = "private date",
+                listenAgain = true,
+                fallbackSpeech = "Private daily briefing with two task facts."
+            )
+        )
+        val suggestion = plan(
+            ExecutionObservation(
+                operation = ExecutionOperation.CONTEXT_SUGGESTION,
+                outcome = ExecutionOutcome.INFORMATION,
+                taskTitle = "private suggestion",
+                facts = listOf("private reason"),
+                listenAgain = true,
+                fallbackSpeech = "Private suggestion and its factual reason."
+            )
+        )
+
+        listOf(briefing, suggestion).forEach { complexPlan ->
+            assertEquals(
+                ResponseVerbalizationContract.AUTHORITATIVE_MESSAGE,
+                complexPlan.contract
+            )
+            assertEquals(
+                setOf(ResponseVerbalizationPlan.AUTHORITATIVE_MESSAGE),
+                complexPlan.requiredPlaceholders
+            )
+            assertTrue(evaluate(complexPlan, "Sure — {authoritative_message}").accepted)
+            assertFalse(complexPlan.toSafeAgentJson().contains("private", ignoreCase = true))
+            assertFalse(
+                evaluate(
+                    complexPlan,
+                    "Here are two tasks. {authoritative_message}"
+                ).accepted
+            )
+        }
     }
 
     @Test
@@ -272,7 +399,7 @@ class ResponseVerbalizationSafetyTest {
                 started.complete(Unit)
                 release.await()
                 return verbalization(
-                    "All set — I've {authoritative_action} {task_title}."
+                    "All set — I've deleted {task_title}."
                 )
             }
         }
@@ -337,6 +464,31 @@ class ResponseVerbalizationSafetyTest {
         taskTitle = "private title",
         listenAgain = false,
         fallbackSpeech = "private title was deleted."
+    )
+
+    private fun taskResultObservation(
+        operation: ExecutionOperation,
+        fallback: String
+    ) = ExecutionObservation(
+        operation = operation,
+        outcome = ExecutionOutcome.SUCCESS,
+        taskTitle = "private title",
+        listenAgain = false,
+        fallbackSpeech = fallback
+    )
+
+    private fun transitionPlan(
+        operation: ExecutionOperation,
+        fallback: String
+    ) = plan(
+        ExecutionObservation(
+            operation = operation,
+            outcome = ExecutionOutcome.INFORMATION,
+            taskTitle = "private title",
+            tasks = listOf(ObservedTask("private title")),
+            listenAgain = false,
+            fallbackSpeech = fallback
+        )
     )
 
     private fun plan(observation: ExecutionObservation) = requireNotNull(
