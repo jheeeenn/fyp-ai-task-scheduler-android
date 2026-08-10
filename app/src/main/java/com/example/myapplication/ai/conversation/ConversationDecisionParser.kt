@@ -24,7 +24,8 @@ enum class ConversationDecisionFailureCode {
 class ConversationSchemaException(
     message: String,
     cause: Throwable? = null,
-    val decisionFailureCode: ConversationDecisionFailureCode? = null
+    val decisionFailureCode: ConversationDecisionFailureCode? = null,
+    val failedRoute: ConversationRoute? = null
 ) : Exception(message, cause)
 
 data class RawConversationDecision(
@@ -341,13 +342,15 @@ object ConversationDecisionContractValidator {
                 if (decision.confidence < ConversationDecisionParser.MIN_ACCEPTED_ROUTING_CONFIDENCE) {
                     fail(
                         ConversationDecisionFailureCode.LOW_CONFIDENCE,
-                        "ConversationDecision confidence is below the accepted routing threshold"
+                        "ConversationDecision confidence is below the accepted routing threshold",
+                        decision.route
                     )
                 }
                 if (!decision.listenAgain) {
                     fail(
                         ConversationDecisionFailureCode.LISTEN_AGAIN_REQUIRED,
-                        "ConversationDecision route requires listen_again true"
+                        "ConversationDecision route requires listen_again true",
+                        decision.route
                     )
                 }
             }
@@ -355,13 +358,15 @@ object ConversationDecisionContractValidator {
                 if (!TEMPORARY_REF.matches(decision.contextRef)) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_REF,
-                        "CONTEXT_READ requires a temporary context_ref"
+                        "CONTEXT_READ requires a temporary context_ref",
+                        decision.route
                     )
                 }
                 if (decision.contextDetail == ConversationContextDetail.NONE) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_DETAIL,
-                        "CONTEXT_READ requires a non-NONE context_detail"
+                        "CONTEXT_READ requires a non-NONE context_detail",
+                        decision.route
                     )
                 }
             }
@@ -369,7 +374,8 @@ object ConversationDecisionContractValidator {
                 if (!TEMPORARY_REF.matches(decision.contextRef)) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_REF,
-                        "CONTEXT_ACTION requires a temporary context_ref"
+                        "CONTEXT_ACTION requires a temporary context_ref",
+                        decision.route
                     )
                 }
                 if (decision.contextAction !in setOf(
@@ -380,7 +386,8 @@ object ConversationDecisionContractValidator {
                 ) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_ACTION,
-                        "CONTEXT_ACTION requires UPDATE, RESCHEDULE, or DELETE context_action"
+                        "CONTEXT_ACTION requires UPDATE, RESCHEDULE, or DELETE context_action",
+                        decision.route
                     )
                 }
             }
@@ -388,7 +395,8 @@ object ConversationDecisionContractValidator {
                 if (decision.queryReadingMove == ConversationQueryReadingMove.NONE) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_QUERY_READING_MOVE,
-                        "QUERY_READING_CONTROL requires a non-NONE query_reading_move"
+                        "QUERY_READING_CONTROL requires a non-NONE query_reading_move",
+                        decision.route
                     )
                 }
             }
@@ -402,8 +410,13 @@ object ConversationDecisionContractValidator {
 
     private fun fail(
         code: ConversationDecisionFailureCode,
-        message: String
-    ): Nothing = throw ConversationSchemaException(message, decisionFailureCode = code)
+        message: String,
+        failedRoute: ConversationRoute
+    ): Nothing = throw ConversationSchemaException(
+        message = message,
+        decisionFailureCode = code,
+        failedRoute = failedRoute
+    )
 
     private val TEMPORARY_REF = Regex("T[1-9][0-9]*", RegexOption.IGNORE_CASE)
 }

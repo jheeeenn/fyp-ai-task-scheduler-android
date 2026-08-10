@@ -210,6 +210,10 @@ class ConversationOrchestrator(
                 appContextSummary = appContextSummary
             )
             parseCanonicalDecision(rawContent).also {
+                validateContextReadAuthority(
+                    decision = it,
+                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
+                )
                 validateContextActionAuthority(
                     decision = it,
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
@@ -261,11 +265,16 @@ class ConversationOrchestrator(
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
                     contextFocus = contextFocus
                 ),
-                failureCode = failureCode
+                failureCode = failureCode,
+                failedRoute = (firstFailure as? ConversationSchemaException)?.failedRoute
             )
             val repairedDecision = parseCanonicalDecision(
                 rawContent = repairContent,
                 source = SOURCE_SCHEMA_REPAIR
+            )
+            validateContextReadAuthority(
+                decision = repairedDecision,
+                readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
             )
             validateContextActionAuthority(
                 decision = repairedDecision,
@@ -420,6 +429,23 @@ class ConversationOrchestrator(
         else -> FAILURE_CODE_UNEXPECTED
     }
 
+    /** CONTEXT_READ may select only a temporary ref in Android's captured snapshot. */
+    private fun validateContextReadAuthority(
+        decision: ConversationDecision,
+        readOnlyTaskContextSnapshot: String
+    ) {
+        if (decision.route != ConversationRoute.CONTEXT_READ) return
+        val suppliedRefs = suppliedContextRefs(readOnlyTaskContextSnapshot)
+        val selectedRef = decision.contextRef.uppercase(Locale.ROOT)
+        if (selectedRef !in suppliedRefs) {
+            throw ConversationSchemaException(
+                message = "CONTEXT_READ selected a ref not supplied by Android",
+                decisionFailureCode = ConversationDecisionFailureCode.INVALID_CONTEXT_REF,
+                failedRoute = ConversationRoute.CONTEXT_READ
+            )
+        }
+    }
+
     /** CONTEXT_ACTION may select only authority already supplied by Android. */
     private fun validateContextActionAuthority(
         decision: ConversationDecision,
@@ -436,7 +462,8 @@ class ConversationOrchestrator(
         if (selectedRef !in suppliedRefs && selectedRef != focusRef) {
             throw ConversationSchemaException(
                 message = "CONTEXT_ACTION selected a ref not supplied by Android",
-                decisionFailureCode = ConversationDecisionFailureCode.INVALID_CONTEXT_REF
+                decisionFailureCode = ConversationDecisionFailureCode.INVALID_CONTEXT_REF,
+                failedRoute = ConversationRoute.CONTEXT_ACTION
             )
         }
     }
@@ -463,6 +490,7 @@ class ConversationOrchestrator(
                 refs.takeIf { it.isNotEmpty() }?.joinToString(",").orEmpty()
                     .ifBlank { "NONE" }
         )
+        appendLine("Supplied temporary ref count: ${refs.size}")
         appendLine(
             "Current validated focus ref: " +
                 focusRef.orEmpty().ifBlank { "NONE" }
