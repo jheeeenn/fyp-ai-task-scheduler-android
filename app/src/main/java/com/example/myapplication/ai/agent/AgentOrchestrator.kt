@@ -66,7 +66,10 @@ class AgentOrchestrator(
     private val relativeTemporalRepairChoiceValidator: RelativeTemporalRepairChoiceValidator =
         RelativeTemporalRepairChoiceValidator(),
     private val routineExtractionParser: RoutineExtractionResponseParser =
-        RoutineExtractionResponseParser()
+        RoutineExtractionResponseParser(),
+    private val initialContextRescheduleRecoveryPolicy:
+        InitialContextRescheduleClarificationRecoveryPolicy =
+            InitialContextRescheduleClarificationRecoveryPolicy()
 ) {
     suspend fun process(normalizedText: String): AiParsedCommand {
         return try {
@@ -97,10 +100,41 @@ class AgentOrchestrator(
             val rawContent = laptopAgentClient.processContextAction(normalizedText, expectedAction)
             val response = contextActionExtractionParser.parse(rawContent)
             logParsedRelativeTemporalShape(RelativeTemporalExtractionStage.INITIAL, response)
-            val validation = contextActionExtractionValidator.validateWithReport(
-                response,
-                expectedAction
-            )
+            val validation = try {
+                contextActionExtractionValidator.validateWithReport(response, expectedAction)
+            } catch (exception: RelativeTemporalProposalValidationException) {
+                if (exception.failure != RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED) {
+                    throw exception
+                }
+                when (
+                    val recovery = initialContextRescheduleRecoveryPolicy.recover(
+                        originalNormalizedRequest = normalizedText,
+                        response = response,
+                        expectedAction = expectedAction,
+                        validationFailure = exception.failure
+                    )
+                ) {
+                    is InitialContextRescheduleRecoveryResult.Accepted -> {
+                        val recoveredValidation =
+                            contextActionExtractionValidator.validateWithReport(
+                                recovery.response,
+                                expectedAction
+                            )
+                        Log.d(
+                            "INITIAL_CONTEXT_RESCHEDULE_RECOVERY",
+                            "trigger=${exception.failure} result=ACCEPTED_EXACT_ANDROID_MATCH"
+                        )
+                        recoveredValidation
+                    }
+                    is InitialContextRescheduleRecoveryResult.Rejected -> {
+                        Log.d(
+                            "INITIAL_CONTEXT_RESCHEDULE_RECOVERY",
+                            "trigger=${exception.failure} result=REJECTED reason=${recovery.reason}"
+                        )
+                        throw exception
+                    }
+                }
+            }
             logCanonicalization(
                 RelativeTemporalExtractionStage.INITIAL,
                 validation.canonicalizationReport.changedFields
@@ -123,7 +157,7 @@ class AgentOrchestrator(
         } catch (e: Exception) {
             Log.d(
                 "RELATIVE_TEMPORAL_VALIDATION",
-                "result=REJECTED failureReason=${e::class.java.simpleName}"
+                "result=REJECTED failureReason=${relativeTemporalFailureReason(e)}"
             )
             Log.e("AGENT_ORCHESTRATOR", "Context-action extraction failed closed", e)
             throw TaskAgentProcessingException("Task agent failed to extract context action", e)
@@ -176,7 +210,7 @@ class AgentOrchestrator(
         } catch (e: Exception) {
             Log.d(
                 "RELATIVE_TEMPORAL_VALIDATION",
-                "result=REJECTED failureReason=${e::class.java.simpleName}"
+                "result=REJECTED failureReason=${relativeTemporalFailureReason(e)}"
             )
             throw TaskAgentProcessingException(
                 "Task agent failed to interpret relative-temporal correction",
@@ -448,6 +482,10 @@ class AgentOrchestrator(
         value.takeIf { candidate ->
             RelativeTemporalCorrectionRelation.entries.any { it.name == candidate }
         } ?: if (value == "NOT_APPLICABLE") "NOT_APPLICABLE" else "UNKNOWN"
+
+    private fun relativeTemporalFailureReason(exception: Exception): String =
+        (exception as? RelativeTemporalProposalValidationException)?.failure?.name
+            ?: exception::class.java.simpleName
 
     private companion object {
         val REPAIRABLE_CORRECTION_FAILURES = setOf(
