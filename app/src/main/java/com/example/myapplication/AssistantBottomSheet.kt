@@ -20,7 +20,8 @@ import android.view.HapticFeedbackConstants
 
 class AssistantBottomSheet(
     private val activity: AppCompatActivity,
-    private val onStateChanged: (AssistantAccessibilityState) -> Unit = {}
+    private val onStateChanged: (AssistantAccessibilityState) -> Unit = {},
+    private val onPanelDismissed: () -> Unit = {}
 ) : BottomSheetDialog(activity) {
     private var onDoubleTapCancel: (() -> Unit)? = null
     private var lastTapTime: Long = 0L
@@ -89,6 +90,7 @@ class AssistantBottomSheet(
         }
 
         setOnDismissListener {
+            onPanelDismissed()
             val shouldRestoreFocus = restoreFocusOnDismiss
             restoreFocusOnDismiss = true
             if (shouldRestoreFocus && !activity.isFinishing && !activity.isDestroyed) {
@@ -155,7 +157,9 @@ class AssistantBottomSheet(
         startSpeakingAnimation()
     }
     fun setWaitingForConfirmationState() {
-        setProcessingState()
+        if (!isContentReady) return
+        applyState(AssistantAccessibilityState.WAITING_FOR_CONFIRMATION, announce = true)
+        startProcessingAnimation()
     }
     fun setStoppedState() {
         if (!isContentReady) return
@@ -179,6 +183,12 @@ class AssistantBottomSheet(
         tvUserSpeech.contentDescription = "Nothing entered yet"
         tvAssistantReply.contentDescription = "No assistant reply yet"
         tvAssistantHint.contentDescription = "No next action suggested"
+    }
+
+    fun performProcessingHapticPulse(): Boolean {
+        if (!isShowing || !isContentReady || !assistantRoot.isAttachedToWindow) return false
+        assistantRoot.performProcessingHapticFeedback()
+        return true
     }
 
     private fun applyState(state: AssistantAccessibilityState, announce: Boolean) {

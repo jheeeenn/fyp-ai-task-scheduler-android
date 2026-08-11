@@ -48,6 +48,9 @@
     <string name="assistant_next_action_label">What you can do next</string>
     <string name="type_to_assistant">Type to Assistant</string>
     <string name="stop_assistant">Stop Assistant</string>
+    <string name="processing_haptic_feedback">Processing Haptic Feedback</string>
+    <string name="processing_haptic_feedback_on_description">Processing haptic feedback, On</string>
+    <string name="setting_on">On</string>
     <string name="save_changes">Save</string>
     <string name="unsaved_changes">Unsaved changes</string>
 </resources>

@@ -20,6 +20,11 @@ fun View.performConfirmationHapticFeedback() {
     }
 }
 
+fun View.performProcessingHapticFeedback() {
+    if (!isAttachedToWindow) return
+    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+}
+
 inline fun View.setOnClickListenerWithHaptic(crossinline onClick: (View) -> Unit) {
     setOnClickListener { view ->
         view.performTapHapticFeedback()

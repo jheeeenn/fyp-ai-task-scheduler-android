@@ -13,7 +13,10 @@ import android.view.View
 import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import com.example.myapplication.AssistantBottomSheet
+import com.example.myapplication.SettingsActivity
 import com.example.myapplication.VoiceHelper
 import com.example.myapplication.diagnostics.AssistantTranscriptDiagnosticLogger
 import com.example.myapplication.accessibility.AssistantAccessibilityState
@@ -45,10 +48,45 @@ class AssistantVoiceSession(
     private var pendingRecognitionRestart: Runnable? = null
     private var terminalDeliveryActive = false
     private val typedInputCancellationRecovery = TypedInputCancellationRecoveryPolicy()
+    private val processingHapticFeedback = ProcessingHapticFeedbackController(
+        scheduler = MainLooperProcessingHapticScheduler(),
+        isEnabled = {
+            activity.getSharedPreferences(SettingsActivity.PREFS_NAME, AppCompatActivity.MODE_PRIVATE)
+                .getBoolean(SettingsActivity.KEY_PROCESSING_HAPTIC_FEEDBACK, true)
+        },
+        performPulse = {
+            !activity.isFinishing &&
+                !activity.isDestroyed &&
+                assistantSessionActive &&
+                !isForceStopping &&
+                assistantBottomSheet?.performProcessingHapticPulse() == true
+        }
+    )
+    private val lifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            processingHapticFeedback.onLifecycleStarted()
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+            processingHapticFeedback.onLifecycleStopped()
+        }
+
+        override fun onDestroy(owner: LifecycleOwner) {
+            processingHapticFeedback.destroy()
+        }
+    }
+
+    init {
+        activity.lifecycle.addObserver(lifecycleObserver)
+    }
 
     fun ensureInitialized() {
         if (assistantBottomSheet == null) {
-            assistantBottomSheet = AssistantBottomSheet(activity, onAccessibilityStateChanged)
+            assistantBottomSheet = AssistantBottomSheet(
+                activity = activity,
+                onStateChanged = onAccessibilityStateChanged,
+                onPanelDismissed = { processingHapticFeedback.stop("PANEL_DISMISSED") }
+            )
             assistantBottomSheet?.setOnDoubleTapCancelListener {
                 activity.runOnUiThread {
                     forceStop()
@@ -61,7 +99,7 @@ class AssistantVoiceSession(
                         forceStopping = isForceStopping
                     )
                     stopListeningBeforeSpeak()
-                    assistantBottomSheet?.setIdleState()
+                    showAssistantState(AssistantAccessibilityState.READY)
                     host.onAssistantTypedInputRequested()
                 }
             }
@@ -96,7 +134,7 @@ class AssistantVoiceSession(
                         isListening = false
                         recognitionRequestActive = false
                         if (!assistantSessionActive || isForceStopping) return
-                        assistantBottomSheet?.setProcessingState()
+                        showAssistantState(AssistantAccessibilityState.PROCESSING)
                     }
 
                     override fun onError(error: Int) {
@@ -152,7 +190,10 @@ class AssistantVoiceSession(
                                 source = "VOICE"
                             )
                             assistantBottomSheet?.showUserSpeech(spokenText)
-                            assistantBottomSheet?.setProcessingState()
+                            showAssistantState(
+                                AssistantAccessibilityState.PROCESSING,
+                                submittedCommand = true
+                            )
                             host.onAssistantFinalText(
                                 if (normalizeFinalTextForHost) spokenText else finalRecognizedText
                             )
@@ -194,10 +235,11 @@ class AssistantVoiceSession(
         if (clearConversation) {
             assistantBottomSheet?.clearConversation()
         }
-        assistantBottomSheet?.setIdleState()
+        showAssistantState(AssistantAccessibilityState.READY)
     }
 
     fun prepareForContextEntry() {
+        processingHapticFeedback.stop(ProcessingHapticFeedbackController.REASON_SESSION_STOPPED)
         invalidateSessionCallbacks()
         isListening = false
         terminalDeliveryActive = false
@@ -212,6 +254,7 @@ class AssistantVoiceSession(
      * assistant has never been opened and must never initialize session UI or recognition.
      */
     fun stopForLifecycle() {
+        processingHapticFeedback.onLifecycleStopped()
         invalidateSessionCallbacks()
         assistantSessionActive = false
         waitingForConfirmation = false
@@ -225,7 +268,7 @@ class AssistantVoiceSession(
         assistantBottomSheet?.let { panel ->
             if (panel.isShowing) {
                 if (panel.isContentReady) {
-                    panel.setStoppedState()
+                    showAssistantState(AssistantAccessibilityState.STOPPED)
                 }
                 panel.dismissWithoutFocusReturn()
             }
@@ -245,7 +288,7 @@ class AssistantVoiceSession(
         if (clearConversation) {
             assistantBottomSheet?.clearConversation()
         }
-        assistantBottomSheet?.setListeningState()
+        showAssistantState(AssistantAccessibilityState.LISTENING)
 
         startVoiceFlow()
     }
@@ -269,7 +312,10 @@ class AssistantVoiceSession(
             assistantBottomSheet?.clearConversation()
         }
         assistantBottomSheet?.showUserSpeech(typedText)
-        assistantBottomSheet?.setProcessingState()
+        showAssistantState(
+            AssistantAccessibilityState.PROCESSING,
+            submittedCommand = true
+        )
 
         logUserTranscript(typedText, source = "TYPED")
         host.onAssistantFinalText(
@@ -308,7 +354,10 @@ class AssistantVoiceSession(
     }
 
     fun onAudioPermissionDenied() {
-        assistantBottomSheet?.setErrorState("Microphone permission required")
+        showAssistantState(
+            AssistantAccessibilityState.ERROR,
+            errorText = "Microphone permission required"
+        )
         speak(responseManager.microphonePermissionNeeded(), listenAgain = false)
     }
 
@@ -356,7 +405,7 @@ class AssistantVoiceSession(
         Log.d("VOICE_SESSION", "speak listenAgain=$listenAgain active=$assistantSessionActive forceStop=$isForceStopping")
 
         assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.setSpeakingState()
+        showAssistantState(AssistantAccessibilityState.SPEAKING)
 
         logAssistantTranscript(text, listenAgain)
         voiceHelper.speak(text) {
@@ -369,7 +418,7 @@ class AssistantVoiceSession(
                     Log.d("VOICE_SESSION", "posting delayed restart")
                     postRecognitionRestart(350L)
                 } else {
-                    assistantBottomSheet?.setIdleState()
+                    showAssistantState(AssistantAccessibilityState.READY)
                 }
             }
         }
@@ -384,7 +433,7 @@ class AssistantVoiceSession(
         terminalDeliveryActive = true
 
         assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.setSpeakingState()
+        showAssistantState(AssistantAccessibilityState.SPEAKING)
 
         logAssistantTranscript(text, listenAgain = false)
         voiceHelper.speak(text) {
@@ -392,7 +441,7 @@ class AssistantVoiceSession(
                 if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
                     return@runOnUiThread
                 }
-                assistantBottomSheet?.setStoppedState()
+                showAssistantState(AssistantAccessibilityState.STOPPED)
                 if (dismissPanel) {
                     assistantBottomSheet?.dismiss()
                 }
@@ -419,14 +468,14 @@ class AssistantVoiceSession(
         terminalDeliveryActive = true
 
         assistantBottomSheet?.showAssistantReply(closingReply)
-        assistantBottomSheet?.setSpeakingState()
+        showAssistantState(AssistantAccessibilityState.SPEAKING)
         logAssistantTranscript(closingReply, listenAgain = false)
         voiceHelper.speak(closingReply) {
             activity.runOnUiThread {
                 if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
                     return@runOnUiThread
                 }
-                assistantBottomSheet?.setStoppedState()
+                showAssistantState(AssistantAccessibilityState.STOPPED)
                 assistantBottomSheet?.dismiss()
                 terminalDeliveryActive = false
                 isForceStopping = false
@@ -461,7 +510,10 @@ class AssistantVoiceSession(
 
             val finalReply = responseManager.stopListening()
             assistantBottomSheet?.showAssistantReply(finalReply)
-            assistantBottomSheet?.setErrorState("Assistant could not hear a response")
+            showAssistantState(
+                AssistantAccessibilityState.ERROR,
+                errorText = "Assistant could not hear a response"
+            )
 
             logAssistantTranscript(finalReply, listenAgain = false)
             voiceHelper.speak(finalReply) {
@@ -469,7 +521,7 @@ class AssistantVoiceSession(
                     if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
                         return@runOnUiThread
                     }
-                    assistantBottomSheet?.setStoppedState()
+                    showAssistantState(AssistantAccessibilityState.STOPPED)
                     assistantBottomSheet?.dismiss()
                     terminalDeliveryActive = false
                     isForceStopping = false
@@ -484,7 +536,7 @@ class AssistantVoiceSession(
         invalidateSessionCallbacks()
         val callbackGeneration = sessionGeneration
         if (!assistantSessionActive && !isListening) {
-            assistantBottomSheet?.setStoppedState()
+            showAssistantState(AssistantAccessibilityState.STOPPED)
             assistantBottomSheet?.dismiss()
             host.onAssistantCancelled()
             return
@@ -500,7 +552,7 @@ class AssistantVoiceSession(
 
         val reply = responseManager.stopListening()
         assistantBottomSheet?.showAssistantReply(reply)
-        assistantBottomSheet?.setSpeakingState()
+        showAssistantState(AssistantAccessibilityState.SPEAKING)
 
         logAssistantTranscript(reply, listenAgain = false)
         voiceHelper.speak(reply) {
@@ -508,7 +560,7 @@ class AssistantVoiceSession(
                 if (callbackGeneration != sessionGeneration || !terminalDeliveryActive) {
                     return@runOnUiThread
                 }
-                assistantBottomSheet?.setStoppedState()
+                showAssistantState(AssistantAccessibilityState.STOPPED)
                 assistantBottomSheet?.dismiss()
                 terminalDeliveryActive = false
                 isForceStopping = false
@@ -518,10 +570,11 @@ class AssistantVoiceSession(
     }
 
     fun dismissPanel() {
+        processingHapticFeedback.stop("PANEL_DISMISSED")
         assistantBottomSheet?.let { panel ->
             if (!panel.isShowing) return@let
             if (panel.isContentReady) {
-                panel.setStoppedState()
+                showAssistantState(AssistantAccessibilityState.STOPPED)
             }
             panel.dismissWithoutFocusReturn()
         }
@@ -534,11 +587,14 @@ class AssistantVoiceSession(
 
     fun expectConfirmation() {
         waitingForConfirmation = true
+        processingHapticFeedback.stop(AssistantAccessibilityState.WAITING_FOR_CONFIRMATION.name)
     }
 
     fun getBottomSheet(): AssistantBottomSheet? = assistantBottomSheet
 
     fun destroy() {
+        processingHapticFeedback.destroy()
+        activity.lifecycle.removeObserver(lifecycleObserver)
         invalidateSessionCallbacks()
         assistantSessionActive = false
         waitingForConfirmation = false
@@ -558,7 +614,7 @@ class AssistantVoiceSession(
         retryCount = 0
         isListening = false
         cancelRecognitionIfActive()
-        assistantBottomSheet?.setStoppedState()
+        showAssistantState(AssistantAccessibilityState.STOPPED)
         assistantBottomSheet?.dismiss()
     }
 
@@ -568,13 +624,13 @@ class AssistantVoiceSession(
         val callbackGeneration = sessionGeneration
 
         assistantBottomSheet?.showAssistantReply(text)
-        assistantBottomSheet?.setSpeakingState()
+        showAssistantState(AssistantAccessibilityState.SPEAKING)
 
         logAssistantTranscript(text, listenAgain = false)
         voiceHelper.speak(text) {
             activity.runOnUiThread {
                 if (callbackGeneration != sessionGeneration) return@runOnUiThread
-                assistantBottomSheet?.setStoppedState()
+                showAssistantState(AssistantAccessibilityState.STOPPED)
                 assistantBottomSheet?.dismissWithoutFocusReturn()
                 assistantSessionActive = false
                 isForceStopping = false
@@ -603,9 +659,32 @@ class AssistantVoiceSession(
 
     private fun updateListeningAccessibilityState() {
         if (waitingForConfirmation) {
-            assistantBottomSheet?.setProcessingState()
+            showAssistantState(AssistantAccessibilityState.WAITING_FOR_CONFIRMATION)
         } else {
-            assistantBottomSheet?.setListeningState()
+            showAssistantState(AssistantAccessibilityState.LISTENING)
+        }
+    }
+
+    private fun showAssistantState(
+        state: AssistantAccessibilityState,
+        submittedCommand: Boolean = false,
+        errorText: String = ""
+    ) {
+        if (state == AssistantAccessibilityState.PROCESSING && submittedCommand) {
+            processingHapticFeedback.start()
+        } else {
+            processingHapticFeedback.stop(state.name)
+        }
+
+        when (state) {
+            AssistantAccessibilityState.READY -> assistantBottomSheet?.setIdleState()
+            AssistantAccessibilityState.LISTENING -> assistantBottomSheet?.setListeningState()
+            AssistantAccessibilityState.PROCESSING -> assistantBottomSheet?.setProcessingState()
+            AssistantAccessibilityState.SPEAKING -> assistantBottomSheet?.setSpeakingState()
+            AssistantAccessibilityState.WAITING_FOR_CONFIRMATION ->
+                assistantBottomSheet?.setWaitingForConfirmationState()
+            AssistantAccessibilityState.STOPPED -> assistantBottomSheet?.setStoppedState()
+            AssistantAccessibilityState.ERROR -> assistantBottomSheet?.setErrorState(errorText)
         }
     }
 

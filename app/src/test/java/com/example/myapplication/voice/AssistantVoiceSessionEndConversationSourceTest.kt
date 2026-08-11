@@ -24,7 +24,7 @@ class AssistantVoiceSessionEndConversationSourceTest {
         assertTrue(beforeTts.contains("assistantSessionActive = false"))
         assertTrue(beforeTts.contains("terminalDeliveryActive = true"))
         assertFalse(beforeTts.contains("assistantBottomSheet?.dismiss()"))
-        assertTrue(afterTts.contains("assistantBottomSheet?.setStoppedState()"))
+        assertTrue(afterTts.contains("showAssistantState(AssistantAccessibilityState.STOPPED)"))
         assertTrue(afterTts.contains("assistantBottomSheet?.dismiss()"))
         assertTrue(afterTts.contains("host.onAssistantSessionStopped()"))
         assertEquals(1, body.split("voiceHelper.speak(closingReply)").size - 1)

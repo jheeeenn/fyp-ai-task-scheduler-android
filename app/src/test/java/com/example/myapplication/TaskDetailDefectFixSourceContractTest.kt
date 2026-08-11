@@ -66,7 +66,7 @@ class TaskDetailDefectFixSourceContractTest {
     }
 
     @Test
-    fun confirmationKeepsInternalFlagButRendersExistingProcessingAnimation() {
+    fun confirmationKeepsInternalFlagAndProcessingAnimationWithDistinctSemantics() {
         val listeningState = session.substringAfter("private fun updateListeningAccessibilityState()")
             .substringBefore("private companion object")
         val waitingState = panel.substringAfter("fun setWaitingForConfirmationState()")
@@ -76,10 +76,10 @@ class TaskDetailDefectFixSourceContractTest {
 
         assertTrue(session.contains("private var waitingForConfirmation = false"))
         assertTrue(session.contains("fun expectConfirmation()"))
-        assertTrue(listeningState.contains("assistantBottomSheet?.setProcessingState()"))
-        assertFalse(listeningState.contains("setWaitingForConfirmationState()"))
-        assertTrue(waitingState.contains("setProcessingState()"))
-        assertFalse(waitingState.contains("WAITING_FOR_CONFIRMATION"))
+        assertTrue(listeningState.contains("AssistantAccessibilityState.WAITING_FOR_CONFIRMATION"))
+        assertTrue(listeningState.contains("setWaitingForConfirmationState()"))
+        assertTrue(waitingState.contains("startProcessingAnimation()"))
+        assertTrue(waitingState.contains("WAITING_FOR_CONFIRMATION"))
         assertTrue(processing.contains("#7F1D1D"))
         assertTrue(processing.contains("#FF5252"))
     }
