@@ -41,12 +41,8 @@ internal class ProcessingHapticFeedbackController(
                 log("state=DISABLED")
                 return
             }
-            if (!performPulse()) {
-                stop(REASON_UNAVAILABLE)
-                return
-            }
-
-            log("state=PULSE")
+            val delivered = performPulse()
+            log("state=PULSE result=${if (delivered) "DELIVERED" else "NOT_DELIVERED"}")
             scheduler.postDelayed(this, pulseIntervalMs)
         }
     }
@@ -92,7 +88,6 @@ internal class ProcessingHapticFeedbackController(
         const val INITIAL_DELAY_MS = 1_500L
         const val PULSE_INTERVAL_MS = 1_800L
         const val REASON_DISABLED = "DISABLED"
-        const val REASON_UNAVAILABLE = "UNAVAILABLE"
         const val REASON_SESSION_STOPPED = "SESSION_STOPPED"
         private const val LOG_TAG = "PROCESSING_HAPTIC"
     }

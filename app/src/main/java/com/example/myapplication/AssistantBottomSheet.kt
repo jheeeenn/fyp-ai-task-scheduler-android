@@ -187,8 +187,7 @@ class AssistantBottomSheet(
 
     fun performProcessingHapticPulse(): Boolean {
         if (!isShowing || !isContentReady || !assistantRoot.isAttachedToWindow) return false
-        assistantRoot.performProcessingHapticFeedback()
-        return true
+        return assistantRoot.performProcessingHapticFeedback()
     }
 
     private fun applyState(state: AssistantAccessibilityState, announce: Boolean) {

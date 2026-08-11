@@ -12,6 +12,8 @@ class ProcessingHapticIntegrationSourceTest {
         File("src/main/java/com/example/myapplication/AssistantBottomSheet.kt").readText()
     private val settingsSource =
         File("src/main/java/com/example/myapplication/SettingsActivity.kt").readText()
+    private val hapticSource =
+        File("src/main/java/com/example/myapplication/HapticFeedbackExtensions.kt").readText()
     private val settingsLayout = File("src/main/res/layout/activity_settings.xml").readText()
 
     @Test
@@ -81,7 +83,19 @@ class ProcessingHapticIntegrationSourceTest {
 
         assertTrue(pulse.contains("!isContentReady"))
         assertTrue(pulse.contains("!assistantRoot.isAttachedToWindow"))
-        assertTrue(pulse.contains("performProcessingHapticFeedback()"))
+        assertTrue(pulse.contains("return assistantRoot.performProcessingHapticFeedback()"))
+    }
+
+    @Test
+    fun processingPulseUsesProvenVirtualKeyEffectAndReturnsAndroidResult() {
+        val helper = hapticSource
+            .substringAfter("fun View.performProcessingHapticFeedback()")
+            .substringBefore("inline fun View.setOnClickListenerWithHaptic")
+
+        assertTrue(helper.contains(": Boolean"))
+        assertTrue(helper.contains("if (!isAttachedToWindow) return false"))
+        assertTrue(helper.contains("return performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)"))
+        assertFalse(helper.contains("CLOCK_TICK"))
     }
 
     private fun callbackBody(start: String, end: String): String =

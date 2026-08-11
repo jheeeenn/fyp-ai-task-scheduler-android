@@ -102,15 +102,39 @@ class ProcessingHapticFeedbackControllerTest {
     }
 
     @Test
-    fun unavailablePanelStopsSequenceInsteadOfLeavingStaleCallbacks() {
+    fun notDeliveredResultIsReportedAndDoesNotStopSequence() {
         val scheduler = FakeScheduler()
-        val controller = controller(scheduler, pulse = { false })
+        val messages = mutableListOf<String>()
+        val controller = ProcessingHapticFeedbackController(
+            scheduler = scheduler,
+            isEnabled = { true },
+            performPulse = { false },
+            log = messages::add
+        )
 
         controller.start()
         scheduler.runNext()
 
-        assertEquals(0, scheduler.pendingCount())
-        assertFalse(controller.isRunningForTest())
+        assertTrue(messages.contains("state=PULSE result=NOT_DELIVERED"))
+        assertEquals(1, scheduler.pendingCount())
+        assertTrue(controller.isRunningForTest())
+    }
+
+    @Test
+    fun deliveredResultIsReported() {
+        val scheduler = FakeScheduler()
+        val messages = mutableListOf<String>()
+        val controller = ProcessingHapticFeedbackController(
+            scheduler = scheduler,
+            isEnabled = { true },
+            performPulse = { true },
+            log = messages::add
+        )
+
+        controller.start()
+        scheduler.runNext()
+
+        assertTrue(messages.contains("state=PULSE result=DELIVERED"))
     }
 
     @Test
