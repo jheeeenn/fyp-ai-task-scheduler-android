@@ -22,7 +22,7 @@ fun View.performConfirmationHapticFeedback() {
 
 fun View.performProcessingHapticFeedback(): Boolean {
     if (!isAttachedToWindow) return false
-    return performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    return performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 }
 
 inline fun View.setOnClickListenerWithHaptic(crossinline onClick: (View) -> Unit) {
