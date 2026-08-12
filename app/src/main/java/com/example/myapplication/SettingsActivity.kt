@@ -27,6 +27,7 @@ class SettingsActivity : AppCompatActivity() {
         const val KEY_LARGE_TEXT = "large_text"
         const val KEY_HIGH_CONTRAST = "high_contrast"
         const val KEY_PROCESSING_HAPTIC_FEEDBACK = "processing_haptic_feedback"
+        const val KEY_SESSION_END_HAPTIC_FEEDBACK = "session_end_haptic_feedback"
         const val KEY_LM_STUDIO_ENDPOINT = "lm_studio_endpoint"
         const val KEY_CONVERSATION_AGENT_ENDPOINT = "conversation_agent_endpoint"
         const val KEY_TASK_AGENT_ENDPOINT = "task_agent_endpoint"
@@ -42,6 +43,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvLargeTextValue: TextView
     private lateinit var tvHighContrastValue: TextView
     private lateinit var tvProcessingHapticValue: TextView
+    private lateinit var tvSessionEndHapticValue: TextView
     private lateinit var tvConversationAgentEndpointValue: TextView
     private lateinit var tvTaskAgentEndpointValue: TextView
 
@@ -50,6 +52,7 @@ class SettingsActivity : AppCompatActivity() {
     private var largeText: Boolean = false
     private var highContrast: Boolean = false
     private var processingHapticFeedback: Boolean = true
+    private var sessionEndHapticFeedback: Boolean = true
     private var conversationAgentEndpoint: String = DEFAULT_CONVERSATION_AGENT_ENDPOINT
     private var taskAgentEndpoint: String = DEFAULT_TASK_AGENT_ENDPOINT
 
@@ -65,6 +68,7 @@ class SettingsActivity : AppCompatActivity() {
         val cardLargeText = findViewById<LinearLayout>(R.id.cardLargeText)
         val cardHighContrast = findViewById<LinearLayout>(R.id.cardHighContrast)
         val cardProcessingHaptic = findViewById<LinearLayout>(R.id.cardProcessingHaptic)
+        val cardSessionEndHaptic = findViewById<LinearLayout>(R.id.cardSessionEndHaptic)
         val cardConversationAgentEndpoint = findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint)
         val cardTaskAgentEndpoint = findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint)
 
@@ -81,6 +85,7 @@ class SettingsActivity : AppCompatActivity() {
         tvLargeTextValue = findViewById(R.id.tvLargeTextValue)
         tvHighContrastValue = findViewById(R.id.tvHighContrastValue)
         tvProcessingHapticValue = findViewById(R.id.tvProcessingHapticValue)
+        tvSessionEndHapticValue = findViewById(R.id.tvSessionEndHapticValue)
         tvConversationAgentEndpointValue = findViewById(R.id.tvConversationAgentEndpointValue)
         tvTaskAgentEndpointValue = findViewById(R.id.tvTaskAgentEndpointValue)
 
@@ -147,6 +152,18 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        cardSessionEndHaptic.setOnClickListenerWithHaptic {
+            showOptionDialog(
+                title = "Session End Haptic Feedback",
+                options = listOf("On", "Off"),
+                currentValue = if (sessionEndHapticFeedback) "On" else "Off"
+            ) { selected ->
+                sessionEndHapticFeedback = selected == "On"
+                saveSettings()
+                updateUiValues()
+            }
+        }
+
         cardConversationAgentEndpoint.setOnClickListenerWithHaptic {
             showEndpointDialog(
                 title = "Conversation Agent Endpoint",
@@ -188,6 +205,7 @@ class SettingsActivity : AppCompatActivity() {
         largeText = prefs.getBoolean(KEY_LARGE_TEXT, false)
         highContrast = prefs.getBoolean(KEY_HIGH_CONTRAST, false)
         processingHapticFeedback = prefs.getBoolean(KEY_PROCESSING_HAPTIC_FEEDBACK, true)
+        sessionEndHapticFeedback = prefs.getBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, true)
         conversationAgentEndpoint = loadEndpointPreference(
             dedicatedKey = KEY_CONVERSATION_AGENT_ENDPOINT,
             dedicatedDefault = DEFAULT_CONVERSATION_AGENT_ENDPOINT
@@ -205,6 +223,7 @@ class SettingsActivity : AppCompatActivity() {
             .putBoolean(KEY_LARGE_TEXT, largeText)
             .putBoolean(KEY_HIGH_CONTRAST, highContrast)
             .putBoolean(KEY_PROCESSING_HAPTIC_FEEDBACK, processingHapticFeedback)
+            .putBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, sessionEndHapticFeedback)
             .putString(KEY_CONVERSATION_AGENT_ENDPOINT, conversationAgentEndpoint)
             .putString(KEY_TASK_AGENT_ENDPOINT, taskAgentEndpoint)
             .apply()
@@ -216,6 +235,7 @@ class SettingsActivity : AppCompatActivity() {
         tvLargeTextValue.text = if (largeText) "On" else "Off"
         tvHighContrastValue.text = if (highContrast) "On" else "Off"
         tvProcessingHapticValue.text = if (processingHapticFeedback) "On" else "Off"
+        tvSessionEndHapticValue.text = if (sessionEndHapticFeedback) "On" else "Off"
         tvConversationAgentEndpointValue.text = conversationAgentEndpoint
         tvTaskAgentEndpointValue.text = taskAgentEndpoint
         findViewById<LinearLayout>(R.id.cardTone).contentDescription =
@@ -228,6 +248,8 @@ class SettingsActivity : AppCompatActivity() {
             "High contrast, ${if (highContrast) "On" else "Off"}"
         findViewById<LinearLayout>(R.id.cardProcessingHaptic).contentDescription =
             "Processing haptic feedback, ${if (processingHapticFeedback) "On" else "Off"}"
+        findViewById<LinearLayout>(R.id.cardSessionEndHaptic).contentDescription =
+            "Session end haptic feedback, ${if (sessionEndHapticFeedback) "On" else "Off"}"
         findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint).contentDescription =
             "Conversation agent endpoint, $conversationAgentEndpoint"
         findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint).contentDescription =

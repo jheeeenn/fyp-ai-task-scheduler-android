@@ -201,6 +201,39 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/cardSessionEndHaptic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_task_card"
+                android:clickable="true"
+                android:contentDescription="@string/session_end_haptic_feedback_on_description"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
+                android:minHeight="96dp"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:id="@+id/tvSessionEndHapticTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/session_end_haptic_feedback"
+                    android:textColor="@color/ui_text_primary_light"
+                    android:textSize="21sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvSessionEndHapticValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/setting_on"
+                    android:textColor="@color/ui_text_secondary_light"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/cardConversationAgentEndpoint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

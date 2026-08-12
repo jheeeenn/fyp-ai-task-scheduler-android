@@ -7,7 +7,7 @@ import org.junit.Test
 
 class ProcessingHapticFeedbackControllerTest {
     @Test
-    fun startWaitsBeforeFirstPulseThenRepeatsAtGentleInterval() {
+    fun startWaitsThenRepeatsFirstAndSecondHeartbeatPulses() {
         val scheduler = FakeScheduler()
         var pulses = 0
         val controller = controller(scheduler, pulse = { pulses += 1; true })
@@ -19,10 +19,30 @@ class ProcessingHapticFeedbackControllerTest {
 
         scheduler.runNext()
         assertEquals(1, pulses)
-        assertEquals(ProcessingHapticFeedbackController.PULSE_INTERVAL_MS, scheduler.nextDelay())
+        assertEquals(ProcessingHapticFeedbackController.SECOND_PULSE_GAP_MS, scheduler.nextDelay())
 
         scheduler.runNext()
         assertEquals(2, pulses)
+        assertEquals(ProcessingHapticFeedbackController.HEARTBEAT_INTERVAL_MS, scheduler.nextDelay())
+
+        scheduler.runNext()
+        assertEquals(3, pulses)
+        assertEquals(ProcessingHapticFeedbackController.SECOND_PULSE_GAP_MS, scheduler.nextDelay())
+    }
+
+    @Test
+    fun stopBetweenFirstAndSecondPulseCancelsSecondPulse() {
+        val scheduler = FakeScheduler()
+        var pulses = 0
+        val controller = controller(scheduler, pulse = { pulses += 1; true })
+
+        controller.start()
+        scheduler.runNext()
+        controller.stop("SPEAKING")
+
+        assertEquals(1, pulses)
+        assertEquals(0, scheduler.pendingCount())
+        assertFalse(controller.isRunningForTest())
     }
 
     @Test
@@ -115,7 +135,7 @@ class ProcessingHapticFeedbackControllerTest {
         controller.start()
         scheduler.runNext()
 
-        assertTrue(messages.contains("state=PULSE result=NOT_DELIVERED"))
+        assertTrue(messages.contains("state=PULSE beat=FIRST result=NOT_DELIVERED"))
         assertEquals(1, scheduler.pendingCount())
         assertTrue(controller.isRunningForTest())
     }
@@ -134,7 +154,7 @@ class ProcessingHapticFeedbackControllerTest {
         controller.start()
         scheduler.runNext()
 
-        assertTrue(messages.contains("state=PULSE result=DELIVERED"))
+        assertTrue(messages.contains("state=PULSE beat=FIRST result=DELIVERED"))
     }
 
     @Test

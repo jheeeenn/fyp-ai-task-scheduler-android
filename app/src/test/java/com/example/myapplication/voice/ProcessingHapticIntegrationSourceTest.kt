@@ -76,6 +76,24 @@ class ProcessingHapticIntegrationSourceTest {
     }
 
     @Test
+    fun sessionEndSettingUsesSamePreferencesAndDefaultsOn() {
+        assertTrue(settingsSource.contains("KEY_SESSION_END_HAPTIC_FEEDBACK"))
+        assertTrue(settingsSource.contains("getBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, true)"))
+        assertTrue(
+            settingsSource.contains(
+                "putBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, sessionEndHapticFeedback)"
+            )
+        )
+        assertTrue(
+            settingsSource.contains(
+                "Session end haptic feedback, \${if (sessionEndHapticFeedback) \"On\" else \"Off\"}"
+            )
+        )
+        assertTrue(settingsLayout.contains("android:id=\"@+id/cardSessionEndHaptic\""))
+        assertTrue(settingsLayout.contains("android:text=\"@string/session_end_haptic_feedback\""))
+    }
+
+    @Test
     fun attachedPanelViewAndNativeHapticGuardAgainstInitializationCrashes() {
         val pulse = bottomSheetSource
             .substringAfter("fun performProcessingHapticPulse()")

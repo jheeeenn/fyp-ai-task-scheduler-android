@@ -26,24 +26,31 @@ internal class ProcessingHapticFeedbackController(
     private val isEnabled: () -> Boolean,
     private val performPulse: () -> Boolean,
     private val initialDelayMs: Long = INITIAL_DELAY_MS,
-    private val pulseIntervalMs: Long = PULSE_INTERVAL_MS,
+    private val secondPulseGapMs: Long = SECOND_PULSE_GAP_MS,
+    private val heartbeatIntervalMs: Long = HEARTBEAT_INTERVAL_MS,
     private val log: (String) -> Unit = { message -> Log.d(LOG_TAG, message) }
 ) {
     private var running = false
     private var destroyed = false
     private var acceptsStarts = true
 
-    private val pulseCallback = object : Runnable {
+    private val firstPulseCallback: Runnable = object : Runnable {
         override fun run() {
             if (!running) return
-            if (!isEnabled()) {
-                stop(REASON_DISABLED)
-                log("state=DISABLED")
-                return
-            }
-            val delivered = performPulse()
-            log("state=PULSE result=${if (delivered) "DELIVERED" else "NOT_DELIVERED"}")
-            scheduler.postDelayed(this, pulseIntervalMs)
+            if (!continueIfEnabled()) return
+
+            pulse(HeartbeatBeat.FIRST)
+            scheduler.postDelayed(secondPulseCallback, secondPulseGapMs)
+        }
+    }
+
+    private val secondPulseCallback: Runnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            if (!continueIfEnabled()) return
+
+            pulse(HeartbeatBeat.SECOND)
+            scheduler.postDelayed(firstPulseCallback, heartbeatIntervalMs)
         }
     }
 
@@ -56,11 +63,12 @@ internal class ProcessingHapticFeedbackController(
 
         running = true
         log("state=START_DELAYED")
-        scheduler.postDelayed(pulseCallback, initialDelayMs)
+        scheduler.postDelayed(firstPulseCallback, initialDelayMs)
     }
 
     fun stop(reason: String) {
-        scheduler.removeCallbacks(pulseCallback)
+        scheduler.removeCallbacks(firstPulseCallback)
+        scheduler.removeCallbacks(secondPulseCallback)
         if (!running) return
 
         running = false
@@ -84,9 +92,27 @@ internal class ProcessingHapticFeedbackController(
 
     internal fun isRunningForTest(): Boolean = running
 
+    private fun continueIfEnabled(): Boolean {
+        if (isEnabled()) return true
+        stop(REASON_DISABLED)
+        log("state=DISABLED")
+        return false
+    }
+
+    private fun pulse(beat: HeartbeatBeat) {
+        val delivered = performPulse()
+        log(
+            "state=PULSE beat=${beat.name} " +
+                "result=${if (delivered) "DELIVERED" else "NOT_DELIVERED"}"
+        )
+    }
+
+    private enum class HeartbeatBeat { FIRST, SECOND }
+
     companion object {
-        const val INITIAL_DELAY_MS = 1_500L
-        const val PULSE_INTERVAL_MS = 1_800L
+        const val INITIAL_DELAY_MS = 1_000L
+        const val SECOND_PULSE_GAP_MS = 150L
+        const val HEARTBEAT_INTERVAL_MS = 1_200L
         const val REASON_DISABLED = "DISABLED"
         const val REASON_SESSION_STOPPED = "SESSION_STOPPED"
         private const val LOG_TAG = "PROCESSING_HAPTIC"

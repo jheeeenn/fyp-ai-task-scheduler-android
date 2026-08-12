@@ -50,6 +50,8 @@
     <string name="stop_assistant">Stop Assistant</string>
     <string name="processing_haptic_feedback">Processing Haptic Feedback</string>
     <string name="processing_haptic_feedback_on_description">Processing haptic feedback, On</string>
+    <string name="session_end_haptic_feedback">Session End Haptic Feedback</string>
+    <string name="session_end_haptic_feedback_on_description">Session end haptic feedback, On</string>
     <string name="setting_on">On</string>
     <string name="save_changes">Save</string>
     <string name="unsaved_changes">Unsaved changes</string>

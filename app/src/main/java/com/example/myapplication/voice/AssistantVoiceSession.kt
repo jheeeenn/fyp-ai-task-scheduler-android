@@ -14,6 +14,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import com.example.myapplication.AssistantBottomSheet
 import com.example.myapplication.SettingsActivity
@@ -62,6 +63,20 @@ class AssistantVoiceSession(
                 assistantBottomSheet?.performProcessingHapticPulse() == true
         }
     )
+    private val sessionEndVibrationPerformer = AndroidSessionEndVibrationPerformer(activity)
+    private val sessionEndHapticFeedback = AssistantSessionEndHapticFeedback(
+        isEnabled = {
+            activity.getSharedPreferences(SettingsActivity.PREFS_NAME, AppCompatActivity.MODE_PRIVATE)
+                .getBoolean(SettingsActivity.KEY_SESSION_END_HAPTIC_FEEDBACK, true)
+        },
+        performVibration = { durationMs ->
+            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                !activity.isFinishing &&
+                !activity.isDestroyed &&
+                sessionEndVibrationPerformer.vibrate(durationMs)
+        },
+        cancelVibration = sessionEndVibrationPerformer::cancel
+    )
     private val lifecycleObserver = object : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
             processingHapticFeedback.onLifecycleStarted()
@@ -69,10 +84,12 @@ class AssistantVoiceSession(
 
         override fun onStop(owner: LifecycleOwner) {
             processingHapticFeedback.onLifecycleStopped()
+            sessionEndHapticFeedback.cancelActive()
         }
 
         override fun onDestroy(owner: LifecycleOwner) {
             processingHapticFeedback.destroy()
+            sessionEndHapticFeedback.destroy()
         }
     }
 
@@ -255,6 +272,7 @@ class AssistantVoiceSession(
      */
     fun stopForLifecycle() {
         processingHapticFeedback.onLifecycleStopped()
+        sessionEndHapticFeedback.cancelActive()
         invalidateSessionCallbacks()
         assistantSessionActive = false
         waitingForConfirmation = false
@@ -442,6 +460,7 @@ class AssistantVoiceSession(
                     return@runOnUiThread
                 }
                 showAssistantState(AssistantAccessibilityState.STOPPED)
+                sessionEndHapticFeedback.deliverOnce(callbackGeneration)
                 if (dismissPanel) {
                     assistantBottomSheet?.dismiss()
                 }
@@ -476,6 +495,7 @@ class AssistantVoiceSession(
                     return@runOnUiThread
                 }
                 showAssistantState(AssistantAccessibilityState.STOPPED)
+                sessionEndHapticFeedback.deliverOnce(callbackGeneration)
                 assistantBottomSheet?.dismiss()
                 terminalDeliveryActive = false
                 isForceStopping = false
@@ -522,6 +542,7 @@ class AssistantVoiceSession(
                         return@runOnUiThread
                     }
                     showAssistantState(AssistantAccessibilityState.STOPPED)
+                    sessionEndHapticFeedback.deliverOnce(callbackGeneration)
                     assistantBottomSheet?.dismiss()
                     terminalDeliveryActive = false
                     isForceStopping = false
@@ -561,6 +582,7 @@ class AssistantVoiceSession(
                     return@runOnUiThread
                 }
                 showAssistantState(AssistantAccessibilityState.STOPPED)
+                sessionEndHapticFeedback.deliverOnce(callbackGeneration)
                 assistantBottomSheet?.dismiss()
                 terminalDeliveryActive = false
                 isForceStopping = false
@@ -594,6 +616,7 @@ class AssistantVoiceSession(
 
     fun destroy() {
         processingHapticFeedback.destroy()
+        sessionEndHapticFeedback.destroy()
         activity.lifecycle.removeObserver(lifecycleObserver)
         invalidateSessionCallbacks()
         assistantSessionActive = false
