@@ -90,7 +90,7 @@ internal class AssistantSessionEndHapticFeedback(
     }
 
     companion object {
-        const val DURATION_MS = 2_000L
+        const val DURATION_MS = 1_000L
         private const val LOG_TAG = "SESSION_END_HAPTIC"
     }
 }
