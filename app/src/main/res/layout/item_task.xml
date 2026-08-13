@@ -22,7 +22,7 @@
         android:importantForAccessibility="no"
         android:lineSpacingExtra="2dp"
         android:text="@string/untitled_task"
-        android:textColor="@color/ui_text_primary_light"
+        android:textColor="?attr/appColorTextPrimaryLight"
         android:textSize="22sp"
         android:textStyle="bold" />
 

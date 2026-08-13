@@ -2,7 +2,7 @@ package com.example.myapplication.ai.agent
 
 import android.content.Context
 import android.util.Log
-import com.example.myapplication.SettingsActivity
+import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.temporal.RelativeTemporalRepairCandidate
@@ -27,7 +27,7 @@ class TaskAgentResponseException(
 
 open class LaptopAgentClient(
     context: Context? = null,
-    private val endpointUrl: String = SettingsActivity.DEFAULT_TASK_AGENT_ENDPOINT,
+    private val endpointUrl: String = AppPreferences.DEFAULT_TASK_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
 ) {
     private val appContext = context?.applicationContext
@@ -286,20 +286,9 @@ open class LaptopAgentClient(
     }
 
     private fun getEndpointUrl(): String {
-        val prefs = appContext
-            ?.getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE)
-
-        val configuredEndpoint = if (prefs?.contains(SettingsActivity.KEY_TASK_AGENT_ENDPOINT) == true) {
-            prefs.getString(SettingsActivity.KEY_TASK_AGENT_ENDPOINT, null)
-        } else {
-            null
-        }
-        if (!configuredEndpoint.isNullOrBlank()) return configuredEndpoint
-
-        val legacyEndpoint = prefs?.getString(SettingsActivity.KEY_LM_STUDIO_ENDPOINT, null)
-        if (!legacyEndpoint.isNullOrBlank()) return legacyEndpoint
-
-        return endpointUrl
+        return appContext
+            ?.let { AppPreferences(it).configuredTaskAgentEndpoint() }
+            ?: endpointUrl
     }
 
     companion object {

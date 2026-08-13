@@ -2,7 +2,7 @@ package com.example.myapplication.ai.conversation
 
 import android.content.Context
 import android.util.Log
-import com.example.myapplication.SettingsActivity
+import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticClient
 import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditSemanticClient
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSemanticClient
@@ -29,7 +29,7 @@ class ConversationAgentResponseException(
 
 open class ConversationAgentClient(
     context: Context? = null,
-    private val endpointUrl: String = SettingsActivity.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
+    private val endpointUrl: String = AppPreferences.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
 ) : CreateDraftSemanticClient, TaskDetailEditSemanticClient, RoutineFollowUpSemanticClient, SavedRoutineSemanticClient,
     ContextSuggestionSemanticClient {
@@ -551,20 +551,9 @@ $snapshotJson
     }
 
     private fun getEndpointUrl(): String {
-        val prefs = appContext
-            ?.getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE)
-
-        val configuredEndpoint = if (prefs?.contains(SettingsActivity.KEY_CONVERSATION_AGENT_ENDPOINT) == true) {
-            prefs.getString(SettingsActivity.KEY_CONVERSATION_AGENT_ENDPOINT, null)
-        } else {
-            null
-        }
-        if (!configuredEndpoint.isNullOrBlank()) return configuredEndpoint
-
-        val legacyEndpoint = prefs?.getString(SettingsActivity.KEY_LM_STUDIO_ENDPOINT, null)
-        if (!legacyEndpoint.isNullOrBlank()) return legacyEndpoint
-
-        return endpointUrl
+        return appContext
+            ?.let { AppPreferences(it).configuredConversationAgentEndpoint() }
+            ?: endpointUrl
     }
 
     private enum class RequestKind {

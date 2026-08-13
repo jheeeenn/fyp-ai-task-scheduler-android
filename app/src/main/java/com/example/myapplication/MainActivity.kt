@@ -3,7 +3,7 @@ package com.example.myapplication
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
-import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -16,7 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AccessibilityActivity() {
     private lateinit var adapter: TaskAdapter
     private lateinit var dao: com.example.myapplication.data.TaskDao
     private lateinit var voiceHelper: VoiceHelper

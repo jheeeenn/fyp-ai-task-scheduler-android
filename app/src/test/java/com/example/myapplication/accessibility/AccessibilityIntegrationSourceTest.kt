@@ -1,0 +1,72 @@
+package com.example.myapplication.accessibility
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+class AccessibilityIntegrationSourceTest {
+    private val sourceRoot = File("src/main/java/com/example/myapplication")
+    private val layoutRoot = File("src/main/res/layout")
+
+    @Test
+    fun everyUserFacingActivityUsesReusableAccessibilityActivity() {
+        listOf(
+            "HomeActivity.kt",
+            "TodayTasksActivity.kt",
+            "MainActivity.kt",
+            "CreateTaskActivity.kt",
+            "EditTaskActivity.kt",
+            "TaskDetailActivity.kt",
+            "SettingsActivity.kt"
+        ).forEach { fileName ->
+            assertTrue(
+                "$fileName must inherit AccessibilityActivity",
+                File(sourceRoot, fileName).readText().contains(": AccessibilityActivity()")
+            )
+        }
+    }
+
+    @Test
+    fun layoutsUseThemeSemanticColorsAndKeepTextWrappable() {
+        val majorLayouts = listOf(
+            "activity_home.xml",
+            "activity_task_list.xml",
+            "activity_create_task.xml",
+            "activity_edit_task.xml",
+            "activity_task_detail.xml",
+            "activity_settings.xml",
+            "bottomsheet_assistant.xml",
+            "item_task.xml"
+        ).map { File(layoutRoot, it).readText() }
+
+        majorLayouts.forEach { layout ->
+            assertTrue(layout.contains("?attr/appColor"))
+            assertFalse(layout.contains("android:singleLine=\"true\""))
+        }
+    }
+
+    @Test
+    fun binarySettingsUseOneSwitchListenerAndNoParentClickHandler() {
+        val settingsSource = File(sourceRoot, "SettingsActivity.kt").readText()
+        val settingsLayout = File(layoutRoot, "activity_settings.xml").readText()
+
+        listOf("LargeText", "HighContrast", "ProcessingHaptic", "SessionEndHaptic").forEach { name ->
+            assertTrue(settingsLayout.contains("@+id/switch$name"))
+            assertTrue(settingsSource.contains("switch$name.setOnCheckedChangeListener"))
+        }
+        listOf("cardLargeText", "cardHighContrast", "cardProcessingHaptic", "cardSessionEndHaptic")
+            .forEach { card -> assertFalse(settingsSource.contains("$card).setOnClickListener")) }
+    }
+
+    @Test
+    fun assistantStatesKeepTextLabelsAndAddAContrastingLabelBoundary() {
+        val sheetSource = File(sourceRoot, "AssistantBottomSheet.kt").readText()
+        val layout = File(layoutRoot, "bottomsheet_assistant.xml").readText()
+
+        listOf("LISTENING", "PROCESSING", "SPEAKING", "WAITING_FOR_CONFIRMATION", "ERROR", "STOPPED")
+            .forEach { assertTrue(sheetSource.contains("AssistantAccessibilityState.$it")) }
+        assertTrue(layout.contains("@drawable/bg_assistant_state_label"))
+        assertTrue(layout.contains("@+id/tvAssistantState"))
+    }
+}

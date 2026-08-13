@@ -14,7 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityActivity
 
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.ai.AiIntent
@@ -76,7 +76,7 @@ private enum class EditFieldTarget {
 }
 
 
-class EditTaskActivity : AppCompatActivity(), AssistantVoiceHost {
+class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
     private lateinit var assistantSession: AssistantVoiceSession
     private var isForceStoppingAssistant = false

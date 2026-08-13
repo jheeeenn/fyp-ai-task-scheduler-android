@@ -6,7 +6,7 @@ import org.junit.Test
 
 class AssistantSessionEndHapticFeedbackTest {
     @Test
-    fun enabledDeliveryUsesNamedTwoSecondDuration() {
+    fun enabledDeliveryUsesNamedOneSecondDuration() {
         val durations = mutableListOf<Long>()
         val messages = mutableListOf<String>()
         val feedback = feedback(
@@ -17,7 +17,7 @@ class AssistantSessionEndHapticFeedbackTest {
         feedback.deliverOnce(sessionGeneration = 7L)
 
         assertEquals(listOf(AssistantSessionEndHapticFeedback.DURATION_MS), durations)
-        assertTrue(messages.contains("state=DELIVERED durationMs=2000"))
+        assertTrue(messages.contains("state=DELIVERED durationMs=1000"))
     }
 
     @Test
@@ -65,7 +65,7 @@ class AssistantSessionEndHapticFeedbackTest {
 
         feedback.deliverOnce(sessionGeneration = 13L)
 
-        assertTrue(messages.contains("state=UNAVAILABLE durationMs=2000"))
+        assertTrue(messages.contains("state=UNAVAILABLE durationMs=1000"))
     }
 
     @Test

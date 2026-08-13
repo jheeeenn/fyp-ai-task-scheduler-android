@@ -74,7 +74,7 @@ class AssistantSessionEndHapticSourceTest {
 
     @Test
     fun platformVibrationUsesAccessibilityAttributesAndCompatibleFallback() {
-        assertTrue(feedback.contains("const val DURATION_MS = 2_000L"))
+        assertTrue(feedback.contains("const val DURATION_MS = 1_000L"))
         assertTrue(feedback.contains("VibrationEffect.createOneShot"))
         assertTrue(feedback.contains("VibrationAttributes.USAGE_ACCESSIBILITY"))
         assertTrue(feedback.contains("Build.VERSION_CODES.TIRAMISU"))

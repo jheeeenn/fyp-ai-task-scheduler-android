@@ -4,7 +4,63 @@
         <item name="android:navigationBarColor">@color/ui_bg_primary</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="appColorBackgroundPrimary">@color/ui_bg_primary</item>
+        <item name="appColorBackgroundSecondary">@color/ui_bg_secondary</item>
+        <item name="appColorBackgroundTertiary">@color/ui_bg_tertiary</item>
+        <item name="appColorSurface">@color/ui_surface</item>
+        <item name="appColorSurfaceAlt">@color/ui_surface_alt</item>
+        <item name="appColorTextPrimaryDark">@color/ui_text_primary_dark</item>
+        <item name="appColorTextSecondaryDark">@color/ui_text_secondary_dark</item>
+        <item name="appColorTextMutedDark">@color/ui_text_muted_dark</item>
+        <item name="appColorTextPrimaryLight">@color/ui_text_primary_light</item>
+        <item name="appColorTextSecondaryLight">@color/ui_text_secondary_light</item>
+        <item name="appColorAccentPrimary">@color/ui_accent_primary</item>
+        <item name="appColorAccentPrimaryDark">@color/ui_accent_primary_dark</item>
+        <item name="appColorAccentSecondary">@color/ui_accent_secondary</item>
+        <item name="appColorSuccess">@color/ui_success</item>
+        <item name="appColorDanger">@color/ui_danger</item>
+        <item name="appColorOutline">@color/ui_outline</item>
+        <item name="appColorOutlineSoft">@color/ui_outline_soft</item>
+        <item name="appColorAssistantIdle">@color/assistant_idle</item>
+        <item name="appColorAssistantListeningStart">@color/assistant_listening_start</item>
+        <item name="appColorAssistantListeningEnd">@color/assistant_listening_end</item>
+        <item name="appColorAssistantProcessingStart">@color/assistant_processing_start</item>
+        <item name="appColorAssistantProcessingEnd">@color/assistant_processing_end</item>
+        <item name="appColorAssistantSpeakingStart">@color/assistant_speaking_start</item>
+        <item name="appColorAssistantSpeakingEnd">@color/assistant_speaking_end</item>
     </style>
 
     <style name="Theme.MyApplication" parent="Base.Theme.MyApplication" />
+
+    <style name="Theme.MyApplication.HighContrast" parent="Base.Theme.MyApplication">
+        <item name="android:navigationBarColor">@color/hc_bg_primary</item>
+        <item name="colorPrimary">@color/hc_accent_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSurface">@color/hc_bg_secondary</item>
+        <item name="colorOnSurface">@color/hc_text_primary_dark</item>
+        <item name="appColorBackgroundPrimary">@color/hc_bg_primary</item>
+        <item name="appColorBackgroundSecondary">@color/hc_bg_secondary</item>
+        <item name="appColorBackgroundTertiary">@color/hc_bg_tertiary</item>
+        <item name="appColorSurface">@color/hc_surface</item>
+        <item name="appColorSurfaceAlt">@color/hc_surface_alt</item>
+        <item name="appColorTextPrimaryDark">@color/hc_text_primary_dark</item>
+        <item name="appColorTextSecondaryDark">@color/hc_text_secondary_dark</item>
+        <item name="appColorTextMutedDark">@color/hc_text_muted_dark</item>
+        <item name="appColorTextPrimaryLight">@color/hc_text_primary_light</item>
+        <item name="appColorTextSecondaryLight">@color/hc_text_secondary_light</item>
+        <item name="appColorAccentPrimary">@color/hc_accent_primary</item>
+        <item name="appColorAccentPrimaryDark">@color/hc_accent_primary_dark</item>
+        <item name="appColorAccentSecondary">@color/hc_accent_secondary</item>
+        <item name="appColorSuccess">@color/hc_success</item>
+        <item name="appColorDanger">@color/hc_danger</item>
+        <item name="appColorOutline">@color/hc_outline</item>
+        <item name="appColorOutlineSoft">@color/hc_outline_soft</item>
+        <item name="appColorAssistantIdle">@color/hc_assistant_idle</item>
+        <item name="appColorAssistantListeningStart">@color/hc_assistant_listening_start</item>
+        <item name="appColorAssistantListeningEnd">@color/hc_assistant_listening_end</item>
+        <item name="appColorAssistantProcessingStart">@color/hc_assistant_processing_start</item>
+        <item name="appColorAssistantProcessingEnd">@color/hc_assistant_processing_end</item>
+        <item name="appColorAssistantSpeakingStart">@color/hc_assistant_speaking_start</item>
+        <item name="appColorAssistantSpeakingEnd">@color/hc_assistant_speaking_end</item>
+    </style>
 </resources>

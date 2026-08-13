@@ -9,7 +9,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
@@ -76,7 +76,7 @@ internal fun isCreateDraftFieldReplacement(
     }
 }
 
-class CreateTaskActivity : AppCompatActivity(), AssistantVoiceHost {
+class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
 
     private lateinit var assistantSession: AssistantVoiceSession

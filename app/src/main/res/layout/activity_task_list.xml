@@ -6,7 +6,7 @@
     android:id="@+id/taskListRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ui_bg_primary"
+    android:background="?attr/appColorBackgroundPrimary"
     android:padding="16dp">
 
     <TextView
@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:accessibilityHeading="true"
         android:text="@string/scheduled_tasks_title"
-        android:textColor="@color/ui_text_primary_dark"
+        android:textColor="?attr/appColorTextPrimaryDark"
         android:textSize="36sp"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
@@ -44,7 +44,7 @@
         android:layout_marginHorizontal="24dp"
         android:gravity="center"
         android:text="@string/no_scheduled_tasks"
-        android:textColor="@color/ui_text_secondary_dark"
+        android:textColor="?attr/appColorTextSecondaryDark"
         android:textSize="22sp"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@id/taskRecyclerView"
@@ -63,7 +63,7 @@
         android:paddingVertical="12dp"
         android:text="@string/home"
         android:textAllCaps="false"
-        android:textColor="@color/ui_text_primary_dark"
+        android:textColor="?attr/appColorTextPrimaryDark"
         android:textSize="20sp"
         android:textStyle="bold"
         app:backgroundTint="@null"

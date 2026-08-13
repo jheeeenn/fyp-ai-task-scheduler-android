@@ -53,6 +53,26 @@
     <string name="session_end_haptic_feedback">Session End Haptic Feedback</string>
     <string name="session_end_haptic_feedback_on_description">Session end haptic feedback, On</string>
     <string name="setting_on">On</string>
+    <string name="setting_off">Off</string>
     <string name="save_changes">Save</string>
     <string name="unsaved_changes">Unsaved changes</string>
+    <string name="settings">Settings</string>
+    <string name="assistant_preferences">Assistant Preferences</string>
+    <string name="accessibility_settings_heading">Accessibility</string>
+    <string name="developer_connection_heading">Developer / AI Connection</string>
+    <string name="developer_connection_description">Technical connection settings for local AI agents</string>
+    <string name="assistant_tone">Assistant Tone</string>
+    <string name="assistant_tone_description">Choose how the assistant phrases responses</string>
+    <string name="reply_length">Reply Length</string>
+    <string name="reply_length_description">Choose how detailed assistant responses should be</string>
+    <string name="large_text">Large Text</string>
+    <string name="large_text_description">Increase text size throughout the app</string>
+    <string name="high_contrast">High Contrast</string>
+    <string name="high_contrast_description">Increase visual contrast for easier reading</string>
+    <string name="processing_haptic_description">Heartbeat-style feedback while the assistant is processing</string>
+    <string name="session_end_haptic_description">Vibrate when an assistant session finishes</string>
+    <string name="conversation_agent_endpoint">Conversation Agent Endpoint</string>
+    <string name="task_agent_endpoint">Task Agent Endpoint</string>
+    <string name="reset_to_default">Reset to Default</string>
+    <string name="endpoint_blank_error">Endpoint cannot be blank.</string>
 </resources>

@@ -2,10 +2,11 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/settingsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ui_bg_primary"
+    android:background="?attr/appColorBackgroundPrimary"
     android:padding="16dp">
 
     <ScrollView
@@ -28,278 +29,165 @@
                 android:id="@+id/tvSettingsTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:accessibilityHeading="true"
                 android:layout_marginTop="4dp"
-                android:text="Settings"
-                android:textColor="@color/ui_text_primary_dark"
+                android:text="@string/settings"
+                android:textColor="?attr/appColorTextPrimaryDark"
                 android:textSize="32sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/tvAssistantPreferencesHeading"
+                style="@style/SettingsSectionHeading"
+                android:layout_marginTop="22dp"
+                android:text="@string/assistant_preferences" />
+
             <LinearLayout
                 android:id="@+id/cardTone"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:background="@drawable/bg_task_card"
+                style="@style/SettingsCard"
                 android:clickable="true"
-                android:contentDescription="Assistant tone setting"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:focusable="true">
 
                 <TextView
-                    android:id="@+id/tvToneTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Assistant Tone"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
+                    style="@style/SettingsTitleText"
+                    android:text="@string/assistant_tone" />
+
+                <TextView
+                    style="@style/SettingsDescriptionText"
+                    android:text="@string/assistant_tone_description" />
 
                 <TextView
                     android:id="@+id/tvToneValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Friendly"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsValueText"
+                    tools:text="Friendly" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardReplyLength"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
+                style="@style/SettingsCard"
                 android:clickable="true"
-                android:contentDescription="Assistant reply length setting"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:focusable="true">
 
                 <TextView
-                    android:id="@+id/tvReplyLengthTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Reply Length"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
+                    style="@style/SettingsTitleText"
+                    android:text="@string/reply_length" />
+
+                <TextView
+                    style="@style/SettingsDescriptionText"
+                    android:text="@string/reply_length_description" />
 
                 <TextView
                     android:id="@+id/tvReplyLengthValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Normal"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsValueText"
+                    tools:text="Normal" />
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvAccessibilityHeading"
+                style="@style/SettingsSectionHeading"
+                android:layout_marginTop="24dp"
+                android:text="@string/accessibility_settings_heading" />
 
             <LinearLayout
                 android:id="@+id/cardLargeText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
-                android:clickable="true"
-                android:contentDescription="Large text accessibility setting"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                style="@style/SettingsCard">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchLargeText"
+                    style="@style/SettingsSwitch"
+                    android:text="@string/large_text" />
 
                 <TextView
-                    android:id="@+id/tvLargeTextTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Large Text"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvLargeTextValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Off"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsDescriptionText"
+                    android:importantForAccessibility="no"
+                    android:text="@string/large_text_description" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardHighContrast"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
-                android:clickable="true"
-                android:contentDescription="High contrast accessibility setting"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                style="@style/SettingsCard">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchHighContrast"
+                    style="@style/SettingsSwitch"
+                    android:text="@string/high_contrast" />
 
                 <TextView
-                    android:id="@+id/tvHighContrastTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="High Contrast"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvHighContrastValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Off"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsDescriptionText"
+                    android:importantForAccessibility="no"
+                    android:text="@string/high_contrast_description" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardProcessingHaptic"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
-                android:clickable="true"
-                android:contentDescription="@string/processing_haptic_feedback_on_description"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                style="@style/SettingsCard">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchProcessingHaptic"
+                    style="@style/SettingsSwitch"
+                    android:text="@string/processing_haptic_feedback" />
 
                 <TextView
-                    android:id="@+id/tvProcessingHapticTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/processing_haptic_feedback"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvProcessingHapticValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/setting_on"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsDescriptionText"
+                    android:importantForAccessibility="no"
+                    android:text="@string/processing_haptic_description" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardSessionEndHaptic"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
-                android:clickable="true"
-                android:contentDescription="@string/session_end_haptic_feedback_on_description"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                style="@style/SettingsCard">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSessionEndHaptic"
+                    style="@style/SettingsSwitch"
+                    android:text="@string/session_end_haptic_feedback" />
 
                 <TextView
-                    android:id="@+id/tvSessionEndHapticTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/session_end_haptic_feedback"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvSessionEndHapticValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/setting_on"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsDescriptionText"
+                    android:importantForAccessibility="no"
+                    android:text="@string/session_end_haptic_description" />
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvDeveloperHeading"
+                style="@style/SettingsSectionHeading"
+                android:layout_marginTop="24dp"
+                android:text="@string/developer_connection_heading" />
+
+            <TextView
+                style="@style/SettingsSectionDescription"
+                android:text="@string/developer_connection_description" />
 
             <LinearLayout
                 android:id="@+id/cardConversationAgentEndpoint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
+                style="@style/SettingsTechnicalCard"
                 android:clickable="true"
-                android:contentDescription="Conversation agent LM Studio endpoint setting"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:focusable="true">
 
                 <TextView
-                    android:id="@+id/tvConversationAgentEndpointTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Conversation Agent Endpoint"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
+                    style="@style/SettingsTechnicalTitleText"
+                    android:text="@string/conversation_agent_endpoint" />
 
                 <TextView
                     android:id="@+id/tvConversationAgentEndpointValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="http://192.168.0.132:1234/v1/chat/completions"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsTechnicalValueText"
+                    tools:text="http://192.168.0.132:1234/v1/chat/completions" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardTaskAgentEndpoint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_task_card"
+                style="@style/SettingsTechnicalCard"
                 android:clickable="true"
-                android:contentDescription="Task agent LM Studio endpoint setting"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="96dp"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:focusable="true">
 
                 <TextView
-                    android:id="@+id/tvTaskAgentEndpointTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Task Agent Endpoint"
-                    android:textColor="@color/ui_text_primary_light"
-                    android:textSize="21sp"
-                    android:textStyle="bold" />
+                    style="@style/SettingsTechnicalTitleText"
+                    android:text="@string/task_agent_endpoint" />
 
                 <TextView
                     android:id="@+id/tvTaskAgentEndpointValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="http://192.168.0.132:1234/v1/chat/completions"
-                    android:textColor="@color/ui_text_secondary_light"
-                    android:textSize="18sp" />
+                    style="@style/SettingsTechnicalValueText"
+                    tools:text="http://192.168.0.132:1234/v1/chat/completions" />
             </LinearLayout>
-
-
         </LinearLayout>
     </ScrollView>
 
@@ -312,9 +200,9 @@
         android:backgroundTint="@null"
         android:minHeight="66dp"
         android:paddingVertical="12dp"
-        android:text="Home"
+        android:text="@string/home"
         android:textAllCaps="false"
-        android:textColor="@color/ui_text_primary_dark"
+        android:textColor="?attr/appColorTextPrimaryDark"
         android:textSize="20sp"
         android:textStyle="bold"
         app:backgroundTint="@null"
@@ -331,7 +219,7 @@
         android:hapticFeedbackEnabled="true"
         android:minHeight="104dp"
         android:paddingVertical="16dp"
-        android:text="Talk to Assistant"
+        android:text="@string/talk_to_assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"
         android:textSize="24sp"

@@ -4,7 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -20,7 +20,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class TodayTasksActivity : AppCompatActivity() {
+class TodayTasksActivity : AccessibilityActivity() {
     private lateinit var adapter: TaskAdapter
     private lateinit var dao: com.example.myapplication.data.TaskDao
     private lateinit var voiceHelper: VoiceHelper

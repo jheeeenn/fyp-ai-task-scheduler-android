@@ -31,7 +31,7 @@
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
         android:layout_marginBottom="16dp"
-        android:background="#DDDDDD"
+        android:background="?attr/appColorBackgroundPrimary"
         android:padding="16dp"
         app:layout_constraintBottom_toTopOf="@id/addButton"
         app:layout_constraintEnd_toEndOf="parent"

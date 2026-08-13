@@ -17,8 +17,8 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import com.example.myapplication.AssistantBottomSheet
-import com.example.myapplication.SettingsActivity
 import com.example.myapplication.VoiceHelper
+import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.diagnostics.AssistantTranscriptDiagnosticLogger
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 
@@ -52,8 +52,7 @@ class AssistantVoiceSession(
     private val processingHapticFeedback = ProcessingHapticFeedbackController(
         scheduler = MainLooperProcessingHapticScheduler(),
         isEnabled = {
-            activity.getSharedPreferences(SettingsActivity.PREFS_NAME, AppCompatActivity.MODE_PRIVATE)
-                .getBoolean(SettingsActivity.KEY_PROCESSING_HAPTIC_FEEDBACK, true)
+            AppPreferences(activity).processingHapticEnabled
         },
         performPulse = {
             !activity.isFinishing &&
@@ -66,8 +65,7 @@ class AssistantVoiceSession(
     private val sessionEndVibrationPerformer = AndroidSessionEndVibrationPerformer(activity)
     private val sessionEndHapticFeedback = AssistantSessionEndHapticFeedback(
         isEnabled = {
-            activity.getSharedPreferences(SettingsActivity.PREFS_NAME, AppCompatActivity.MODE_PRIVATE)
-                .getBoolean(SettingsActivity.KEY_SESSION_END_HAPTIC_FEEDBACK, true)
+            AppPreferences(activity).sessionEndHapticEnabled
         },
         performVibration = { durationMs ->
             activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&

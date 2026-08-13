@@ -12,6 +12,8 @@ class ProcessingHapticIntegrationSourceTest {
         File("src/main/java/com/example/myapplication/AssistantBottomSheet.kt").readText()
     private val settingsSource =
         File("src/main/java/com/example/myapplication/SettingsActivity.kt").readText()
+    private val preferencesSource =
+        File("src/main/java/com/example/myapplication/preferences/AppPreferences.kt").readText()
     private val hapticSource =
         File("src/main/java/com/example/myapplication/HapticFeedbackExtensions.kt").readText()
     private val settingsLayout = File("src/main/res/layout/activity_settings.xml").readText()
@@ -67,29 +69,21 @@ class ProcessingHapticIntegrationSourceTest {
 
     @Test
     fun settingUsesExistingPreferencesAndDefaultsOn() {
-        assertTrue(settingsSource.contains("KEY_PROCESSING_HAPTIC_FEEDBACK"))
-        assertTrue(settingsSource.contains("getBoolean(KEY_PROCESSING_HAPTIC_FEEDBACK, true)"))
-        assertTrue(settingsSource.contains("putBoolean(KEY_PROCESSING_HAPTIC_FEEDBACK, processingHapticFeedback)"))
-        assertTrue(settingsSource.contains("Processing haptic feedback, \${if (processingHapticFeedback) \"On\" else \"Off\"}"))
+        assertTrue(preferencesSource.contains("KEY_PROCESSING_HAPTIC_FEEDBACK"))
+        assertTrue(preferencesSource.contains("getBoolean(KEY_PROCESSING_HAPTIC_FEEDBACK, true)"))
+        assertTrue(settingsSource.contains("setProcessingHapticEnabled(enabled)"))
         assertTrue(settingsLayout.contains("android:id=\"@+id/cardProcessingHaptic\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/switchProcessingHaptic\""))
         assertTrue(settingsLayout.contains("android:text=\"@string/processing_haptic_feedback\""))
     }
 
     @Test
     fun sessionEndSettingUsesSamePreferencesAndDefaultsOn() {
-        assertTrue(settingsSource.contains("KEY_SESSION_END_HAPTIC_FEEDBACK"))
-        assertTrue(settingsSource.contains("getBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, true)"))
-        assertTrue(
-            settingsSource.contains(
-                "putBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, sessionEndHapticFeedback)"
-            )
-        )
-        assertTrue(
-            settingsSource.contains(
-                "Session end haptic feedback, \${if (sessionEndHapticFeedback) \"On\" else \"Off\"}"
-            )
-        )
+        assertTrue(preferencesSource.contains("KEY_SESSION_END_HAPTIC_FEEDBACK"))
+        assertTrue(preferencesSource.contains("getBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, true)"))
+        assertTrue(settingsSource.contains("setSessionEndHapticEnabled(enabled)"))
         assertTrue(settingsLayout.contains("android:id=\"@+id/cardSessionEndHaptic\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/switchSessionEndHaptic\""))
         assertTrue(settingsLayout.contains("android:text=\"@string/session_end_haptic_feedback\""))
     }
 
@@ -105,14 +99,14 @@ class ProcessingHapticIntegrationSourceTest {
     }
 
     @Test
-    fun processingPulseUsesProvenVirtualKeyEffectAndReturnsAndroidResult() {
+    fun processingPulseUsesPhysicallyTestedLongPressEffectAndReturnsAndroidResult() {
         val helper = hapticSource
             .substringAfter("fun View.performProcessingHapticFeedback()")
             .substringBefore("inline fun View.setOnClickListenerWithHaptic")
 
         assertTrue(helper.contains(": Boolean"))
         assertTrue(helper.contains("if (!isAttachedToWindow) return false"))
-        assertTrue(helper.contains("return performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)"))
+        assertTrue(helper.contains("return performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)"))
         assertFalse(helper.contains("CLOCK_TICK"))
     }
 

@@ -80,8 +80,8 @@ class TaskDetailDefectFixSourceContractTest {
         assertTrue(listeningState.contains("setWaitingForConfirmationState()"))
         assertTrue(waitingState.contains("startProcessingAnimation()"))
         assertTrue(waitingState.contains("WAITING_FOR_CONFIRMATION"))
-        assertTrue(processing.contains("#7F1D1D"))
-        assertTrue(processing.contains("#FF5252"))
+        assertTrue(processing.contains("R.attr.appColorAssistantProcessingStart"))
+        assertTrue(processing.contains("R.attr.appColorAssistantProcessingEnd"))
     }
 
     @Test

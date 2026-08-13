@@ -12,10 +12,10 @@ import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
-import android.graphics.Color
 import android.view.animation.LinearInterpolator
 import android.graphics.drawable.GradientDrawable
 import android.view.HapticFeedbackConstants
+import com.example.myapplication.accessibility.resolveThemeColor
 
 
 class AssistantBottomSheet(
@@ -63,10 +63,10 @@ class AssistantBottomSheet(
         tvState = view.findViewById(R.id.tvAssistantState)
 
         stateContainer = view.findViewById(R.id.stateContainer)
-        defaultStateColor = Color.parseColor("#2A2047")
+        defaultStateColor = activity.resolveThemeColor(R.attr.appColorAssistantIdle)
 
         assistantRoot = view.findViewById(R.id.assistantRoot)
-        defaultBorderColor = Color.parseColor("#2A2047")
+        defaultBorderColor = activity.resolveThemeColor(R.attr.appColorAssistantIdle)
 
         tvUserSpeech = view.findViewById(R.id.tvUserSpeech)
         tvAssistantReply = view.findViewById(R.id.tvAssistantReply)
@@ -219,8 +219,8 @@ class AssistantBottomSheet(
 
         stateAnimator = ValueAnimator.ofObject(
             ArgbEvaluator(),
-            android.graphics.Color.parseColor("#7A5C00"),
-            android.graphics.Color.parseColor("#FFD54F")
+            activity.resolveThemeColor(R.attr.appColorAssistantListeningStart),
+            activity.resolveThemeColor(R.attr.appColorAssistantListeningEnd)
         ).apply {
             duration = 700
             repeatCount = ValueAnimator.INFINITE
@@ -240,8 +240,8 @@ class AssistantBottomSheet(
 
         stateAnimator = ValueAnimator.ofObject(
             ArgbEvaluator(),
-            android.graphics.Color.parseColor("#7F1D1D"),
-            android.graphics.Color.parseColor("#FF5252")
+            activity.resolveThemeColor(R.attr.appColorAssistantProcessingStart),
+            activity.resolveThemeColor(R.attr.appColorAssistantProcessingEnd)
         ).apply {
             duration = 650
             repeatCount = ValueAnimator.INFINITE
@@ -261,8 +261,8 @@ class AssistantBottomSheet(
 
         stateAnimator = ValueAnimator.ofObject(
             ArgbEvaluator(),
-            android.graphics.Color.parseColor("#1B5E20"),
-            android.graphics.Color.parseColor("#66BB6A")
+            activity.resolveThemeColor(R.attr.appColorAssistantSpeakingStart),
+            activity.resolveThemeColor(R.attr.appColorAssistantSpeakingEnd)
         ).apply {
             duration = 900
             repeatCount = ValueAnimator.INFINITE

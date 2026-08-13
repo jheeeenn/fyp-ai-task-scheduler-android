@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="appColorBackgroundPrimary" format="color" />
+    <attr name="appColorBackgroundSecondary" format="color" />
+    <attr name="appColorBackgroundTertiary" format="color" />
+    <attr name="appColorSurface" format="color" />
+    <attr name="appColorSurfaceAlt" format="color" />
+    <attr name="appColorTextPrimaryDark" format="color" />
+    <attr name="appColorTextSecondaryDark" format="color" />
+    <attr name="appColorTextMutedDark" format="color" />
+    <attr name="appColorTextPrimaryLight" format="color" />
+    <attr name="appColorTextSecondaryLight" format="color" />
+    <attr name="appColorAccentPrimary" format="color" />
+    <attr name="appColorAccentPrimaryDark" format="color" />
+    <attr name="appColorAccentSecondary" format="color" />
+    <attr name="appColorSuccess" format="color" />
+    <attr name="appColorDanger" format="color" />
+    <attr name="appColorOutline" format="color" />
+    <attr name="appColorOutlineSoft" format="color" />
+    <attr name="appColorAssistantIdle" format="color" />
+    <attr name="appColorAssistantListeningStart" format="color" />
+    <attr name="appColorAssistantListeningEnd" format="color" />
+    <attr name="appColorAssistantProcessingStart" format="color" />
+    <attr name="appColorAssistantProcessingEnd" format="color" />
+    <attr name="appColorAssistantSpeakingStart" format="color" />
+    <attr name="appColorAssistantSpeakingEnd" format="color" />
+</resources>

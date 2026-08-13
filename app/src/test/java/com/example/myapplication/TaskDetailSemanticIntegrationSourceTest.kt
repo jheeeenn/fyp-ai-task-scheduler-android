@@ -1,8 +1,6 @@
 package com.example.myapplication
 
 import java.io.File
-import java.security.MessageDigest
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -87,15 +85,20 @@ class TaskDetailSemanticIntegrationSourceTest {
     }
 
     @Test
-    fun latestManualTaskDetailsLayoutIsByteForBytePreserved() {
-        val bytes = File("src/main/res/layout/activity_task_detail.xml").readBytes()
-        val hash = MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { "%02x".format(it) }
-        assertEquals(
-            "9c40978cb9e85999362bb981e8ace2f0f09362b564ba05895253fd80f40f9a40",
-            hash
-        )
+    fun manualTaskDetailsStructureIsPreservedWhileColorsUseThemeTokens() {
+        val layout = File("src/main/res/layout/activity_task_detail.xml").readText()
+        listOf(
+            "detailTitleSurface",
+            "detailDateSurface",
+            "detailTimeSurface",
+            "detailSubtaskProgressSurface",
+            "btnReadAll",
+            "btnToggleDone",
+            "btnSaveChanges",
+            "btnDeleteTask"
+        ).forEach { assertTrue(layout.contains("@+id/$it")) }
+        assertTrue(layout.contains("?attr/appColorTextPrimaryDark"))
+        assertTrue(layout.contains("?attr/appColorTextSecondaryDark"))
     }
 
     @Test

@@ -28,6 +28,41 @@
     <color name="ui_outline">#89A4F0</color>
     <color name="ui_outline_soft">#5069A8</color>
 
+    <!-- High-contrast palette: strong separation without discarding the existing blue identity. -->
+    <color name="hc_bg_primary">#00030A</color>
+    <color name="hc_bg_secondary">#080D18</color>
+    <color name="hc_bg_tertiary">#111A2A</color>
+    <color name="hc_surface">#FFFFFF</color>
+    <color name="hc_surface_alt">#EAF0FF</color>
+    <color name="hc_text_primary_dark">#FFFFFF</color>
+    <color name="hc_text_secondary_dark">#EDF2FF</color>
+    <color name="hc_text_muted_dark">#CFDCFF</color>
+    <color name="hc_text_primary_light">#050A14</color>
+    <color name="hc_text_secondary_light">#17264A</color>
+    <color name="hc_accent_primary">#2864FF</color>
+    <color name="hc_accent_primary_dark">#164BCC</color>
+    <color name="hc_accent_secondary">#72A3FF</color>
+    <color name="hc_success">#32D296</color>
+    <color name="hc_danger">#D71945</color>
+    <color name="hc_outline">#FFFFFF</color>
+    <color name="hc_outline_soft">#B9CBFF</color>
+
+    <color name="assistant_idle">#2A2047</color>
+    <color name="assistant_listening_start">#7A5C00</color>
+    <color name="assistant_listening_end">#FFD54F</color>
+    <color name="assistant_processing_start">#7F1D1D</color>
+    <color name="assistant_processing_end">#FF5252</color>
+    <color name="assistant_speaking_start">#1B5E20</color>
+    <color name="assistant_speaking_end">#66BB6A</color>
+
+    <color name="hc_assistant_idle">#17213A</color>
+    <color name="hc_assistant_listening_start">#8A6500</color>
+    <color name="hc_assistant_listening_end">#FFE16B</color>
+    <color name="hc_assistant_processing_start">#8F1027</color>
+    <color name="hc_assistant_processing_end">#FF6680</color>
+    <color name="hc_assistant_speaking_start">#075F3E</color>
+    <color name="hc_assistant_speaking_end">#59E1A7</color>
+
     <!-- Soft task-state surfaces keep wording, rather than colour, authoritative. -->
     <color name="task_status_overdue_surface">#F1D9D6</color>
     <color name="task_status_overdue_outline">#A8514A</color>

@@ -14,7 +14,7 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -213,7 +213,7 @@ import com.example.myapplication.reminder.ReminderBootstrapScheduler
 import com.example.myapplication.reminder.ReminderBootstrapTaskSource
 import com.example.myapplication.reminder.ReminderEscalationBootstrapper
 import com.example.myapplication.reminder.SharedPreferencesReminderBootstrapVersionStore
-class HomeActivity : AppCompatActivity(), AssistantVoiceHost{
+class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var pendingAssistantEntry: HomeAssistantEntry? = null
     private var assistantEntryGeneration: Long = 0
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier

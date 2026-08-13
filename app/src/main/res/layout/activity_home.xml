@@ -5,7 +5,7 @@
     android:id="@+id/homeRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ui_bg_primary"
+    android:background="?attr/appColorBackgroundPrimary"
     android:paddingStart="20dp"
     android:paddingTop="14dp"
     android:paddingEnd="20dp"
@@ -42,7 +42,7 @@
                 android:layout_marginTop="22dp"
                 android:accessibilityHeading="true"
                 android:text="Good Evening"
-                android:textColor="@color/ui_text_primary_dark"
+                android:textColor="?attr/appColorTextPrimaryDark"
                 android:textSize="34sp"
                 android:textStyle="bold" />
 
@@ -54,7 +54,7 @@
                 android:accessibilityLiveRegion="polite"
                 android:lineSpacingExtra="4dp"
                 android:text="You have 0 tasks today"
-                android:textColor="@color/ui_text_secondary_dark"
+                android:textColor="?attr/appColorTextSecondaryDark"
                 android:textSize="20sp" />
 
             <LinearLayout
@@ -95,7 +95,7 @@
                     android:paddingVertical="16dp"
                     android:text="Today\nTasks"
                     android:textAllCaps="false"
-                    android:textColor="@color/ui_text_primary_light"
+                    android:textColor="?attr/appColorTextPrimaryLight"
                     android:textSize="22sp"
                     android:textStyle="bold"
                     app:backgroundTint="@null" />
@@ -121,7 +121,7 @@
                     android:paddingVertical="16dp"
                     android:text="Scheduled\nTasks"
                     android:textAllCaps="false"
-                    android:textColor="@color/ui_text_primary_light"
+                    android:textColor="?attr/appColorTextPrimaryLight"
                     android:textSize="21sp"
                     android:textStyle="bold"
                     app:backgroundTint="@null" />
@@ -139,7 +139,7 @@
                     android:paddingVertical="16dp"
                     android:text="Settings"
                     android:textAllCaps="false"
-                    android:textColor="@color/ui_text_primary_dark"
+                    android:textColor="?attr/appColorTextPrimaryDark"
                     android:textSize="22sp"
                     android:textStyle="bold"
                     app:backgroundTint="@null" />

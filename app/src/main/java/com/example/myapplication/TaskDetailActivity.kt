@@ -16,7 +16,8 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import com.example.myapplication.accessibility.AccessibilityActivity
+import com.example.myapplication.accessibility.resolveThemeColor
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
@@ -45,7 +46,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
+class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
     companion object {
         const val EXTRA_TASK_ID = "task_id"
         private const val TASK_DETAIL_UPDATE_TAG = "TASK_DETAIL_UPDATE"
@@ -400,7 +401,7 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
                 minHeight = resources.getDimensionPixelSize(R.dimen.task_detail_subtask_min_height)
                 setBackgroundResource(R.drawable.bg_subtask_item)
                 setPadding(dp(16), dp(12), dp(16), dp(12))
-                setTextColor(ContextCompat.getColor(context, R.color.ui_text_primary_light))
+                setTextColor(context.resolveThemeColor(R.attr.appColorTextPrimaryLight))
                 textSize = 18f
             }
             VoiceFirstGestureBinder.bindInformation(
@@ -588,10 +589,11 @@ class TaskDetailActivity : AppCompatActivity(), AssistantVoiceHost {
             if (dirty) R.drawable.bg_save_changes_dirty else R.drawable.bg_action_button
         )
         saveButton.setTextColor(
-            ContextCompat.getColor(
-                this,
-                if (dirty) R.color.white else R.color.ui_text_primary_light
-            )
+            if (dirty) {
+                ContextCompat.getColor(this, R.color.white)
+            } else {
+                resolveThemeColor(R.attr.appColorTextPrimaryLight)
+            }
         )
     }
 

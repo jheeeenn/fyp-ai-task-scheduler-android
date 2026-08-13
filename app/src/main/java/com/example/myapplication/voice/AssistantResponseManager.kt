@@ -1,6 +1,6 @@
 package com.example.myapplication.voice
 
-import com.example.myapplication.SettingsActivity
+import com.example.myapplication.preferences.AppPreferences
 
 enum class AssistantTone {
     FRIENDLY, NEUTRAL, PROFESSIONAL
@@ -570,18 +570,15 @@ class AssistantResponseManager(
     }
     companion object {
         fun fromPreferences(context: android.content.Context): AssistantResponseManager {
-            val prefs = context.getSharedPreferences(
-                SettingsActivity.PREFS_NAME,
-                android.content.Context.MODE_PRIVATE
-            )
+            val preferences = AppPreferences(context)
 
-            val tone = when (prefs.getString(SettingsActivity.KEY_ASSISTANT_TONE, "Friendly")) {
+            val tone = when (preferences.assistantTone) {
                 "Neutral" -> AssistantTone.NEUTRAL
                 "Professional" -> AssistantTone.PROFESSIONAL
                 else -> AssistantTone.FRIENDLY
             }
 
-            val verbosity = when (prefs.getString(SettingsActivity.KEY_REPLY_LENGTH, "Normal")) {
+            val verbosity = when (preferences.replyLength) {
                 "Short" -> AssistantVerbosity.BRIEF
                 "Detailed" -> AssistantVerbosity.DETAILED
                 else -> AssistantVerbosity.BALANCED
@@ -610,5 +607,4 @@ class UserPreferenceState {
         }
     }
 }
-
 

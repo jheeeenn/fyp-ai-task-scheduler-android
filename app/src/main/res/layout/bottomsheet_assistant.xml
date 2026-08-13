@@ -24,7 +24,7 @@
             android:layout_height="wrap_content"
             android:accessibilityHeading="true"
             android:text="@string/assistant_title"
-            android:textColor="@color/ui_text_primary_dark"
+            android:textColor="?attr/appColorTextPrimaryDark"
             android:textSize="28sp"
             android:textStyle="bold" />
 
@@ -47,9 +47,12 @@
                 android:id="@+id/tvAssistantState"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:background="@drawable/bg_assistant_state_label"
                 android:importantForAccessibility="no"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
                 android:text="@string/assistant_ready"
-                android:textColor="@color/ui_text_primary_dark"
+                android:textColor="@color/white"
                 android:textSize="23sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -61,7 +64,7 @@
             android:layout_marginTop="18dp"
             android:importantForAccessibility="no"
             android:text="@string/assistant_user_label"
-            android:textColor="@color/ui_text_muted_dark"
+            android:textColor="?attr/appColorTextMutedDark"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -76,7 +79,7 @@
             android:minHeight="98dp"
             android:padding="16dp"
             android:text=""
-            android:textColor="@color/ui_text_primary_dark"
+            android:textColor="?attr/appColorTextPrimaryDark"
             android:textSize="24sp" />
 
         <TextView
@@ -86,7 +89,7 @@
             android:layout_marginTop="18dp"
             android:importantForAccessibility="no"
             android:text="@string/assistant_reply_label"
-            android:textColor="@color/ui_text_muted_dark"
+            android:textColor="?attr/appColorTextMutedDark"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -101,7 +104,7 @@
             android:minHeight="88dp"
             android:padding="16dp"
             android:text=""
-            android:textColor="@color/ui_text_primary_dark"
+            android:textColor="?attr/appColorTextPrimaryDark"
             android:textSize="22sp" />
 
         <TextView
@@ -111,7 +114,7 @@
             android:layout_marginTop="18dp"
             android:importantForAccessibility="no"
             android:text="@string/assistant_next_action_label"
-            android:textColor="@color/ui_text_muted_dark"
+            android:textColor="?attr/appColorTextMutedDark"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -126,7 +129,7 @@
             android:minHeight="68dp"
             android:padding="16dp"
             android:text=""
-            android:textColor="@color/ui_text_secondary_dark"
+            android:textColor="?attr/appColorTextSecondaryDark"
             android:textSize="19sp" />
 
         <Button

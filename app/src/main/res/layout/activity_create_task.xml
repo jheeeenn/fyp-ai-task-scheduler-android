@@ -5,7 +5,7 @@
     android:id="@+id/createTaskRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ui_bg_primary"
+    android:background="?attr/appColorBackgroundPrimary"
     android:padding="16dp">
 
     <ScrollView
@@ -30,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:accessibilityHeading="true"
                 android:text="Create Task"
-                android:textColor="@color/ui_text_primary_dark"
+                android:textColor="?attr/appColorTextPrimaryDark"
                 android:textSize="36sp"
                 android:textStyle="bold" />
 
@@ -41,7 +41,7 @@
                 android:layout_marginTop="20dp"
                 android:labelFor="@id/etTaskTitle"
                 android:text="@string/task_title_label"
-                android:textColor="@color/ui_text_primary_dark"
+                android:textColor="?attr/appColorTextPrimaryDark"
                 android:textSize="22sp"
                 android:textStyle="bold" />
 
@@ -56,8 +56,8 @@
                 android:minHeight="72dp"
                 android:paddingHorizontal="18dp"
                 android:paddingVertical="16dp"
-                android:textColor="@color/ui_text_primary_dark"
-                android:textColorHint="@color/ui_text_muted_dark"
+                android:textColor="?attr/appColorTextPrimaryDark"
+                android:textColorHint="?attr/appColorTextMutedDark"
                 android:textSize="24sp" />
 
             <LinearLayout
@@ -74,7 +74,7 @@
                     android:layout_height="wrap_content"
                     android:importantForAccessibility="no"
                     android:text="Date"
-                    android:textColor="@color/ui_text_primary_dark"
+                    android:textColor="?attr/appColorTextPrimaryDark"
                     android:textSize="22sp"
                     android:textStyle="bold" />
 
@@ -87,7 +87,7 @@
                     android:importantForAccessibility="no"
                     android:padding="16dp"
                     android:text="No date selected"
-                    android:textColor="@color/ui_text_primary_dark"
+                    android:textColor="?attr/appColorTextPrimaryDark"
                     android:textSize="22sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -104,7 +104,7 @@
                 android:paddingVertical="14dp"
                 android:text="Select Date"
                 android:textAllCaps="false"
-                android:textColor="@color/ui_text_primary_light"
+                android:textColor="?attr/appColorTextPrimaryLight"
                 android:textSize="22sp"
                 android:textStyle="bold"
                 app:backgroundTint="@null" />
@@ -123,7 +123,7 @@
                     android:layout_height="wrap_content"
                     android:importantForAccessibility="no"
                     android:text="Time"
-                    android:textColor="@color/ui_text_primary_dark"
+                    android:textColor="?attr/appColorTextPrimaryDark"
                     android:textSize="22sp"
                     android:textStyle="bold" />
 
@@ -136,7 +136,7 @@
                     android:importantForAccessibility="no"
                     android:padding="16dp"
                     android:text="No time selected"
-                    android:textColor="@color/ui_text_primary_dark"
+                    android:textColor="?attr/appColorTextPrimaryDark"
                     android:textSize="22sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -153,7 +153,7 @@
                 android:paddingVertical="14dp"
                 android:text="Select Time"
                 android:textAllCaps="false"
-                android:textColor="@color/ui_text_primary_light"
+                android:textColor="?attr/appColorTextPrimaryLight"
                 android:textSize="22sp"
                 android:textStyle="bold"
                 app:backgroundTint="@null" />
@@ -186,7 +186,7 @@
                 android:paddingVertical="14dp"
                 android:text="Cancel"
                 android:textAllCaps="false"
-                android:textColor="@color/ui_text_primary_dark"
+                android:textColor="?attr/appColorTextPrimaryDark"
                 android:textSize="21sp"
                 android:textStyle="bold"
                 app:backgroundTint="@null" />
@@ -204,7 +204,7 @@
         android:paddingVertical="12dp"
         android:text="Home"
         android:textAllCaps="false"
-        android:textColor="@color/ui_text_primary_dark"
+        android:textColor="?attr/appColorTextPrimaryDark"
         android:textSize="20sp"
         android:textStyle="bold"
         app:backgroundTint="@null"
