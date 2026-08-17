@@ -15,6 +15,8 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import com.example.myapplication.accessibility.AccessibilityActivity
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.Guideline
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -213,6 +215,7 @@ import com.example.myapplication.reminder.ReminderBootstrapScheduler
 import com.example.myapplication.reminder.ReminderBootstrapTaskSource
 import com.example.myapplication.reminder.ReminderEscalationBootstrapper
 import com.example.myapplication.reminder.SharedPreferencesReminderBootstrapVersionStore
+import com.example.myapplication.preferences.AppPreferences
 class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var pendingAssistantEntry: HomeAssistantEntry? = null
     private var assistantEntryGeneration: Long = 0
@@ -336,6 +339,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
+        applyHomeContentSplit()
 
         val taskAgentClient = LaptopAgentClient(this)
         agentOrchestrator = AgentOrchestrator(
@@ -481,6 +485,18 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             assistantSession.submitTypedText(typedText)
         }
     }
+
+    private fun applyHomeContentSplit() {
+        val splitGuideline = findViewById<Guideline>(R.id.homeAssistantSplit)
+        val layoutParams = splitGuideline.layoutParams as ConstraintLayout.LayoutParams
+        layoutParams.guidePercent = if (AppPreferences(this).largeTextEnabled) {
+            LARGE_TEXT_HOME_CONTENT_PERCENT
+        } else {
+            NORMAL_HOME_CONTENT_PERCENT
+        }
+        splitGuideline.layoutParams = layoutParams
+    }
+
     override fun onAssistantFinalText(text: String) {
         handleVoiceCommand(text)
     }
@@ -6690,6 +6706,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private companion object {
         const val TASK_DETAIL_ENTRY_TAG = "TASK_DETAIL_ENTRY"
+        const val NORMAL_HOME_CONTENT_PERCENT = 0.52f
+        const val LARGE_TEXT_HOME_CONTENT_PERCENT = 0.60f
     }
 }
 

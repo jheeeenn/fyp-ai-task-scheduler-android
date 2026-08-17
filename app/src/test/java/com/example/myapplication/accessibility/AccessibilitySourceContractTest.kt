@@ -142,6 +142,29 @@ class AccessibilitySourceContractTest {
     }
 
     @Test
+    fun homeContentSplitUsesStableLargeTextAwarePercentages() {
+        val homeLayout = layoutRoot.resolve("activity_home.xml").readText()
+        val homeActivity = mainRoot.resolve("HomeActivity.kt").readText()
+        val splitApplication = homeActivity
+            .substringAfter("private fun applyHomeContentSplit()")
+            .substringBefore("override fun onAssistantFinalText")
+
+        assertTrue(homeLayout.contains("app:layout_constraintGuide_percent=\"0.52\""))
+        assertTrue(homeActivity.contains("const val NORMAL_HOME_CONTENT_PERCENT = 0.52f"))
+        assertTrue(homeActivity.contains("const val LARGE_TEXT_HOME_CONTENT_PERCENT = 0.60f"))
+        assertTrue(
+            homeActivity.indexOf("setContentView(R.layout.activity_home)") <
+                homeActivity.indexOf("applyHomeContentSplit()")
+        )
+        assertTrue(splitApplication.contains("AppPreferences(this).largeTextEnabled"))
+        assertTrue(splitApplication.contains("layoutParams.guidePercent = if"))
+        assertTrue(splitApplication.contains("LARGE_TEXT_HOME_CONTENT_PERCENT"))
+        assertTrue(splitApplication.contains("NORMAL_HOME_CONTENT_PERCENT"))
+        assertTrue(splitApplication.contains("splitGuideline.layoutParams = layoutParams"))
+        assertFalse(splitApplication.contains("guidePercent +="))
+    }
+
+    @Test
     fun voiceTouchTalkBackAndTypedPathsRemainAvailableWithoutAccessibilityAi() {
         val home = mainRoot.resolve("HomeActivity.kt").readText()
         val create = mainRoot.resolve("CreateTaskActivity.kt").readText()
