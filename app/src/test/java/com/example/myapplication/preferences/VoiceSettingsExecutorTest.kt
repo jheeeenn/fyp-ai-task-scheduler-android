@@ -83,6 +83,20 @@ class VoiceSettingsExecutorTest {
 
         assertFalse(preferences.processingHapticEnabled)
         assertTrue(preferences.sessionEndHapticEnabled)
+
+        preferences.setProcessingHapticEnabled(true)
+        preferences.setSessionEndHapticEnabled(true)
+        val ordinalFollowUp = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
+            "the second one",
+            pending = requireNotNull(initial.pendingClarification)
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.ALLOW, ordinalFollowUp?.disposition)
+        VoiceSettingsExecutor(preferences).execute(
+            requireNotNull(ordinalFollowUp).authorizedAction
+        )
+
+        assertTrue(preferences.processingHapticEnabled)
+        assertFalse(preferences.sessionEndHapticEnabled)
     }
 
     @Test

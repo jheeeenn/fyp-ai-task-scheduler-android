@@ -164,7 +164,11 @@ object VoiceSettingsMutationSafetyPolicy {
         pending: PendingVoiceSettingClarification
     ): VoiceSettingsSafetyResult? {
         val text = safetyText(normalizedUtterance)
-        val target = groundedTarget(text, allowTargetOnly = true)
+        val target = if (pending.scope == VoiceSettingClarificationScope.HAPTIC_SETTING) {
+            hapticClarificationTarget(text) ?: groundedTarget(text, allowTargetOnly = true)
+        } else {
+            groundedTarget(text, allowTargetOnly = true)
+        }
         val targetAllowed = when (pending.scope) {
             VoiceSettingClarificationScope.ANY_BOOLEAN_SETTING -> target in BOOLEAN_TARGETS
             VoiceSettingClarificationScope.HAPTIC_SETTING -> target in HAPTIC_TARGETS
@@ -189,6 +193,38 @@ object VoiceSettingsMutationSafetyPolicy {
             isBareClarificationAgreement(text) -> clarifySetting(pending = pending)
             else -> null
         }
+    }
+
+    /** True only for a short answer that plausibly belongs to the active haptic choice. */
+    fun shouldRetainClarification(
+        normalizedUtterance: String,
+        pending: PendingVoiceSettingClarification
+    ): Boolean {
+        if (pending.scope != VoiceSettingClarificationScope.HAPTIC_SETTING) return false
+        val text = safetyText(normalizedUtterance)
+        if (text.isBlank() || text.split(' ').size > MAX_HAPTIC_ANSWER_WORDS) return false
+        if (requestedBoolean(text, groundedTarget(text, allowTargetOnly = true)) != null) {
+            return false
+        }
+        if (containsAny(
+                text,
+                "task", "schedule", "reminder", "create", "delete", "show", "list", "read",
+                "complete", "reschedule", "high contrast", "large text", "reply", "tone"
+            )
+        ) return false
+        return containsAny(
+            text,
+            "processing", "session", "first", "second", "haptic", "vibrat", "one", "yes", "yeah"
+        )
+    }
+
+    fun retryClarification(
+        pending: PendingVoiceSettingClarification
+    ): VoiceSettingsSafetyResult = when (pending.scope) {
+        VoiceSettingClarificationScope.HAPTIC_SETTING ->
+            clarifyHaptic(pending.requestedEnabled)
+        VoiceSettingClarificationScope.ANY_BOOLEAN_SETTING ->
+            clarifySetting(pending = pending)
     }
 
     private fun isRequestedValueGrounded(
@@ -245,7 +281,7 @@ object VoiceSettingsMutationSafetyPolicy {
 
     private fun hasLargeTextTarget(text: String): Boolean = containsAny(
         text,
-        "large text", "larger text", "bigger text", "text larger", "text bigger",
+        "large text", "larger text", "bigger text", "big text", "text larger", "text bigger",
         "smaller text", "text smaller", "text size"
     )
 
@@ -296,6 +332,8 @@ object VoiceSettingsMutationSafetyPolicy {
         val sessionEnd = containsAny(
             text,
             "session end", "session ending", "conversation end", "conversation finish",
+            "session vibration", "session haptic", "end vibration", "end haptic",
+            "ending vibration", "ending haptic",
             "final vibration", "final haptic", "terminal vibration", "terminal haptic",
             "when you re done", "when you are done", "when you re finished",
             "when you are finished", "when the assistant is done", "when the conversation is done",
@@ -309,6 +347,12 @@ object VoiceSettingsMutationSafetyPolicy {
             processing = processing,
             sessionEnd = sessionEnd
         )
+    }
+
+    private fun hapticClarificationTarget(text: String): VoiceSettingTarget? = when (text) {
+        in PROCESSING_HAPTIC_CLARIFICATION_ANSWERS -> VoiceSettingTarget.PROCESSING_HAPTIC
+        in SESSION_END_HAPTIC_CLARIFICATION_ANSWERS -> VoiceSettingTarget.SESSION_END_HAPTIC
+        else -> null
     }
 
     private fun guidanceSpeech(text: String, proposedAction: ConversationSettingAction): String {
@@ -401,6 +445,16 @@ object VoiceSettingsMutationSafetyPolicy {
         VoiceSettingTarget.PROCESSING_HAPTIC,
         VoiceSettingTarget.SESSION_END_HAPTIC
     )
+    private val PROCESSING_HAPTIC_CLARIFICATION_ANSWERS = setOf(
+        "processing", "the processing", "processing one", "the processing one",
+        "first", "first one", "the first one"
+    )
+    private val SESSION_END_HAPTIC_CLARIFICATION_ANSWERS = setOf(
+        "session", "the session", "session one", "the session one",
+        "session end", "the session end", "session end one", "the session end one",
+        "second", "second one", "the second one"
+    )
+    private const val MAX_HAPTIC_ANSWER_WORDS = 5
     private val CONTEXT_ON_REQUEST = Regex(
         "\\b(?:turn|switch)\\s+(?:it|that|the one)(?:\\s+back)?\\s+on\\b"
     )

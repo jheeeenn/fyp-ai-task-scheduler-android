@@ -2,6 +2,7 @@ package com.example.myapplication.voice
 
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -162,6 +163,136 @@ class VoiceSettingsMutationSafetyPolicyTest {
         assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET, bareYes?.disposition)
         assertEquals(ConversationSettingAction.NONE, bareYes?.authorizedAction)
 
+    }
+
+    @Test
+    fun pendingHapticClarificationResolvesNaturalAndOrdinalProcessingAnswers() {
+        val pending = PendingVoiceSettingClarification(
+            requestedEnabled = false,
+            scope = VoiceSettingClarificationScope.HAPTIC_SETTING
+        )
+        listOf(
+            "processing",
+            "the processing",
+            "processing one",
+            "the processing one",
+            "first",
+            "first one",
+            "the first one"
+        ).forEach { answer ->
+            val result = VoiceSettingsMutationSafetyPolicy.evaluateClarification(answer, pending)
+            assertEquals(answer, VoiceSettingsSafetyDisposition.ALLOW, result?.disposition)
+            assertEquals(
+                answer,
+                ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+                result?.authorizedAction
+            )
+        }
+    }
+
+    @Test
+    fun pendingHapticClarificationResolvesNaturalAndOrdinalSessionAnswers() {
+        val pendingOff = PendingVoiceSettingClarification(
+            requestedEnabled = false,
+            scope = VoiceSettingClarificationScope.HAPTIC_SETTING
+        )
+        listOf(
+            "session",
+            "the session",
+            "session one",
+            "the session one",
+            "session end",
+            "the session end",
+            "second",
+            "second one",
+            "the second one"
+        ).forEach { answer ->
+            val result = VoiceSettingsMutationSafetyPolicy.evaluateClarification(answer, pendingOff)
+            assertEquals(answer, VoiceSettingsSafetyDisposition.ALLOW, result?.disposition)
+            assertEquals(
+                answer,
+                ConversationSettingAction.SESSION_END_HAPTIC_OFF,
+                result?.authorizedAction
+            )
+        }
+
+        val pendingOn = pendingOff.copy(requestedEnabled = true)
+        val enabled = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
+            "the second one",
+            pendingOn
+        )
+        assertEquals(ConversationSettingAction.SESSION_END_HAPTIC_ON, enabled?.authorizedAction)
+    }
+
+    @Test
+    fun ambiguousHapticAnswerRetriesButExplicitNewCommandEscapes() {
+        val pending = PendingVoiceSettingClarification(
+            requestedEnabled = false,
+            scope = VoiceSettingClarificationScope.HAPTIC_SETTING
+        )
+        val yes = VoiceSettingsMutationSafetyPolicy.evaluateClarification("yes", pending)
+        assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET, yes?.disposition)
+        assertEquals(false, yes?.pendingClarification?.requestedEnabled)
+
+        assertEquals(
+            null,
+            VoiceSettingsMutationSafetyPolicy.evaluateClarification(
+                "turn on high contrast",
+                pending
+            )
+        )
+        assertFalse(
+            VoiceSettingsMutationSafetyPolicy.shouldRetainClarification(
+                "turn on high contrast",
+                pending
+            )
+        )
+        assertTrue(
+            VoiceSettingsMutationSafetyPolicy.shouldRetainClarification(
+                "maybe that one",
+                pending
+            )
+        )
+    }
+
+    @Test
+    fun explicitSessionVibrationGroundingIsAllowedWhileGenericHapticStaysAmbiguous() {
+        assertDisposition(
+            "turn off the session vibration",
+            ConversationSettingAction.SESSION_END_HAPTIC_OFF,
+            VoiceSettingsSafetyDisposition.ALLOW
+        )
+        assertDisposition(
+            "turn on the session haptic",
+            ConversationSettingAction.SESSION_END_HAPTIC_ON,
+            VoiceSettingsSafetyDisposition.ALLOW
+        )
+        assertDisposition(
+            "turn off vibration",
+            ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+            VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET
+        )
+        assertDisposition(
+            "turn off the haptic",
+            ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+            VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET
+        )
+    }
+
+    @Test
+    fun onlyExactBigTextAliasIsAddedForLargeText() {
+        assertDisposition(
+            "turn on big text",
+            ConversationSettingAction.LARGE_TEXT_ON,
+            VoiceSettingsSafetyDisposition.ALLOW
+        )
+        listOf("turn on lush tax", "turn on the big tasks", "turn on the big tex").forEach {
+            assertDisposition(
+                it,
+                ConversationSettingAction.LARGE_TEXT_ON,
+                VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET
+            )
+        }
     }
 
     @Test

@@ -6861,6 +6861,17 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             normalizedUtterance = normalized,
             pending = pending
         ) ?: run {
+            if (VoiceSettingsMutationSafetyPolicy.shouldRetainClarification(
+                    normalizedUtterance = normalized,
+                    pending = pending
+                )
+            ) {
+                val retry = VoiceSettingsMutationSafetyPolicy.retryClarification(pending)
+                voiceSettingConversationContext.retain(retry.pendingClarification)
+                logVoiceSettingsSafety(retry.authorizedAction, retry)
+                assistantSession.speak(retry.speech, listenAgain = true)
+                return true
+            }
             voiceSettingConversationContext.clearPending()
             return false
         }

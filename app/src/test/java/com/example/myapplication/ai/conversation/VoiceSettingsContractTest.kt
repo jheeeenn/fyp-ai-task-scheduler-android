@@ -159,6 +159,25 @@ class VoiceSettingsContractTest {
     }
 
     @Test
+    fun pendingHapticClarificationOwnsCandidateAnswerBeforeGeneralRouting() {
+        val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val voiceFlow = home.substringAfter("private fun handleVoiceCommand(command: String)")
+            .substringBefore("private fun beginAssistantRequest")
+        val pendingHandler = home.substringAfter(
+            "private fun handlePendingVoiceSettingClarification(normalized: String)"
+        ).substringBefore("private fun executeAllowedVoiceSetting")
+        val pendingCheck = voiceFlow.indexOf("handlePendingVoiceSettingClarification(normalized)")
+        val generalRouting = voiceFlow.indexOf("conversationOrchestrator.process(")
+
+        assertTrue(pendingCheck >= 0)
+        assertTrue(generalRouting > pendingCheck)
+        assertTrue(pendingHandler.contains("shouldRetainClarification("))
+        assertTrue(pendingHandler.contains("retryClarification(pending)"))
+        assertTrue(pendingHandler.contains("voiceSettingConversationContext.retain("))
+        assertTrue(pendingHandler.contains("voiceSettingConversationContext.clearPending()"))
+    }
+
+    @Test
     fun homeExecutesWithoutSettingsNavigationAndDefersVisualRefresh() {
         val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
         val routeBranch = home.substringAfter("ConversationRoute.SETTINGS_ACTION -> {")
