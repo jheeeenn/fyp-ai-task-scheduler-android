@@ -2,6 +2,70 @@ package com.example.myapplication.voice
 
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 
+enum class VoiceSettingTarget {
+    LARGE_TEXT,
+    HIGH_CONTRAST,
+    PROCESSING_HAPTIC,
+    SESSION_END_HAPTIC,
+    ASSISTANT_TONE,
+    REPLY_LENGTH
+}
+
+data class VoiceSettingConversationFocus(val target: VoiceSettingTarget)
+
+enum class VoiceSettingClarificationScope {
+    ANY_BOOLEAN_SETTING,
+    HAPTIC_SETTING
+}
+
+data class PendingVoiceSettingClarification(
+    val requestedEnabled: Boolean,
+    val scope: VoiceSettingClarificationScope
+)
+
+/** Session-only Android authority. It is deliberately not preference-backed. */
+class VoiceSettingConversationContext {
+    var focus: VoiceSettingConversationFocus? = null
+        private set
+    var pendingClarification: PendingVoiceSettingClarification? = null
+        private set
+
+    fun focus(target: VoiceSettingTarget) {
+        focus = VoiceSettingConversationFocus(target)
+    }
+
+    fun retain(clarification: PendingVoiceSettingClarification?) {
+        pendingClarification = clarification
+    }
+
+    fun clearPending() {
+        pendingClarification = null
+    }
+
+    fun clear() {
+        focus = null
+        pendingClarification = null
+    }
+}
+
+fun ConversationSettingAction.voiceSettingTarget(): VoiceSettingTarget? = when (this) {
+    ConversationSettingAction.LARGE_TEXT_ON,
+    ConversationSettingAction.LARGE_TEXT_OFF -> VoiceSettingTarget.LARGE_TEXT
+    ConversationSettingAction.HIGH_CONTRAST_ON,
+    ConversationSettingAction.HIGH_CONTRAST_OFF -> VoiceSettingTarget.HIGH_CONTRAST
+    ConversationSettingAction.PROCESSING_HAPTIC_ON,
+    ConversationSettingAction.PROCESSING_HAPTIC_OFF -> VoiceSettingTarget.PROCESSING_HAPTIC
+    ConversationSettingAction.SESSION_END_HAPTIC_ON,
+    ConversationSettingAction.SESSION_END_HAPTIC_OFF -> VoiceSettingTarget.SESSION_END_HAPTIC
+    ConversationSettingAction.ASSISTANT_TONE_FRIENDLY,
+    ConversationSettingAction.ASSISTANT_TONE_NEUTRAL,
+    ConversationSettingAction.ASSISTANT_TONE_PROFESSIONAL -> VoiceSettingTarget.ASSISTANT_TONE
+    ConversationSettingAction.REPLY_LENGTH_SHORT,
+    ConversationSettingAction.REPLY_LENGTH_NORMAL,
+    ConversationSettingAction.REPLY_LENGTH_DETAILED -> VoiceSettingTarget.REPLY_LENGTH
+    ConversationSettingAction.NONE -> null
+}
+
 enum class VoiceSettingsSafetyDisposition {
     ALLOW,
     GUIDANCE_ONLY,
@@ -13,208 +77,202 @@ data class VoiceSettingsSafetyResult(
     val disposition: VoiceSettingsSafetyDisposition,
     val authorizedAction: ConversationSettingAction = ConversationSettingAction.NONE,
     val speech: String = "",
-    val pendingHapticEnabled: Boolean? = null
+    val groundedTarget: VoiceSettingTarget? = null,
+    val pendingClarification: PendingVoiceSettingClarification? = null
 )
 
 /**
- * A narrow final mutation veto. The Conversation Agent remains the semantic router; this policy
- * only requires recognizable guidance, target, and value evidence before Android mutates state.
+ * Final Android mutation veto. ConversationSessionMemory provides semantic conversational context;
+ * this policy accepts only a bounded Android-owned target focus as mutation authority.
  */
 object VoiceSettingsMutationSafetyPolicy {
     fun evaluate(
         normalizedUtterance: String,
-        proposedAction: ConversationSettingAction
+        proposedAction: ConversationSettingAction,
+        currentFocus: VoiceSettingConversationFocus? = null
     ): VoiceSettingsSafetyResult {
         val text = safetyText(normalizedUtterance)
+        val utteranceTarget = groundedTarget(text)
         if (proposedAction == ConversationSettingAction.NONE || text.isBlank()) {
-            return clarifySetting()
+            return clarifySetting(groundedTarget = utteranceTarget)
         }
 
         if (isClearGuidanceQuestion(text)) {
             return VoiceSettingsSafetyResult(
                 disposition = VoiceSettingsSafetyDisposition.GUIDANCE_ONLY,
-                speech = guidanceSpeech(text, proposedAction)
+                speech = guidanceSpeech(text, proposedAction),
+                groundedTarget = utteranceTarget
             )
         }
 
-        val hapticEvidence = hapticEvidence(text)
-        if (hapticEvidence.mentionsHaptic &&
-            hapticEvidence.processing == hapticEvidence.sessionEnd
-        ) {
-            return clarifyHaptic(genericRequestedEnabled(text))
+        val haptic = hapticEvidence(text)
+        if (haptic.mentionsHaptic && haptic.processing == haptic.sessionEnd) {
+            return clarifyHaptic(requestedBoolean(text, null))
         }
 
-        if (!isActionGrounded(text, proposedAction, hapticEvidence)) {
-            return clarifySetting()
+        val proposedTarget = proposedAction.voiceSettingTarget() ?: return clarifySetting()
+        val authoritativeTarget = utteranceTarget ?: currentFocus?.target?.takeIf {
+            hasBoundedContextReference(text)
+        }
+        if (authoritativeTarget == null || authoritativeTarget != proposedTarget) {
+            return clarifySetting(
+                groundedTarget = utteranceTarget,
+                pending = if (utteranceTarget == null && currentFocus == null) {
+                    requestedBoolean(text, null)?.let(::pendingAnyBoolean)
+                } else {
+                    null
+                }
+            )
+        }
+
+        if (!isRequestedValueGrounded(text, proposedAction, proposedTarget)) {
+            return clarifySetting(groundedTarget = utteranceTarget)
         }
 
         return VoiceSettingsSafetyResult(
             disposition = VoiceSettingsSafetyDisposition.ALLOW,
-            authorizedAction = proposedAction
+            authorizedAction = proposedAction,
+            groundedTarget = utteranceTarget
         )
     }
 
-    /** Resolves only a bounded target-only continuation after Android already retained on/off. */
-    fun evaluateHapticClarification(
+    /** Finds one of the six targets only from trustworthy words in this turn. */
+    fun groundedTarget(normalizedUtterance: String): VoiceSettingTarget? =
+        groundedTarget(safetyText(normalizedUtterance), allowTargetOnly = true)
+
+    /** Retains only a direction that Android can read from a targetless clarification request. */
+    fun inferPendingClarification(
         normalizedUtterance: String,
-        requestedEnabled: Boolean
+        currentFocus: VoiceSettingConversationFocus? = null
     ): VoiceSettingsSafetyResult? {
         val text = safetyText(normalizedUtterance)
-        val evidence = hapticEvidence(text, allowTargetOnly = true)
+        if (text.isBlank() || isClearGuidanceQuestion(text)) return null
+        val requestedEnabled = requestedBoolean(text, null) ?: return null
+        val haptic = hapticEvidence(text)
+        if (haptic.mentionsHaptic && haptic.processing == haptic.sessionEnd) {
+            return clarifyHaptic(requestedEnabled)
+        }
+        if (groundedTarget(text) == null && currentFocus == null) {
+            return clarifySetting(pending = pendingAnyBoolean(requestedEnabled))
+        }
+        return null
+    }
+
+    /** Resolves a target-only follow-up using a previously Android-grounded on/off value. */
+    fun evaluateClarification(
+        normalizedUtterance: String,
+        pending: PendingVoiceSettingClarification
+    ): VoiceSettingsSafetyResult? {
+        val text = safetyText(normalizedUtterance)
+        val target = groundedTarget(text, allowTargetOnly = true)
+        val targetAllowed = when (pending.scope) {
+            VoiceSettingClarificationScope.ANY_BOOLEAN_SETTING -> target in BOOLEAN_TARGETS
+            VoiceSettingClarificationScope.HAPTIC_SETTING -> target in HAPTIC_TARGETS
+        }
+        if (targetAllowed && target != null) {
+            val currentDirection = requestedBoolean(text, target)
+            if (currentDirection != null && currentDirection != pending.requestedEnabled) {
+                return null
+            }
+            return VoiceSettingsSafetyResult(
+                disposition = VoiceSettingsSafetyDisposition.ALLOW,
+                authorizedAction = booleanAction(target, pending.requestedEnabled),
+                groundedTarget = target
+            )
+        }
+
+        val haptic = hapticEvidence(text, allowTargetOnly = true)
         return when {
-            evidence.processing && !evidence.sessionEnd -> VoiceSettingsSafetyResult(
-                disposition = VoiceSettingsSafetyDisposition.ALLOW,
-                authorizedAction = if (requestedEnabled) {
-                    ConversationSettingAction.PROCESSING_HAPTIC_ON
-                } else {
-                    ConversationSettingAction.PROCESSING_HAPTIC_OFF
-                }
-            )
-            evidence.sessionEnd && !evidence.processing -> VoiceSettingsSafetyResult(
-                disposition = VoiceSettingsSafetyDisposition.ALLOW,
-                authorizedAction = if (requestedEnabled) {
-                    ConversationSettingAction.SESSION_END_HAPTIC_ON
-                } else {
-                    ConversationSettingAction.SESSION_END_HAPTIC_OFF
-                }
-            )
-            evidence.mentionsHaptic || isBareClarificationAgreement(text) -> clarifyHaptic(
-                requestedEnabled
-            )
+            pending.scope == VoiceSettingClarificationScope.HAPTIC_SETTING &&
+                (haptic.mentionsHaptic || isBareClarificationAgreement(text)) ->
+                clarifyHaptic(pending.requestedEnabled)
+            isBareClarificationAgreement(text) -> clarifySetting(pending = pending)
             else -> null
         }
     }
 
-    private fun isActionGrounded(
+    private fun isRequestedValueGrounded(
         text: String,
         action: ConversationSettingAction,
-        hapticEvidence: HapticEvidence
+        target: VoiceSettingTarget
     ): Boolean = when (action) {
-        ConversationSettingAction.NONE -> false
-        ConversationSettingAction.LARGE_TEXT_ON ->
-            hasLargeTextTarget(text) && requestedBoolean(text, SettingTarget.LARGE_TEXT) == true
-        ConversationSettingAction.LARGE_TEXT_OFF ->
-            hasLargeTextTarget(text) && requestedBoolean(text, SettingTarget.LARGE_TEXT) == false
-        ConversationSettingAction.HIGH_CONTRAST_ON ->
-            hasHighContrastTarget(text) && requestedBoolean(text, SettingTarget.HIGH_CONTRAST) == true
-        ConversationSettingAction.HIGH_CONTRAST_OFF ->
-            hasHighContrastTarget(text) && requestedBoolean(text, SettingTarget.HIGH_CONTRAST) == false
-        ConversationSettingAction.PROCESSING_HAPTIC_ON ->
-            hapticEvidence.processing && !hapticEvidence.sessionEnd &&
-                requestedBoolean(text, SettingTarget.HAPTIC) == true
-        ConversationSettingAction.PROCESSING_HAPTIC_OFF ->
-            hapticEvidence.processing && !hapticEvidence.sessionEnd &&
-                requestedBoolean(text, SettingTarget.HAPTIC) == false
-        ConversationSettingAction.SESSION_END_HAPTIC_ON ->
-            hapticEvidence.sessionEnd && !hapticEvidence.processing &&
-                requestedBoolean(text, SettingTarget.HAPTIC) == true
-        ConversationSettingAction.SESSION_END_HAPTIC_OFF ->
-            hapticEvidence.sessionEnd && !hapticEvidence.processing &&
-                requestedBoolean(text, SettingTarget.HAPTIC) == false
-        ConversationSettingAction.ASSISTANT_TONE_FRIENDLY -> hasToneRequest(text) && containsAny(
-            text,
-            "friendly",
-            "warmer",
-            "warm tone"
-        )
+        ConversationSettingAction.LARGE_TEXT_ON,
+        ConversationSettingAction.HIGH_CONTRAST_ON,
+        ConversationSettingAction.PROCESSING_HAPTIC_ON,
+        ConversationSettingAction.SESSION_END_HAPTIC_ON -> requestedBoolean(text, target) == true
+        ConversationSettingAction.LARGE_TEXT_OFF,
+        ConversationSettingAction.HIGH_CONTRAST_OFF,
+        ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+        ConversationSettingAction.SESSION_END_HAPTIC_OFF -> requestedBoolean(text, target) == false
+        ConversationSettingAction.ASSISTANT_TONE_FRIENDLY ->
+            hasSettingValueRequest(text) && containsAny(text, "friendly", "warmer", "warm tone")
         ConversationSettingAction.ASSISTANT_TONE_NEUTRAL ->
-            hasToneRequest(text) && containsWord(text, "neutral")
-        ConversationSettingAction.ASSISTANT_TONE_PROFESSIONAL -> hasToneRequest(text) && containsAny(
-            text,
-            "professional",
-            "formal"
-        )
-        ConversationSettingAction.REPLY_LENGTH_SHORT -> containsAny(
-            text,
-            "concise"
-        ) || hasReplyNoun(text) && containsAny(text, "short", "shorter", "brief")
-        ConversationSettingAction.REPLY_LENGTH_NORMAL -> containsAny(
-            text,
-            "normal reply length",
-            "default reply length",
-            "default replies"
-        ) || hasReplyNoun(text) && containsAny(text, "normal", "default")
-        ConversationSettingAction.REPLY_LENGTH_DETAILED -> containsAny(
-            text,
-            "more detail",
-            "thorough"
-        ) || hasReplyNoun(text) && containsAny(text, "detailed", "longer")
+            hasSettingValueRequest(text) && containsWord(text, "neutral")
+        ConversationSettingAction.ASSISTANT_TONE_PROFESSIONAL ->
+            hasSettingValueRequest(text) && containsAny(text, "professional", "formal")
+        ConversationSettingAction.REPLY_LENGTH_SHORT ->
+            hasSettingValueRequest(text) && containsAny(text, "short", "shorter", "brief", "concise")
+        ConversationSettingAction.REPLY_LENGTH_NORMAL ->
+            hasSettingValueRequest(text) && containsAny(text, "normal", "default")
+        ConversationSettingAction.REPLY_LENGTH_DETAILED ->
+            hasSettingValueRequest(text) && containsAny(text, "detailed", "more detail", "longer", "thorough")
+        ConversationSettingAction.NONE -> false
     }
 
     private fun isClearGuidanceQuestion(text: String): Boolean =
-        text.startsWith("how ") ||
-            text.startsWith("what ") ||
-            text.startsWith("where ") ||
-            text.startsWith("tell me about ") ||
-            text.startsWith("explain ") ||
-            text.startsWith("can i ") ||
-            text.startsWith("could i ") ||
-            text.startsWith("am i able to ") ||
-            text.startsWith("do you know how ")
+        text.startsWith("how ") || text.startsWith("what ") || text.startsWith("where ") ||
+            text.startsWith("tell me about ") || text.startsWith("explain ") ||
+            text.startsWith("can i ") || text.startsWith("could i ") ||
+            text.startsWith("am i able to ") || text.startsWith("do you know how ")
+
+    private fun groundedTarget(text: String, allowTargetOnly: Boolean = false): VoiceSettingTarget? {
+        val haptic = hapticEvidence(text, allowTargetOnly)
+        return when {
+            hasLargeTextTarget(text) -> VoiceSettingTarget.LARGE_TEXT
+            hasHighContrastTarget(text) -> VoiceSettingTarget.HIGH_CONTRAST
+            haptic.processing && !haptic.sessionEnd -> VoiceSettingTarget.PROCESSING_HAPTIC
+            haptic.sessionEnd && !haptic.processing -> VoiceSettingTarget.SESSION_END_HAPTIC
+            containsAny(text, "tone", "tones", "professional", "formal", "friendly", "warmer", "neutral") ->
+                VoiceSettingTarget.ASSISTANT_TONE
+            containsAny(
+                text,
+                "reply", "replies", "reply length", "reply lengths", "answer", "answers",
+                "response", "responses", "concise", "more detail"
+            ) -> VoiceSettingTarget.REPLY_LENGTH
+            else -> null
+        }
+    }
 
     private fun hasLargeTextTarget(text: String): Boolean = containsAny(
         text,
-        "large text",
-        "larger text",
-        "bigger text",
-        "text larger",
-        "text bigger",
-        "smaller text",
-        "text smaller",
-        "text size"
+        "large text", "larger text", "bigger text", "text larger", "text bigger",
+        "smaller text", "text smaller", "text size"
     )
 
     private fun hasHighContrastTarget(text: String): Boolean = containsWord(text, "contrast")
 
-    private fun requestedBoolean(text: String, target: SettingTarget): Boolean? {
+    private fun requestedBoolean(text: String, target: VoiceSettingTarget?): Boolean? {
         val off = containsAny(
             text,
-            "turn off",
-            "switch off",
-            "disable",
-            "deactivate",
-            "stop",
-            "do not",
-            "don t",
-            "without"
-        ) || (target == SettingTarget.LARGE_TEXT && containsAny(
-            text,
-            "smaller text",
-            "decrease text size",
-            "reduce text size"
+            "turn off", "turn it off", "turn it back off", "switch off", "switch it off",
+            "disable", "deactivate", "stop", "do not", "don t", "without"
+        ) || (target == VoiceSettingTarget.LARGE_TEXT && containsAny(
+            text, "smaller text", "decrease text size", "reduce text size"
         ))
         val on = containsAny(
             text,
-            "turn on",
-            "switch on",
-            "enable",
-            "activate",
-            "start",
-            "open"
+            "turn on", "turn it on", "turn it back on", "switch on", "switch it on",
+            "enable", "activate", "start", "open"
         ) || when (target) {
-            SettingTarget.LARGE_TEXT -> containsAny(
-                text,
-                "large text",
-                "larger text",
-                "bigger text",
-                "text larger",
-                "text bigger",
-                "text size",
-                "increase text size"
+            VoiceSettingTarget.LARGE_TEXT -> containsAny(
+                text, "large text", "larger text", "bigger text", "text larger", "text bigger",
+                "text size", "increase text size"
             ) && containsAny(text, "use", "make", "want", "increase")
-            SettingTarget.HIGH_CONTRAST -> containsAny(
-                text,
-                "more contrast",
-                "stronger contrast",
-                "contrast stronger",
-                "increase contrast",
+            VoiceSettingTarget.HIGH_CONTRAST -> containsAny(
+                text, "more contrast", "stronger contrast", "contrast stronger", "increase contrast",
                 "high contrast"
             ) && containsAny(text, "use", "make", "want", "increase")
-            SettingTarget.HAPTIC,
-            SettingTarget.PROCESSING_HAPTIC,
-            SettingTarget.SESSION_END_HAPTIC,
-            SettingTarget.ASSISTANT_TONE,
-            SettingTarget.REPLY_LENGTH -> false
+            else -> false
         }
         return when {
             off && !on -> false
@@ -223,96 +281,40 @@ object VoiceSettingsMutationSafetyPolicy {
         }
     }
 
-    private fun genericRequestedEnabled(text: String): Boolean? =
-        requestedBoolean(text, SettingTarget.HAPTIC)
+    private fun hasSettingValueRequest(text: String): Boolean = containsAny(
+        text, "use", "be ", "make", "keep", "give", "set", "switch", "change", "go back"
+    )
 
-    private fun hapticEvidence(
-        text: String,
-        allowTargetOnly: Boolean = false
-    ): HapticEvidence {
-        val mentionsHaptic = containsHapticConcept(text)
+    private fun hasBoundedContextReference(text: String): Boolean =
+        containsWord(text, "it") || containsWord(text, "one")
+
+    private fun hapticEvidence(text: String, allowTargetOnly: Boolean = false): HapticEvidence {
         val processing = containsAny(
             text,
-            "processing",
-            "while processing",
-            "while thinking",
-            "while you re thinking",
-            "while you are thinking",
-            "when thinking",
-            "thinking vibration",
-            "while working",
-            "while you re working",
-            "while you are working",
-            "when working",
-            "heartbeat"
+            "processing", "while processing", "while thinking", "while you re thinking",
+            "while you are thinking", "when thinking", "thinking vibration", "while working",
+            "while you re working", "while you are working", "when working", "heartbeat"
         ) || (allowTargetOnly && containsAny(text, "processing one", "thinking one"))
         val sessionEnd = containsAny(
             text,
-            "session end",
-            "session ending",
-            "conversation end",
-            "conversation finish",
-            "final vibration",
-            "final haptic",
-            "terminal vibration",
-            "terminal haptic",
-            "when you re done",
-            "when you are done",
-            "when you re finished",
-            "when you are finished",
-            "when the assistant is done",
-            "when the conversation is done",
+            "session end", "session ending", "conversation end", "conversation finish",
+            "final vibration", "final haptic", "terminal vibration", "terminal haptic",
+            "when you re done", "when you are done", "when you re finished",
+            "when you are finished", "when the assistant is done", "when the conversation is done",
             "after the conversation"
         ) || (allowTargetOnly && containsAny(
-            text,
-            "session end one",
-            "session ending one",
-            "final one",
-            "ending one"
+            text, "session end one", "session ending one", "final one", "ending one"
         ))
         return HapticEvidence(
-            mentionsHaptic = mentionsHaptic || (allowTargetOnly && (processing || sessionEnd)),
+            mentionsHaptic = containsAny(text, "haptic", "vibrat", "heartbeat", "pulse") ||
+                (allowTargetOnly && (processing || sessionEnd)),
             processing = processing,
             sessionEnd = sessionEnd
         )
     }
 
-    private fun containsHapticConcept(text: String): Boolean =
-        containsAny(text, "haptic", "vibrat", "heartbeat", "pulse")
-
-    private fun hasReplyNoun(text: String): Boolean = containsAny(
-        text,
-        "reply",
-        "replies",
-        "answer",
-        "answers",
-        "response",
-        "responses"
-    )
-
-    private fun hasToneRequest(text: String): Boolean = containsAny(
-        text,
-        "tone",
-        "sound",
-        "speak",
-        "talk",
-        "more formal",
-        "more friendly",
-        "more neutral"
-    ) || Regex("(^|\\s)(be|use)(\\s|$)").containsMatchIn(text)
-
-    private fun guidanceSpeech(
-        text: String,
-        proposedAction: ConversationSettingAction
-    ): String {
-        if (containsAny(
-                text,
-                "what settings",
-                "which settings",
-                "settings can",
-                "change settings by voice"
-            )
-        ) {
+    private fun guidanceSpeech(text: String, proposedAction: ConversationSettingAction): String {
+        if (containsAny(text, "what settings", "which settings", "settings can", "change settings by voice")) {
             return "You can ask me to change Large Text, High Contrast, processing and " +
                 "session-end haptics, Assistant Tone, and Reply Length."
         }
@@ -321,84 +323,66 @@ object VoiceSettingsMutationSafetyPolicy {
             return "There are separate processing and session-end vibration settings. " +
                 "You can ask me about either one."
         }
-        return when (groundedTarget(text) ?: proposedAction.target()) {
-            SettingTarget.LARGE_TEXT ->
+        return when (groundedTarget(text) ?: proposedAction.voiceSettingTarget()) {
+            VoiceSettingTarget.LARGE_TEXT ->
                 "You can say, 'Turn on large text,' or, 'Turn off large text.'"
-            SettingTarget.HIGH_CONTRAST ->
+            VoiceSettingTarget.HIGH_CONTRAST ->
                 "High contrast increases screen contrast. You can ask me to turn it on or off."
-            SettingTarget.PROCESSING_HAPTIC ->
+            VoiceSettingTarget.PROCESSING_HAPTIC ->
                 "Processing haptic feedback vibrates while I am working. You can ask me to turn it on or off."
-            SettingTarget.SESSION_END_HAPTIC ->
+            VoiceSettingTarget.SESSION_END_HAPTIC ->
                 "Session-end haptic feedback vibrates when the conversation finishes. You can ask me to turn it on or off."
-            SettingTarget.ASSISTANT_TONE ->
+            VoiceSettingTarget.ASSISTANT_TONE ->
                 "You can ask me to use a Friendly, Neutral, or Professional tone."
-            SettingTarget.REPLY_LENGTH ->
+            VoiceSettingTarget.REPLY_LENGTH ->
                 "You can ask me to use Short, Normal, or Detailed replies."
-            SettingTarget.HAPTIC,
             null -> "Which setting would you like help with?"
         }
     }
 
-    private fun groundedTarget(text: String): SettingTarget? {
-        val haptic = hapticEvidence(text)
-        return when {
-            hasLargeTextTarget(text) -> SettingTarget.LARGE_TEXT
-            hasHighContrastTarget(text) -> SettingTarget.HIGH_CONTRAST
-            haptic.processing && !haptic.sessionEnd -> SettingTarget.PROCESSING_HAPTIC
-            haptic.sessionEnd && !haptic.processing -> SettingTarget.SESSION_END_HAPTIC
-            containsAny(text, "tone", "professional", "formal", "friendly", "warmer", "neutral") ->
-                SettingTarget.ASSISTANT_TONE
-            containsAny(text, "reply", "replies", "answer", "answers", "concise", "detail") ->
-                SettingTarget.REPLY_LENGTH
-            else -> null
+    private fun booleanAction(target: VoiceSettingTarget, enabled: Boolean): ConversationSettingAction =
+        when (target) {
+            VoiceSettingTarget.LARGE_TEXT -> if (enabled) ConversationSettingAction.LARGE_TEXT_ON else ConversationSettingAction.LARGE_TEXT_OFF
+            VoiceSettingTarget.HIGH_CONTRAST -> if (enabled) ConversationSettingAction.HIGH_CONTRAST_ON else ConversationSettingAction.HIGH_CONTRAST_OFF
+            VoiceSettingTarget.PROCESSING_HAPTIC -> if (enabled) ConversationSettingAction.PROCESSING_HAPTIC_ON else ConversationSettingAction.PROCESSING_HAPTIC_OFF
+            VoiceSettingTarget.SESSION_END_HAPTIC -> if (enabled) ConversationSettingAction.SESSION_END_HAPTIC_ON else ConversationSettingAction.SESSION_END_HAPTIC_OFF
+            VoiceSettingTarget.ASSISTANT_TONE,
+            VoiceSettingTarget.REPLY_LENGTH -> ConversationSettingAction.NONE
         }
-    }
-
-    private fun ConversationSettingAction.target(): SettingTarget? = when (this) {
-        ConversationSettingAction.LARGE_TEXT_ON,
-        ConversationSettingAction.LARGE_TEXT_OFF -> SettingTarget.LARGE_TEXT
-        ConversationSettingAction.HIGH_CONTRAST_ON,
-        ConversationSettingAction.HIGH_CONTRAST_OFF -> SettingTarget.HIGH_CONTRAST
-        ConversationSettingAction.PROCESSING_HAPTIC_ON,
-        ConversationSettingAction.PROCESSING_HAPTIC_OFF -> SettingTarget.PROCESSING_HAPTIC
-        ConversationSettingAction.SESSION_END_HAPTIC_ON,
-        ConversationSettingAction.SESSION_END_HAPTIC_OFF -> SettingTarget.SESSION_END_HAPTIC
-        ConversationSettingAction.ASSISTANT_TONE_FRIENDLY,
-        ConversationSettingAction.ASSISTANT_TONE_NEUTRAL,
-        ConversationSettingAction.ASSISTANT_TONE_PROFESSIONAL -> SettingTarget.ASSISTANT_TONE
-        ConversationSettingAction.REPLY_LENGTH_SHORT,
-        ConversationSettingAction.REPLY_LENGTH_NORMAL,
-        ConversationSettingAction.REPLY_LENGTH_DETAILED -> SettingTarget.REPLY_LENGTH
-        ConversationSettingAction.NONE -> null
-    }
 
     private fun clarifyHaptic(enabled: Boolean?) = VoiceSettingsSafetyResult(
         disposition = VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET,
         speech = "Do you mean the processing vibration or the session-end vibration?",
-        pendingHapticEnabled = enabled
+        pendingClarification = enabled?.let {
+            PendingVoiceSettingClarification(it, VoiceSettingClarificationScope.HAPTIC_SETTING)
+        }
     )
 
-    private fun clarifySetting() = VoiceSettingsSafetyResult(
+    private fun clarifySetting(
+        groundedTarget: VoiceSettingTarget? = null,
+        pending: PendingVoiceSettingClarification? = null
+    ) = VoiceSettingsSafetyResult(
         disposition = VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET,
-        speech = "Which setting would you like me to change?"
+        speech = "Which setting would you like me to change?",
+        groundedTarget = groundedTarget,
+        pendingClarification = pending
+    )
+
+    private fun pendingAnyBoolean(enabled: Boolean) = PendingVoiceSettingClarification(
+        enabled,
+        VoiceSettingClarificationScope.ANY_BOOLEAN_SETTING
     )
 
     private fun isBareClarificationAgreement(text: String): Boolean = text in setOf(
-        "yes",
-        "yeah",
-        "correct",
-        "that one",
-        "the one"
+        "yes", "yeah", "correct", "that one", "the one"
     )
 
-    private fun safetyText(value: String): String = value
-        .lowercase()
+    private fun safetyText(value: String): String = value.lowercase()
         .replace(Regex("[^a-z0-9]+"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
 
-    private fun containsAny(text: String, vararg values: String): Boolean =
-        values.any(text::contains)
+    private fun containsAny(text: String, vararg values: String): Boolean = values.any(text::contains)
 
     private fun containsWord(text: String, word: String): Boolean =
         Regex("(^|\\s)${Regex.escape(word)}(\\s|$)").containsMatchIn(text)
@@ -409,13 +393,14 @@ object VoiceSettingsMutationSafetyPolicy {
         val sessionEnd: Boolean
     )
 
-    private enum class SettingTarget {
-        LARGE_TEXT,
-        HIGH_CONTRAST,
-        HAPTIC,
-        PROCESSING_HAPTIC,
-        SESSION_END_HAPTIC,
-        ASSISTANT_TONE,
-        REPLY_LENGTH
-    }
+    private val BOOLEAN_TARGETS = setOf(
+        VoiceSettingTarget.LARGE_TEXT,
+        VoiceSettingTarget.HIGH_CONTRAST,
+        VoiceSettingTarget.PROCESSING_HAPTIC,
+        VoiceSettingTarget.SESSION_END_HAPTIC
+    )
+    private val HAPTIC_TARGETS = setOf(
+        VoiceSettingTarget.PROCESSING_HAPTIC,
+        VoiceSettingTarget.SESSION_END_HAPTIC
+    )
 }

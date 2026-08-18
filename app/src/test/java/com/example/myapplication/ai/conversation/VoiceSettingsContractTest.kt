@@ -133,6 +133,7 @@ class VoiceSettingsContractTest {
         assertTrue(routeBranch.contains("VoiceSettingsSafetyDisposition.ALLOW"))
         assertTrue(routeBranch.contains("executeAllowedVoiceSetting"))
         assertFalse(routeBranch.contains("voiceSettingsExecutor.execute"))
+        assertFalse(routeBranch.contains("clearAccessibleTaskQuerySession"))
         assertTrue(home.contains("pendingVoiceDisplayRefresh = true"))
         assertFalse(routeBranch.contains("SettingsActivity"))
         assertFalse(routeBranch.contains("startActivity"))
@@ -158,8 +159,14 @@ class VoiceSettingsContractTest {
         assertTrue(allowBranch.contains("executeAllowedVoiceSetting"))
         assertFalse(vetoBranches.contains("executeAllowedVoiceSetting"))
         assertEquals(1, executorHelper.split("voiceSettingsExecutor.execute").size - 1)
-        assertTrue(home.contains("handlePendingVoiceHapticClarification(normalized)"))
-        assertTrue(home.contains("pendingVoiceHapticClarification = null"))
+        assertTrue(home.contains("handlePendingVoiceSettingClarification(normalized)"))
+        assertTrue(home.contains("voiceSettingConversationContext.clear()"))
+        val sessionClear = home.substringAfter("private fun clearConversationSessionContext()")
+            .substringBefore("private fun clearAccessibleTaskQuerySession")
+        assertTrue(sessionClear.contains("voiceSettingConversationContext.clear()"))
+        val lifecycleStop = home.substringAfter("override fun onStop()")
+            .substringBefore("override fun onDestroy()")
+        assertTrue(lifecycleStop.contains("clearConversationSessionContext()"))
     }
 
     private fun decisionJson(

@@ -71,9 +71,9 @@ class VoiceSettingsExecutorTest {
         assertTrue(preferences.processingHapticEnabled)
         assertTrue(preferences.sessionEndHapticEnabled)
 
-        val followUp = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+        val followUp = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
             "the processing one",
-            requestedEnabled = requireNotNull(initial.pendingHapticEnabled)
+            pending = requireNotNull(initial.pendingClarification)
         )
         assertEquals(VoiceSettingsSafetyDisposition.ALLOW, followUp?.disposition)
         VoiceSettingsExecutor(preferences).execute(requireNotNull(followUp).authorizedAction)

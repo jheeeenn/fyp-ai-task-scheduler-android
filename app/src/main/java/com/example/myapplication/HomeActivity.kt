@@ -136,6 +136,8 @@ import com.example.myapplication.voice.VoiceSettingsExecutor
 import com.example.myapplication.voice.VoiceSettingsMutationSafetyPolicy
 import com.example.myapplication.voice.VoiceSettingsSafetyDisposition
 import com.example.myapplication.voice.VoiceSettingsSafetyResult
+import com.example.myapplication.voice.VoiceSettingConversationContext
+import com.example.myapplication.voice.voiceSettingTarget
 import java.text.SimpleDateFormat
 
 import com.example.myapplication.voice.AssistantVoiceHost
@@ -272,9 +274,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         val originalActionRequest: String? = null,
         val authorityValidatedRef: String? = null
     )
-    private data class PendingVoiceHapticClarification(
-        val enabled: Boolean
-    )
     private enum class AssistantRequestInvalidationReason {
         NEW_COMMAND,
         USER_CANCELLED,
@@ -308,7 +307,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var assistantRequestGeneration: Long = 0
     private var assistantRequestActive: Boolean = false
     private var pendingVoiceDisplayRefresh: Boolean = false
-    private var pendingVoiceHapticClarification: PendingVoiceHapticClarification? = null
+    private val voiceSettingConversationContext = VoiceSettingConversationContext()
     private val routineDraftController = RoutineDraftController()
     private val breakdownDraftController = BreakdownDraftController()
     private val savedRoutineInteractionController = SavedRoutineInteractionController()
@@ -1064,7 +1063,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             return
         }
 
-        if (handlePendingVoiceHapticClarification(normalized)) {
+        if (handlePendingVoiceSettingClarification(normalized)) {
             return
         }
 
@@ -1547,6 +1546,14 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             !contextActionRepairEligible
                 )
                 val taskAgentInput: String
+                if (conversationDecision.route !in setOf(
+                        ConversationRoute.SETTINGS_ACTION,
+                        ConversationRoute.DIRECT_REPLY,
+                        ConversationRoute.ASK_CLARIFICATION
+                    )
+                ) {
+                    voiceSettingConversationContext.clear()
+                }
                 when (conversationDecision.route) {
                     ConversationRoute.SMART_ROUTINE_BUILDER -> {
                         if (!isAssistantRequestCurrent(requestToken)) return@launch
@@ -1896,6 +1903,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     }
                     ConversationRoute.SETTINGS_ACTION -> {
                         if (!VoiceSettingsDecisionValidator.isValid(conversationDecision)) {
+                            voiceSettingConversationContext.clear()
                             val clarification = "I could not change that setting safely. Please try again."
                             conversationOrchestrator.commitFinalDecision(
                                 ConversationDecision(
@@ -1910,7 +1918,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         }
                         val safetyResult = VoiceSettingsMutationSafetyPolicy.evaluate(
                             normalizedUtterance = normalized,
-                            proposedAction = conversationDecision.settingAction
+                            proposedAction = conversationDecision.settingAction,
+                            currentFocus = voiceSettingConversationContext.focus
                         )
                         logVoiceSettingsSafety(
                             action = conversationDecision.settingAction,
@@ -1918,29 +1927,44 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         )
                         when (safetyResult.disposition) {
                             VoiceSettingsSafetyDisposition.ALLOW -> {
-                                pendingVoiceHapticClarification = null
+                                voiceSettingConversationContext.clearPending()
+                                safetyResult.authorizedAction.voiceSettingTarget()?.let(
+                                    voiceSettingConversationContext::focus
+                                )
                                 conversationOrchestrator.commitFinalDecision(conversationDecision)
                                 executeAllowedVoiceSetting(safetyResult.authorizedAction)
                             }
                             VoiceSettingsSafetyDisposition.GUIDANCE_ONLY -> {
-                                pendingVoiceHapticClarification = null
+                                voiceSettingConversationContext.clearPending()
+                                safetyResult.groundedTarget?.let(
+                                    voiceSettingConversationContext::focus
+                                )
                                 deliverVoiceSettingsSafetyResponse(
                                     safetyResult,
                                     ConversationRoute.DIRECT_REPLY
                                 )
                             }
                             VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET -> {
-                                pendingVoiceHapticClarification =
-                                    safetyResult.pendingHapticEnabled?.let(
-                                        ::PendingVoiceHapticClarification
-                                    )
+                                voiceSettingConversationContext.clear()
+                                voiceSettingConversationContext.retain(
+                                    safetyResult.pendingClarification
+                                )
                                 deliverVoiceSettingsSafetyResponse(
                                     safetyResult,
                                     ConversationRoute.ASK_CLARIFICATION
                                 )
                             }
                             VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET -> {
-                                pendingVoiceHapticClarification = null
+                                if (safetyResult.groundedTarget != null) {
+                                    voiceSettingConversationContext.focus(
+                                        safetyResult.groundedTarget
+                                    )
+                                } else {
+                                    voiceSettingConversationContext.clear()
+                                }
+                                voiceSettingConversationContext.retain(
+                                    safetyResult.pendingClarification
+                                )
                                 deliverVoiceSettingsSafetyResponse(
                                     safetyResult,
                                     ConversationRoute.ASK_CLARIFICATION
@@ -1951,6 +1975,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     }
                     ConversationRoute.DIRECT_REPLY -> {
                         Log.d("CONVO_ORCH", "handled directly as DIRECT_REPLY")
+                        VoiceSettingsMutationSafetyPolicy.groundedTarget(normalized)?.let {
+                            voiceSettingConversationContext.clearPending()
+                            voiceSettingConversationContext.focus(it)
+                        } ?: voiceSettingConversationContext.clear()
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
                         assistantSession.speak(
                             conversationDecision.reply,
@@ -1960,6 +1988,30 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     }
                     ConversationRoute.ASK_CLARIFICATION -> {
                         Log.d("CONVO_ORCH", "handled directly as ASK_CLARIFICATION")
+                        val settingsClarification =
+                            VoiceSettingsMutationSafetyPolicy.inferPendingClarification(
+                                normalizedUtterance = normalized,
+                                currentFocus = voiceSettingConversationContext.focus
+                            )
+                        if (settingsClarification != null) {
+                            voiceSettingConversationContext.clear()
+                            voiceSettingConversationContext.retain(
+                                settingsClarification.pendingClarification
+                            )
+                            logVoiceSettingsSafety(
+                                ConversationSettingAction.NONE,
+                                settingsClarification
+                            )
+                            deliverVoiceSettingsSafetyResponse(
+                                settingsClarification,
+                                ConversationRoute.ASK_CLARIFICATION
+                            )
+                            return@launch
+                        }
+                        VoiceSettingsMutationSafetyPolicy.groundedTarget(normalized)?.let {
+                            voiceSettingConversationContext.clearPending()
+                            voiceSettingConversationContext.focus(it)
+                        } ?: voiceSettingConversationContext.clear()
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
                         assistantSession.speak(conversationDecision.reply, listenAgain = true)
                         return@launch
@@ -4215,7 +4267,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun clearConversationSessionContext() {
-        pendingVoiceHapticClarification = null
+        voiceSettingConversationContext.clear()
         clearPendingContextActionClarification(restoreContext = false)
         clearAccessibleTaskQuerySession(clearTaskContext = true)
         if (::conversationOrchestrator.isInitialized) {
@@ -6753,6 +6805,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     override fun onStop() {
         if (!isChangingConfigurations) {
             invalidateAssistantRequest(AssistantRequestInvalidationReason.SESSION_STOPPED)
+            clearConversationSessionContext()
             assistantSession.stopForLifecycle()
         }
         super.onStop()
@@ -6772,13 +6825,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (!isFinishing && !isDestroyed) recreate()
     }
 
-    private fun handlePendingVoiceHapticClarification(normalized: String): Boolean {
-        val pending = pendingVoiceHapticClarification ?: return false
-        val safetyResult = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+    private fun handlePendingVoiceSettingClarification(normalized: String): Boolean {
+        val pending = voiceSettingConversationContext.pendingClarification ?: return false
+        val safetyResult = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
             normalizedUtterance = normalized,
-            requestedEnabled = pending.enabled
+            pending = pending
         ) ?: run {
-            pendingVoiceHapticClarification = null
+            voiceSettingConversationContext.clearPending()
             return false
         }
         logVoiceSettingsSafety(safetyResult.authorizedAction, safetyResult)
@@ -6789,25 +6842,33 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     settingAction = safetyResult.authorizedAction,
                     confidence = 1.0,
                     listenAgain = true,
-                    source = "android_haptic_settings_clarification"
+                    source = "android_voice_setting_clarification"
                 )
                 if (!VoiceSettingsDecisionValidator.isValid(decision)) {
-                    pendingVoiceHapticClarification = null
+                    voiceSettingConversationContext.clearPending()
                     false
                 } else {
-                    pendingVoiceHapticClarification = null
+                    voiceSettingConversationContext.clearPending()
+                    safetyResult.authorizedAction.voiceSettingTarget()?.let(
+                        voiceSettingConversationContext::focus
+                    )
                     conversationOrchestrator.commitFinalDecision(decision)
                     executeAllowedVoiceSetting(safetyResult.authorizedAction)
                     true
                 }
             }
             VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET -> {
+                voiceSettingConversationContext.retain(safetyResult.pendingClarification)
                 assistantSession.speak(safetyResult.speech, listenAgain = true)
                 true
             }
-            VoiceSettingsSafetyDisposition.GUIDANCE_ONLY,
             VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET -> {
-                pendingVoiceHapticClarification = null
+                voiceSettingConversationContext.retain(safetyResult.pendingClarification)
+                assistantSession.speak(safetyResult.speech, listenAgain = true)
+                true
+            }
+            VoiceSettingsSafetyDisposition.GUIDANCE_ONLY -> {
+                voiceSettingConversationContext.clearPending()
                 false
             }
         }

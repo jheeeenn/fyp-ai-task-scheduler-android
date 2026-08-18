@@ -2,7 +2,6 @@ package com.example.myapplication.voice
 
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -131,11 +130,11 @@ class VoiceSettingsMutationSafetyPolicyTest {
             ConversationSettingAction.PROCESSING_HAPTIC_OFF
         )
         assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET, initial.disposition)
-        assertEquals(false, initial.pendingHapticEnabled)
+        assertEquals(false, initial.pendingClarification?.requestedEnabled)
 
-        val processing = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+        val processing = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
             "the processing one",
-            requestedEnabled = requireNotNull(initial.pendingHapticEnabled)
+            pending = requireNotNull(initial.pendingClarification)
         )
         assertEquals(VoiceSettingsSafetyDisposition.ALLOW, processing?.disposition)
         assertEquals(
@@ -143,9 +142,12 @@ class VoiceSettingsMutationSafetyPolicyTest {
             processing?.authorizedAction
         )
 
-        val sessionEnd = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+        val sessionEnd = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
             "the session end one",
-            requestedEnabled = false
+            pending = PendingVoiceSettingClarification(
+                requestedEnabled = false,
+                scope = VoiceSettingClarificationScope.HAPTIC_SETTING
+            )
         )
         assertEquals(VoiceSettingsSafetyDisposition.ALLOW, sessionEnd?.disposition)
         assertEquals(
@@ -153,19 +155,124 @@ class VoiceSettingsMutationSafetyPolicyTest {
             sessionEnd?.authorizedAction
         )
 
-        val bareYes = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+        val bareYes = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
             "yes",
-            requestedEnabled = false
+            pending = requireNotNull(initial.pendingClarification)
         )
         assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET, bareYes?.disposition)
         assertEquals(ConversationSettingAction.NONE, bareYes?.authorizedAction)
 
-        assertNull(
-            VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
-                "turn on high contrast",
-                requestedEnabled = false
-            )
+    }
+
+    @Test
+    fun guidanceGroundsFocusAndContextualBooleanFollowUpsRemainValueBounded() {
+        val guidance = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "how do i turn on high contrast",
+            ConversationSettingAction.HIGH_CONTRAST_ON
         )
+        assertEquals(VoiceSettingsSafetyDisposition.GUIDANCE_ONLY, guidance.disposition)
+        assertEquals(VoiceSettingTarget.HIGH_CONTRAST, guidance.groundedTarget)
+        val focus = VoiceSettingConversationFocus(requireNotNull(guidance.groundedTarget))
+
+        assertDisposition(
+            "can you turn it on",
+            ConversationSettingAction.HIGH_CONTRAST_ON,
+            VoiceSettingsSafetyDisposition.ALLOW,
+            focus
+        )
+        assertDisposition(
+            "turn it back off",
+            ConversationSettingAction.HIGH_CONTRAST_OFF,
+            VoiceSettingsSafetyDisposition.ALLOW,
+            focus
+        )
+        assertDisposition(
+            "turn it on",
+            ConversationSettingAction.LARGE_TEXT_ON,
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET,
+            focus
+        )
+        assertDisposition(
+            "what about it",
+            ConversationSettingAction.HIGH_CONTRAST_ON,
+            VoiceSettingsSafetyDisposition.GUIDANCE_ONLY,
+            focus
+        )
+    }
+
+    @Test
+    fun noFocusRetainsOnlyGroundedDirectionAndTargetFollowUpCompletesAction() {
+        val initial = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "turn it on",
+            ConversationSettingAction.HIGH_CONTRAST_ON
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET, initial.disposition)
+        assertEquals(VoiceSettingClarificationScope.ANY_BOOLEAN_SETTING, initial.pendingClarification?.scope)
+        assertEquals(true, initial.pendingClarification?.requestedEnabled)
+        assertEquals(null, initial.groundedTarget)
+
+        val followUp = VoiceSettingsMutationSafetyPolicy.evaluateClarification(
+            "high contrast",
+            requireNotNull(initial.pendingClarification)
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.ALLOW, followUp?.disposition)
+        assertEquals(ConversationSettingAction.HIGH_CONTRAST_ON, followUp?.authorizedAction)
+        assertEquals(VoiceSettingTarget.HIGH_CONTRAST, followUp?.groundedTarget)
+    }
+
+    @Test
+    fun toneAndReplyGuidanceTargetsAuthorizeOnlyExplicitContextualValues() {
+        assertEquals(
+            VoiceSettingTarget.ASSISTANT_TONE,
+            VoiceSettingsMutationSafetyPolicy.groundedTarget("what tones can you use")
+        )
+        assertDisposition(
+            "use the professional one",
+            ConversationSettingAction.ASSISTANT_TONE_PROFESSIONAL,
+            VoiceSettingsSafetyDisposition.ALLOW,
+            VoiceSettingConversationFocus(VoiceSettingTarget.ASSISTANT_TONE)
+        )
+        assertDisposition(
+            "use the short one",
+            ConversationSettingAction.REPLY_LENGTH_SHORT,
+            VoiceSettingsSafetyDisposition.ALLOW,
+            VoiceSettingConversationFocus(VoiceSettingTarget.REPLY_LENGTH)
+        )
+        assertDisposition(
+            "use it",
+            ConversationSettingAction.REPLY_LENGTH_SHORT,
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET,
+            VoiceSettingConversationFocus(VoiceSettingTarget.REPLY_LENGTH)
+        )
+    }
+
+    @Test
+    fun ungroundedModelTargetNeverBecomesAndroidFocusAndContextClearsAtSessionBoundary() {
+        val unsafe = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "can you turn off the last text",
+            ConversationSettingAction.PROCESSING_HAPTIC_OFF
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET, unsafe.disposition)
+        assertEquals(null, unsafe.groundedTarget)
+        val unsafeWithMatchingStaleFocus = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "can you turn off the last text",
+            ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+            VoiceSettingConversationFocus(VoiceSettingTarget.PROCESSING_HAPTIC)
+        )
+        assertEquals(
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET,
+            unsafeWithMatchingStaleFocus.disposition
+        )
+        assertEquals(null, unsafeWithMatchingStaleFocus.groundedTarget)
+
+        val context = VoiceSettingConversationContext()
+        context.focus(VoiceSettingTarget.HIGH_CONTRAST)
+        context.retain(
+            PendingVoiceSettingClarification(true, VoiceSettingClarificationScope.ANY_BOOLEAN_SETTING)
+        )
+        context.clear()
+        assertEquals(null, context.focus)
+        assertEquals(null, context.pendingClarification)
     }
 
     @Test
@@ -183,9 +290,10 @@ class VoiceSettingsMutationSafetyPolicyTest {
     private fun assertDisposition(
         utterance: String,
         action: ConversationSettingAction,
-        expected: VoiceSettingsSafetyDisposition
+        expected: VoiceSettingsSafetyDisposition,
+        focus: VoiceSettingConversationFocus? = null
     ) {
-        val result = VoiceSettingsMutationSafetyPolicy.evaluate(utterance, action)
+        val result = VoiceSettingsMutationSafetyPolicy.evaluate(utterance, action, focus)
         assertEquals(utterance, expected, result.disposition)
         if (expected == VoiceSettingsSafetyDisposition.ALLOW) {
             assertEquals(utterance, action, result.authorizedAction)
