@@ -52,6 +52,7 @@ import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
 import com.example.myapplication.ai.conversation.ConversationRoute
+import com.example.myapplication.ai.conversation.ConversationSettingAction
 import com.example.myapplication.ai.conversation.ConversationQueryReadingMove
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.conversation.DailyBriefingSnapshotBuilder
@@ -132,6 +133,9 @@ import com.example.myapplication.voice.AssistantTone
 import com.example.myapplication.voice.AssistantVerbosity
 import com.example.myapplication.voice.VoiceSettingsDecisionValidator
 import com.example.myapplication.voice.VoiceSettingsExecutor
+import com.example.myapplication.voice.VoiceSettingsMutationSafetyPolicy
+import com.example.myapplication.voice.VoiceSettingsSafetyDisposition
+import com.example.myapplication.voice.VoiceSettingsSafetyResult
 import java.text.SimpleDateFormat
 
 import com.example.myapplication.voice.AssistantVoiceHost
@@ -268,6 +272,9 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         val originalActionRequest: String? = null,
         val authorityValidatedRef: String? = null
     )
+    private data class PendingVoiceHapticClarification(
+        val enabled: Boolean
+    )
     private enum class AssistantRequestInvalidationReason {
         NEW_COMMAND,
         USER_CANCELLED,
@@ -301,6 +308,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var assistantRequestGeneration: Long = 0
     private var assistantRequestActive: Boolean = false
     private var pendingVoiceDisplayRefresh: Boolean = false
+    private var pendingVoiceHapticClarification: PendingVoiceHapticClarification? = null
     private val routineDraftController = RoutineDraftController()
     private val breakdownDraftController = BreakdownDraftController()
     private val savedRoutineInteractionController = SavedRoutineInteractionController()
@@ -1053,6 +1061,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
         if (isConversationExitCommand(normalized)) {
             endAssistantConversation()
+            return
+        }
+
+        if (handlePendingVoiceHapticClarification(normalized)) {
             return
         }
 
@@ -1896,16 +1908,45 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             assistantSession.speak(clarification, listenAgain = true)
                             return@launch
                         }
-                        val result = voiceSettingsExecutor.execute(
-                            conversationDecision.settingAction
+                        val safetyResult = VoiceSettingsMutationSafetyPolicy.evaluate(
+                            normalizedUtterance = normalized,
+                            proposedAction = conversationDecision.settingAction
                         )
-                        if (result.displayRefreshRequired) {
-                            pendingVoiceDisplayRefresh = true
+                        logVoiceSettingsSafety(
+                            action = conversationDecision.settingAction,
+                            result = safetyResult
+                        )
+                        when (safetyResult.disposition) {
+                            VoiceSettingsSafetyDisposition.ALLOW -> {
+                                pendingVoiceHapticClarification = null
+                                conversationOrchestrator.commitFinalDecision(conversationDecision)
+                                executeAllowedVoiceSetting(safetyResult.authorizedAction)
+                            }
+                            VoiceSettingsSafetyDisposition.GUIDANCE_ONLY -> {
+                                pendingVoiceHapticClarification = null
+                                deliverVoiceSettingsSafetyResponse(
+                                    safetyResult,
+                                    ConversationRoute.DIRECT_REPLY
+                                )
+                            }
+                            VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET -> {
+                                pendingVoiceHapticClarification =
+                                    safetyResult.pendingHapticEnabled?.let(
+                                        ::PendingVoiceHapticClarification
+                                    )
+                                deliverVoiceSettingsSafetyResponse(
+                                    safetyResult,
+                                    ConversationRoute.ASK_CLARIFICATION
+                                )
+                            }
+                            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET -> {
+                                pendingVoiceHapticClarification = null
+                                deliverVoiceSettingsSafetyResponse(
+                                    safetyResult,
+                                    ConversationRoute.ASK_CLARIFICATION
+                                )
+                            }
                         }
-                        responseManager.profile =
-                            AssistantResponseManager.fromPreferences(this@HomeActivity).profile
-                        conversationOrchestrator.commitFinalDecision(conversationDecision)
-                        assistantSession.speak(result.speech, listenAgain = true)
                         return@launch
                     }
                     ConversationRoute.DIRECT_REPLY -> {
@@ -4174,6 +4215,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun clearConversationSessionContext() {
+        pendingVoiceHapticClarification = null
         clearPendingContextActionClarification(restoreContext = false)
         clearAccessibleTaskQuerySession(clearTaskContext = true)
         if (::conversationOrchestrator.isInitialized) {
@@ -6728,6 +6770,81 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (!pendingVoiceDisplayRefresh) return
         pendingVoiceDisplayRefresh = false
         if (!isFinishing && !isDestroyed) recreate()
+    }
+
+    private fun handlePendingVoiceHapticClarification(normalized: String): Boolean {
+        val pending = pendingVoiceHapticClarification ?: return false
+        val safetyResult = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+            normalizedUtterance = normalized,
+            requestedEnabled = pending.enabled
+        ) ?: run {
+            pendingVoiceHapticClarification = null
+            return false
+        }
+        logVoiceSettingsSafety(safetyResult.authorizedAction, safetyResult)
+        return when (safetyResult.disposition) {
+            VoiceSettingsSafetyDisposition.ALLOW -> {
+                val decision = ConversationDecision(
+                    route = ConversationRoute.SETTINGS_ACTION,
+                    settingAction = safetyResult.authorizedAction,
+                    confidence = 1.0,
+                    listenAgain = true,
+                    source = "android_haptic_settings_clarification"
+                )
+                if (!VoiceSettingsDecisionValidator.isValid(decision)) {
+                    pendingVoiceHapticClarification = null
+                    false
+                } else {
+                    pendingVoiceHapticClarification = null
+                    conversationOrchestrator.commitFinalDecision(decision)
+                    executeAllowedVoiceSetting(safetyResult.authorizedAction)
+                    true
+                }
+            }
+            VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET -> {
+                assistantSession.speak(safetyResult.speech, listenAgain = true)
+                true
+            }
+            VoiceSettingsSafetyDisposition.GUIDANCE_ONLY,
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET -> {
+                pendingVoiceHapticClarification = null
+                false
+            }
+        }
+    }
+
+    private fun executeAllowedVoiceSetting(action: ConversationSettingAction) {
+        val result = voiceSettingsExecutor.execute(action)
+        if (result.displayRefreshRequired) {
+            pendingVoiceDisplayRefresh = true
+        }
+        responseManager.profile = AssistantResponseManager.fromPreferences(this).profile
+        assistantSession.speak(result.speech, listenAgain = true)
+    }
+
+    private fun deliverVoiceSettingsSafetyResponse(
+        result: VoiceSettingsSafetyResult,
+        route: ConversationRoute
+    ) {
+        conversationOrchestrator.commitFinalDecision(
+            ConversationDecision(
+                route = route,
+                reply = result.speech,
+                listenAgain = true,
+                source = "android_voice_settings_safety"
+            )
+        )
+        assistantSession.speak(result.speech, listenAgain = true)
+    }
+
+    private fun logVoiceSettingsSafety(
+        action: ConversationSettingAction,
+        result: VoiceSettingsSafetyResult
+    ) {
+        Log.d(
+            "VOICE_SETTINGS_SAFETY",
+            "action=${action.name} disposition=${result.disposition.name}"
+        )
     }
 
     private companion object {

@@ -3,6 +3,8 @@ package com.example.myapplication.preferences
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import com.example.myapplication.voice.VoiceSettingExecutionStatus
 import com.example.myapplication.voice.VoiceSettingsExecutor
+import com.example.myapplication.voice.VoiceSettingsMutationSafetyPolicy
+import com.example.myapplication.voice.VoiceSettingsSafetyDisposition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,6 +55,53 @@ class VoiceSettingsExecutorTest {
 
         assertTrue(source.contains("setLargeTextEnabled(it, PreferenceChangeSource.VOICE)"))
         assertTrue(source.contains("setHighContrastEnabled(it, PreferenceChangeSource.VOICE)"))
+    }
+
+    @Test
+    fun hapticClarificationChangesOnlyTheExplicitFollowUpTarget() {
+        val preferences = AppPreferences(FakeVoicePreferenceStorage())
+        preferences.setProcessingHapticEnabled(true)
+        preferences.setSessionEndHapticEnabled(true)
+        val initial = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "turn off vibration",
+            ConversationSettingAction.PROCESSING_HAPTIC_OFF
+        )
+
+        assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_HAPTIC_TARGET, initial.disposition)
+        assertTrue(preferences.processingHapticEnabled)
+        assertTrue(preferences.sessionEndHapticEnabled)
+
+        val followUp = VoiceSettingsMutationSafetyPolicy.evaluateHapticClarification(
+            "the processing one",
+            requestedEnabled = requireNotNull(initial.pendingHapticEnabled)
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.ALLOW, followUp?.disposition)
+        VoiceSettingsExecutor(preferences).execute(requireNotNull(followUp).authorizedAction)
+
+        assertFalse(preferences.processingHapticEnabled)
+        assertTrue(preferences.sessionEndHapticEnabled)
+    }
+
+    @Test
+    fun safetyVetoesNeverReachExecutorOrChangePreferences() {
+        val cases = listOf(
+            "how do i turn on high contrast" to ConversationSettingAction.HIGH_CONTRAST_ON,
+            "turn off vibration" to ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+            "can you turn off the last text" to ConversationSettingAction.PROCESSING_HAPTIC_OFF,
+            "turn on high contrast" to ConversationSettingAction.LARGE_TEXT_ON
+        )
+
+        cases.forEach { (utterance, proposedAction) ->
+            val preferences = AppPreferences(FakeVoicePreferenceStorage())
+            val before = preferenceSnapshot(preferences)
+            val safety = VoiceSettingsMutationSafetyPolicy.evaluate(utterance, proposedAction)
+            if (safety.disposition == VoiceSettingsSafetyDisposition.ALLOW) {
+                VoiceSettingsExecutor(preferences).execute(safety.authorizedAction)
+            }
+
+            assertTrue(safety.disposition != VoiceSettingsSafetyDisposition.ALLOW)
+            assertEquals(utterance, before, preferenceSnapshot(preferences))
+        }
     }
 
     private fun prepareOpposite(
@@ -120,6 +169,17 @@ class VoiceSettingsExecutorTest {
         ConversationSettingAction.LARGE_TEXT_OFF,
         ConversationSettingAction.HIGH_CONTRAST_ON,
         ConversationSettingAction.HIGH_CONTRAST_OFF
+    )
+
+    private fun preferenceSnapshot(preferences: AppPreferences): List<Any> = listOf(
+        preferences.largeTextEnabled,
+        preferences.highContrastEnabled,
+        preferences.processingHapticEnabled,
+        preferences.sessionEndHapticEnabled,
+        preferences.assistantTone,
+        preferences.replyLength,
+        preferences.conversationAgentEndpoint,
+        preferences.taskAgentEndpoint
     )
 }
 

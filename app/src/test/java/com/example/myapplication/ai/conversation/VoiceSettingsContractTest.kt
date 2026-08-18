@@ -129,14 +129,37 @@ class VoiceSettingsContractTest {
             .substringBefore("private companion object")
 
         assertTrue(routeBranch.contains("VoiceSettingsDecisionValidator.isValid"))
-        assertTrue(routeBranch.contains("voiceSettingsExecutor.execute"))
-        assertTrue(routeBranch.contains("pendingVoiceDisplayRefresh = true"))
+        assertTrue(routeBranch.contains("VoiceSettingsMutationSafetyPolicy.evaluate"))
+        assertTrue(routeBranch.contains("VoiceSettingsSafetyDisposition.ALLOW"))
+        assertTrue(routeBranch.contains("executeAllowedVoiceSetting"))
+        assertFalse(routeBranch.contains("voiceSettingsExecutor.execute"))
+        assertTrue(home.contains("pendingVoiceDisplayRefresh = true"))
         assertFalse(routeBranch.contains("SettingsActivity"))
         assertFalse(routeBranch.contains("startActivity"))
         assertTrue(home.contains("override fun onAssistantCancelled()"))
         assertTrue(home.contains("override fun onAssistantSessionStopped()"))
         assertTrue(refresh.indexOf("pendingVoiceDisplayRefresh = false") < refresh.indexOf("recreate()"))
         assertTrue(refresh.contains("!isFinishing && !isDestroyed"))
+    }
+
+    @Test
+    fun executorCallIsIsolatedBehindAllowOnlyHelper() {
+        val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val routeBranch = home.substringAfter("ConversationRoute.SETTINGS_ACTION -> {")
+            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+        val allowBranch = routeBranch
+            .substringAfter("VoiceSettingsSafetyDisposition.ALLOW -> {")
+            .substringBefore("VoiceSettingsSafetyDisposition.GUIDANCE_ONLY ->")
+        val vetoBranches = routeBranch.substringAfter("VoiceSettingsSafetyDisposition.GUIDANCE_ONLY ->")
+        val executorHelper = home.substringAfter(
+            "private fun executeAllowedVoiceSetting(action: ConversationSettingAction)"
+        ).substringBefore("private fun deliverVoiceSettingsSafetyResponse")
+
+        assertTrue(allowBranch.contains("executeAllowedVoiceSetting"))
+        assertFalse(vetoBranches.contains("executeAllowedVoiceSetting"))
+        assertEquals(1, executorHelper.split("voiceSettingsExecutor.execute").size - 1)
+        assertTrue(home.contains("handlePendingVoiceHapticClarification(normalized)"))
+        assertTrue(home.contains("pendingVoiceHapticClarification = null"))
     }
 
     private fun decisionJson(
