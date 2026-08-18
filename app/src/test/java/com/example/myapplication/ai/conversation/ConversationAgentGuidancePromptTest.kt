@@ -43,6 +43,24 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("one to three short sentences"))
         assertTrue(prompt.contains("Avoid visual-only instructions"))
         assertTrue(prompt.contains("Long-press the Talk Assistant button to type"))
+        assertTrue(prompt.contains("prioritize Current interaction and What the user may say now"))
+        assertTrue(prompt.contains("What can I say now?"))
+        assertTrue(prompt.contains("do not speak the implementation state name"))
+    }
+
+    @Test
+    fun pendingDeleteTitleQuestionUsesReadOnlyFocusedContext() {
+        val example = prompt.substringAfter(
+            "Interaction state:\nDELETE_CONFIRMATION\n" +
+                "Captured Task Detail context contains T1 and Current validated task focus is T1."
+        ).substringBefore("App context:\nInteraction state:\nAFTER_DAILY_BRIEFING")
+
+        assertTrue(example.contains("User: What is the task title?"))
+        assertTrue(example.contains("\"route\":\"CONTEXT_READ\""))
+        assertTrue(example.contains("\"context_ref\":\"T1\""))
+        assertTrue(example.contains("\"context_detail\":\"TITLE\""))
+        assertTrue(example.contains("\"reply\":\"\""))
+        assertTrue(example.contains("\"listen_again\":true"))
     }
 
     @Test

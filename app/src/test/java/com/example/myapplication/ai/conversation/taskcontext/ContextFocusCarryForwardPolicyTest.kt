@@ -16,6 +16,10 @@ class ContextFocusCarryForwardPolicyTest {
             "is it completed" to ConversationContextDetail.STATUS,
             "how many subtasks does it have" to ConversationContextDetail.SUBTASKS,
             "what was it called" to ConversationContextDetail.TITLE,
+            "what is the task title" to ConversationContextDetail.TITLE,
+            "what's the task title" to ConversationContextDetail.TITLE,
+            "what is the task name" to ConversationContextDetail.TITLE,
+            "what is the title of the task" to ConversationContextDetail.TITLE,
             "tell me about it" to ConversationContextDetail.SUMMARY
         )
 
@@ -43,6 +47,14 @@ class ContextFocusCarryForwardPolicyTest {
 
     @Test
     fun staleMissingOrNonResultFocusNeverCarries() {
+        assertNull(
+            ContextFocusCarryForwardPolicy.resolve(
+                "what is the task title",
+                focus = null,
+                capturedSnapshot = snapshot(),
+                isResultInteraction = true
+            )
+        )
         assertNull(
             ContextFocusCarryForwardPolicy.resolve(
                 "what time is it",
@@ -103,6 +115,7 @@ class ContextFocusCarryForwardPolicyTest {
             "what date is it" to ConversationContextDetail.DATE,
             "is it overdue" to ConversationContextDetail.STATUS,
             "how many subtasks are unfinished" to ConversationContextDetail.SUBTASKS,
+            "what is the task title" to ConversationContextDetail.TITLE,
             "read the task" to ConversationContextDetail.SUMMARY
         )
 

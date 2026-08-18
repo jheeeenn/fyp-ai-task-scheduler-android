@@ -71,7 +71,10 @@ object ContextFocusCarryForwardPolicy {
         "(?i)\\b(?:how\\s+many\\s+subtasks|what\\s+subtasks|subtasks?\\s+does\\s+it\\s+have)\\b"
     )
     private val TITLE_QUESTION = Regex(
-        "(?i)\\b(?:what\\s+(?:was|is)\\s+it\\s+called|what(?:'s|\\s+is)\\s+its\\s+(?:name|title))\\b"
+        "(?i)\\b(?:what\\s+(?:was|is)\\s+it\\s+called|" +
+            "what(?:'s|\\s+is)\\s+its\\s+(?:name|title)|" +
+            "what(?:'s|\\s+is)\\s+the\\s+task\\s+(?:name|title)|" +
+            "what(?:'s|\\s+is)\\s+the\\s+(?:name|title)\\s+of\\s+the\\s+task)\\b"
     )
     private val SUMMARY_QUESTION = Regex(
         "(?i)\\b(?:what\\s+was\\s+it|tell\\s+me\\s+about\\s+it|" +

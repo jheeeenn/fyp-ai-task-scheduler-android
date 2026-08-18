@@ -59,24 +59,54 @@ class TaskDetailVoiceInteractionSourceContractTest {
     }
 
     @Test
-    fun homeLoadsRoomContextThenSeedsT1BeforeStartingAssistant() {
+    fun homePublishesAndFocusesTaskDetailBeforeStartingEitherAssistantEntry() {
         val home = mainRoot.resolve("HomeActivity.kt").readText()
         val loader = home.substringAfter("private fun loadTaskDetailAssistantEntry")
             .substringBefore("private fun handleUnavailableTaskDetailEntry")
+        val publisher = home.substringAfter("private fun publishTaskDetailAssistantContext")
+            .substringBefore("private fun handleUnavailableTaskDetailEntry")
+        val normalEntry = loader.substringAfter("HomeAssistantEntryMode.TASK_DETAIL_CONTEXT -> {")
+            .substringBefore("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION -> {")
+        val deleteEntry = loader
+            .substringAfter("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION -> {")
+            .substringBefore("HomeAssistantEntryMode.GENERIC -> Unit")
 
         assertOrdered(
             loader,
             "dao.getById(taskId)",
             "dao.getSubtasks(taskId)",
+            "HomeAssistantEntryMode.TASK_DETAIL_CONTEXT -> {",
+            "publishTaskDetailAssistantContext(task, subtasks)",
+            "HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION -> {"
+        )
+        assertOrdered(
+            publisher,
             "replaceTaskDetailResult(task, subtasks)",
             "readOnlyTaskContextStore.capture()",
+            "capture.snapshot.items.single()",
             "setAuthoritativeContextFocus(",
-            "selectedRef = \"T1\"",
+            "selectedRef = item.ref",
+            "capturedGeneration = capture.snapshot.generation"
+        )
+        assertOrdered(
+            normalEntry,
+            "publishTaskDetailAssistantContext(task, subtasks)",
             "homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS",
             "assistantSession.startPassiveSession()",
             "What would you like to know?"
         )
+        assertOrdered(
+            deleteEntry,
+            "publishTaskDetailAssistantContext(task, subtasks)",
+            "contextScope=\${capture.snapshot.scope}",
+            "contextItemCount=\${capture.snapshot.items.size}",
+            "focusEstablished=true",
+            "assistantSession.startPassiveSession()",
+            "askDeleteConfirmation(task)"
+        )
         assertFalse(loader.contains("putExtra(\"task_title\""))
+        assertFalse(deleteEntry.contains("task.id"))
+        assertFalse(deleteEntry.contains("pendingDeleteTaskId"))
     }
 
     @Test
@@ -129,6 +159,22 @@ class TaskDetailVoiceInteractionSourceContractTest {
         assertTrue(decline.contains("ExecutionOutcome.CANCELLED"))
         assertFalse(decline.contains("deleteTaskAndSubtasks"))
         assertFalse(decline.contains("cancelReminder"))
+    }
+
+    @Test
+    fun contextualReadDoesNotClearPendingDeleteAndYesOrNoStillOwnConfirmation() {
+        val home = mainRoot.resolve("HomeActivity.kt").readText()
+        val executor = home.substringAfter("private fun executeContextRead(")
+            .substringBefore("private fun handleQueryReadingFollowUp(")
+        val deleteFollowUp = home.substringAfterLast("HomeFollowUpContext.DELETE_CONFIRMATION ->")
+            .substringBefore("HomeFollowUpContext.BREAKDOWN_CONFIRMATION")
+
+        assertFalse(executor.contains("clearPendingDeleteState()"))
+        assertFalse(executor.contains("homeFollowUpContext ="))
+        assertFalse(executor.contains("deleteTaskAndSubtasks"))
+        assertTrue(deleteFollowUp.contains("confirmPendingDelete()"))
+        assertTrue(deleteFollowUp.contains("clearPendingDeleteState()"))
+        assertTrue(deleteFollowUp.contains("ExecutionOutcome.CANCELLED"))
     }
 
     @Test

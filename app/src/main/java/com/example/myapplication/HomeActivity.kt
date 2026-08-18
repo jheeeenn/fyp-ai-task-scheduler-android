@@ -624,19 +624,15 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
             when (entry.entryMode) {
                 HomeAssistantEntryMode.TASK_DETAIL_CONTEXT -> {
-                    readOnlyTaskContextStore.replaceTaskDetailResult(task, subtasks)
-                    val capture = readOnlyTaskContextStore.capture()
-                    val item = capture.snapshot.items.single()
-                    conversationOrchestrator.setAuthoritativeContextFocus(
-                        item = item,
-                        selectedRef = "T1",
-                        capturedGeneration = capture.snapshot.generation
-                    )
+                    val capture = publishTaskDetailAssistantContext(task, subtasks)
                     homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
                     Log.d(
                         TASK_DETAIL_ENTRY_TAG,
                         "entryMode=TASK_DETAIL_CONTEXT taskAvailable=true " +
-                            "contextGeneration=${capture.snapshot.generation}"
+                            "contextScope=${capture.snapshot.scope} " +
+                            "contextGeneration=${capture.snapshot.generation} " +
+                            "contextItemCount=${capture.snapshot.items.size} " +
+                            "focusEstablished=true"
                     )
                     assistantSession.startPassiveSession()
                     assistantSession.speak(
@@ -646,10 +642,14 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
 
                 HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION -> {
+                    val capture = publishTaskDetailAssistantContext(task, subtasks)
                     Log.d(
                         TASK_DETAIL_ENTRY_TAG,
                         "entryMode=TASK_DETAIL_DELETE_CONFIRMATION taskAvailable=true " +
-                            "contextGeneration=${readOnlyTaskContextStore.currentGeneration()}"
+                            "contextScope=${capture.snapshot.scope} " +
+                            "contextGeneration=${capture.snapshot.generation} " +
+                            "contextItemCount=${capture.snapshot.items.size} " +
+                            "focusEstablished=true"
                     )
                     assistantSession.startPassiveSession()
                     askDeleteConfirmation(task)
@@ -658,6 +658,21 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 HomeAssistantEntryMode.GENERIC -> Unit
             }
         }
+    }
+
+    private fun publishTaskDetailAssistantContext(
+        task: com.example.myapplication.data.TaskEntity,
+        subtasks: List<com.example.myapplication.data.TaskEntity>
+    ): ReadOnlyTaskContextCapture {
+        readOnlyTaskContextStore.replaceTaskDetailResult(task, subtasks)
+        val capture = readOnlyTaskContextStore.capture()
+        val item = capture.snapshot.items.single()
+        conversationOrchestrator.setAuthoritativeContextFocus(
+            item = item,
+            selectedRef = item.ref,
+            capturedGeneration = capture.snapshot.generation
+        )
+        return capture
     }
 
     private fun handleUnavailableTaskDetailEntry(entryMode: HomeAssistantEntryMode) {
@@ -925,10 +940,11 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
 
             HomeFollowUpContext.DELETE_CONFIRMATION -> Pair(
-                "A deletion is waiting for confirmation and has not happened yet.",
+                "One task deletion is waiting for confirmation and has not happened yet.",
                 listOf(
-                    "Confirm or decline the deletion.",
-                    "Ask what the confirmation means."
+                    "Say yes or confirm to delete the pending task.",
+                    "Say no or cancel to keep the pending task.",
+                    "Ask a read-only question about the pending task before deciding."
                 )
             )
 
@@ -1069,7 +1085,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     homeFollowUpContext == HomeFollowUpContext.AFTER_TASK_DETAILS ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_DAILY_BRIEFING ||
                     homeFollowUpContext == HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION ||
-                    homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE) &&
+                    homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE ||
+                    homeFollowUpContext == HomeFollowUpContext.DELETE_CONFIRMATION) &&
                     (ContextReferenceMutationGuard.containsContextReference(
                             normalized,
                             readOnlyTaskContextStore.snapshot()
@@ -1132,6 +1149,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         homeFollowUpContext == HomeFollowUpContext.AFTER_DAILY_BRIEFING ||
                         homeFollowUpContext == HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION ||
                         homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE ||
+                        homeFollowUpContext == HomeFollowUpContext.DELETE_CONFIRMATION ||
                         homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION
                 val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
                     taskContextCapture.snapshot
@@ -1180,20 +1198,45 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         listenAgain = true,
                         source = "android_conversation_failure"
                     )
-                    ContextDeleteFailureFallbackPolicy.resolve(
+                    val focusedReadFallback = ContextFocusCarryForwardPolicy.resolve(
                         normalizedText = normalized,
-                        currentDecision = failureDecision,
+                        focus = contextFocus,
                         capturedSnapshot = taskContextCapture.snapshot,
-                        currentGeneration = readOnlyTaskContextStore.currentGeneration(),
-                        currentFocus = contextFocus,
-                        agentAttempted = true
-                    ) ?: run {
-                        conversationOrchestrator.commitFinalDecision(failureDecision)
-                        assistantSession.speak(
-                            fallbackReply,
-                            listenAgain = true
+                        isResultInteraction = isResultInteraction
+                    )
+                    val focusedReadValidation = focusedReadFallback?.let { candidate ->
+                        ReadOnlyTaskContextReadValidator.validate(
+                            decision = candidate,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration(),
+                            normalizedText = normalized
                         )
-                        return@launch
+                    }
+                    if (focusedReadFallback != null && focusedReadValidation?.isValid == true) {
+                        Log.d(
+                            "HOME_CONTEXT_FOCUS",
+                            "CONTEXT_FOCUS_FAILURE_FALLBACK_ACCEPTED " +
+                                "ref=${focusedReadFallback.contextRef} " +
+                                "generation=${taskContextCapture.snapshot.generation} " +
+                                "detail=${focusedReadFallback.contextDetail}"
+                        )
+                        focusedReadFallback
+                    } else {
+                        ContextDeleteFailureFallbackPolicy.resolve(
+                            normalizedText = normalized,
+                            currentDecision = failureDecision,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration(),
+                            currentFocus = contextFocus,
+                            agentAttempted = true
+                        ) ?: run {
+                            conversationOrchestrator.commitFinalDecision(failureDecision)
+                            assistantSession.speak(
+                                fallbackReply,
+                                listenAgain = true
+                            )
+                            return@launch
+                        }
                     }
                 }
                 if (
@@ -3704,7 +3747,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.AFTER_TASK_DETAILS,
             HomeFollowUpContext.QUERY_PAGE,
             HomeFollowUpContext.AFTER_DAILY_BRIEFING,
-            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION,
+            HomeFollowUpContext.DELETE_CONFIRMATION
         )
         if (!isResultInteraction) return false
 
@@ -3754,7 +3798,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.AFTER_TASK_DETAILS,
             HomeFollowUpContext.QUERY_PAGE,
             HomeFollowUpContext.AFTER_DAILY_BRIEFING,
-            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION
+            HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION,
+            HomeFollowUpContext.DELETE_CONFIRMATION
         )
         if (!isResultInteraction) return false
 

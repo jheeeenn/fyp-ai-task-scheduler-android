@@ -49,6 +49,20 @@ class HomeActivityAppGuidanceSourceTest {
     }
 
     @Test
+    fun deleteConfirmationGuidancePrioritizesDecisionAndReadOnlyOptions() {
+        val deleteGuidance = contextBuilder
+            .substringAfter("HomeFollowUpContext.DELETE_CONFIRMATION -> Pair(")
+            .substringBefore("HomeFollowUpContext.BREAKDOWN_CONFIRMATION -> Pair(")
+
+        assertTrue(deleteGuidance.contains("One task deletion is waiting for confirmation"))
+        assertTrue(deleteGuidance.contains("Say yes or confirm to delete the pending task."))
+        assertTrue(deleteGuidance.contains("Say no or cancel to keep the pending task."))
+        assertTrue(deleteGuidance.contains("Ask a read-only question about the pending task"))
+        assertFalse(deleteGuidance.contains("pendingDeleteTaskId"))
+        assertFalse(deleteGuidance.contains("pendingDeleteTaskTitle"))
+    }
+
+    @Test
     fun conversationAndAndroidAuthorityBoundariesRemainIntact() {
         val directReplyBody = source
             .substringAfter("ConversationRoute.DIRECT_REPLY ->")
