@@ -43,9 +43,32 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("one to three short sentences"))
         assertTrue(prompt.contains("Avoid visual-only instructions"))
         assertTrue(prompt.contains("Long-press the Talk Assistant button to type"))
-        assertTrue(prompt.contains("prioritize Current interaction and What the user may say now"))
+        assertTrue(prompt.contains("Interaction priority ACTIVE is authoritative for contextual meta-help"))
         assertTrue(prompt.contains("What can I say now?"))
         assertTrue(prompt.contains("do not speak the implementation state name"))
+        assertTrue(prompt.contains("Generic example commands must never override ACTIVE interaction guidance"))
+        assertTrue(prompt.contains("How do routines work?"))
+        assertTrue(prompt.contains("even while Interaction priority is ACTIVE"))
+    }
+
+    @Test
+    fun pendingDeleteMetaHelpUsesCurrentInteractionInsteadOfGenericExample() {
+        val example = prompt.substringAfter(
+            "Interaction priority:\nACTIVE\nInteraction state:\nDELETE_CONFIRMATION\n" +
+                "Current interaction:\nOne task deletion is waiting for confirmation"
+        ).substringBefore("App context:\nInteraction state:\nAFTER_DAILY_BRIEFING")
+
+        assertTrue(example.contains("User: What should I say?"))
+        assertTrue(example.contains("\"route\":\"DIRECT_REPLY\""))
+        assertTrue(example.contains("yes to delete the task or no to keep it"))
+        assertTrue(example.contains("ask about the task before deciding"))
+        assertTrue(example.contains("\"context_ref\":\"\""))
+        assertTrue(example.contains("\"context_detail\":\"NONE\""))
+        assertTrue(example.contains("\"context_action\":\"NONE\""))
+        assertTrue(example.contains("\"listen_again\":true"))
+        assertFalse(example.contains("Create a task called revision"))
+        val reply = example.substringAfter("\"reply\":\"").substringBefore("\"")
+        assertFalse(reply.contains("DELETE_CONFIRMATION"))
     }
 
     @Test

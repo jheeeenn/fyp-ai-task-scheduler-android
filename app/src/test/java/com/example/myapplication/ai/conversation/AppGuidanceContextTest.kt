@@ -25,6 +25,7 @@ class AppGuidanceContextTest {
 
         listOf(
             "Current screen:",
+            "Interaction priority:",
             "Assistant purpose:",
             "Supported capabilities:",
             "Available screen actions:",
@@ -73,6 +74,39 @@ class AppGuidanceContextTest {
             assertEquals(state, serializedState)
             assertTrue(prompt.contains("Current interaction:\n${context.currentInteraction}"))
         }
+    }
+
+    @Test
+    fun activeInteractionPrecedesGenericCatalogAndCarriesPriorityRule() {
+        val prompt = context.copy(
+            interactionState = "DELETE_CONFIRMATION",
+            currentInteraction = "One deletion is waiting for confirmation.",
+            currentInteractionGuidance = listOf("Say yes or no.")
+        ).toPromptText()
+
+        val priority = prompt.indexOf("Interaction priority:\nACTIVE")
+        val state = prompt.indexOf("Interaction state:\nDELETE_CONFIRMATION")
+        val current = prompt.indexOf("Current interaction:\nOne deletion is waiting")
+        val nextMoves = prompt.indexOf("What the user may say now:\n- Say yes or no.")
+        val capabilities = prompt.indexOf("Supported capabilities:")
+
+        assertTrue(priority >= 0)
+        assertTrue(state > priority)
+        assertTrue(current > state)
+        assertTrue(nextMoves > current)
+        assertTrue(capabilities > nextMoves)
+        assertTrue(prompt.contains("Interaction priority rule:"))
+        assertTrue(prompt.contains("before general application guidance"))
+    }
+
+    @Test
+    fun noPendingInteractionMarksNoneAndKeepsGeneralGuidanceAvailable() {
+        val prompt = context.toPromptText()
+
+        assertTrue(prompt.contains("Interaction priority:\nNONE"))
+        assertFalse(prompt.contains("Interaction priority rule:"))
+        assertTrue(prompt.contains("Supported capabilities:\n- Create tasks."))
+        assertTrue(prompt.contains("Example commands:\n- Say, 'Show my tasks tomorrow.'"))
     }
 
     @Test

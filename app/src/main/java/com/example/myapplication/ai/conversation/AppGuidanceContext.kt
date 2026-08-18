@@ -14,13 +14,28 @@ data class AppGuidanceContext(
 ) {
     fun toPromptText(): String = buildString {
         appendValue("Current screen", currentScreen)
+        val hasActiveInteraction = interactionState.trim().let { state ->
+            state.isNotEmpty() && !state.equals("NONE", ignoreCase = true)
+        }
+        appendValue(
+            "Interaction priority",
+            if (hasActiveInteraction) "ACTIVE" else "NONE"
+        )
+        if (hasActiveInteraction) {
+            appendValue(
+                "Interaction priority rule",
+                "For questions about what to say, what to do next, what is expected now, " +
+                    "or what the current interaction means, use Current interaction and " +
+                    "What the user may say now before general application guidance."
+            )
+        }
+        appendValue("Interaction state", interactionState)
+        appendValue("Current interaction", currentInteraction)
+        appendItems("What the user may say now", currentInteractionGuidance)
         appendValue("Assistant purpose", assistantPurpose)
         appendItems("Supported capabilities", supportedCapabilities)
         appendItems("Available screen actions", screenActions)
         appendItems("Input methods", inputMethods)
-        appendValue("Interaction state", interactionState)
-        appendValue("Current interaction", currentInteraction)
-        appendItems("What the user may say now", currentInteractionGuidance)
         appendItems("Example commands", usageExamples)
         appendItems("Limitations", limitations)
     }.trim()
