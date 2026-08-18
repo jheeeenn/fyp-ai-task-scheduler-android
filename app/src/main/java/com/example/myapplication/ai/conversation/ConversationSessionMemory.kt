@@ -157,6 +157,7 @@ class ConversationSessionMemory {
                 recordAssistant(decision.reply)
             }
             ConversationRoute.CONTEXT_READ -> Unit
+            ConversationRoute.SETTINGS_ACTION -> Unit
             ConversationRoute.CONTEXT_ACTION -> {
                 pendingAction = "CONTEXT_ACTION"
             }

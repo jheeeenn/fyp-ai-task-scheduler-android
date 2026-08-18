@@ -130,6 +130,8 @@ import com.example.myapplication.ai.conversation.query.RepeatableSpeechKind
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.AssistantTone
 import com.example.myapplication.voice.AssistantVerbosity
+import com.example.myapplication.voice.VoiceSettingsDecisionValidator
+import com.example.myapplication.voice.VoiceSettingsExecutor
 import java.text.SimpleDateFormat
 
 import com.example.myapplication.voice.AssistantVoiceHost
@@ -222,6 +224,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
     private lateinit var responseManager: AssistantResponseManager
+    private lateinit var voiceSettingsExecutor: VoiceSettingsExecutor
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var conversationOrchestrator: ConversationOrchestrator
     private lateinit var routineFollowUpSemanticOrchestrator:
@@ -297,6 +300,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var queryReadingStateGeneration: Long = 0
     private var assistantRequestGeneration: Long = 0
     private var assistantRequestActive: Boolean = false
+    private var pendingVoiceDisplayRefresh: Boolean = false
     private val routineDraftController = RoutineDraftController()
     private val breakdownDraftController = BreakdownDraftController()
     private val savedRoutineInteractionController = SavedRoutineInteractionController()
@@ -437,6 +441,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager= AssistantResponseManager.fromPreferences(this)
+        voiceSettingsExecutor = VoiceSettingsExecutor(AppPreferences(this))
 
         assistantSession = AssistantVoiceSession(
             activity = this,
@@ -513,6 +518,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
+        applyPendingVoiceDisplayRefresh()
     }
 
     override fun onAssistantSessionStopped() {
@@ -527,6 +533,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (routineDraftController.state != RoutineDraftState.SAVING) {
             routineDraftController.clear()
         }
+        applyPendingVoiceDisplayRefresh()
     }
 
     override fun onAssistantTypedInputRequested() {
@@ -1873,6 +1880,32 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             requestToken,
                             routedStyleAuthorization
                         )
+                        return@launch
+                    }
+                    ConversationRoute.SETTINGS_ACTION -> {
+                        if (!VoiceSettingsDecisionValidator.isValid(conversationDecision)) {
+                            val clarification = "I could not change that setting safely. Please try again."
+                            conversationOrchestrator.commitFinalDecision(
+                                ConversationDecision(
+                                    route = ConversationRoute.ASK_CLARIFICATION,
+                                    reply = clarification,
+                                    listenAgain = true,
+                                    source = "android_voice_settings_validation"
+                                )
+                            )
+                            assistantSession.speak(clarification, listenAgain = true)
+                            return@launch
+                        }
+                        val result = voiceSettingsExecutor.execute(
+                            conversationDecision.settingAction
+                        )
+                        if (result.displayRefreshRequired) {
+                            pendingVoiceDisplayRefresh = true
+                        }
+                        responseManager.profile =
+                            AssistantResponseManager.fromPreferences(this@HomeActivity).profile
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        assistantSession.speak(result.speech, listenAgain = true)
                         return@launch
                     }
                     ConversationRoute.DIRECT_REPLY -> {
@@ -6689,6 +6722,12 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()
+    }
+
+    private fun applyPendingVoiceDisplayRefresh() {
+        if (!pendingVoiceDisplayRefresh) return
+        pendingVoiceDisplayRefresh = false
+        if (!isFinishing && !isDestroyed) recreate()
     }
 
     private companion object {

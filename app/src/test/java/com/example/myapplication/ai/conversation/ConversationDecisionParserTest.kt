@@ -338,6 +338,7 @@ class ConversationDecisionParserTest {
           "context_ref":"$contextRef",
           "context_detail":"$contextDetail",
           "context_action":"$contextAction",
+          "setting_action":"NONE",
           "query_reading_move":"$queryReadingMove",
           "query_presentation_hint":"$queryPresentationHint",
           "confidence":$confidence,

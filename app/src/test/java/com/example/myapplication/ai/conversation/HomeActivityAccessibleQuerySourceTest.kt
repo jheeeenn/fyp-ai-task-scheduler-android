@@ -208,7 +208,7 @@ class HomeActivityAccessibleQuerySourceTest {
     fun queryReadingControlIsValidatedBeforeEitherCommitOrExecution() {
         val branch = source
             .substringAfter("ConversationRoute.QUERY_READING_CONTROL -> {")
-            .substringBefore("ConversationRoute.DIRECT_REPLY ->")
+            .substringBefore("ConversationRoute.SETTINGS_ACTION ->")
         val validate = branch.indexOf("validateQueryReadingControl(")
         val invalidCheck = branch.indexOf("if (!validation.isValid)")
         val clarificationCommit =

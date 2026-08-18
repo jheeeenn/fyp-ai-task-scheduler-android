@@ -36,8 +36,8 @@ class AppGuidanceCatalogTest {
     @Test
     fun coversCurrentAccessibilityAndAssistantPreferences() {
         listOf(
-            "Friendly, Neutral, and Professional",
-            "Short, Normal, and Detailed",
+            "Friendly, Neutral, or Professional",
+            "Short, Normal, or Detailed",
             "Large Text",
             "Android's system font scaling",
             "High Contrast",
@@ -52,7 +52,8 @@ class AppGuidanceCatalogTest {
     @Test
     fun recordsGuidanceSafetyAndUnsupportedFeatures() {
         listOf(
-            "cannot currently change Settings",
+            "six voice-configurable user settings",
+            "cannot be changed by voice",
             "no wake word",
             "calendar or email integration",
             "weather, news, traffic",

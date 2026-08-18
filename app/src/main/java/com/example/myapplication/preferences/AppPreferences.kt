@@ -127,6 +127,7 @@ class AppPreferences internal constructor(
 
 enum class PreferenceChangeSource {
     TOUCH,
+    VOICE,
     SYSTEM
 }
 

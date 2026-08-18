@@ -48,7 +48,7 @@ class ReadOnlyTaskContextPromptTest {
     }
 
     @Test
-    fun conversationDecisionSchemaContainsExactlyTenRequiredFields() {
+    fun conversationDecisionSchemaContainsExactlyElevenRequiredFields() {
         val format = AgentResponseSchemas.conversationDecisionResponseFormat()
         val schema = format.getJSONObject("json_schema").getJSONObject("schema")
         val propertyNames = schema.getJSONObject("properties").keys().asSequence().toSet()
@@ -61,6 +61,7 @@ class ReadOnlyTaskContextPromptTest {
             "context_ref",
             "context_detail",
             "context_action",
+            "setting_action",
             "query_reading_move",
             "query_presentation_hint",
             "confidence",
@@ -101,6 +102,7 @@ class ReadOnlyTaskContextPromptTest {
                 .put("context_ref", "T2")
                 .put("context_detail", "SUMMARY")
                 .put("context_action", "NONE")
+            .put("setting_action", "NONE")
                 .put("query_reading_move", "NONE")
                 .put("query_presentation_hint", "NONE")
                 .put("confidence", 0.99)

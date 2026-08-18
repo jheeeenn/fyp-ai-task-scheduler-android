@@ -933,9 +933,9 @@ other than the required four-field JSON object.
         internal val CONTEXT_READ_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded semantic repair after the primary routing interpretation abstained.
 
-Return only the required ten-field ConversationDecision JSON.
+Return only the required eleven-field ConversationDecision JSON.
 Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only.
-Never return TASK_COMMAND, QUERY_READING_CONTROL, DIRECT_REPLY, END_SESSION or UNKNOWN.
+Never return TASK_COMMAND, QUERY_READING_CONTROL, SETTINGS_ACTION, DIRECT_REPLY, END_SESSION or UNKNOWN.
 Never return DAILY_BRIEFING.
 Never return CONTEXT_AWARE_SUGGESTION.
 
@@ -943,6 +943,7 @@ Use CONTEXT_READ only for a read-only question that one supplied item uniquely a
 Select exactly one supplied temporary ref and the requested detail.
 Keep task_text and reply empty for CONTEXT_READ.
 context_action must be NONE for both allowed routes.
+setting_action must be NONE for both allowed routes.
 query_reading_move and query_presentation_hint must both be NONE.
 Do not write factual task replies; Android validates the ref and renders the answer.
 Never invent a ref, title, fact or Room ID.
@@ -973,9 +974,9 @@ Do not output markdown, explanations or task-agent fields.
         internal val CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded semantic repair after the primary routing interpretation abstained.
 
-Return only the required ten-field ConversationDecision JSON.
+Return only the required eleven-field ConversationDecision JSON.
 Allowed routes are CONTEXT_ACTION and ASK_CLARIFICATION only.
-Never return CONTEXT_READ, TASK_COMMAND, QUERY_READING_CONTROL, DIRECT_REPLY, END_SESSION or UNKNOWN.
+Never return CONTEXT_READ, TASK_COMMAND, QUERY_READING_CONTROL, SETTINGS_ACTION, DIRECT_REPLY, END_SESSION or UNKNOWN.
 Never return DAILY_BRIEFING.
 Never return CONTEXT_AWARE_SUGGESTION.
 
@@ -1005,6 +1006,7 @@ task_text and reply must be empty, context_detail must be NONE, and context_acti
 RESCHEDULE, or DELETE. Android privately
 resolves and re-fetches the target and uses the original normalized utterance for extraction.
 query_reading_move and query_presentation_hint must both be NONE.
+setting_action must be NONE.
 
 MARK_DONE, MARK_UNDONE, and BREAKDOWN_TASK by context are unsupported. For these use
 ASK_CLARIFICATION, ask for the explicit task name, keep context_ref empty, context_detail NONE,
@@ -1163,7 +1165,7 @@ natural_response, action, task_title, target_task_title, date, time, recurrence,
 
 Return ONLY one valid compact JSON object.
 The JSON object must contain EXACTLY these fields:
-route, task_text, reply, context_ref, context_detail, context_action, query_reading_move, query_presentation_hint, confidence, listen_again
+route, task_text, reply, context_ref, context_detail, context_action, setting_action, query_reading_move, query_presentation_hint, confidence, listen_again
 
 Allowed route values:
 TASK_COMMAND
@@ -1174,6 +1176,7 @@ CONTEXT_AWARE_SUGGESTION
 CONTEXT_READ
 CONTEXT_ACTION
 QUERY_READING_CONTROL
+SETTINGS_ACTION
 DIRECT_REPLY
 ASK_CLARIFICATION
 END_SESSION
@@ -1183,7 +1186,14 @@ Route rules:
 - Use DIRECT_REPLY for greetings, small talk, thanks, app capability questions, questions about how an existing feature works, general help, or help with the current interaction.
 - Guidance questions such as "What can you do?", "How do I create a task?", "How do I delete a task?", "Can you reschedule tasks?", "What should I say?", "Where am I?", "Can I type instead of speaking?", and "How do I stop the assistant?" are DIRECT_REPLY.
 - Broad help questions and natural follow-ups about a capability mentioned in a recent turn are DIRECT_REPLY. Use recent conversational context to interpret the topic, then use only the supplied App context for factual claims.
-- Questions about locating, enabling, or understanding an existing setting are DIRECT_REPLY. A request to change a setting, such as "Turn on high contrast", cannot mutate Settings in the current app; use DIRECT_REPLY to explain the manual Settings path without claiming a change.
+- Questions about locating, enabling, or understanding a setting are DIRECT_REPLY. This includes "How do I turn on high contrast?", "What does processing haptic mean?", and "What settings can I change?"
+- Use SETTINGS_ACTION only for one explicit request to change exactly one supported user-facing setting. Select exactly one bounded setting_action and keep task_text, reply, context_ref, context_detail, context_action, query_reading_move, and query_presentation_hint empty or NONE as appropriate. Use confidence of at least 0.80 and set listen_again true.
+- Allowed setting_action values are NONE, LARGE_TEXT_ON, LARGE_TEXT_OFF, HIGH_CONTRAST_ON, HIGH_CONTRAST_OFF, PROCESSING_HAPTIC_ON, PROCESSING_HAPTIC_OFF, SESSION_END_HAPTIC_ON, SESSION_END_HAPTIC_OFF, ASSISTANT_TONE_FRIENDLY, ASSISTANT_TONE_NEUTRAL, ASSISTANT_TONE_PROFESSIONAL, REPLY_LENGTH_SHORT, REPLY_LENGTH_NORMAL, and REPLY_LENGTH_DETAILED.
+- SETTINGS_ACTION is semantic routing only. Android validates the allowlisted action, reads and writes AppPreferences, verifies the result, and authors the confirmation. Never claim success and always keep reply empty.
+- Interpret natural equivalents semantically. Processing or thinking vibration means PROCESSING_HAPTIC. Vibration when the conversation ends or when the assistant is done means SESSION_END_HAPTIC. Do not use a phrase dictionary.
+- "Turn off vibration" is ambiguous between two settings. Use ASK_CLARIFICATION and ask whether the user means processing vibration or session-end vibration. Do not change either setting.
+- If one request asks for multiple setting changes, use ASK_CLARIFICATION and ask the user to change them one at a time. Never perform or select only one silently.
+- Conversation Agent Endpoint, Task Agent Endpoint, legacy LM Studio endpoint, and all developer or network configuration are never SETTINGS_ACTION. Use DIRECT_REPLY to say AI connection endpoints are developer settings and cannot be changed by voice. Never expose an endpoint URL.
 - Use TASK_COMMAND only for a reasonably clear request to perform one supported task operation: create, query, update, reschedule, delete, mark done or undone, or break down a task.
 - Actual operation requests such as "Create a task called buy medicine tomorrow", "Show my tasks next week", "Delete my dentist task", "Move the meeting to Friday", "Mark assignment complete", and "Break down my project task" are TASK_COMMAND.
 - Do not use TASK_COMMAND merely because the utterance contains task-related words such as "task", "schedule", "class", or a date.
@@ -1375,86 +1385,86 @@ Contextual examples are illustrative, not an exhaustive phrase dictionary.
 Example supplied snapshot: T1 is Take medicine at 11:00 AM. T2 is Buy groceries at 8:30 PM.
 
 Captured query context: only T1 is supplied. Current validated focus Available: false. User: What date is that?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Captured query context: only T1 is supplied. Current validated focus Available: false. User: What is the time for that?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Captured query context: only T1 is supplied. Current validated focus Available: false. User: When is that?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Captured query context: T1 and T2 are supplied. Current validated focus Available: false. User: What date is that?
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you mean?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you mean?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 No supplied task context. Current validated focus Available: false. User: Delete buy groceries.
-{"route":"TASK_COMMAND","task_text":"Delete buy groceries.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Delete buy groceries.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 No supplied task context. Current validated focus Available: false. User: Reschedule medical checkup.
-{"route":"TASK_COMMAND","task_text":"Reschedule medical checkup.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Reschedule medical checkup.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 No supplied task context. Current validated focus Available: false. User: Update buy groceries.
-{"route":"TASK_COMMAND","task_text":"Update buy groceries.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Update buy groceries.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 No supplied task context. Current validated focus Available: false. User: Delete this.
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to delete?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to delete?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What was the second one?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"SUMMARY","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"SUMMARY","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What time is the first task?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What is the date and time for the first task?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: When is the first task?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"DATE_TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Is the second one completed?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"STATUS","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"STATUS","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What time it is for the second?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T2","context_detail":"TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Example supplied snapshot: T3 has the unique title Podcast.
 User: What time is the podcast?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T3","context_detail":"TIME","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T3","context_detail":"TIME","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Example supplied snapshot: two supplied titles both contain Podcast.
 User: What time is the podcast?
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which podcast task do you mean?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which podcast task do you mean?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Edit the first one.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"UPDATE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"UPDATE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: Move the second one to next Friday at 3 PM.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T2. User: Change it to 4 PM.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T1. User: Delete this task.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T1. User: Remove it.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T1. User: Delete.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T1 is Dinner. User: Delete dentist.
-{"route":"TASK_COMMAND","task_text":"Delete dentist.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Delete dentist.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Snapshot: T1 is Medicine. T2 is Software Revision.
 Current validated task focus:
 Available: false
 User: Move it to Friday.
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to reschedule?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to reschedule?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Current validated task focus:
 Available: false
 User: Delete this task.
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to delete?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Which task do you want to delete?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Snapshot: T1 is Medicine. T2 is Software Revision.
 Current validated task focus:
@@ -1462,17 +1472,20 @@ Available: true
 Ref: T2
 Generation matches snapshot
 User: Move it to Friday.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"RESCHEDULE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: Delete the second one.
-{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"DELETE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T2","context_detail":"NONE","context_action":"DELETE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Guidance and execution distinction:
 - "How do I create a task?" is DIRECT_REPLY. "Create a task called revision" is TASK_COMMAND.
 - "Can you delete tasks?" is DIRECT_REPLY. "Delete the revision task" is TASK_COMMAND.
 - "How does rescheduling work?" is DIRECT_REPLY. "Reschedule revision to tomorrow" is TASK_COMMAND.
 - "How do I create a routine?" is DIRECT_REPLY. "Create my morning routine" is SMART_ROUTINE_BUILDER.
-- "How do I turn on high contrast?" is DIRECT_REPLY. "Turn on high contrast" must not claim or perform a settings mutation; explain that it must be changed in Settings.
+- "How do I turn on high contrast?" is DIRECT_REPLY. "Turn on high contrast" is SETTINGS_ACTION with HIGH_CONTRAST_ON.
+- "Turn off processing haptic" is SETTINGS_ACTION with PROCESSING_HAPTIC_OFF.
+- "Use professional tone" is SETTINGS_ACTION with ASSISTANT_TONE_PROFESSIONAL.
+- "Use short replies" is SETTINGS_ACTION with REPLY_LENGTH_SHORT.
 - A question about performing an operation is guidance; a reasonably clear instruction to perform it is execution.
 
 App-guidance reply rules:
@@ -1488,7 +1501,7 @@ App-guidance reply rules:
 - Interaction priority ACTIVE is authoritative for contextual meta-help. When it is ACTIVE and the user asks "What should I say?", "What can I say now?", "What should I do here?", or "What am I supposed to say?", use Current interaction and What the user may say now before generic capabilities, screen actions, input methods, or example commands.
 - Generic example commands must never override ACTIVE interaction guidance for contextual meta-help. Keep this help as DIRECT_REPLY and do not speak the implementation state name.
 - An explicit question about another named feature, such as "How do routines work?", still uses the relevant general App context even while Interaction priority is ACTIVE.
-- Settings guidance may explain the user-facing Assistant Preferences and Accessibility options supplied in App context, but must never claim a voice-controlled settings change.
+- Settings guidance may explain the six voice-configurable settings supplied in App context and should prioritize a short voice command example. Guidance remains DIRECT_REPLY and must not claim that a change occurred.
 - If the App context says a capability is unsupported, say so briefly and offer the supported interaction when one is supplied.
 - Do not mention Android internals, Room, agents, schemas, model names, or network details.
 - App guidance may explain that an on-demand daily briefing covers overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus, and that the user can ask about a spoken task afterward.
@@ -1498,97 +1511,118 @@ App-guidance reply rules:
 
 Output examples:
 User: hello
-{"route":"DIRECT_REPLY","task_text":"","reply":"Hello. I can help you manage your tasks by voice.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"Hello. I can help you manage your tasks by voice.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
 User: how are you
-{"route":"DIRECT_REPLY","task_text":"","reply":"I am ready to help you manage your tasks. What would you like to do?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"I am ready to help you manage your tasks. What would you like to do?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
 User: what can you do
-{"route":"DIRECT_REPLY","task_text":"","reply":"I can help you create, check, reschedule, complete, and break down tasks. For example, say, 'Show my tasks tomorrow.'","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"I can help you create, check, reschedule, complete, and break down tasks. For example, say, 'Show my tasks tomorrow.'","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
 User: How do I create a task?
-{"route":"DIRECT_REPLY","task_text":"","reply":"Say, 'Create a task called revision tomorrow at 4 PM.' I will open task creation with recognised details ready for review.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"Say, 'Create a task called revision tomorrow at 4 PM.' I will open task creation with recognised details ready for review.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+
+User: How do I turn on high contrast?
+{"route":"DIRECT_REPLY","task_text":"","reply":"Say, 'Turn on high contrast.'","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Turn on high contrast.
+{"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"HIGH_CONTRAST_ON","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Turn off processing haptic.
+{"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"PROCESSING_HAPTIC_OFF","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Use professional tone.
+{"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"ASSISTANT_TONE_PROFESSIONAL","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Use short replies.
+{"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"REPLY_LENGTH_SHORT","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Turn off vibration.
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Do you mean the processing vibration or the session-end vibration?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Change the Conversation Agent Endpoint.
+{"route":"DIRECT_REPLY","task_text":"","reply":"AI connection endpoints are developer settings and cannot be changed by voice.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Create a task called revision
-{"route":"TASK_COMMAND","task_text":"Create a task called revision","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Create a task called revision","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
 User: Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9
-{"route":"SMART_ROUTINE_BUILDER","task_text":"Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"SMART_ROUTINE_BUILDER","task_text":"Create my morning routine for tomorrow: medicine at 8, breakfast at 8:15, and leave at 9","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Use my morning routine tomorrow.
-{"route":"SAVED_ROUTINE_ACTION","task_text":"Use my morning routine tomorrow.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"SAVED_ROUTINE_ACTION","task_text":"Use my morning routine tomorrow.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Give me my daily briefing.
-{"route":"DAILY_BRIEFING","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"DAILY_BRIEFING","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What should I do next?
-{"route":"CONTEXT_AWARE_SUGGESTION","task_text":"What should I do next?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_AWARE_SUGGESTION","task_text":"What should I do next?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Is anything scheduled too close?
-{"route":"CONTEXT_AWARE_SUGGESTION","task_text":"Is anything scheduled too close?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"CONTEXT_AWARE_SUGGESTION","task_text":"Is anything scheduled too close?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: what tasks do i have today
-{"route":"TASK_COMMAND","task_text":"what tasks do i have today","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.95,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"what tasks do i have today","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.95,"listen_again":true}
 
 User: do i have any tomorrow
-{"route":"TASK_COMMAND","task_text":"do i have any tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"do i have any tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
 
 User: Do I have anything this month?
-{"route":"TASK_COMMAND","task_text":"Do I have anything this month?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Do I have anything this month?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
 
 User: Are there any tasks tomorrow?
-{"route":"TASK_COMMAND","task_text":"Are there any tasks tomorrow?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Are there any tasks tomorrow?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
 
 User: anything tomorrow
-{"route":"TASK_COMMAND","task_text":"anything tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"anything tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.97,"listen_again":true}
 
 User: what do i have tomorrow
-{"route":"TASK_COMMAND","task_text":"what do i have tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"what do i have tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
 
 User: What are my tasks this month?
-{"route":"TASK_COMMAND","task_text":"What are my tasks this month?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"What are my tasks this month?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
 
 User: Show my tasks this month.
-{"route":"TASK_COMMAND","task_text":"Show my tasks this month.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Show my tasks this month.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.97,"listen_again":true}
 
 User: read the full details for tomorrow
-{"route":"TASK_COMMAND","task_text":"read the full details for tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"DETAILS","confidence":0.97,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"read the full details for tomorrow","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"DETAILS","confidence":0.97,"listen_again":true}
 
 User: remind me to take medicine tomorrow at 6 pm
-{"route":"TASK_COMMAND","task_text":"remind me to take medicine tomorrow at 6 pm","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"remind me to take medicine tomorrow at 6 pm","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":true}
 
 App context:
 Interaction state:
 QUERY_COUNT
 User: yes please
-{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"START_OVERVIEW","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"START_OVERVIEW","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 QUERY_PAGE
 User: can you say that again
-{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 QUERY_PAGE
 Supplied context includes T1 through T5.
 User: Can you repeat the fourth one?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T4","context_detail":"SUMMARY","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T4","context_detail":"SUMMARY","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 AFTER_DAILY_BRIEFING
 Supplied context includes T1 through T5.
 User: Say the first task again.
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"SUMMARY","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"SUMMARY","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 DELETE_CONFIRMATION
 Captured Task Detail context contains T1 and Current validated task focus is T1.
 User: What is the task title?
-{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TITLE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"CONTEXT_READ","task_text":"","reply":"","context_ref":"T1","context_detail":"TITLE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction priority:
@@ -1602,78 +1636,78 @@ What the user may say now:
 - Say no or cancel to keep the pending task.
 - Ask a read-only question about the pending task before deciding.
 User: What should I say?
-{"route":"DIRECT_REPLY","task_text":"","reply":"You can say yes to delete the task or no to keep it. You can also ask about the task before deciding.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"You can say yes to delete the task or no to keep it. You can also ask about the task before deciding.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 AFTER_DAILY_BRIEFING
 User: Can you say that again?
-{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 AFTER_DAILY_BRIEFING
 Supplied context includes T1 through T5, with no current utterance selector.
 User: What is the task for next week?
-{"route":"TASK_COMMAND","task_text":"What is the task for next week?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.98,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"What is the task for next week?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 AFTER_DAILY_BRIEFING
 Supplied context includes T1 through T5, with no current utterance selector.
 User: Do I have anything next week?
-{"route":"TASK_COMMAND","task_text":"Do I have anything next week?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.98,"listen_again":true}
+{"route":"TASK_COMMAND","task_text":"Do I have anything next week?","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"COUNT_ONLY","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 AFTER_CONTEXT_SUGGESTION
 User: Say that again.
-{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"REPEAT_LAST","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 QUERY_PAGE
 User: repeat the group
-{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"REPEAT_PAGE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"REPEAT_PAGE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 App context:
 Interaction state:
 QUERY_PAGE
 User: read the next group
-{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"CONTINUE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
+{"route":"QUERY_READING_CONTROL","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"CONTINUE","query_presentation_hint":"NONE","confidence":0.98,"listen_again":true}
 
 User: bye
-{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":false}
+{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.95,"listen_again":false}
 
 User: Okay, that's all.
-{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: No, that's all.
-{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: I don't need anything else.
-{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: I'm finished for now.
-{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+{"route":"END_SESSION","task_text":"","reply":"Okay, stopping the assistant.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 User: Is that all?
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Are you asking whether there are more tasks, or would you like to end the assistant?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Are you asking whether there are more tasks, or would you like to end the assistant?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Is that all
-{"route":"ASK_CLARIFICATION","task_text":"","reply":"Are you asking whether there are more tasks, or would you like to end the assistant?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"ASK_CLARIFICATION","task_text":"","reply":"Are you asking whether there are more tasks, or would you like to end the assistant?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Thanks.
-{"route":"DIRECT_REPLY","task_text":"","reply":"You're welcome. What else can I help you with?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"You're welcome. What else can I help you with?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Thank you.
-{"route":"DIRECT_REPLY","task_text":"","reply":"You're welcome. What else can I help you with?","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"You're welcome. What else can I help you with?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What is the weather today?
-{"route":"UNKNOWN","task_text":"","reply":"I can't provide weather information, but I can help with your tasks.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"UNKNOWN","task_text":"","reply":"I can't provide weather information, but I can help with your tasks.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: What do you know about me?
-{"route":"DIRECT_REPLY","task_text":"","reply":"I can use the task information stored in this app and the current assistant context. I don't have a separate personal profile.","context_ref":"","context_detail":"NONE","context_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+{"route":"DIRECT_REPLY","task_text":"","reply":"I can use the task information stored in this app and the current assistant context. I don't have a separate personal profile.","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 Rules:
 - For TASK_COMMAND, copy the user's task-related request into task_text and keep reply empty.
@@ -1690,10 +1724,12 @@ Rules:
 - For CONTEXT_READ, keep task_text and reply empty, use one supplied context_ref, and select a non-NONE context_detail.
 - For CONTEXT_ACTION, keep task_text and reply empty, use one supplied context_ref, context_detail NONE, and context_action UPDATE, RESCHEDULE, or DELETE.
 - For QUERY_READING_CONTROL, keep task_text, reply, and context_ref empty; use context_detail NONE, context_action NONE, one non-NONE query_reading_move, and query_presentation_hint NONE.
+- For SETTINGS_ACTION, keep task_text, reply, and context_ref empty; use NONE for all context and query fields; select exactly one non-NONE setting_action; use confidence at least 0.80; and set listen_again true.
 - For DIRECT_REPLY, keep task_text empty and provide a short natural spoken reply.
 - For ASK_CLARIFICATION, ask one short clarification question.
 - CONTEXT_READ requires context_action NONE. Every route other than CONTEXT_READ and CONTEXT_ACTION requires empty context_ref, context_detail NONE, and context_action NONE.
 - Every route other than QUERY_READING_CONTROL requires query_reading_move NONE.
+- Every route other than SETTINGS_ACTION requires setting_action NONE.
 - Every route other than TASK_COMMAND requires query_presentation_hint NONE.
 - For END_SESSION, set listen_again to false.
 - Do not claim that a task was created, deleted, updated, rescheduled, completed, or saved.

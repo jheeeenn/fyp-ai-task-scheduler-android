@@ -25,7 +25,7 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("\"How do I create a routine?\" is DIRECT_REPLY"))
         assertTrue(prompt.contains("\"Create my morning routine\" is SMART_ROUTINE_BUILDER"))
         assertTrue(prompt.contains("\"How do I turn on high contrast?\" is DIRECT_REPLY"))
-        assertTrue(prompt.contains("\"Turn on high contrast\" must not claim or perform a settings mutation"))
+        assertTrue(prompt.contains("\"Turn on high contrast\" is SETTINGS_ACTION with HIGH_CONTRAST_ON"))
     }
 
     @Test
@@ -33,7 +33,7 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("App context is the only authority for app guidance"))
         assertTrue(prompt.contains("Do not invent screens, buttons, features"))
         assertTrue(prompt.contains("available integrations"))
-        assertTrue(prompt.contains("cannot mutate Settings in the current app"))
+        assertTrue(prompt.contains("Android validates the allowlisted action"))
         assertTrue(prompt.contains("supplied App context remains the sole factual authority"))
     }
 
@@ -108,7 +108,8 @@ class ConversationAgentGuidancePromptTest {
         val ordinalDeleteExample = "User: Delete the second one.\n" +
             "{\"route\":\"CONTEXT_ACTION\",\"task_text\":\"\",\"reply\":\"\"," +
             "\"context_ref\":\"T2\",\"context_detail\":\"NONE\"," +
-            "\"context_action\":\"DELETE\",\"query_reading_move\":\"NONE\"," +
+            "\"context_action\":\"DELETE\",\"setting_action\":\"NONE\"," +
+            "\"query_reading_move\":\"NONE\"," +
             "\"query_presentation_hint\":\"NONE\",\"confidence\":0.97," +
             "\"listen_again\":false}"
         assertTrue(prompt.contains(ordinalDeleteExample))
@@ -292,7 +293,7 @@ class ConversationAgentGuidancePromptTest {
         val repairPrompt = ConversationAgentClient.CONTEXT_READ_REPAIR_SYSTEM_PROMPT
 
         assertTrue(repairPrompt.contains("Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only"))
-        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, QUERY_READING_CONTROL, DIRECT_REPLY, END_SESSION or UNKNOWN"))
+        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, QUERY_READING_CONTROL, SETTINGS_ACTION, DIRECT_REPLY, END_SESSION or UNKNOWN"))
         assertTrue(repairPrompt.contains("query_reading_move and query_presentation_hint must both be NONE"))
         assertTrue(repairPrompt.contains("Match titles case-insensitively using only supplied items"))
         assertTrue(repairPrompt.contains("more than one supplied title plausibly matches"))

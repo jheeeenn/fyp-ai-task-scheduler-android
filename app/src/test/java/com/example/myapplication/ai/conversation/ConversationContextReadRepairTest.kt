@@ -510,6 +510,7 @@ class ConversationContextReadRepairTest {
             .put("context_ref", contextRef)
             .put("context_detail", contextDetail)
             .put("context_action", "NONE")
+            .put("setting_action", "NONE")
             .put("query_reading_move", "NONE")
             .put("query_presentation_hint", "NONE")
             .put("confidence", 0.97)

@@ -152,6 +152,7 @@ class CombinedDateTimeContextReadTest {
           "context_ref":"T1",
           "context_detail":"$detail",
           "context_action":"NONE",
+          "setting_action":"NONE",
           "query_reading_move":"NONE",
           "query_presentation_hint":"NONE",
           "confidence":0.95,

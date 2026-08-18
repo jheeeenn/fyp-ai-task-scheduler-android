@@ -238,12 +238,13 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_AWARE_SUGGESTION", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_AWARE_SUGGESTION", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "SETTINGS_ACTION", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())
                 put("context_detail", stringEnum("NONE", "SUMMARY", "TITLE", "DATE", "TIME", "DATE_TIME", "STATUS", "SUBTASKS"))
                 put("context_action", stringEnum("NONE", "UPDATE", "RESCHEDULE", "DELETE"))
+                put("setting_action", conversationSettingActionEnum())
                 put("query_reading_move", stringEnum("NONE", "START_OVERVIEW", "CONTINUE", "REPEAT_LAST", "REPEAT_PAGE", "STOP"))
                 put("query_presentation_hint", stringEnum("NONE", "COUNT_ONLY", "OVERVIEW", "DETAILS"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
@@ -256,6 +257,7 @@ object AgentResponseSchemas {
                 put("context_ref")
                 put("context_detail")
                 put("context_action")
+                put("setting_action")
                 put("query_reading_move")
                 put("query_presentation_hint")
                 put("confidence")
@@ -274,6 +276,7 @@ object AgentResponseSchemas {
                 put("context_ref", stringType())
                 put("context_detail", stringEnum("NONE", "SUMMARY", "TITLE", "DATE", "TIME", "DATE_TIME", "STATUS", "SUBTASKS"))
                 put("context_action", stringEnum("NONE"))
+                put("setting_action", stringEnum("NONE"))
                 put("query_reading_move", stringEnum("NONE"))
                 put("query_presentation_hint", stringEnum("NONE"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
@@ -286,6 +289,7 @@ object AgentResponseSchemas {
                 put("context_ref")
                 put("context_detail")
                 put("context_action")
+                put("setting_action")
                 put("query_reading_move")
                 put("query_presentation_hint")
                 put("confidence")
@@ -304,6 +308,7 @@ object AgentResponseSchemas {
                 put("context_ref", stringType())
                 put("context_detail", stringEnum("NONE"))
                 put("context_action", stringEnum("NONE", "UPDATE", "RESCHEDULE", "DELETE"))
+                put("setting_action", stringEnum("NONE"))
                 put("query_reading_move", stringEnum("NONE"))
                 put("query_presentation_hint", stringEnum("NONE"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
@@ -316,6 +321,7 @@ object AgentResponseSchemas {
                 put("context_ref")
                 put("context_detail")
                 put("context_action")
+                put("setting_action")
                 put("query_reading_move")
                 put("query_presentation_hint")
                 put("confidence")
@@ -569,6 +575,24 @@ object AgentResponseSchemas {
     private fun stringEnum(vararg values: String): JSONObject = stringType().apply {
         put("enum", JSONArray().apply { values.forEach { put(it) } })
     }
+
+    private fun conversationSettingActionEnum(): JSONObject = stringEnum(
+        "NONE",
+        "LARGE_TEXT_ON",
+        "LARGE_TEXT_OFF",
+        "HIGH_CONTRAST_ON",
+        "HIGH_CONTRAST_OFF",
+        "PROCESSING_HAPTIC_ON",
+        "PROCESSING_HAPTIC_OFF",
+        "SESSION_END_HAPTIC_ON",
+        "SESSION_END_HAPTIC_OFF",
+        "ASSISTANT_TONE_FRIENDLY",
+        "ASSISTANT_TONE_NEUTRAL",
+        "ASSISTANT_TONE_PROFESSIONAL",
+        "REPLY_LENGTH_SHORT",
+        "REPLY_LENGTH_NORMAL",
+        "REPLY_LENGTH_DETAILED"
+    )
 
     private fun numberType(minimum: Double, maximum: Double): JSONObject = JSONObject().apply {
         put("type", "number")

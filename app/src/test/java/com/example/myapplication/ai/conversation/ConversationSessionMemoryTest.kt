@@ -205,6 +205,40 @@ class ConversationSessionMemoryTest {
         )
     }
 
+    @Test
+    fun settingsActionPreservesUnrelatedPendingAuthorityAndTaskFocus() {
+        val memory = ConversationSessionMemory()
+        memory.recordAuthoritativeContextRead(
+            item = ReadOnlyTaskContextItem(
+                ref = "T1",
+                title = "Medicine",
+                dueDate = "",
+                dueTime = "9:00 PM",
+                isDone = false,
+                subtaskCount = 0,
+                unfinishedSubtaskCount = 0
+            ),
+            selectedRef = "T1",
+            selectedDetail = ConversationContextDetail.TIME,
+            capturedGeneration = 4,
+            finalSpeech = "Medicine is scheduled at 9:00 PM."
+        )
+        memory.commitFinalDecision(
+            ConversationDecision(route = ConversationRoute.TASK_COMMAND)
+        )
+
+        memory.commitFinalDecision(
+            ConversationDecision(
+                route = ConversationRoute.SETTINGS_ACTION,
+                settingAction = ConversationSettingAction.HIGH_CONTRAST_ON,
+                confidence = 0.97
+            )
+        )
+
+        assertTrue(memory.snapshotForPrompt().contains("pendingAction=TASK_COMMAND"))
+        assertEquals("T1", memory.contextFocusForGeneration(4, setOf("T1"))?.ref)
+    }
+
     private fun observation(
         operation: ExecutionOperation = ExecutionOperation.UPDATE_TASK,
         taskTitle: String = "",
