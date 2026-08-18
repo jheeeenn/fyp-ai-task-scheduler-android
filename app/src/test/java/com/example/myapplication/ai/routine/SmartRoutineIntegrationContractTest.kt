@@ -301,7 +301,7 @@ class SmartRoutineIntegrationContractTest {
           "context_ref":"",
           "context_detail":"NONE",
           "context_action":"NONE",
-          "setting_action":"NONE",
+          "setting_target":"NONE","setting_action":"NONE",
           "query_reading_move":"NONE",
           "query_presentation_hint":"NONE",
           "confidence":$confidence,

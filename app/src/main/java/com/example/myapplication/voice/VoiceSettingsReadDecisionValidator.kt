@@ -10,12 +10,11 @@ import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import com.example.myapplication.ai.conversation.ConversationSettingTarget
 
-/** Final fail-closed gate immediately before Home permits a preference mutation. */
-object VoiceSettingsDecisionValidator {
+object VoiceSettingsReadDecisionValidator {
     fun isValid(decision: ConversationDecision): Boolean =
-        decision.route == ConversationRoute.SETTINGS_ACTION &&
-            decision.settingAction != ConversationSettingAction.NONE &&
-            decision.settingTarget == ConversationSettingTarget.NONE &&
+        decision.route == ConversationRoute.SETTINGS_READ &&
+            decision.settingTarget != ConversationSettingTarget.NONE &&
+            decision.settingAction == ConversationSettingAction.NONE &&
             decision.confidence >= ConversationDecisionParser.MIN_ACCEPTED_ROUTING_CONFIDENCE &&
             decision.listenAgain &&
             decision.taskText.isEmpty() &&

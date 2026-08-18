@@ -257,6 +257,7 @@ class ConversationOrchestrator(
                 "context_detail=${decision.contextDetail.name}\n" +
                 "context_action=${decision.contextAction.name}\n" +
                 "setting_action=${decision.settingAction.name}\n" +
+                "setting_target=${decision.settingTarget.name}\n" +
                 "query_reading_move=${decision.queryReadingMove.name}\n" +
                 "query_presentation_hint=${decision.queryPresentationHint.name}\n" +
                 "confidence=${decision.confidence}\n" +
@@ -344,6 +345,7 @@ class ConversationOrchestrator(
             ConversationRoute.CONTEXT_ACTION -> decision
             ConversationRoute.QUERY_READING_CONTROL -> decision
             ConversationRoute.SETTINGS_ACTION -> decision
+            ConversationRoute.SETTINGS_READ -> decision
             ConversationRoute.DIRECT_REPLY -> decision.copy(
                 reply = decision.reply.ifBlank { "Hi. I can help you create, check, reschedule, delete, complete, or break down tasks." }
             )

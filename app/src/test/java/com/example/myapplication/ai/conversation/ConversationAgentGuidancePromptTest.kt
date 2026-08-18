@@ -108,7 +108,8 @@ class ConversationAgentGuidancePromptTest {
         val ordinalDeleteExample = "User: Delete the second one.\n" +
             "{\"route\":\"CONTEXT_ACTION\",\"task_text\":\"\",\"reply\":\"\"," +
             "\"context_ref\":\"T2\",\"context_detail\":\"NONE\"," +
-            "\"context_action\":\"DELETE\",\"setting_action\":\"NONE\"," +
+            "\"context_action\":\"DELETE\",\"setting_target\":\"NONE\"," +
+            "\"setting_action\":\"NONE\"," +
             "\"query_reading_move\":\"NONE\"," +
             "\"query_presentation_hint\":\"NONE\",\"confidence\":0.97," +
             "\"listen_again\":false}"
@@ -293,7 +294,7 @@ class ConversationAgentGuidancePromptTest {
         val repairPrompt = ConversationAgentClient.CONTEXT_READ_REPAIR_SYSTEM_PROMPT
 
         assertTrue(repairPrompt.contains("Allowed routes are CONTEXT_READ and ASK_CLARIFICATION only"))
-        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, QUERY_READING_CONTROL, SETTINGS_ACTION, DIRECT_REPLY, END_SESSION or UNKNOWN"))
+        assertTrue(repairPrompt.contains("Never return TASK_COMMAND, QUERY_READING_CONTROL, SETTINGS_ACTION, SETTINGS_READ, DIRECT_REPLY, END_SESSION or UNKNOWN"))
         assertTrue(repairPrompt.contains("query_reading_move and query_presentation_hint must both be NONE"))
         assertTrue(repairPrompt.contains("Match titles case-insensitively using only supplied items"))
         assertTrue(repairPrompt.contains("more than one supplied title plausibly matches"))

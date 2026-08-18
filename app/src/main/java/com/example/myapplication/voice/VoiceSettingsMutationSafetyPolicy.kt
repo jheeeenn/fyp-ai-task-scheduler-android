@@ -291,13 +291,15 @@ object VoiceSettingsMutationSafetyPolicy {
         val off = containsAny(
             text,
             "turn off", "switch off", "disable", "deactivate", "stop", "do not", "don t", "without"
-        ) || CONTEXT_OFF_REQUEST.containsMatchIn(text) || (target == VoiceSettingTarget.LARGE_TEXT && containsAny(
+        ) || EXPLICIT_BACK_OFF_REQUEST.containsMatchIn(text) ||
+            CONTEXT_OFF_REQUEST.containsMatchIn(text) || (target == VoiceSettingTarget.LARGE_TEXT && containsAny(
             text, "smaller text", "decrease text size", "reduce text size"
         ))
         val on = containsAny(
             text,
             "turn on", "switch on", "enable", "activate", "start", "open"
-        ) || CONTEXT_ON_REQUEST.containsMatchIn(text) || when (target) {
+        ) || EXPLICIT_BACK_ON_REQUEST.containsMatchIn(text) ||
+            CONTEXT_ON_REQUEST.containsMatchIn(text) || when (target) {
             VoiceSettingTarget.LARGE_TEXT -> containsAny(
                 text, "large text", "larger text", "bigger text", "text larger", "text bigger",
                 "text size", "increase text size"
@@ -358,7 +360,7 @@ object VoiceSettingsMutationSafetyPolicy {
     private fun guidanceSpeech(text: String, proposedAction: ConversationSettingAction): String {
         if (containsAny(text, "what settings", "which settings", "settings can", "change settings by voice")) {
             return "You can ask me to change Large Text, High Contrast, processing and " +
-                "session-end haptics, Assistant Tone, and Reply Length."
+                "session-end haptics, Assistant Tone, and Reply Length, or ask what they are currently set to."
         }
         val haptic = hapticEvidence(text)
         if (haptic.mentionsHaptic && haptic.processing == haptic.sessionEnd) {
@@ -457,6 +459,14 @@ object VoiceSettingsMutationSafetyPolicy {
     private const val MAX_HAPTIC_ANSWER_WORDS = 5
     private val CONTEXT_ON_REQUEST = Regex(
         "\\b(?:turn|switch)\\s+(?:it|that|the one)(?:\\s+back)?\\s+on\\b"
+    )
+
+    private val EXPLICIT_BACK_ON_REQUEST = Regex(
+        "\\bturn\\s+back\\s+on\\b|\\bturn(?:\\s+[a-z0-9]+){1,8}\\s+back\\s+on\\b"
+    )
+
+    private val EXPLICIT_BACK_OFF_REQUEST = Regex(
+        "\\bturn\\s+back\\s+off\\b|\\bturn(?:\\s+[a-z0-9]+){1,8}\\s+back\\s+off\\b"
     )
     private val CONTEXT_OFF_REQUEST = Regex(
         "\\b(?:turn|switch)\\s+(?:it|that|the one)(?:\\s+back)?\\s+off\\b"

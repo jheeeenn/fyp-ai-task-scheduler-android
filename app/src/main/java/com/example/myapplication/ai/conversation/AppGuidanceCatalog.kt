@@ -33,7 +33,7 @@ object AppGuidanceCatalog {
             "Turn High Contrast on or off by voice or in Settings under Accessibility; it increases foreground and background contrast across supported app screens.",
             "Turn Processing Haptic Feedback on or off by voice or in Settings; while enabled, a repeating heartbeat or lub-dub vibration means the assistant is genuinely processing a submitted request and is still working.",
             "Turn Session End Haptic Feedback on or off by voice or in Settings; while enabled, a distinct terminal vibration means the assistant conversation has completely finished and is separate from the processing heartbeat.",
-            "The six voice-configurable user settings are Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, and Reply Length."
+            "The six voice-configurable user settings are Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, and Reply Length; users may ask to change them or ask what they are currently set to."
         ),
         screenActions = listOf(
             "Open today's tasks.",
@@ -64,7 +64,7 @@ object AppGuidanceCatalog {
         ),
         limitations = listOf(
             "App guidance explains features but never performs an operation merely because the user asks how the operation works.",
-            "Voice can change only these six user-facing settings: Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, and Reply Length.",
+            "Voice can change or read the current value of only these six user-facing settings: Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, and Reply Length.",
             "The app has no wake word or background always-listening activation; use the Talk Assistant control.",
             "The app does not provide calendar or email integration, weather, news, traffic, cloud or cross-device synchronisation, or arbitrary third-party integrations.",
             "A voice create request opens task creation with recognised fields prefilled for review; update and reschedule requests open the matched task for review.",

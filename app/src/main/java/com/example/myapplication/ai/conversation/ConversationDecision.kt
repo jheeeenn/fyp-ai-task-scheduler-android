@@ -19,6 +19,7 @@ data class ConversationDecision(
     val contextDetail: ConversationContextDetail = ConversationContextDetail.NONE,
     val contextAction: ConversationContextAction = ConversationContextAction.NONE,
     val settingAction: ConversationSettingAction = ConversationSettingAction.NONE,
+    val settingTarget: ConversationSettingTarget = ConversationSettingTarget.NONE,
     val queryReadingMove: ConversationQueryReadingMove = ConversationQueryReadingMove.NONE,
     val queryPresentationHint: TaskQueryPresentation = TaskQueryPresentation.NONE,
     val confidence: Double = 0.0,

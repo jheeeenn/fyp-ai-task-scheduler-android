@@ -303,6 +303,7 @@ class ConversationContextActionRepairTest {
             .put("context_detail", "NONE")
             .put("context_action", contextAction)
             .put("setting_action", "NONE")
+            .put("setting_target", "NONE")
             .put("query_reading_move", "NONE")
             .put("query_presentation_hint", "NONE")
             .put("confidence", 0.97)

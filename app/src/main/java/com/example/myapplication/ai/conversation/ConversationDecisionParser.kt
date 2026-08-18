@@ -17,6 +17,7 @@ enum class ConversationDecisionFailureCode {
     INVALID_CONTEXT_DETAIL,
     INVALID_CONTEXT_ACTION,
     INVALID_SETTING_ACTION,
+    INVALID_SETTING_TARGET,
     INVALID_QUERY_READING_MOVE,
     LOW_CONFIDENCE,
     LISTEN_AGAIN_REQUIRED
@@ -37,6 +38,7 @@ data class RawConversationDecision(
     val contextDetail: ConversationContextDetail,
     val contextAction: ConversationContextAction,
     val settingAction: ConversationSettingAction,
+    val settingTarget: ConversationSettingTarget,
     val queryReadingMove: ConversationQueryReadingMove,
     val queryPresentationHint: TaskQueryPresentation,
     val confidence: Double,
@@ -99,6 +101,11 @@ class ConversationDecisionStructuralDecoder {
             value = requireString(json, "setting_action"),
             values = ConversationSettingAction.entries.associateBy(ConversationSettingAction::name)
         )
+        val settingTarget = enumValue(
+            field = "setting_target",
+            value = requireString(json, "setting_target"),
+            values = ConversationSettingTarget.entries.associateBy(ConversationSettingTarget::name)
+        )
         val queryReadingMove = enumValue(
             field = "query_reading_move",
             value = requireString(json, "query_reading_move"),
@@ -126,6 +133,7 @@ class ConversationDecisionStructuralDecoder {
             contextDetail = contextDetail,
             contextAction = contextAction,
             settingAction = settingAction,
+            settingTarget = settingTarget,
             queryReadingMove = queryReadingMove,
             queryPresentationHint = queryPresentationHint,
             confidence = confidence,
@@ -253,6 +261,7 @@ class ConversationDecisionStructuralDecoder {
             "context_detail",
             "context_action",
             "setting_action",
+            "setting_target",
             "query_reading_move",
             "query_presentation_hint",
             "confidence",
@@ -297,6 +306,11 @@ object ConversationDecisionCanonicalizer {
             } else {
                 ConversationSettingAction.NONE
             },
+            settingTarget = if (raw.route == ConversationRoute.SETTINGS_READ) {
+                raw.settingTarget
+            } else {
+                ConversationSettingTarget.NONE
+            },
             queryReadingMove = if (raw.route == ConversationRoute.QUERY_READING_CONTROL) {
                 raw.queryReadingMove
             } else {
@@ -328,6 +342,7 @@ object ConversationDecisionCanonicalizer {
         if (raw.contextDetail != canonical.contextDetail) add("context_detail")
         if (raw.contextAction != canonical.contextAction) add("context_action")
         if (raw.settingAction != canonical.settingAction) add("setting_action")
+        if (raw.settingTarget != canonical.settingTarget) add("setting_target")
         if (raw.queryReadingMove != canonical.queryReadingMove) add("query_reading_move")
         if (raw.queryPresentationHint != canonical.queryPresentationHint) {
             add("query_presentation_hint")
@@ -434,6 +449,29 @@ object ConversationDecisionContractValidator {
                     fail(
                         ConversationDecisionFailureCode.LISTEN_AGAIN_REQUIRED,
                         "SETTINGS_ACTION requires listen_again true",
+                        decision.route
+                    )
+                }
+            }
+            ConversationRoute.SETTINGS_READ -> {
+                if (decision.settingTarget == ConversationSettingTarget.NONE) {
+                    fail(
+                        ConversationDecisionFailureCode.INVALID_SETTING_TARGET,
+                        "SETTINGS_READ requires a non-NONE setting_target",
+                        decision.route
+                    )
+                }
+                if (decision.confidence < ConversationDecisionParser.MIN_ACCEPTED_ROUTING_CONFIDENCE) {
+                    fail(
+                        ConversationDecisionFailureCode.LOW_CONFIDENCE,
+                        "SETTINGS_READ confidence is below the accepted routing threshold",
+                        decision.route
+                    )
+                }
+                if (!decision.listenAgain) {
+                    fail(
+                        ConversationDecisionFailureCode.LISTEN_AGAIN_REQUIRED,
+                        "SETTINGS_READ requires listen_again true",
                         decision.route
                     )
                 }

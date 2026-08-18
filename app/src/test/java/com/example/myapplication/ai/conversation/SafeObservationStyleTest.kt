@@ -607,6 +607,6 @@ class SafeObservationStyleTest {
 
     companion object {
         private fun validRoutingDecision() =
-            """{"route":"TASK_COMMAND","task_text":"show my work","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.98,"listen_again":true}"""
+            """{"route":"TASK_COMMAND","task_text":"show my work","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"OVERVIEW","confidence":0.98,"listen_again":true}"""
     }
 }

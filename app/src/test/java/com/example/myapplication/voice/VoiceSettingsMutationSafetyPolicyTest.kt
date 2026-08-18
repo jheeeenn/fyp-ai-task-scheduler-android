@@ -38,6 +38,30 @@ class VoiceSettingsMutationSafetyPolicyTest {
     }
 
     @Test
+    fun explicitTurnBackDirectionsAreAllowedOnlyWithGroundedMatchingTargets() {
+        listOf(
+            "turn the processing vibration back on" to
+                ConversationSettingAction.PROCESSING_HAPTIC_ON,
+            "turn back on the processing vibration" to
+                ConversationSettingAction.PROCESSING_HAPTIC_ON,
+            "turn back on for the processing vibration" to
+                ConversationSettingAction.PROCESSING_HAPTIC_ON,
+            "turn high contrast back off" to ConversationSettingAction.HIGH_CONTRAST_OFF,
+            "turn large text back on" to ConversationSettingAction.LARGE_TEXT_ON,
+            "turn the session end vibration back off" to
+                ConversationSettingAction.SESSION_END_HAPTIC_OFF
+        ).forEach { (utterance, action) ->
+            assertDisposition(utterance, action, VoiceSettingsSafetyDisposition.ALLOW)
+        }
+
+        assertDisposition(
+            "turn high contrast back on",
+            ConversationSettingAction.PROCESSING_HAPTIC_ON,
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET
+        )
+    }
+
+    @Test
     fun clearGuidanceQuestionsAreVetoedBeforeGrounding() {
         listOf(
             "how do i turn on high contrast" to ConversationSettingAction.HIGH_CONTRAST_ON,

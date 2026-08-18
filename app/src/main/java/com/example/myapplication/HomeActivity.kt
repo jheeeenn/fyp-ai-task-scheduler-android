@@ -134,6 +134,10 @@ import com.example.myapplication.voice.AssistantTone
 import com.example.myapplication.voice.AssistantVerbosity
 import com.example.myapplication.voice.VoiceSettingsDecisionValidator
 import com.example.myapplication.voice.VoiceSettingsExecutor
+import com.example.myapplication.voice.VoiceSettingsReadDecisionValidator
+import com.example.myapplication.voice.VoiceSettingsReadRecoveryPolicy
+import com.example.myapplication.voice.VoiceSettingsStatusReader
+import com.example.myapplication.voice.VoiceSettingReadStatus
 import com.example.myapplication.voice.VoiceSettingsMutationSafetyPolicy
 import com.example.myapplication.voice.VoiceSettingsSafetyDisposition
 import com.example.myapplication.voice.VoiceSettingsSafetyResult
@@ -233,6 +237,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var voiceSettingsExecutor: VoiceSettingsExecutor
+    private lateinit var voiceSettingsStatusReader: VoiceSettingsStatusReader
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var conversationOrchestrator: ConversationOrchestrator
     private lateinit var routineFollowUpSemanticOrchestrator:
@@ -450,7 +455,9 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager= AssistantResponseManager.fromPreferences(this)
-        voiceSettingsExecutor = VoiceSettingsExecutor(AppPreferences(this))
+        val appPreferences = AppPreferences(this)
+        voiceSettingsExecutor = VoiceSettingsExecutor(appPreferences)
+        voiceSettingsStatusReader = VoiceSettingsStatusReader(appPreferences)
 
         assistantSession = AssistantVoiceSession(
             activity = this,
@@ -1537,6 +1544,21 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     }
                 }
 
+                val recoveredSettingReadDecision =
+                    VoiceSettingsReadRecoveryPolicy.recoverDecision(normalized)
+                if (recoveredSettingReadDecision != null &&
+                    (conversationDecision.route != ConversationRoute.SETTINGS_READ ||
+                        conversationDecision.settingTarget != recoveredSettingReadDecision.settingTarget)
+                ) {
+                    Log.d(
+                        "VOICE_SETTINGS_READ_RECOVERY",
+                        "modelRoute=${conversationDecision.route.name} " +
+                            "modelAction=${conversationDecision.settingAction.name} " +
+                            "recoveredTarget=${recoveredSettingReadDecision.settingTarget.name}"
+                    )
+                    conversationDecision = recoveredSettingReadDecision
+                }
+
                 val recoveredSettingAction = VoiceSettingContextualActionResolver.resolve(
                     normalizedUtterance = normalized,
                     focus = voiceSettingFocus
@@ -1578,6 +1600,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 val taskAgentInput: String
                 if (conversationDecision.route !in setOf(
                         ConversationRoute.SETTINGS_ACTION,
+                        ConversationRoute.SETTINGS_READ,
                         ConversationRoute.DIRECT_REPLY,
                         ConversationRoute.ASK_CLARIFICATION
                     )
@@ -1929,6 +1952,40 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             requestToken,
                             routedStyleAuthorization
                         )
+                        return@launch
+                    }
+                    ConversationRoute.SETTINGS_READ -> {
+                        if (!VoiceSettingsReadDecisionValidator.isValid(conversationDecision)) {
+                            val clarification = "Which setting would you like me to check?"
+                            conversationOrchestrator.commitFinalDecision(
+                                ConversationDecision(
+                                    route = ConversationRoute.ASK_CLARIFICATION,
+                                    reply = clarification,
+                                    listenAgain = true,
+                                    source = "android_voice_settings_read_validation"
+                                )
+                            )
+                            assistantSession.speak(clarification, listenAgain = true)
+                            return@launch
+                        }
+                        voiceSettingConversationContext.clearPending()
+                        conversationDecision.settingTarget.voiceSettingTarget()?.let(
+                            voiceSettingConversationContext::focus
+                        )
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        val readResult = voiceSettingsStatusReader.read(
+                            conversationDecision.settingTarget
+                        )
+                        Log.d(
+                            "VOICE_SETTINGS_READ",
+                            "target=${readResult.target.name} status=${readResult.status.name}"
+                        )
+                        val speech = if (readResult.status == VoiceSettingReadStatus.READ) {
+                            readResult.speech
+                        } else {
+                            "Which setting would you like me to check?"
+                        }
+                        assistantSession.speak(speech, listenAgain = true)
                         return@launch
                     }
                     ConversationRoute.SETTINGS_ACTION -> {

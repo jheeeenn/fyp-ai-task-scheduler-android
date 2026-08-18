@@ -158,6 +158,7 @@ class ConversationSessionMemory {
             }
             ConversationRoute.CONTEXT_READ -> Unit
             ConversationRoute.SETTINGS_ACTION -> Unit
+            ConversationRoute.SETTINGS_READ -> Unit
             ConversationRoute.CONTEXT_ACTION -> {
                 pendingAction = "CONTEXT_ACTION"
             }
