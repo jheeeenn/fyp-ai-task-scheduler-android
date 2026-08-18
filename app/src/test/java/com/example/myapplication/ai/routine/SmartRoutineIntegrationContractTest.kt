@@ -276,13 +276,15 @@ class SmartRoutineIntegrationContractTest {
 
     @Test
     fun guidanceStatesReviewExactScheduleConfirmationAndNoAutomaticRecurrence() {
-        val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
-        assertTrue(home.contains("reusable routine containing 2 to 5 timed steps"))
-        assertTrue(home.contains("Every routine task requires an exact future date and time"))
-        assertTrue(home.contains("Android reviews the complete routine before creation"))
-        assertTrue(home.contains("only after explicit confirmation"))
-        assertTrue(home.contains("do not recur automatically"))
-        assertTrue(home.contains("do not generate future occurrences"))
+        val guidance = File(
+            "src/main/java/com/example/myapplication/ai/conversation/AppGuidanceCatalog.kt"
+        ).readText()
+        assertTrue(guidance.contains("reusable routine from 2 to 5 ordered, timed steps"))
+        assertTrue(guidance.contains("collect missing schedule information"))
+        assertTrue(guidance.contains("complete proposal for confirmation or revision before saving"))
+        assertTrue(guidance.contains("Running it creates independent occurrence tasks"))
+        assertTrue(guidance.contains("do not recur automatically"))
+        assertTrue(guidance.contains("generate future occurrences automatically"))
     }
 
     private fun decisionJson(

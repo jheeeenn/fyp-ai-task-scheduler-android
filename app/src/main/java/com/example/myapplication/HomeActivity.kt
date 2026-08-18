@@ -46,7 +46,7 @@ import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.agent.ContextActionChangeSet
 import com.example.myapplication.ai.conversation.ConversationAgentClient
-import com.example.myapplication.ai.conversation.AppGuidanceContext
+import com.example.myapplication.ai.conversation.AppGuidanceCatalog
 import com.example.myapplication.ai.conversation.ConversationDecision
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
@@ -854,8 +854,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.AFTER_TASK_SUMMARY -> Pair(
                 "A task summary was read, and the assistant offered to read more details.",
                 listOf(
-                    "Ask what the first, second, or another supplied result was.",
-                    "Ask for a supplied task's date, time, status, or subtask summary.",
+                    "Ask what the first, second, or another recently read result was.",
+                    "Ask for a recently read task's date, time, status, or subtask summary.",
                     "Give another task command using the task name, or end the assistant session."
                 )
             )
@@ -863,14 +863,14 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.AFTER_TASK_DETAILS -> Pair(
                 "Detailed task results were already read.",
                 listOf(
-                    "Ask what the first, second, or another supplied result was.",
-                    "Ask for a supplied task's date, time, status, or subtask summary.",
+                    "Ask what the first, second, or another recently read result was.",
+                    "Ask for a recently read task's date, time, status, or subtask summary.",
                     "Give another task command using the task name, or end the assistant session."
                 )
             )
 
             HomeFollowUpContext.AFTER_DAILY_BRIEFING -> Pair(
-                "An authoritative on-demand daily briefing was read.",
+                "An on-demand daily briefing was read.",
                 listOf(
                     "Ask what the first, second, or another spoken task was.",
                     "Ask for a spoken task's date, time, status, or subtask summary.",
@@ -880,7 +880,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
 
             HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION -> Pair(
-                "An authoritative on-demand context-aware task suggestion was read.",
+                "An on-demand context-aware task suggestion was read.",
                 listOf(
                     "Ask about the selected task or either selected task in a close-schedule pair.",
                     "Ask for a spoken task's date, time, status, or subtask summary.",
@@ -899,7 +899,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
 
             HomeFollowUpContext.QUERY_PAGE -> Pair(
-                "The current group of authoritative task-query results was read.",
+                "The current group of task-query results was read.",
                 listOf(
                     "Say continue for the next group, repeat the current group, or stop.",
                     "Ask what the first, second, or another task in the current group was.",
@@ -909,9 +909,9 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
 
             HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION -> Pair(
-                "Android is waiting for the target of a bounded contextual task action.",
+                "The assistant is waiting to learn which recently presented task the user means.",
                 listOf(
-                    "Select one supplied task by name, ordinal, or temporary reference.",
+                    "Choose one recently presented task by name or position in the spoken list.",
                     "Give a fresh task command to abandon this clarification."
                 )
             )
@@ -951,7 +951,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         val routineInteraction = when (routineDraftController.state) {
             RoutineDraftState.NONE -> null
             RoutineDraftState.EXTRACTING -> Pair(
-                "The bounded Task Agent is extracting a new reusable routine proposal.",
+                "The assistant is preparing a new reusable routine proposal.",
                 listOf("Wait for the proposal or cancel the routine request.")
             )
             RoutineDraftState.COLLECTING_SHARED_DATE -> Pair(
@@ -963,81 +963,23 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 listOf("Provide one exact time or cancel the routine.")
             )
             RoutineDraftState.WAITING_FOR_CONFIRMATION -> Pair(
-                "An Android-authored routine proposal is waiting for explicit confirmation.",
+                "A complete routine proposal is waiting for explicit confirmation.",
                 listOf(
                     "Confirm or reject the complete proposal.",
                     "Change one selected step's time or title, or change the shared date.",
-                    "Repeat the stored authoritative proposal."
+                    "Repeat the complete proposal."
                 )
             )
             RoutineDraftState.SAVING -> Pair(
-                "Android is persisting a confirmed routine occurrence.",
-                listOf("Wait for the authoritative save and reminder result.")
+                "The confirmed routine occurrence is being saved.",
+                listOf("Wait for saving and reminder scheduling to finish.")
             )
         }
 
-        val baseGuidanceContext = AppGuidanceContext(
-            currentScreen = "Home",
-            assistantPurpose = "Help a visually impaired user manage scheduled tasks through voice or typed assistant input.",
-            supportedCapabilities = listOf(
-                "Create a task.",
-                "Query tasks by date, time, or date range.",
-                "Provide an on-demand daily briefing covering overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus.",
-                "Suggest one active task to focus on.",
-                "Suggest continuing the first unfinished subtask of an active task.",
-                "Suggest using task breakdown for a suitable active task without subtasks.",
-                "Identify two active tasks scheduled no more than thirty minutes apart on the same date.",
-                "Update a task.",
-                "Reschedule a task.",
-                "Delete a task after confirmation.",
-                "Mark a task complete.",
-                "Mark a completed task incomplete.",
-                "Break a large task into subtasks.",
-                "Build and save a reusable routine containing 2 to 5 timed steps, and create its first occurrence only after explicit confirmation.",
-                "List, read, run, or delete saved routines through the assistant. Running creates independent occurrence tasks only."
-            ),
-            screenActions = listOf(
-                "Open today's tasks.",
-                "Open the create-task screen.",
-                "Open scheduled tasks.",
-                "Open settings.",
-                "Start the voice assistant."
-            ),
-            inputMethods = listOf(
-                "Activate the Talk Assistant button to speak.",
-                "Long-press the Talk Assistant button to type an assistant request.",
-                "Voice and typed inputs use the same assistant pipeline."
-            ),
+        val baseGuidanceContext = AppGuidanceCatalog.homeContext(
             interactionState = homeFollowUpContext.name,
             currentInteraction = interaction.first,
-            currentInteractionGuidance = interaction.second,
-            usageExamples = listOf(
-                "Say, 'Show my tasks tomorrow.'",
-                "Say, 'Give me my daily briefing.'",
-                "Say, 'What should I focus on?'",
-                "Say, 'Create a task called revision tomorrow at 4 PM.'",
-                "Say, 'Use my morning routine tomorrow.'",
-                "Say, 'How do I reschedule a task?' for app guidance."
-            ),
-            limitations = listOf(
-                "A voice create request opens the create-task screen with recognised fields prefilled for review.",
-                "Update and reschedule requests open the edit screen for the matched task.",
-                "Delete requires confirmation before the app deletes the task.",
-                "The app marks a matched task complete or incomplete.",
-                "The app reads verified task-query results.",
-                "Daily briefings are available on demand and are not delivered automatically on a schedule.",
-                "The daily briefing's suggested focus uses deterministic due-date and time ordering, not behavioural learning, habit-based recommendations, priority fields, or calendar integration.",
-                "After a daily briefing, the user may ask about one of the spoken tasks.",
-                "Context-aware suggestions run only after an explicit request and never change a task.",
-                "Suggestions use current task structure and device-local schedules, not proactive monitoring, behavioural profiles, learned priorities, task priority fields, inferred duration, or calendar data.",
-                "A close-schedule suggestion means tasks are no more than thirty minutes apart; it does not claim a definite conflict because task duration is unknown.",
-                "The user must give a separate explicit task command before any breakdown, reschedule, completion, or other task change.",
-                "Task breakdown requires plan approval and any missing scheduling information.",
-                "A saved routine is a reusable template of 2 to 5 ordered titles and default times; occurrence dates are stored only on generated tasks.",
-                "Every routine task requires an exact future date and time, and Android reviews the complete routine before creation.",
-                "Saved routines do not recur automatically and do not generate future occurrences. The app does not learn routine behaviour or integrate routine creation with calendars.",
-                "App guidance must not claim that an operation occurred unless the app successfully completed it."
-            )
+            currentInteractionGuidance = interaction.second
         )
         val guidanceContext = if (routineInteraction == null) {
             baseGuidanceContext

@@ -1182,6 +1182,8 @@ UNKNOWN
 Route rules:
 - Use DIRECT_REPLY for greetings, small talk, thanks, app capability questions, questions about how an existing feature works, general help, or help with the current interaction.
 - Guidance questions such as "What can you do?", "How do I create a task?", "How do I delete a task?", "Can you reschedule tasks?", "What should I say?", "Where am I?", "Can I type instead of speaking?", and "How do I stop the assistant?" are DIRECT_REPLY.
+- Broad help questions and natural follow-ups about a capability mentioned in a recent turn are DIRECT_REPLY. Use recent conversational context to interpret the topic, then use only the supplied App context for factual claims.
+- Questions about locating, enabling, or understanding an existing setting are DIRECT_REPLY. A request to change a setting, such as "Turn on high contrast", cannot mutate Settings in the current app; use DIRECT_REPLY to explain the manual Settings path without claiming a change.
 - Use TASK_COMMAND only for a reasonably clear request to perform one supported task operation: create, query, update, reschedule, delete, mark done or undone, or break down a task.
 - Actual operation requests such as "Create a task called buy medicine tomorrow", "Show my tasks next week", "Delete my dentist task", "Move the meeting to Friday", "Mark assignment complete", and "Break down my project task" are TASK_COMMAND.
 - Do not use TASK_COMMAND merely because the utterance contains task-related words such as "task", "schedule", "class", or a date.
@@ -1469,6 +1471,8 @@ Guidance and execution distinction:
 - "How do I create a task?" is DIRECT_REPLY. "Create a task called revision" is TASK_COMMAND.
 - "Can you delete tasks?" is DIRECT_REPLY. "Delete the revision task" is TASK_COMMAND.
 - "How does rescheduling work?" is DIRECT_REPLY. "Reschedule revision to tomorrow" is TASK_COMMAND.
+- "How do I create a routine?" is DIRECT_REPLY. "Create my morning routine" is SMART_ROUTINE_BUILDER.
+- "How do I turn on high contrast?" is DIRECT_REPLY. "Turn on high contrast" must not claim or perform a settings mutation; explain that it must be changed in Settings.
 - A question about performing an operation is guidance; a reasonably clear instruction to perform it is execution.
 
 App-guidance reply rules:
@@ -1479,7 +1483,10 @@ App-guidance reply rules:
 - Avoid visual-only instructions such as "look at", "as shown", "on the right", or "the icon over there".
 - Prefer instructions such as "Open the Today Tasks button", "Say, 'Show my tasks tomorrow'", or "Long-press the Talk Assistant button to type".
 - Do not overwhelm the user with every capability unless they ask for the full list.
-- For "What can you do?", give a compact summary and one or two examples, not a long manual.
+- For "What can you do?", briefly summarize task management, daily briefings, routines, task breakdown, and reminders, then offer guidance about those features; do not read the whole App context.
+- For a guidance follow-up, use recent conversation only to resolve which feature the user means. The supplied App context remains the sole factual authority.
+- Settings guidance may explain the user-facing Assistant Preferences and Accessibility options supplied in App context, but must never claim a voice-controlled settings change.
+- If the App context says a capability is unsupported, say so briefly and offer the supported interaction when one is supplied.
 - Do not mention Android internals, Room, agents, schemas, model names, or network details.
 - App guidance may explain that an on-demand daily briefing covers overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus, and that the user can ask about a spoken task afterward.
 - Do not describe the suggested focus as behavioural, habit-based, personalised, priority-field, or calendar-based analysis.

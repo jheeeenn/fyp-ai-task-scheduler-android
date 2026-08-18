@@ -263,6 +263,9 @@ class ContextSuggestionContractTest {
 
     @Test
     fun diagnosticEventsAndReadOnlyGuidanceArePresentWithoutPrivateMappings() {
+        val guidanceSource = File(
+            "src/main/java/com/example/myapplication/ai/conversation/AppGuidanceCatalog.kt"
+        ).readText()
         listOf(
             "CONTEXT_SUGGESTION_REQUEST",
             "CONTEXT_SUGGESTION_SNAPSHOT",
@@ -277,14 +280,14 @@ class ContextSuggestionContractTest {
             "excludedPastClosePairCount="
         ).forEach { assertTrue("Missing bounded count: $it", homeSource.contains(it)) }
         listOf(
-            "Suggest one active task to focus on.",
+            "What should I focus on?",
             "Suggest continuing the first unfinished subtask",
-            "Suggest using task breakdown",
-            "Identify two active tasks scheduled no more than thirty minutes apart",
-            "run only after an explicit request and never change a task",
-            "not proactive monitoring",
-            "not claim a definite conflict"
-        ).forEach { assertTrue("Missing guidance: $it", homeSource.contains(it)) }
+            "suggest task breakdown",
+            "identify two active tasks scheduled no more than thirty minutes apart",
+            "run only after an explicit request, never change a task",
+            "proactive monitoring",
+            "does not claim a definite conflict"
+        ).forEach { assertTrue("Missing guidance: $it", guidanceSource.contains(it)) }
         assertFalse(
             homeSource.substringAfter("CONTEXT_SUGGESTION_REQUEST")
                 .substringBefore("private fun isEligibleContextActionTarget")

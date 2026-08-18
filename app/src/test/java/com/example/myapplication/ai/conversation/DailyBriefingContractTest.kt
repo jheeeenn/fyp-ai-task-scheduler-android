@@ -77,22 +77,25 @@ class DailyBriefingContractTest {
 
     @Test
     fun appGuidanceDescribesExpandedOnDemandScopeWithoutAdaptiveClaims() {
+        val guidanceSource = File(
+            "src/main/java/com/example/myapplication/ai/conversation/AppGuidanceCatalog.kt"
+        ).readText()
         assertTrue(
-            homeSource.contains(
+            guidanceSource.contains(
                 "covering overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus"
             )
         )
         assertTrue(
-            homeSource.contains(
-                "not behavioural learning, habit-based recommendations, priority fields, or calendar integration"
+            guidanceSource.contains(
+                "not behavioural learning, habit learning, priority fields, autonomous prioritisation, or calendar data"
             )
         )
         assertTrue(
-            homeSource.contains(
-                "Daily briefings are available on demand and are not delivered automatically on a schedule."
+            guidanceSource.contains(
+                "Daily briefings are available only on demand and contain scheduled task information; they are not delivered automatically on a schedule."
             )
         )
-        assertFalse(homeSource.contains("scheduled briefing notification", ignoreCase = true))
+        assertFalse(guidanceSource.contains("scheduled briefing notification", ignoreCase = true))
     }
 
     @Test

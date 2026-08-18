@@ -12,21 +12,16 @@ class HomeActivityAppGuidanceSourceTest {
         .substringBefore("private fun handleVoiceCommand")
 
     @Test
-    fun buildsTrustedHomeGuidanceWithVoiceAndTypedInput() {
-        assertTrue(contextBuilder.contains("AppGuidanceContext("))
-        assertTrue(contextBuilder.contains("currentScreen = \"Home\""))
-        assertTrue(contextBuilder.contains("Activate the Talk Assistant button to speak."))
-        assertTrue(contextBuilder.contains("Long-press the Talk Assistant button to type"))
-        assertTrue(contextBuilder.contains("Voice and typed inputs use the same assistant pipeline."))
+    fun combinesStaticCatalogWithDynamicHomeInteraction() {
+        assertTrue(contextBuilder.contains("AppGuidanceCatalog.homeContext("))
         assertTrue(contextBuilder.contains("interactionState = homeFollowUpContext.name"))
+        assertTrue(contextBuilder.contains("currentInteraction = interaction.first"))
+        assertTrue(contextBuilder.contains("currentInteractionGuidance = interaction.second"))
         assertTrue(contextBuilder.contains("return guidanceContext.toPromptText()"))
         assertFalse(contextBuilder.contains("Android-generated speech"))
-        assertTrue(contextBuilder.contains("The app reads verified task-query results."))
-        assertTrue(
-            contextBuilder.contains(
-                "App guidance must not claim that an operation occurred unless the app successfully completed it."
-            )
-        )
+        assertFalse(contextBuilder.contains("supportedCapabilities = listOf("))
+        assertFalse(contextBuilder.contains("usageExamples = listOf("))
+        assertFalse(contextBuilder.contains("limitations = listOf("))
     }
 
     @Test
@@ -87,7 +82,7 @@ class HomeActivityAppGuidanceSourceTest {
             .substringBefore("HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> Pair(")
 
         listOf(summary, details).forEach { guidance ->
-            assertTrue(guidance.contains("Ask what the first, second, or another supplied result was."))
+            assertTrue(guidance.contains("Ask what the first, second, or another recently read result was."))
             assertTrue(guidance.contains("date, time, status, or subtask summary"))
             assertTrue(guidance.contains("using the task name"))
             assertFalse(guidance.contains("Delete the second"))

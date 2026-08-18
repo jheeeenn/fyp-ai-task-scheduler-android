@@ -22,6 +22,10 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("\"Create a task called revision\" is TASK_COMMAND"))
         assertTrue(prompt.contains("\"Can you delete tasks?\" is DIRECT_REPLY"))
         assertTrue(prompt.contains("\"Delete the revision task\" is TASK_COMMAND"))
+        assertTrue(prompt.contains("\"How do I create a routine?\" is DIRECT_REPLY"))
+        assertTrue(prompt.contains("\"Create my morning routine\" is SMART_ROUTINE_BUILDER"))
+        assertTrue(prompt.contains("\"How do I turn on high contrast?\" is DIRECT_REPLY"))
+        assertTrue(prompt.contains("\"Turn on high contrast\" must not claim or perform a settings mutation"))
     }
 
     @Test
@@ -29,6 +33,8 @@ class ConversationAgentGuidancePromptTest {
         assertTrue(prompt.contains("App context is the only authority for app guidance"))
         assertTrue(prompt.contains("Do not invent screens, buttons, features"))
         assertTrue(prompt.contains("available integrations"))
+        assertTrue(prompt.contains("cannot mutate Settings in the current app"))
+        assertTrue(prompt.contains("supplied App context remains the sole factual authority"))
     }
 
     @Test
