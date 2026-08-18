@@ -415,29 +415,48 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
 
         // Navigation buttons
-        btnTodayTasks.setOnClickListenerWithHaptic {
-            //startActivity(Intent(this, TodayTasksActivity::class.java))
-            speakThenOpen("opening today's task.") {
-                startActivity(Intent(this, TodayTasksActivity::class.java))
+        VoiceFirstGestureBinder.bindAction(
+            view = btnTodayTasks,
+            speechProvider = HomeControlSpeechRenderer::todayTasks,
+            speak = ::speakControlIdentification,
+            activate = {
+                speakThenOpen("opening today's task.") {
+                    startActivity(Intent(this, TodayTasksActivity::class.java))
+                }
             }
-        }
-        btnCreateTask.setOnClickListenerWithHaptic {
-            speakThenOpen("opening task create.") {
-                startActivity(Intent(this, CreateTaskActivity::class.java))
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = btnCreateTask,
+            speechProvider = HomeControlSpeechRenderer::createTask,
+            speak = ::speakControlIdentification,
+            activate = {
+                speakThenOpen("opening task create.") {
+                    startActivity(Intent(this, CreateTaskActivity::class.java))
+                }
             }
-        }
+        )
 
-        btnScheduledTasks.setOnClickListenerWithHaptic {
-            speakThenOpen("opening scheduled task.") {
-                startActivity(Intent(this, MainActivity::class.java))
+        VoiceFirstGestureBinder.bindAction(
+            view = btnScheduledTasks,
+            speechProvider = HomeControlSpeechRenderer::scheduledTasks,
+            speak = ::speakControlIdentification,
+            activate = {
+                speakThenOpen("opening scheduled task.") {
+                    startActivity(Intent(this, MainActivity::class.java))
+                }
             }
-        }
+        )
 
-        btnSettings.setOnClickListenerWithHaptic {
-            speakThenOpen("opening settings.") {
-                startActivity(Intent(this, SettingsActivity::class.java))
+        VoiceFirstGestureBinder.bindAction(
+            view = btnSettings,
+            speechProvider = HomeControlSpeechRenderer::settings,
+            speak = ::speakControlIdentification,
+            activate = {
+                speakThenOpen("opening settings.") {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                }
             }
-        }
+        )
 
         // Notification permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -478,9 +497,12 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
 
 
-        btnTalkAssistant.setOnClickListenerWithHaptic {
-            startGenericAssistantSession()
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnTalkAssistant,
+            speechProvider = HomeControlSpeechRenderer::assistant,
+            speak = ::speakControlIdentification,
+            activate = ::startGenericAssistantSession
+        )
 
         btnTalkAssistant.setOnLongClickListener {
             btnTalkAssistant.performLongClickHapticFeedback()
@@ -6720,6 +6742,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         assistantSession.speakThenRun(reply) {
             action()
         }
+    }
+
+    private fun speakControlIdentification(text: String) {
+        voiceHelper.speak(text)
     }
 
     private fun handleConversationIntent(

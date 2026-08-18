@@ -14,18 +14,16 @@ import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.view.animation.LinearInterpolator
 import android.graphics.drawable.GradientDrawable
-import android.view.HapticFeedbackConstants
 import com.example.myapplication.accessibility.resolveThemeColor
 
 
 class AssistantBottomSheet(
     private val activity: AppCompatActivity,
+    private val speakIdentification: (String) -> Unit,
     private val onStateChanged: (AssistantAccessibilityState) -> Unit = {},
     private val onPanelDismissed: () -> Unit = {}
 ) : BottomSheetDialog(activity) {
     private var onDoubleTapCancel: (() -> Unit)? = null
-    private var lastTapTime: Long = 0L
-    private val doubleTapWindowMs = 350L
 
     private lateinit var assistantRoot: View
     private var defaultBorderColor: Int = 0
@@ -72,21 +70,37 @@ class AssistantBottomSheet(
         tvAssistantReply = view.findViewById(R.id.tvAssistantReply)
         tvAssistantHint = view.findViewById(R.id.tvAssistantHint)
 
-        view.findViewById<Button>(R.id.btnStopAssistant).setOnClickListenerWithHaptic {
-            onDoubleTapCancel?.invoke()
-        }
-        view.findViewById<Button>(R.id.btnTypeAssistantInput).setOnClickListenerWithHaptic {
-            onTypedInputRequested?.invoke()
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = view.findViewById<Button>(R.id.btnStopAssistant),
+            speechProvider = AssistantPanelControlSpeechRenderer::stop,
+            speak = speakIdentification,
+            activate = { onDoubleTapCancel?.invoke() }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = view.findViewById<Button>(R.id.btnTypeAssistantInput),
+            speechProvider = AssistantPanelControlSpeechRenderer::typeInput,
+            speak = speakIdentification,
+            activate = { onTypedInputRequested?.invoke() }
+        )
 
-        assistantRoot.setOnClickListener {
-            assistantRoot.performTapHapticFeedback()
-            val now = System.currentTimeMillis()
-            if (now - lastTapTime <= doubleTapWindowMs) {
-                assistantRoot.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                onDoubleTapCancel?.invoke()
-            }
-            lastTapTime = now
+        assistantRoot.contentDescription = "Assistant panel"
+        VoiceFirstGestureBinder.bindAction(
+            view = assistantRoot,
+            speechProvider = AssistantPanelControlSpeechRenderer::panel,
+            speak = speakIdentification,
+            activate = { onDoubleTapCancel?.invoke() }
+        )
+        VoiceFirstGestureBinder.bindInformation(
+            view = stateContainer,
+            speechProvider = { AssistantPanelControlSpeechRenderer.status(tvState.text) },
+            speak = speakIdentification
+        )
+        listOf(tvUserSpeech, tvAssistantReply, tvAssistantHint).forEach { informationView ->
+            VoiceFirstGestureBinder.bindInformation(
+                view = informationView,
+                speechProvider = { informationView.contentDescription?.toString() },
+                speak = speakIdentification
+            )
         }
 
         setOnDismissListener {

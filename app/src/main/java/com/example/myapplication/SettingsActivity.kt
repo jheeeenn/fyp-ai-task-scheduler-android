@@ -52,12 +52,14 @@ class SettingsActivity : AccessibilityActivity() {
     private lateinit var switchHighContrast: SwitchMaterial
     private lateinit var switchProcessingHaptic: SwitchMaterial
     private lateinit var switchSessionEndHaptic: SwitchMaterial
+    private lateinit var voiceHelper: VoiceHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
         appPreferences = AppPreferences(this)
+        voiceHelper = VoiceHelper(this)
         bindHeadings()
         bindViews()
         renderCurrentValues()
@@ -111,29 +113,43 @@ class SettingsActivity : AccessibilityActivity() {
     }
 
     private fun bindInteractions() {
-        findViewById<LinearLayout>(R.id.cardTone).setOnClickListenerWithHaptic {
-            showOptionDialog(
-                title = getString(R.string.assistant_tone),
-                options = listOf("Friendly", "Neutral", "Professional"),
-                currentValue = appPreferences.assistantTone
-            ) { selected ->
-                appPreferences.setAssistantTone(selected)
-                tvToneValue.text = selected
-                updateMultiOptionSemantics()
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardTone),
+            speechProvider = {
+                SettingsControlSpeechRenderer.assistantTone(appPreferences.assistantTone)
+            },
+            speak = ::speakControlIdentification,
+            activate = {
+                showOptionDialog(
+                    title = getString(R.string.assistant_tone),
+                    options = listOf("Friendly", "Neutral", "Professional"),
+                    currentValue = appPreferences.assistantTone
+                ) { selected ->
+                    appPreferences.setAssistantTone(selected)
+                    tvToneValue.text = selected
+                    updateMultiOptionSemantics()
+                }
             }
-        }
+        )
 
-        findViewById<LinearLayout>(R.id.cardReplyLength).setOnClickListenerWithHaptic {
-            showOptionDialog(
-                title = getString(R.string.reply_length),
-                options = listOf("Short", "Normal", "Detailed"),
-                currentValue = appPreferences.replyLength
-            ) { selected ->
-                appPreferences.setReplyLength(selected)
-                tvReplyLengthValue.text = selected
-                updateMultiOptionSemantics()
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardReplyLength),
+            speechProvider = {
+                SettingsControlSpeechRenderer.replyLength(appPreferences.replyLength)
+            },
+            speak = ::speakControlIdentification,
+            activate = {
+                showOptionDialog(
+                    title = getString(R.string.reply_length),
+                    options = listOf("Short", "Normal", "Detailed"),
+                    currentValue = appPreferences.replyLength
+                ) { selected ->
+                    appPreferences.setReplyLength(selected)
+                    tvReplyLengthValue.text = selected
+                    updateMultiOptionSemantics()
+                }
             }
-        }
+        )
 
         switchLargeText.setOnCheckedChangeListener { button, enabled ->
             button.performTapHapticFeedback()
@@ -161,36 +177,66 @@ class SettingsActivity : AccessibilityActivity() {
             updateSwitchSemantics(switchSessionEndHaptic, R.string.session_end_haptic_description)
         }
 
-        findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint).setOnClickListenerWithHaptic {
-            showEndpointDialog(
-                title = getString(R.string.conversation_agent_endpoint),
-                currentValue = appPreferences.conversationAgentEndpoint,
-                defaultValue = DEFAULT_CONVERSATION_AGENT_ENDPOINT
-            ) { endpoint ->
-                appPreferences.setConversationAgentEndpoint(endpoint)
-                tvConversationAgentEndpointValue.text = endpoint
-                updateEndpointSemantics()
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint),
+            speechProvider = {
+                SettingsControlSpeechRenderer.conversationEndpoint(
+                    appPreferences.conversationAgentEndpoint
+                )
+            },
+            speak = ::speakControlIdentification,
+            activate = {
+                showEndpointDialog(
+                    title = getString(R.string.conversation_agent_endpoint),
+                    currentValue = appPreferences.conversationAgentEndpoint,
+                    defaultValue = DEFAULT_CONVERSATION_AGENT_ENDPOINT
+                ) { endpoint ->
+                    appPreferences.setConversationAgentEndpoint(endpoint)
+                    tvConversationAgentEndpointValue.text = endpoint
+                    updateEndpointSemantics()
+                }
             }
-        }
+        )
 
-        findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint).setOnClickListenerWithHaptic {
-            showEndpointDialog(
-                title = getString(R.string.task_agent_endpoint),
-                currentValue = appPreferences.taskAgentEndpoint,
-                defaultValue = DEFAULT_TASK_AGENT_ENDPOINT
-            ) { endpoint ->
-                appPreferences.setTaskAgentEndpoint(endpoint)
-                tvTaskAgentEndpointValue.text = endpoint
-                updateEndpointSemantics()
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint),
+            speechProvider = {
+                SettingsControlSpeechRenderer.taskEndpoint(appPreferences.taskAgentEndpoint)
+            },
+            speak = ::speakControlIdentification,
+            activate = {
+                showEndpointDialog(
+                    title = getString(R.string.task_agent_endpoint),
+                    currentValue = appPreferences.taskAgentEndpoint,
+                    defaultValue = DEFAULT_TASK_AGENT_ENDPOINT
+                ) { endpoint ->
+                    appPreferences.setTaskAgentEndpoint(endpoint)
+                    tvTaskAgentEndpointValue.text = endpoint
+                    updateEndpointSemantics()
+                }
             }
-        }
+        )
 
-        findViewById<Button>(R.id.btnGoHome).setOnClickListenerWithHaptic { finish() }
-        findViewById<Button>(R.id.btnTalkAssistant).setOnClickListenerWithHaptic {
-            startActivity(Intent(this, HomeActivity::class.java).apply {
-                putExtra("open_assistant_on_arrival", true)
-            })
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<Button>(R.id.btnGoHome),
+            speechProvider = SettingsControlSpeechRenderer::home,
+            speak = ::speakControlIdentification,
+            activate = ::finish
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<Button>(R.id.btnTalkAssistant),
+            speechProvider = SettingsControlSpeechRenderer::assistant,
+            speak = ::speakControlIdentification,
+            activate = {
+                startActivity(Intent(this, HomeActivity::class.java).apply {
+                    putExtra("open_assistant_on_arrival", true)
+                })
+            }
+        )
+    }
+
+    private fun speakControlIdentification(text: String) {
+        voiceHelper.speak(text)
     }
 
     private fun updateSwitchSemantics(switch: SwitchMaterial, descriptionRes: Int) {
@@ -313,14 +359,24 @@ class SettingsActivity : AccessibilityActivity() {
             })
         }
 
-        view.findViewById<Button>(R.id.btnDialogSave).setOnClickListenerWithHaptic {
-            val checkedId = radioGroup.checkedRadioButtonId
-            if (checkedId != -1) {
-                onSelected(radioGroup.findViewById<RadioButton>(checkedId).text.toString())
-                dialog.dismiss()
+        VoiceFirstGestureBinder.bindAction(
+            view = view.findViewById<Button>(R.id.btnDialogSave),
+            speechProvider = SettingsControlSpeechRenderer::saveOption,
+            speak = ::speakControlIdentification,
+            activate = {
+                val checkedId = radioGroup.checkedRadioButtonId
+                if (checkedId != -1) {
+                    onSelected(radioGroup.findViewById<RadioButton>(checkedId).text.toString())
+                    dialog.dismiss()
+                }
             }
-        }
+        )
         dialog.show()
+    }
+
+    override fun onDestroy() {
+        voiceHelper.shutdown()
+        super.onDestroy()
     }
 
 }

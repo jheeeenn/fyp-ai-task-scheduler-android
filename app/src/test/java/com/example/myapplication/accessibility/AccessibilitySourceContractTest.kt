@@ -134,7 +134,8 @@ class AccessibilitySourceContractTest {
         assertTrue(assistantButton.contains("app:layout_constraintBottom_toBottomOf=\"parent\""))
         assertTrue(assistantButton.contains("android:gravity=\"center\""))
         assertTrue(assistantButton.contains("android:hapticFeedbackEnabled=\"true\""))
-        assertTrue(activity.contains("btnTalkAssistant.setOnClickListenerWithHaptic"))
+        assertTrue(activity.contains("view = btnTalkAssistant"))
+        assertTrue(activity.contains("VoiceFirstGestureBinder.bindAction"))
         assertTrue(activity.contains("btnTalkAssistant.setOnLongClickListener"))
         assertTrue(activity.contains("AccessibilityStateHelper.updateAssistantState"))
         assertTrue(activity.contains("AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)"))
@@ -175,7 +176,8 @@ class AccessibilitySourceContractTest {
             .joinToString("\n", transform = File::readText)
 
         listOf(home, create, edit).forEach { activity ->
-            assertTrue(activity.contains("btnTalkAssistant.setOnClickListenerWithHaptic"))
+            assertTrue(activity.contains("view = btnTalkAssistant"))
+            assertTrue(activity.contains("VoiceFirstGestureBinder.bindAction"))
             assertTrue(activity.contains("btnTalkAssistant.setOnLongClickListener"))
             assertTrue(activity.contains("showTypedAssistantInputDialog"))
         }

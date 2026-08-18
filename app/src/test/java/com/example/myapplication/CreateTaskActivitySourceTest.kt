@@ -226,24 +226,24 @@ class CreateTaskActivitySourceTest {
             .substringAfter("override fun onCreate")
             .substringBefore("//function definitions")
         val cancelClickBody = onCreateBody
-            .substringAfter("btnCancelTask.setOnClickListenerWithHaptic")
-            .substringBefore("btnGoHome.setOnClickListenerWithHaptic")
+            .substringAfter("view = btnCancelTask")
+            .substringBefore("view = btnGoHome")
         val homeClickBody = onCreateBody
-            .substringAfter("btnGoHome.setOnClickListenerWithHaptic")
-            .substringBefore("btnTalkAssistant.setOnClickListenerWithHaptic")
+            .substringAfter("view = btnGoHome")
+            .substringBefore("view = btnTalkAssistant")
 
         assertTrue(cancelClickBody.contains("invalidateCreateDraftResolution()"))
-        assertTrue(cancelClickBody.contains("if (isSavingTask) return@setOnClickListenerWithHaptic"))
+        assertTrue(cancelClickBody.contains("if (!isSavingTask)"))
         assertTrue(
-            cancelClickBody.indexOf("if (isSavingTask)") <
+            cancelClickBody.indexOf("if (!isSavingTask)") <
                     cancelClickBody.indexOf("invalidateCreateDraftResolution()") &&
                     cancelClickBody.indexOf("invalidateCreateDraftResolution()") <
                     cancelClickBody.indexOf("handleCreateDraftMove(CreateDraftMove.Cancel)")
         )
         assertTrue(homeClickBody.contains("invalidateCreateDraftResolution()"))
-        assertTrue(homeClickBody.contains("if (isSavingTask) return@setOnClickListenerWithHaptic"))
+        assertTrue(homeClickBody.contains("if (!isSavingTask)"))
         assertTrue(
-            homeClickBody.indexOf("if (isSavingTask)") <
+            homeClickBody.indexOf("if (!isSavingTask)") <
                     homeClickBody.indexOf("invalidateCreateDraftResolution()") &&
                     homeClickBody.indexOf("invalidateCreateDraftResolution()") <
                     homeClickBody.indexOf("assistantSession.speakThenRun")

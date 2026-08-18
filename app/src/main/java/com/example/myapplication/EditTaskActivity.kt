@@ -218,34 +218,70 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
 
 
-        btnPickDate.setOnClickListenerWithHaptic { openDatePicker() }
-        btnPickTime.setOnClickListenerWithHaptic { openTimePicker() }
-        btnSaveTask.setOnClickListenerWithHaptic {
-            saveTask(relativeTemporalSession?.revision)
-        }
-        btnDeleteTask.setOnClickListenerWithHaptic { confirmDeleteTask() }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnPickDate,
+            speechProvider = TaskFormControlSpeechRenderer::pickDate,
+            speak = ::speakControlIdentification,
+            activate = ::openDatePicker
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = btnPickTime,
+            speechProvider = TaskFormControlSpeechRenderer::pickTime,
+            speak = ::speakControlIdentification,
+            activate = ::openTimePicker
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = btnSaveTask,
+            speechProvider = TaskFormControlSpeechRenderer::saveTask,
+            speak = ::speakControlIdentification,
+            activate = { saveTask(relativeTemporalSession?.revision) }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = btnDeleteTask,
+            speechProvider = TaskFormControlSpeechRenderer::deleteTask,
+            speak = ::speakControlIdentification,
+            activate = ::confirmDeleteTask
+        )
 
 
-        btnCancelTask.setOnClickListenerWithHaptic {
-            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnClickListenerWithHaptic
-            relativeTemporalSession?.cancel()
-            assistantSession.speakThenRun(responseManager.cancelEdit()) {
-                finish()
+        VoiceFirstGestureBinder.bindAction(
+            view = btnCancelTask,
+            speechProvider = TaskFormControlSpeechRenderer::cancel,
+            speak = ::speakControlIdentification,
+            activate = {
+                if (!ignoreInputWhileRelativeTemporalSaveIsInFlight()) {
+                    relativeTemporalSession?.cancel()
+                    assistantSession.speakThenRun(responseManager.cancelEdit()) {
+                        finish()
+                    }
+                }
             }
-        }
+        )
 
-        btnGoHome.setOnClickListenerWithHaptic {
-            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnClickListenerWithHaptic
-            relativeTemporalSession?.cancel()
-            assistantSession.speakThenRun(responseManager.returnHomeFromEdit()) {
-                finish()
+        VoiceFirstGestureBinder.bindAction(
+            view = btnGoHome,
+            speechProvider = TaskFormControlSpeechRenderer::home,
+            speak = ::speakControlIdentification,
+            activate = {
+                if (!ignoreInputWhileRelativeTemporalSaveIsInFlight()) {
+                    relativeTemporalSession?.cancel()
+                    assistantSession.speakThenRun(responseManager.returnHomeFromEdit()) {
+                        finish()
+                    }
+                }
             }
-        }
+        )
 
-        btnTalkAssistant.setOnClickListenerWithHaptic {
-            if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnClickListenerWithHaptic
-            assistantSession.startSession()
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnTalkAssistant,
+            speechProvider = TaskFormControlSpeechRenderer::assistant,
+            speak = ::speakControlIdentification,
+            activate = {
+                if (!ignoreInputWhileRelativeTemporalSaveIsInFlight()) {
+                    assistantSession.startSession()
+                }
+            }
+        )
         btnTalkAssistant.setOnLongClickListener {
             btnTalkAssistant.performLongClickHapticFeedback()
             if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return@setOnLongClickListener true
@@ -1118,6 +1154,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun speak(text: String) {
         assistantSession.speak(text, listenAgain = true)
+    }
+
+    private fun speakControlIdentification(text: String) {
+        voiceHelper.speak(text)
     }
 
     private fun readInitialRelativeTemporalSemanticProposal(): RelativeTemporalProposal? {

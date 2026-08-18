@@ -99,6 +99,7 @@ class AssistantVoiceSession(
         if (assistantBottomSheet == null) {
             assistantBottomSheet = AssistantBottomSheet(
                 activity = activity,
+                speakIdentification = voiceHelper::speak,
                 onStateChanged = onAccessibilityStateChanged,
                 onPanelDismissed = { processingHapticFeedback.stop("PANEL_DISMISSED") }
             )

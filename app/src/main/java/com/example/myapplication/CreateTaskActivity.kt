@@ -194,42 +194,68 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             applyIncomingPrefill()
         }, 1500)
 
-        btnPickDate.setOnClickListenerWithHaptic {
-            openDatePicker()
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnPickDate,
+            speechProvider = TaskFormControlSpeechRenderer::pickDate,
+            speak = ::speakControlIdentification,
+            activate = ::openDatePicker
+        )
 
-        btnPickTime.setOnClickListenerWithHaptic {
-            openTimePicker()
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnPickTime,
+            speechProvider = TaskFormControlSpeechRenderer::pickTime,
+            speak = ::speakControlIdentification,
+            activate = ::openTimePicker
+        )
 
-        btnSaveTask.setOnClickListenerWithHaptic {
-            saveTask()
-        }
+        VoiceFirstGestureBinder.bindAction(
+            view = btnSaveTask,
+            speechProvider = TaskFormControlSpeechRenderer::saveTask,
+            speak = ::speakControlIdentification,
+            activate = ::saveTask
+        )
 
-        btnCancelTask.setOnClickListenerWithHaptic {
-            if (isSavingTask) return@setOnClickListenerWithHaptic
-            invalidateCreateDraftResolution()
-            handleCreateDraftMove(CreateDraftMove.Cancel)
-        }
-
-        btnGoHome.setOnClickListenerWithHaptic {
-            if (isSavingTask) return@setOnClickListenerWithHaptic
-            invalidateCreateDraftResolution()
-            isCreateTaskExitPending = true
-            setCreateDraftControlsEnabled(false)
-            hasConsumedPrefill = false
-            assistantSession.speakThenRun(responseManager.returnHome()) {
-                finish()
+        VoiceFirstGestureBinder.bindAction(
+            view = btnCancelTask,
+            speechProvider = TaskFormControlSpeechRenderer::cancel,
+            speak = ::speakControlIdentification,
+            activate = {
+                if (!isSavingTask) {
+                    invalidateCreateDraftResolution()
+                    handleCreateDraftMove(CreateDraftMove.Cancel)
+                }
             }
-        }
+        )
 
-        btnTalkAssistant.setOnClickListenerWithHaptic {
-            if (dialogState == CreateTaskDialogState.IDLE) {
-                dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-                promptHelper.askTitle()
+        VoiceFirstGestureBinder.bindAction(
+            view = btnGoHome,
+            speechProvider = TaskFormControlSpeechRenderer::home,
+            speak = ::speakControlIdentification,
+            activate = {
+                if (!isSavingTask) {
+                    invalidateCreateDraftResolution()
+                    isCreateTaskExitPending = true
+                    setCreateDraftControlsEnabled(false)
+                    hasConsumedPrefill = false
+                    assistantSession.speakThenRun(responseManager.returnHome()) {
+                        finish()
+                    }
+                }
             }
-            assistantSession.startSession()
-        }
+        )
+
+        VoiceFirstGestureBinder.bindAction(
+            view = btnTalkAssistant,
+            speechProvider = TaskFormControlSpeechRenderer::assistant,
+            speak = ::speakControlIdentification,
+            activate = {
+                if (dialogState == CreateTaskDialogState.IDLE) {
+                    dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
+                    promptHelper.askTitle()
+                }
+                assistantSession.startSession()
+            }
+        )
         btnTalkAssistant.setOnLongClickListener {
             btnTalkAssistant.performLongClickHapticFeedback()
             showTypedAssistantInputDialog()
@@ -1087,6 +1113,10 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun speakWithPanel(text: String) {
         assistantSession.getBottomSheet()?.clearHint()
         assistantSession.speak(text, listenAgain = false)
+    }
+
+    private fun speakControlIdentification(text: String) {
+        voiceHelper.speak(text)
     }
 
     private fun speakThenListenAgain(text: String) {

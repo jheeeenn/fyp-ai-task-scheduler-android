@@ -157,7 +157,8 @@ class RelativeTemporalIntegrationContractTest {
 
     @Test
     fun buttonAndVoiceSaveShareClaimAndManualSyncIsBlockedWhileSaving() {
-        assertTrue(edit.contains("btnSaveTask.setOnClickListenerWithHaptic"))
+        assertTrue(edit.contains("view = btnSaveTask"))
+        assertTrue(edit.contains("VoiceFirstGestureBinder.bindAction"))
         assertTrue(edit.contains("saveTask(relativeTemporalSession?.revision)"))
         val relativeHandler = edit
             .substringAfter("private fun handleRelativeTemporalProposalInput(")
