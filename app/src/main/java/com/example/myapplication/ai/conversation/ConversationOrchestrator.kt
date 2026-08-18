@@ -198,13 +198,16 @@ class ConversationOrchestrator(
         normalizedText: String,
         appContextSummary: String,
         readOnlyTaskContextSnapshot: String = NO_TASK_CONTEXT,
-        contextFocus: ConversationContextFocus? = null
+        contextFocus: ConversationContextFocus? = null,
+        voiceSettingRoutingContext: VoiceSettingRoutingContext =
+            VoiceSettingRoutingContext.UNAVAILABLE
     ): ConversationDecision {
         memory.recordUser(normalizedText)
         val routingMemory = appendTaskContext(
             memorySnapshot = memory.snapshotForPrompt(),
             readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
-            contextFocus = contextFocus
+            contextFocus = contextFocus,
+            voiceSettingRoutingContext = voiceSettingRoutingContext
         )
 
         val parsed = try {
@@ -225,9 +228,23 @@ class ConversationOrchestrator(
                 )
             }
         } catch (e: ConversationSchemaException) {
-            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, contextFocus, e)
+            retryWithRepair(
+                normalizedText,
+                appContextSummary,
+                readOnlyTaskContextSnapshot,
+                contextFocus,
+                voiceSettingRoutingContext,
+                e
+            )
         } catch (e: ConversationAgentResponseException) {
-            retryWithRepair(normalizedText, appContextSummary, readOnlyTaskContextSnapshot, contextFocus, e)
+            retryWithRepair(
+                normalizedText,
+                appContextSummary,
+                readOnlyTaskContextSnapshot,
+                contextFocus,
+                voiceSettingRoutingContext,
+                e
+            )
         }
 
         val decision = normalizeDecision(parsed, normalizedText)
@@ -254,6 +271,7 @@ class ConversationOrchestrator(
         appContextSummary: String,
         readOnlyTaskContextSnapshot: String,
         contextFocus: ConversationContextFocus?,
+        voiceSettingRoutingContext: VoiceSettingRoutingContext,
         firstFailure: Exception
     ): ConversationDecision {
         val failureCode = repairFailureCode(firstFailure)
@@ -268,7 +286,8 @@ class ConversationOrchestrator(
                 appContextSummary = boundedRepairContext(
                     appContextSummary = appContextSummary,
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
-                    contextFocus = contextFocus
+                    contextFocus = contextFocus,
+                    voiceSettingRoutingContext = voiceSettingRoutingContext
                 ),
                 failureCode = failureCode,
                 failedRoute = (firstFailure as? ConversationSchemaException)?.failedRoute
@@ -504,7 +523,8 @@ class ConversationOrchestrator(
     private fun boundedRepairContext(
         appContextSummary: String,
         readOnlyTaskContextSnapshot: String,
-        contextFocus: ConversationContextFocus?
+        contextFocus: ConversationContextFocus?,
+        voiceSettingRoutingContext: VoiceSettingRoutingContext
     ): String = buildString {
         append(appContextSummary.trim())
         appendLine()
@@ -526,6 +546,9 @@ class ConversationOrchestrator(
             "Context action authority available: " +
                 (refs.isNotEmpty() || !focusRef.isNullOrBlank())
         )
+        appendLine()
+        appendLine()
+        append(voiceSettingRoutingContext.toPromptText())
     }
 
     fun recordAuthoritativeContextRead(
@@ -547,7 +570,8 @@ class ConversationOrchestrator(
     private fun appendTaskContext(
         memorySnapshot: String,
         readOnlyTaskContextSnapshot: String,
-        contextFocus: ConversationContextFocus?
+        contextFocus: ConversationContextFocus?,
+        voiceSettingRoutingContext: VoiceSettingRoutingContext
     ): String = buildString {
         append(memorySnapshot.trim())
         appendLine()
@@ -561,6 +585,9 @@ class ConversationOrchestrator(
         appendLine()
         appendLine("Current validated task focus:")
         append(contextFocus?.toPromptText() ?: ConversationContextFocus.UNAVAILABLE_PROMPT)
+        appendLine()
+        appendLine()
+        append(voiceSettingRoutingContext.toPromptText())
     }
 
     private fun appendContextFocus(

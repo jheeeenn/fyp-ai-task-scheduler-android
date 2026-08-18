@@ -85,6 +85,7 @@ import com.example.myapplication.ai.conversation.AssistantRequestTokenPolicy
 import com.example.myapplication.ai.conversation.AssistantExitInterpreter
 import com.example.myapplication.ai.conversation.ConversationEndSessionSafetyPolicy
 import com.example.myapplication.ai.conversation.ConversationContextFocus
+import com.example.myapplication.ai.conversation.VoiceSettingRoutingContext
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationPolicy
 import com.example.myapplication.ai.conversation.SafeStyleAuthorizationStatus
 import com.example.myapplication.ai.conversation.taskcontext.ContextReferenceMutationGuard
@@ -137,6 +138,7 @@ import com.example.myapplication.voice.VoiceSettingsMutationSafetyPolicy
 import com.example.myapplication.voice.VoiceSettingsSafetyDisposition
 import com.example.myapplication.voice.VoiceSettingsSafetyResult
 import com.example.myapplication.voice.VoiceSettingConversationContext
+import com.example.myapplication.voice.VoiceSettingContextualActionResolver
 import com.example.myapplication.voice.voiceSettingTarget
 import java.text.SimpleDateFormat
 
@@ -1172,6 +1174,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
                     taskContextCapture.snapshot
                 )
+                val voiceSettingFocus = voiceSettingConversationContext.focus
+                val voiceSettingRoutingContext = VoiceSettingRoutingContext.from(
+                    voiceSettingFocus
+                )
                 if (contextFocus != null) {
                     Log.d(
                         "HOME_CONTEXT_FOCUS",
@@ -1205,7 +1211,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         normalizedText = normalized,
                         appContextSummary = buildConversationAppContextSummary(),
                         readOnlyTaskContextSnapshot = taskContextCapture.promptText,
-                        contextFocus = contextFocus
+                        contextFocus = contextFocus,
+                        voiceSettingRoutingContext = voiceSettingRoutingContext
                     )
                 } catch (e: ConversationOrchestratorException) {
                     Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)
@@ -1528,6 +1535,29 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             "CONTEXT_FOCUS_FALLBACK_REJECTED generation=${taskContextCapture.snapshot.generation}"
                         )
                     }
+                }
+
+                val recoveredSettingAction = VoiceSettingContextualActionResolver.resolve(
+                    normalizedUtterance = normalized,
+                    focus = voiceSettingFocus
+                )
+                if (recoveredSettingAction != null &&
+                    (conversationDecision.route != ConversationRoute.SETTINGS_ACTION ||
+                        conversationDecision.settingAction != recoveredSettingAction)
+                ) {
+                    Log.d(
+                        "VOICE_SETTINGS_CONTEXT_RECOVERY",
+                        "modelAction=${conversationDecision.settingAction.name} " +
+                            "recoveredAction=${recoveredSettingAction.name} " +
+                            "focus=${voiceSettingFocus?.target?.name ?: "NONE"}"
+                    )
+                    conversationDecision = ConversationDecision(
+                        route = ConversationRoute.SETTINGS_ACTION,
+                        settingAction = recoveredSettingAction,
+                        confidence = 1.0,
+                        listenAgain = true,
+                        source = "android_voice_settings_context_recovery"
+                    )
                 }
 
                 if (conversationDecision.route != ConversationRoute.CONTEXT_READ) {

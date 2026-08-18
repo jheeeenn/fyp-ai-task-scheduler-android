@@ -2,6 +2,9 @@ package com.example.myapplication.preferences
 
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import com.example.myapplication.voice.VoiceSettingExecutionStatus
+import com.example.myapplication.voice.VoiceSettingConversationFocus
+import com.example.myapplication.voice.VoiceSettingContextualActionResolver
+import com.example.myapplication.voice.VoiceSettingTarget
 import com.example.myapplication.voice.VoiceSettingsExecutor
 import com.example.myapplication.voice.VoiceSettingsMutationSafetyPolicy
 import com.example.myapplication.voice.VoiceSettingsSafetyDisposition
@@ -102,6 +105,65 @@ class VoiceSettingsExecutorTest {
             assertTrue(safety.disposition != VoiceSettingsSafetyDisposition.ALLOW)
             assertEquals(utterance, before, preferenceSnapshot(preferences))
         }
+    }
+
+    @Test
+    fun contextualRecoveryExecutesFocusedActionInsteadOfWrongModelTarget() {
+        val highContrastPreferences = AppPreferences(FakeVoicePreferenceStorage()).apply {
+            setHighContrastEnabled(true, PreferenceChangeSource.SYSTEM)
+            setProcessingHapticEnabled(true)
+        }
+        val highContrastFocus = VoiceSettingConversationFocus(VoiceSettingTarget.HIGH_CONTRAST)
+        val recoveredHighContrast = requireNotNull(
+            VoiceSettingContextualActionResolver.resolve(
+                "can you turn it off",
+                highContrastFocus
+            )
+        )
+        assertEquals(ConversationSettingAction.HIGH_CONTRAST_OFF, recoveredHighContrast)
+        val highContrastSafety = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "can you turn it off",
+            recoveredHighContrast,
+            highContrastFocus
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.ALLOW, highContrastSafety.disposition)
+        VoiceSettingsExecutor(highContrastPreferences).execute(highContrastSafety.authorizedAction)
+        assertFalse(highContrastPreferences.highContrastEnabled)
+        assertTrue(highContrastPreferences.processingHapticEnabled)
+
+        val largeTextPreferences = AppPreferences(FakeVoicePreferenceStorage()).apply {
+            setLargeTextEnabled(false, PreferenceChangeSource.SYSTEM)
+            setHighContrastEnabled(false, PreferenceChangeSource.SYSTEM)
+        }
+        val largeTextFocus = VoiceSettingConversationFocus(VoiceSettingTarget.LARGE_TEXT)
+        val recoveredLargeText = requireNotNull(
+            VoiceSettingContextualActionResolver.resolve("turn it on", largeTextFocus)
+        )
+        assertEquals(ConversationSettingAction.LARGE_TEXT_ON, recoveredLargeText)
+        val largeTextSafety = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "turn it on",
+            recoveredLargeText,
+            largeTextFocus
+        )
+        assertEquals(VoiceSettingsSafetyDisposition.ALLOW, largeTextSafety.disposition)
+        VoiceSettingsExecutor(largeTextPreferences).execute(largeTextSafety.authorizedAction)
+        assertTrue(largeTextPreferences.largeTextEnabled)
+        assertFalse(largeTextPreferences.highContrastEnabled)
+    }
+
+    @Test
+    fun targetlessContextualRequestCannotRecoverOrMutateWithoutFocus() {
+        val preferences = AppPreferences(FakeVoicePreferenceStorage())
+        val before = preferenceSnapshot(preferences)
+        val recovered = VoiceSettingContextualActionResolver.resolve("turn it off", null)
+        val modelSafety = VoiceSettingsMutationSafetyPolicy.evaluate(
+            "turn it off",
+            ConversationSettingAction.HIGH_CONTRAST_OFF
+        )
+
+        assertEquals(null, recovered)
+        assertEquals(VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET, modelSafety.disposition)
+        assertEquals(before, preferenceSnapshot(preferences))
     }
 
     private fun prepareOpposite(

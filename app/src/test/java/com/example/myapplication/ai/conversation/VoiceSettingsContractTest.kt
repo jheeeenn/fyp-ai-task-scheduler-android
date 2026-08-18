@@ -118,6 +118,44 @@ class VoiceSettingsContractTest {
         assertTrue(prompt.contains("Conversation Agent Endpoint, Task Agent Endpoint"))
         assertTrue(prompt.contains("ask the user to change them one at a time"))
         assertTrue(prompt.contains("always keep reply empty"))
+        assertTrue(prompt.contains("labelled Voice-setting context"))
+        assertTrue(prompt.contains("separate from Read-only task context"))
+        assertTrue(prompt.contains("Target: HIGH_CONTRAST, User: \"can you turn it off\""))
+        assertTrue(prompt.contains("SETTINGS_ACTION with HIGH_CONTRAST_OFF"))
+        assertTrue(prompt.contains("Target: HIGH_CONTRAST, User: \"turn off large text\""))
+        assertTrue(prompt.contains("SETTINGS_ACTION with LARGE_TEXT_OFF"))
+    }
+
+    @Test
+    fun homeAndOrchestratorTransportDedicatedVoiceSettingFocus() {
+        val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val orchestrator = File(
+            "src/main/java/com/example/myapplication/ai/conversation/ConversationOrchestrator.kt"
+        ).readText()
+        val routingCall = home.substringAfter("conversationOrchestrator.process(")
+            .substringBefore(")\n                } catch")
+
+        assertTrue(home.contains("VoiceSettingRoutingContext.from("))
+        assertTrue(routingCall.contains("voiceSettingRoutingContext = voiceSettingRoutingContext"))
+        assertTrue(orchestrator.contains("voiceSettingRoutingContext: VoiceSettingRoutingContext"))
+        assertTrue(orchestrator.contains("voiceSettingRoutingContext.toPromptText()"))
+        assertTrue(orchestrator.contains("appendTaskContext("))
+        assertTrue(orchestrator.contains("memorySnapshot = routingMemory"))
+    }
+
+    @Test
+    fun homePerformsBoundedRecoveryBeforeExistingMutationSafetyGate() {
+        val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val recovery = home.indexOf("VoiceSettingContextualActionResolver.resolve(")
+        val routeSwitch = home.indexOf("when (conversationDecision.route)", recovery)
+        val safety = home.indexOf("VoiceSettingsMutationSafetyPolicy.evaluate(", routeSwitch)
+
+        assertTrue(recovery >= 0)
+        assertTrue(routeSwitch > recovery)
+        assertTrue(safety > routeSwitch)
+        assertTrue(home.contains("VOICE_SETTINGS_CONTEXT_RECOVERY"))
+        assertTrue(home.contains("modelAction="))
+        assertTrue(home.contains("recoveredAction="))
     }
 
     @Test

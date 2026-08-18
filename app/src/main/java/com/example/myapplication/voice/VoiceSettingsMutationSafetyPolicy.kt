@@ -254,16 +254,14 @@ object VoiceSettingsMutationSafetyPolicy {
     private fun requestedBoolean(text: String, target: VoiceSettingTarget?): Boolean? {
         val off = containsAny(
             text,
-            "turn off", "turn it off", "turn it back off", "switch off", "switch it off",
-            "disable", "deactivate", "stop", "do not", "don t", "without"
-        ) || (target == VoiceSettingTarget.LARGE_TEXT && containsAny(
+            "turn off", "switch off", "disable", "deactivate", "stop", "do not", "don t", "without"
+        ) || CONTEXT_OFF_REQUEST.containsMatchIn(text) || (target == VoiceSettingTarget.LARGE_TEXT && containsAny(
             text, "smaller text", "decrease text size", "reduce text size"
         ))
         val on = containsAny(
             text,
-            "turn on", "turn it on", "turn it back on", "switch on", "switch it on",
-            "enable", "activate", "start", "open"
-        ) || when (target) {
+            "turn on", "switch on", "enable", "activate", "start", "open"
+        ) || CONTEXT_ON_REQUEST.containsMatchIn(text) || when (target) {
             VoiceSettingTarget.LARGE_TEXT -> containsAny(
                 text, "large text", "larger text", "bigger text", "text larger", "text bigger",
                 "text size", "increase text size"
@@ -286,7 +284,7 @@ object VoiceSettingsMutationSafetyPolicy {
     )
 
     private fun hasBoundedContextReference(text: String): Boolean =
-        containsWord(text, "it") || containsWord(text, "one")
+        containsWord(text, "it") || containsWord(text, "that") || containsWord(text, "one")
 
     private fun hapticEvidence(text: String, allowTargetOnly: Boolean = false): HapticEvidence {
         val processing = containsAny(
@@ -402,5 +400,11 @@ object VoiceSettingsMutationSafetyPolicy {
     private val HAPTIC_TARGETS = setOf(
         VoiceSettingTarget.PROCESSING_HAPTIC,
         VoiceSettingTarget.SESSION_END_HAPTIC
+    )
+    private val CONTEXT_ON_REQUEST = Regex(
+        "\\b(?:turn|switch)\\s+(?:it|that|the one)(?:\\s+back)?\\s+on\\b"
+    )
+    private val CONTEXT_OFF_REQUEST = Regex(
+        "\\b(?:turn|switch)\\s+(?:it|that|the one)(?:\\s+back)?\\s+off\\b"
     )
 }

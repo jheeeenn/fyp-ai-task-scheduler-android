@@ -187,6 +187,12 @@ class VoiceSettingsMutationSafetyPolicyTest {
             focus
         )
         assertDisposition(
+            "turn that off",
+            ConversationSettingAction.HIGH_CONTRAST_OFF,
+            VoiceSettingsSafetyDisposition.ALLOW,
+            focus
+        )
+        assertDisposition(
             "turn it on",
             ConversationSettingAction.LARGE_TEXT_ON,
             VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET,
