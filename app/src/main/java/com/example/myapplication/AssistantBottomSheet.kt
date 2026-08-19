@@ -19,7 +19,6 @@ import com.example.myapplication.accessibility.resolveThemeColor
 
 class AssistantBottomSheet(
     private val activity: AppCompatActivity,
-    private val speakIdentification: (String) -> Unit,
     private val onStateChanged: (AssistantAccessibilityState) -> Unit = {},
     private val onPanelDismissed: () -> Unit = {}
 ) : BottomSheetDialog(activity) {
@@ -70,24 +69,18 @@ class AssistantBottomSheet(
         tvAssistantReply = view.findViewById(R.id.tvAssistantReply)
         tvAssistantHint = view.findViewById(R.id.tvAssistantHint)
 
-        VoiceFirstGestureBinder.bindAction(
-            view = view.findViewById<Button>(R.id.btnStopAssistant),
-            speechProvider = AssistantPanelControlSpeechRenderer::stop,
-            speak = speakIdentification,
-            activate = { onDoubleTapCancel?.invoke() }
-        )
-        VoiceFirstGestureBinder.bindAction(
-            view = view.findViewById<Button>(R.id.btnTypeAssistantInput),
-            speechProvider = AssistantPanelControlSpeechRenderer::typeInput,
-            speak = speakIdentification,
-            activate = { onTypedInputRequested?.invoke() }
-        )
+        view.findViewById<Button>(R.id.btnStopAssistant).setOnClickListener {
+            onDoubleTapCancel?.invoke()
+        }
+        view.findViewById<Button>(R.id.btnTypeAssistantInput).setOnClickListener {
+            onTypedInputRequested?.invoke()
+        }
 
         assistantRoot.contentDescription = "Assistant panel"
         VoiceFirstGestureBinder.bindAction(
             view = assistantRoot,
             speechProvider = { null },
-            speak = speakIdentification,
+            speak = { _ -> },
             activate = { onDoubleTapCancel?.invoke() }
         )
 

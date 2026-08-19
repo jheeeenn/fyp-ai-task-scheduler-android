@@ -36,8 +36,3 @@ object SettingsControlSpeechRenderer {
     fun home(): String = "Home"
     fun assistant(): String = "Talk to Assistant"
 }
-
-object AssistantPanelControlSpeechRenderer {
-    fun typeInput(): String = "Type to Assistant"
-    fun stop(): String = "Stop Assistant"
-}

@@ -27,9 +27,7 @@ class ControlSpeechRenderersTest {
             SettingsControlSpeechRenderer.taskEndpoint(),
             SettingsControlSpeechRenderer.saveOption(),
             SettingsControlSpeechRenderer.home(),
-            SettingsControlSpeechRenderer.assistant(),
-            AssistantPanelControlSpeechRenderer.stop(),
-            AssistantPanelControlSpeechRenderer.typeInput()
+            SettingsControlSpeechRenderer.assistant()
         )
 
         descriptions.forEach { description ->

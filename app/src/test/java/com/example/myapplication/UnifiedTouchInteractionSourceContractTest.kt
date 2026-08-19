@@ -1,5 +1,6 @@
 package com.example.myapplication
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -102,7 +103,9 @@ class UnifiedTouchInteractionSourceContractTest {
         }
         assertFalse(edit.contains("setOnClickListenerWithHaptic"))
 
-        assertTrue(panel.countOccurrences("VoiceFirstGestureBinder.bindAction") >= 3)
+        assertEquals(1, panel.countOccurrences("VoiceFirstGestureBinder.bindAction"))
+        assertTrue(panel.contains("btnStopAssistant).setOnClickListener"))
+        assertTrue(panel.contains("btnTypeAssistantInput).setOnClickListener"))
         assertFalse(panel.contains("VoiceFirstGestureBinder.bindInformation"))
         assertTrue(panel.contains("speechProvider = { null }"))
         assertFalse(panel.contains("System.currentTimeMillis"))
