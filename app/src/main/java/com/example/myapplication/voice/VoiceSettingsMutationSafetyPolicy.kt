@@ -132,7 +132,13 @@ object VoiceSettingsMutationSafetyPolicy {
             )
         }
 
-        if (!isRequestedValueGrounded(text, proposedAction, proposedTarget)) {
+        if (!isRequestedValueGrounded(
+                text = text,
+                action = proposedAction,
+                target = proposedTarget,
+                explicitTarget = utteranceTarget
+            )
+        ) {
             return clarifySetting(groundedTarget = utteranceTarget)
         }
 
@@ -237,7 +243,8 @@ object VoiceSettingsMutationSafetyPolicy {
     private fun isRequestedValueGrounded(
         text: String,
         action: ConversationSettingAction,
-        target: VoiceSettingTarget
+        target: VoiceSettingTarget,
+        explicitTarget: VoiceSettingTarget?
     ): Boolean = when (action) {
         ConversationSettingAction.LARGE_TEXT_ON,
         ConversationSettingAction.HIGH_CONTRAST_ON,
@@ -269,8 +276,12 @@ object VoiceSettingsMutationSafetyPolicy {
                 !containsAny(text, "very fast")
         ConversationSettingAction.SPEECH_SPEED_VERY_FAST ->
             hasSettingValueRequest(text) && containsAny(text, "very fast")
-        ConversationSettingAction.SPEECH_SPEED_FASTER -> hasFasterSpeechRequest(text)
-        ConversationSettingAction.SPEECH_SPEED_SLOWER -> hasSlowerSpeechRequest(text)
+        ConversationSettingAction.SPEECH_SPEED_FASTER ->
+            hasFasterSpeechRequest(text) ||
+                (explicitTarget == VoiceSettingTarget.SPEECH_SPEED && containsWord(text, "faster"))
+        ConversationSettingAction.SPEECH_SPEED_SLOWER ->
+            hasSlowerSpeechRequest(text) ||
+                (explicitTarget == VoiceSettingTarget.SPEECH_SPEED && containsWord(text, "slower"))
         ConversationSettingAction.NONE -> false
     }
 

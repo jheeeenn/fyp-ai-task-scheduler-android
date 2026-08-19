@@ -52,10 +52,17 @@ class VoiceSettingsMutationSafetyPolicyTest {
             "can you speak a little faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
             "speed up" to ConversationSettingAction.SPEECH_SPEED_FASTER,
             "speed up your speech" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "set the speech speed faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "set the speech speed more faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "make speech speed faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "change speech speed to be faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
             "speak slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
             "talk slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
             "slow down" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
-            "slow down your speech" to ConversationSettingAction.SPEECH_SPEED_SLOWER
+            "slow down your speech" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "set the speech speed slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "make speech speed slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "change speech speed to be slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER
         ).forEach { (utterance, action) ->
             assertDisposition(utterance, action, VoiceSettingsSafetyDisposition.ALLOW)
         }
@@ -64,11 +71,15 @@ class VoiceSettingsMutationSafetyPolicyTest {
     @Test
     fun genericSpeedWordsNeverGroundSpeechSpeed() {
         listOf(
-            "create the task quickly",
-            "give me a fast answer",
-            "use short replies",
-            "make the app faster"
-        ).forEach { utterance ->
+            "create the task quickly" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "give me a fast answer" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "use short replies" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "make the app faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "finish this task faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "give me a faster answer" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "create it faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "make the application slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER
+        ).forEach { (utterance, action) ->
             assertTrue(
                 utterance,
                 VoiceSettingsMutationSafetyPolicy.groundedTarget(utterance) !=
@@ -76,7 +87,7 @@ class VoiceSettingsMutationSafetyPolicyTest {
             )
             assertDisposition(
                 utterance,
-                ConversationSettingAction.SPEECH_SPEED_FAST,
+                action,
                 VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET
             )
         }
