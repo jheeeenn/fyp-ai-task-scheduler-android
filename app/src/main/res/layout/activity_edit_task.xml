@@ -2,18 +2,22 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/editTaskRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/appColorBackgroundPrimary"
-    android:padding="16dp">
+    android:paddingHorizontal="20dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp">
 
     <ScrollView
         android:id="@+id/editScrollView"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_marginBottom="16dp"
         android:fillViewport="true"
-        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        app:layout_constraintBottom_toTopOf="@id/taskFormBottomDock"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
@@ -22,27 +26,27 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="14dp">
+            android:paddingBottom="20dp">
 
             <TextView
                 android:id="@+id/tvEditTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:accessibilityHeading="true"
-                android:text="Edit Task"
-                android:textColor="?attr/appColorTextPrimaryDark"
-                android:textSize="36sp"
+                android:text="@string/edit_task_title"
+                android:textColor="?attr/appColorTaskListTextPrimary"
+                android:textSize="34sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvTaskTitleLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="22dp"
                 android:labelFor="@id/etTaskTitle"
                 android:text="@string/task_title_label"
-                android:textColor="?attr/appColorTextPrimaryDark"
-                android:textSize="22sp"
+                android:textColor="?attr/appColorTaskListTextPrimary"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
             <EditText
@@ -50,201 +54,243 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:background="@drawable/bg_input_field"
+                android:background="@drawable/bg_task_form_surface"
+                android:importantForAutofill="yes"
                 android:inputType="textCapSentences"
-                android:minHeight="72dp"
+                android:minHeight="88dp"
                 android:paddingHorizontal="18dp"
                 android:paddingVertical="16dp"
-                android:textColor="?attr/appColorTextPrimaryDark"
-                android:textColorHint="?attr/appColorTextMutedDark"
+                android:textColor="?attr/appColorTaskListTextPrimary"
+                android:textColorHint="?attr/appColorTaskListTextSecondary"
                 android:textSize="24sp" />
+
+            <TextView
+                android:id="@+id/tvScheduleLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="@string/task_schedule_label"
+                android:textColor="?attr/appColorTaskListTextPrimary"
+                android:textSize="18sp"
+                android:textStyle="bold" />
 
             <LinearLayout
                 android:id="@+id/dateInfoGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_task_form_surface"
+                android:clickable="true"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
                 android:importantForAccessibility="yes"
-                android:orientation="vertical">
+                android:minHeight="100dp"
+                android:orientation="vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="16dp">
 
-                <TextView
-                    android:id="@+id/tvDateSectionLabel"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="Date"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
+                    android:baselineAligned="false"
+                    android:importantForAccessibility="noHideDescendants"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tvDateSectionLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/task_date_label"
+                        android:textColor="?attr/appColorTaskListTextSecondary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/task_form_chevron"
+                        android:textColor="?attr/appColorTaskListTextSecondary"
+                        android:textSize="26sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvSelectedDate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_info_panel"
+                    android:layout_marginTop="4dp"
                     android:importantForAccessibility="no"
-                    android:padding="16dp"
-                    android:text="No date selected"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="22sp"
+                    android:text="@string/no_date_selected"
+                    android:textColor="?attr/appColorTaskListTextPrimary"
+                    android:textSize="23sp"
                     android:textStyle="bold" />
             </LinearLayout>
-
-            <Button
-                android:id="@+id/btnPickDate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_create_button"
-                android:backgroundTint="@null"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="70dp"
-                android:paddingVertical="14dp"
-                android:text="Change Date"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorTextPrimaryLight"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
 
             <LinearLayout
                 android:id="@+id/timeInfoGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_task_form_surface"
+                android:clickable="true"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
                 android:importantForAccessibility="yes"
-                android:orientation="vertical">
+                android:minHeight="100dp"
+                android:orientation="vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="16dp">
 
-                <TextView
-                    android:id="@+id/tvTimeSectionLabel"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="Time"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
+                    android:baselineAligned="false"
+                    android:importantForAccessibility="noHideDescendants"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tvTimeSectionLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/task_time_label"
+                        android:textColor="?attr/appColorTaskListTextSecondary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/task_form_chevron"
+                        android:textColor="?attr/appColorTaskListTextSecondary"
+                        android:textSize="26sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvSelectedTime"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_info_panel"
+                    android:layout_marginTop="4dp"
                     android:importantForAccessibility="no"
-                    android:padding="16dp"
-                    android:text="No time selected"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="22sp"
+                    android:text="@string/no_time_selected"
+                    android:textColor="?attr/appColorTaskListTextPrimary"
+                    android:textSize="23sp"
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <Button
-                android:id="@+id/btnPickTime"
+            <LinearLayout
+                android:id="@+id/taskFormPrimaryActions"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_create_button"
-                android:backgroundTint="@null"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="70dp"
-                android:paddingVertical="14dp"
-                android:text="Change Time"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorTextPrimaryLight"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
+                android:layout_marginTop="22dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal"
+                tools:ignore="ButtonStyle">
 
-            <Button
-                android:id="@+id/btnSaveTask"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
-                android:background="@drawable/bg_anchor_assistant_button"
-                android:backgroundTint="@null"
-                android:hapticFeedbackEnabled="true"
-                android:minHeight="72dp"
-                android:paddingVertical="14dp"
-                android:text="Save Changes"
-                android:textAllCaps="false"
-                android:textColor="@color/white"
-                android:textSize="23sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
+                <Button
+                    android:id="@+id/btnSaveTask"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_task_form_save"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="82dp"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="14dp"
+                    android:text="@string/save_task_changes"
+                    android:textAllCaps="false"
+                    android:textColor="@color/white"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
+
+                <Button
+                    android:id="@+id/btnCancelTask"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_task_form_cancel"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="82dp"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="14dp"
+                    android:text="@string/cancel"
+                    android:textAllCaps="false"
+                    android:textColor="?attr/appColorTaskListTextPrimary"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
+            </LinearLayout>
 
             <Button
                 android:id="@+id/btnDeleteTask"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_action_button"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_task_form_delete"
                 android:backgroundTint="@null"
                 android:hapticFeedbackEnabled="true"
-                android:minHeight="68dp"
+                android:minHeight="76dp"
+                android:paddingHorizontal="14dp"
                 android:paddingVertical="14dp"
-                android:text="Delete Task"
+                android:text="@string/delete_task"
                 android:textAllCaps="false"
-                android:textColor="?attr/appColorDanger"
-                android:textSize="21sp"
+                android:textColor="@color/white"
+                android:textSize="20sp"
                 android:textStyle="bold"
-                app:backgroundTint="@null" />
-
-            <Button
-                android:id="@+id/btnCancelTask"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_action_button_disabled"
-                android:backgroundTint="@null"
-                android:minHeight="68dp"
-                android:paddingVertical="14dp"
-                android:text="Cancel"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorTextPrimaryDark"
-                android:textSize="21sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
+                app:backgroundTint="@null"
+                tools:ignore="ButtonStyle" />
         </LinearLayout>
     </ScrollView>
 
-    <Button
-        android:id="@+id/btnGoHome"
+    <LinearLayout
+        android:id="@+id/taskFormBottomDock"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="@drawable/bg_anchor_home_button"
-        android:backgroundTint="@null"
-        android:minHeight="66dp"
-        android:paddingVertical="12dp"
-        android:text="Home"
-        android:textAllCaps="false"
-        android:textColor="?attr/appColorTextPrimaryDark"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
-        app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <Button
-        android:id="@+id/btnTalkAssistant"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_anchor_assistant_button"
-        android:backgroundTint="@null"
-        android:hapticFeedbackEnabled="true"
-        android:minHeight="104dp"
-        android:paddingVertical="16dp"
-        android:text="Talk to Assistant"
-        android:textAllCaps="false"
-        android:textColor="@color/white"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
+        android:layout_height="108dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        tools:ignore="ButtonStyle">
+
+        <Button
+            android:id="@+id/btnGoHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_task_list_home_action"
+            android:backgroundTint="@null"
+            android:hapticFeedbackEnabled="true"
+            android:minHeight="108dp"
+            android:text="@string/home"
+            android:textAllCaps="false"
+            android:textColor="?attr/appColorTaskListTextPrimary"
+            android:textSize="19sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
+
+        <Button
+            android:id="@+id/btnTalkAssistant"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="14dp"
+            android:layout_weight="2"
+            android:background="@drawable/bg_task_list_assistant_action"
+            android:backgroundTint="@null"
+            android:hapticFeedbackEnabled="true"
+            android:minHeight="108dp"
+            android:text="@string/talk_to_assistant"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -174,4 +174,17 @@
     <color name="hc_settings_outline">#FF000000</color>
     <color name="hc_settings_state_on">#FF0A572F</color>
     <color name="hc_settings_state_off">#FF202020</color>
+
+    <!-- Shared Create/Edit task-form palette. All surfaces are fully opaque. -->
+    <color name="task_form_surface">#FF23272B</color>
+    <color name="task_form_outline">#FF87919A</color>
+    <color name="task_form_save">#FF346966</color>
+    <color name="task_form_cancel">#FF34383C</color>
+    <color name="task_form_delete">#FF8B4A4E</color>
+
+    <color name="hc_task_form_surface">#FF101010</color>
+    <color name="hc_task_form_outline">#FFFFFFFF</color>
+    <color name="hc_task_form_save">#FF006B62</color>
+    <color name="hc_task_form_cancel">#FF1B1B1B</color>
+    <color name="hc_task_form_delete">#FF7A1F2B</color>
 </resources>

@@ -192,8 +192,12 @@ class CreateTaskActivitySourceTest {
             .substringBefore("private fun invalidateCreateDraftResolution")
         val finallyBody = primaryBody.substringAfter("finally {")
 
-        listOf("btnSaveTask", "btnPickDate", "btnPickTime", "btnTalkAssistant").forEach { control ->
+        listOf("btnSaveTask", "btnTalkAssistant").forEach { control ->
             assertTrue(source.contains("private lateinit var $control: Button"))
+            assertTrue(controlsBody.contains("$control.isEnabled"))
+        }
+        listOf("dateInfoGroup", "timeInfoGroup").forEach { control ->
+            assertTrue(source.contains("private lateinit var $control: View"))
             assertTrue(controlsBody.contains("$control.isEnabled"))
         }
         assertTrue(controlsBody.contains("etTaskTitle.isEnabled"))
@@ -203,8 +207,8 @@ class CreateTaskActivitySourceTest {
         assertTrue(controlsBody.contains("!isSavingTask"))
         assertTrue(controlsBody.contains("etTaskTitle.isEnabled = canEnable"))
         assertTrue(controlsBody.contains("btnSaveTask.isEnabled = canEnable"))
-        assertTrue(controlsBody.contains("btnPickDate.isEnabled = canEnable"))
-        assertTrue(controlsBody.contains("btnPickTime.isEnabled = canEnable"))
+        assertTrue(controlsBody.contains("dateInfoGroup.isEnabled = canEnable"))
+        assertTrue(controlsBody.contains("timeInfoGroup.isEnabled = canEnable"))
         assertTrue(controlsBody.contains("btnTalkAssistant.isEnabled = canEnable"))
         assertFalse(controlsBody.contains("btnCancelTask"))
         assertFalse(controlsBody.contains("btnGoHome"))

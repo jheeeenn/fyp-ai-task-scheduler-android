@@ -68,6 +68,11 @@
         <item name="appColorSettingsOutline">@color/settings_outline</item>
         <item name="appColorSettingsStateOn">@color/settings_state_on</item>
         <item name="appColorSettingsStateOff">@color/settings_state_off</item>
+        <item name="appColorTaskFormSurface">@color/task_form_surface</item>
+        <item name="appColorTaskFormOutline">@color/task_form_outline</item>
+        <item name="appColorTaskFormSave">@color/task_form_save</item>
+        <item name="appColorTaskFormCancel">@color/task_form_cancel</item>
+        <item name="appColorTaskFormDelete">@color/task_form_delete</item>
     </style>
 
     <style name="Theme.MyApplication" parent="Base.Theme.MyApplication" />
@@ -142,5 +147,10 @@
         <item name="appColorSettingsOutline">@color/hc_settings_outline</item>
         <item name="appColorSettingsStateOn">@color/hc_settings_state_on</item>
         <item name="appColorSettingsStateOff">@color/hc_settings_state_off</item>
+        <item name="appColorTaskFormSurface">@color/hc_task_form_surface</item>
+        <item name="appColorTaskFormOutline">@color/hc_task_form_outline</item>
+        <item name="appColorTaskFormSave">@color/hc_task_form_save</item>
+        <item name="appColorTaskFormCancel">@color/hc_task_form_cancel</item>
+        <item name="appColorTaskFormDelete">@color/hc_task_form_delete</item>
     </style>
 </resources>

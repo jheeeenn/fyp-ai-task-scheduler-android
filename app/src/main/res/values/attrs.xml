@@ -64,4 +64,9 @@
     <attr name="appColorSettingsOutline" format="color" />
     <attr name="appColorSettingsStateOn" format="color" />
     <attr name="appColorSettingsStateOff" format="color" />
+    <attr name="appColorTaskFormSurface" format="color" />
+    <attr name="appColorTaskFormOutline" format="color" />
+    <attr name="appColorTaskFormSave" format="color" />
+    <attr name="appColorTaskFormCancel" format="color" />
+    <attr name="appColorTaskFormDelete" format="color" />
 </resources>

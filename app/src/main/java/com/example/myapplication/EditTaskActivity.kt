@@ -143,8 +143,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         dateInfoGroup = findViewById(R.id.dateInfoGroup)
         timeInfoGroup = findViewById(R.id.timeInfoGroup)
 
-        val btnPickDate = findViewById<Button>(R.id.btnPickDate)
-        val btnPickTime = findViewById<Button>(R.id.btnPickTime)
         val btnSaveTask = findViewById<Button>(R.id.btnSaveTask)
         val btnDeleteTask = findViewById<Button>(R.id.btnDeleteTask)
         val btnCancelTask = findViewById<Button>(R.id.btnCancelTask)
@@ -190,8 +188,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         selectedDate = authoritativeOriginalDate
         selectedTime = authoritativeOriginalTime
 
-        tvSelectedDate.text = "Selected date: ${authoritativeOriginalDate ?: "No date selected"}"
-        tvSelectedTime.text = "Selected time: ${authoritativeOriginalTime ?: "No time selected"}"
+        renderSelectedDate()
+        renderSelectedTime()
         updateScheduleAccessibilityState()
 
         parseExistingDate(authoritativeOriginalDate)
@@ -219,20 +217,20 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
 
         VoiceFirstGestureBinder.bindAction(
-            view = btnPickDate,
-            speechProvider = TaskFormControlSpeechRenderer::pickDate,
+            view = dateInfoGroup,
+            speechProvider = { TaskFormControlSpeechRenderer.date(selectedDate) },
             speak = ::speakControlIdentification,
             activate = ::openDatePicker
         )
         VoiceFirstGestureBinder.bindAction(
-            view = btnPickTime,
-            speechProvider = TaskFormControlSpeechRenderer::pickTime,
+            view = timeInfoGroup,
+            speechProvider = { TaskFormControlSpeechRenderer.time(selectedTime) },
             speak = ::speakControlIdentification,
             activate = ::openTimePicker
         )
         VoiceFirstGestureBinder.bindAction(
             view = btnSaveTask,
-            speechProvider = TaskFormControlSpeechRenderer::saveTask,
+            speechProvider = TaskFormControlSpeechRenderer::saveChanges,
             speak = ::speakControlIdentification,
             activate = { saveTask(relativeTemporalSession?.revision) }
         )
@@ -1274,7 +1272,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         selectedDay = parts.getOrNull(0)?.toIntOrNull()
         selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
         selectedYear = parts.getOrNull(2)?.toIntOrNull()
-        tvSelectedDate.text = "Selected date: $selectedDate"
+        renderSelectedDate()
         updateDateAccessibilityState()
         synchronizeRelativeProposalFromUi()
     }
@@ -1298,7 +1296,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         selectedHour24 = minute / 60
         selectedMinute = minute % 60
         selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
-        tvSelectedTime.text = "Selected time: $selectedTime"
+        renderSelectedTime()
         updateTimeAccessibilityState()
         synchronizeRelativeProposalFromUi()
     }
@@ -1316,8 +1314,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         selectedMinute = null
         parseExistingDate(selectedDate)
         parseExistingTime(selectedTime)
-        tvSelectedDate.text = "Selected date: ${selectedDate ?: "No date selected"}"
-        tvSelectedTime.text = "Selected time: ${selectedTime ?: "No time selected"}"
+        renderSelectedDate()
+        renderSelectedTime()
         updateScheduleAccessibilityState()
         if (synchronizeSession) synchronizeRelativeProposalFromUi()
     }
@@ -1588,8 +1586,16 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         updateTimeAccessibilityState()
     }
 
+    private fun renderSelectedDate() {
+        tvSelectedDate.text = TaskFormScheduleValueRenderer.date(selectedDate)
+    }
+
+    private fun renderSelectedTime() {
+        tvSelectedTime.text = TaskFormScheduleValueRenderer.time(selectedTime)
+    }
+
     private fun updateDateAccessibilityState() {
-        dateInfoGroup.contentDescription = "Selected date"
+        dateInfoGroup.contentDescription = "Date"
         AccessibilityStateHelper.updateStateDescription(
             dateInfoGroup,
             TaskCardAccessibilitySemantics.spokenDate(selectedDate)
@@ -1598,7 +1604,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun updateTimeAccessibilityState() {
-        timeInfoGroup.contentDescription = "Selected time"
+        timeInfoGroup.contentDescription = "Time"
         AccessibilityStateHelper.updateStateDescription(
             timeInfoGroup,
             TaskCardAccessibilitySemantics.spokenTime(selectedTime)

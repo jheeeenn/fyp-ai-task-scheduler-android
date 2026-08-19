@@ -1,7 +1,18 @@
 <resources>
     <string name="app_name">AI VoiceTasks</string>
     <string name="message_to_assistant">Message to assistant</string>
-    <string name="task_title_label">Task title</string>
+    <string name="task_title_label">Task Title</string>
+    <string name="create_task_title">Create Task</string>
+    <string name="edit_task_title">Edit Task</string>
+    <string name="task_schedule_label">Schedule</string>
+    <string name="task_date_label">DATE</string>
+    <string name="task_time_label">TIME</string>
+    <string name="task_form_chevron" translatable="false">›</string>
+    <string name="no_date_selected">No date selected</string>
+    <string name="no_time_selected">No time selected</string>
+    <string name="save_task">Save Task</string>
+    <string name="save_task_changes">Save Changes</string>
+    <string name="delete_task">Delete Task</string>
     <string name="no_scheduled_tasks">No scheduled tasks</string>
     <string name="scheduled_tasks_title">Scheduled Tasks</string>
     <string name="today_tasks_title">Today Tasks</string>

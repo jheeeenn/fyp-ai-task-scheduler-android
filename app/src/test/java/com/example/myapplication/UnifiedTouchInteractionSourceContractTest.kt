@@ -30,8 +30,8 @@ class UnifiedTouchInteractionSourceContractTest {
         val create = source("CreateTaskActivity.kt")
 
         listOf(
-            "btnPickDate" to "TaskFormControlSpeechRenderer::pickDate",
-            "btnPickTime" to "TaskFormControlSpeechRenderer::pickTime",
+            "dateInfoGroup" to "TaskFormControlSpeechRenderer.date(selectedDate)",
+            "timeInfoGroup" to "TaskFormControlSpeechRenderer.time(selectedTime)",
             "btnSaveTask" to "TaskFormControlSpeechRenderer::saveTask",
             "btnCancelTask" to "TaskFormControlSpeechRenderer::cancel",
             "btnGoHome" to "TaskFormControlSpeechRenderer::home",
@@ -87,15 +87,15 @@ class UnifiedTouchInteractionSourceContractTest {
 
         assertTrue(manifest.contains("android:name=\".EditTaskActivity\""))
         listOf(
-            "btnPickDate",
-            "btnPickTime",
-            "btnSaveTask",
-            "btnDeleteTask",
-            "btnCancelTask",
-            "btnGoHome",
-            "btnTalkAssistant"
-        ).forEach { view ->
-            assertActionBinding(edit, view, "TaskFormControlSpeechRenderer")
+            "dateInfoGroup" to "TaskFormControlSpeechRenderer.date(selectedDate)",
+            "timeInfoGroup" to "TaskFormControlSpeechRenderer.time(selectedTime)",
+            "btnSaveTask" to "TaskFormControlSpeechRenderer::saveChanges",
+            "btnDeleteTask" to "TaskFormControlSpeechRenderer::deleteTask",
+            "btnCancelTask" to "TaskFormControlSpeechRenderer::cancel",
+            "btnGoHome" to "TaskFormControlSpeechRenderer::home",
+            "btnTalkAssistant" to "TaskFormControlSpeechRenderer::assistant"
+        ).forEach { (view, speech) ->
+            assertActionBinding(edit, view, speech)
         }
         assertFalse(edit.contains("setOnClickListenerWithHaptic"))
 
