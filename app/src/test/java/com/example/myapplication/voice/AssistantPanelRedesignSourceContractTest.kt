@@ -20,6 +20,7 @@ class AssistantPanelRedesignSourceContractTest {
 
         assertTrue(layout.contains("<androidx.core.widget.NestedScrollView"))
         assertTrue(root.contains("android:layout_height=\"wrap_content\""))
+        assertTrue(root.contains("android:minHeight=\"440dp\""))
         assertFalse(root.contains("android:minHeight=\"420dp\""))
         assertTrue(layout.contains("@+id/assistantStateIndicator"))
         assertTrue(layout.contains("@+id/tvAssistantState"))
