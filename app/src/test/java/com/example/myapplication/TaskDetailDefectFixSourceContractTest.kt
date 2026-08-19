@@ -51,7 +51,7 @@ class TaskDetailDefectFixSourceContractTest {
     }
 
     @Test
-    fun bottomSheetStateUpdatesAreGuardedUntilContentExists() {
+    fun bottomSheetStateAnimationsAreGuardedUntilContentExists() {
         assertTrue(panel.contains("val isContentReady: Boolean"))
         assertTrue(panel.contains("::stateContainer.isInitialized"))
         assertTrue(panel.contains("::stateIndicator.isInitialized"))
@@ -60,27 +60,31 @@ class TaskDetailDefectFixSourceContractTest {
 
         val stopped = panel.substringAfter("fun setStoppedState()")
             .substringBefore("fun showUserSpeech")
+        val stopAnimation = panel.substringAfter("private fun stopStateAnimation()")
+            .substringBefore("private fun startListeningAnimation")
         assertTrue(stopped.contains("if (!isContentReady) return"))
-        assertFalse(panel.contains("ValueAnimator"))
-        assertFalse(panel.contains("startStateAnimation"))
+        assertTrue(panel.contains("ValueAnimator"))
+        assertTrue(panel.contains("startStateAnimation"))
+        assertTrue(stopAnimation.contains("if (!isContentReady) return"))
     }
 
     @Test
-    fun confirmationKeepsInternalFlagAndStaticDistinctStateSemantics() {
+    fun confirmationKeepsInternalFlagAndStrongProcessingAnimationSemantics() {
         val listeningState = session.substringAfter("private fun updateListeningAccessibilityState()")
             .substringBefore("private companion object")
         val waitingState = panel.substringAfter("fun setWaitingForConfirmationState()")
             .substringBefore("fun setStoppedState")
-        val indicator = panel.substringAfter("private fun indicatorColor")
+        val processing = panel.substringAfter("private fun startProcessingAnimation()")
+            .substringBefore("private fun startSpeakingAnimation")
 
         assertTrue(session.contains("private var waitingForConfirmation = false"))
         assertTrue(session.contains("fun expectConfirmation()"))
         assertTrue(listeningState.contains("AssistantAccessibilityState.WAITING_FOR_CONFIRMATION"))
         assertTrue(listeningState.contains("setWaitingForConfirmationState()"))
-        assertTrue(waitingState.contains("applyState("))
+        assertTrue(waitingState.contains("startProcessingAnimation()"))
         assertTrue(waitingState.contains("WAITING_FOR_CONFIRMATION"))
-        assertTrue(indicator.contains("R.attr.appColorAssistantStateProcessing"))
-        assertTrue(indicator.contains("R.attr.appColorAssistantStateWaiting"))
+        assertTrue(processing.contains("R.attr.appColorAssistantProcessingStart"))
+        assertTrue(processing.contains("R.attr.appColorAssistantProcessingEnd"))
     }
 
     @Test

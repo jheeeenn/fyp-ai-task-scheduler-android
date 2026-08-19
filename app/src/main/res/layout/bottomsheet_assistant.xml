@@ -21,10 +21,15 @@
             android:id="@+id/stateContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="@drawable/bg_assistant_state_container"
             android:gravity="center_vertical"
             android:importantForAccessibility="yes"
             android:minHeight="52dp"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="10dp">
 
             <View
                 android:id="@+id/assistantStateIndicator"
@@ -41,7 +46,7 @@
                 android:layout_weight="1"
                 android:importantForAccessibility="no"
                 android:text="@string/assistant_ready"
-                android:textColor="?attr/appColorTextPrimaryDark"
+                android:textColor="@color/white"
                 android:textSize="20sp"
                 android:textStyle="bold" />
 
@@ -52,7 +57,7 @@
                 android:accessibilityHeading="true"
                 android:importantForAccessibility="no"
                 android:text="@string/assistant_title"
-                android:textColor="?attr/appColorTextSecondaryDark"
+                android:textColor="@color/white"
                 android:textSize="20sp"
                 android:textStyle="bold" />
         </LinearLayout>

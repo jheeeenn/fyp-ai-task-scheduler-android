@@ -17,12 +17,13 @@
     <attr name="appColorDanger" format="color" />
     <attr name="appColorOutline" format="color" />
     <attr name="appColorOutlineSoft" format="color" />
-    <attr name="appColorAssistantStateNeutral" format="color" />
-    <attr name="appColorAssistantStateListening" format="color" />
-    <attr name="appColorAssistantStateProcessing" format="color" />
-    <attr name="appColorAssistantStateWaiting" format="color" />
-    <attr name="appColorAssistantStateSpeaking" format="color" />
-    <attr name="appColorAssistantStateError" format="color" />
+    <attr name="appColorAssistantIdle" format="color" />
+    <attr name="appColorAssistantListeningStart" format="color" />
+    <attr name="appColorAssistantListeningEnd" format="color" />
+    <attr name="appColorAssistantProcessingStart" format="color" />
+    <attr name="appColorAssistantProcessingEnd" format="color" />
+    <attr name="appColorAssistantSpeakingStart" format="color" />
+    <attr name="appColorAssistantSpeakingEnd" format="color" />
     <attr name="appColorHomeBackground" format="color" />
     <attr name="appColorHomePreviewSurface" format="color" />
     <attr name="appColorHomeTodayAction" format="color" />

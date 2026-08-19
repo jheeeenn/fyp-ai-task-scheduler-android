@@ -63,51 +63,67 @@ class AssistantPanelRedesignSourceContractTest {
     }
 
     @Test
-    fun stateUsesExplicitWordingAndAStaticSemanticIndicatorOnly() {
-        val mapping = panel.substringAfter("private fun indicatorColor")
-
+    fun stateUsesExplicitWordingAndStrongAnimatedContainerAndBorderFeedback() {
         listOf(
-            "appColorAssistantStateNeutral",
-            "appColorAssistantStateListening",
-            "appColorAssistantStateProcessing",
-            "appColorAssistantStateWaiting",
-            "appColorAssistantStateSpeaking",
-            "appColorAssistantStateError"
-        ).forEach { color -> assertTrue(mapping.contains(color)) }
+            "appColorAssistantIdle",
+            "appColorAssistantListeningStart",
+            "appColorAssistantListeningEnd",
+            "appColorAssistantProcessingStart",
+            "appColorAssistantProcessingEnd",
+            "appColorAssistantSpeakingStart",
+            "appColorAssistantSpeakingEnd"
+        ).forEach { color -> assertTrue(panel.contains(color)) }
         assertTrue(panel.contains("tvState.text = state.label"))
         assertTrue(panel.contains("AccessibilityStateHelper.updateAssistantState"))
         assertTrue(panel.contains("AccessibilityAnnouncementHelper.logState"))
         assertTrue(panel.contains("onStateChanged(state)"))
-        assertFalse(panel.contains("ValueAnimator"))
-        assertFalse(panel.contains("stateContainer.setBackground"))
-        assertFalse(panel.contains("assistantRoot.setBackground"))
+        assertTrue(panel.contains("ValueAnimator.ofObject("))
+        assertTrue(panel.contains("repeatCount = ValueAnimator.INFINITE"))
+        assertTrue(panel.contains("repeatMode = ValueAnimator.REVERSE"))
+        assertTrue(panel.contains("interpolator = LinearInterpolator()"))
+        assertTrue(panel.contains("updateStateContainer(color)"))
+        assertTrue(panel.contains("updatePanelBorder(color)"))
+        assertTrue(panel.contains("background.setStroke("))
+        assertTrue(panel.contains("LISTENING_ANIMATION_DURATION_MS = 700L"))
+        assertTrue(panel.contains("PROCESSING_ANIMATION_DURATION_MS = 650L"))
+        assertTrue(panel.contains("SPEAKING_ANIMATION_DURATION_MS = 900L"))
+
+        val stop = panel.substringAfter("private fun stopStateAnimation()")
+            .substringBefore("private fun startListeningAnimation")
+        assertTrue(stop.contains("updateStateContainer(defaultStateColor)"))
+        assertTrue(stop.contains("updatePanelBorder(defaultBorderColor)"))
     }
 
     @Test
     fun panelAndEveryStateResourceAreOpaqueInNormalAndHighContrastThemes() {
         val panelDrawable = main.resolve("res/drawable/bg_assistant_panel.xml").readText()
         val indicatorDrawable = main.resolve("res/drawable/bg_assistant_state_indicator.xml").readText()
+        val stateDrawable = main.resolve("res/drawable/bg_assistant_state_container.xml").readText()
         val colors = main.resolve("res/values/colors.xml").readText()
 
         assertTrue(panelDrawable.contains("<solid"))
         assertTrue(indicatorDrawable.contains("<solid"))
+        assertTrue(stateDrawable.contains("<solid"))
         assertFalse(panelDrawable.contains("android:alpha"))
         assertFalse(indicatorDrawable.contains("android:alpha"))
+        assertFalse(stateDrawable.contains("android:alpha"))
         listOf(
-            "assistant_state_neutral",
-            "assistant_state_listening",
-            "assistant_state_processing",
-            "assistant_state_waiting",
-            "assistant_state_speaking",
-            "assistant_state_error",
-            "hc_assistant_state_neutral",
-            "hc_assistant_state_listening",
-            "hc_assistant_state_processing",
-            "hc_assistant_state_waiting",
-            "hc_assistant_state_speaking",
-            "hc_assistant_state_error"
+            "assistant_idle",
+            "assistant_listening_start",
+            "assistant_listening_end",
+            "assistant_processing_start",
+            "assistant_processing_end",
+            "assistant_speaking_start",
+            "assistant_speaking_end",
+            "hc_assistant_idle",
+            "hc_assistant_listening_start",
+            "hc_assistant_listening_end",
+            "hc_assistant_processing_start",
+            "hc_assistant_processing_end",
+            "hc_assistant_speaking_start",
+            "hc_assistant_speaking_end"
         ).forEach { name ->
-            assertTrue(Regex("name=\"$name\">#FF[0-9A-Fa-f]{6}<").containsMatchIn(colors))
+            assertTrue(Regex("name=\"$name\">#[0-9A-Fa-f]{6}<").containsMatchIn(colors))
         }
     }
 
