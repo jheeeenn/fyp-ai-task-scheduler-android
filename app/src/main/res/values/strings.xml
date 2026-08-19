@@ -43,11 +43,8 @@
     <string name="task_update_failed">I could not update the task. Please try again.</string>
     <string name="assistant_title">Assistant</string>
     <string name="assistant_ready">Ready</string>
-    <string name="assistant_user_label">You said</string>
-    <string name="assistant_reply_label">Assistant reply</string>
-    <string name="assistant_next_action_label">What you can do next</string>
-    <string name="type_to_assistant">Type to Assistant</string>
-    <string name="stop_assistant">Stop Assistant</string>
+    <string name="assistant_user_label">You</string>
+    <string name="assistant_reply_label">Assistant</string>
     <string name="processing_haptic_feedback">Processing Haptic Feedback</string>
     <string name="processing_haptic_feedback_on_description">Processing haptic feedback, On</string>
     <string name="session_end_haptic_feedback">Session End Haptic Feedback</string>

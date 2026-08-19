@@ -2726,8 +2726,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         response: ConversationResponse,
         afterSpeech: (() -> Unit)? = null
     ) {
-        val hint = response.hint.ifBlank { observation.fallbackHint }
-        if (hint.isNotBlank()) assistantSession.getBottomSheet()?.showAssistantHint(hint)
         if (afterSpeech != null) {
             assistantSession.speakThenRun(response.speech) { afterSpeech() }
         } else if (observation.listenAgain) {
@@ -4425,7 +4423,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         logQueryPageEndIfActive("USER_STOPPED")
         clearConversationSessionContext()
         homeFollowUpContext = HomeFollowUpContext.NONE
-        assistantSession.getBottomSheet()?.clearHint()
         clearPendingTaskMatchState()
         clearPendingDeleteState()
         clearPendingBreakdownState()
@@ -5322,7 +5319,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         return when (update) {
             is RoutineDraftUpdate.Ask -> {
                 logRoutineDraftState()
-                assistantSession.getBottomSheet()?.showAssistantHint(update.prompt)
                 val kind = if (
                     routineDraftController.state == RoutineDraftState.COLLECTING_SHARED_DATE
                 ) {
@@ -5335,9 +5331,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
             is RoutineDraftUpdate.Review -> {
                 logRoutineDraftState()
-                assistantSession.getBottomSheet()?.showAssistantHint(
-                    "Confirm, reject, repeat, or change one selected step."
-                )
                 speakRoutineResponse(
                     RoutineResponseKind.PROPOSAL,
                     update.proposal,
@@ -6125,7 +6118,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             breakdownDraftController.state,
             captured
         )
-        assistantSession.getBottomSheet()?.showAssistantHint("Reviewing your feedback...")
         lifecycleScope.launch {
             val decision = try {
                 breakdownFollowUpSemanticOrchestrator.interpret(feedback, context)
@@ -6290,7 +6282,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             else -> null
         }
         if (prompt != null) {
-            assistantSession.getBottomSheet()?.showAssistantHint(prompt)
             assistantSession.speakThenListenAgain(prompt)
         } else {
             val date = pending.exactDate ?: pending.original.startDateInclusive
@@ -6436,7 +6427,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 "Please provide a later exact time."
             else -> "Please provide a future date and time."
         }
-        assistantSession.getBottomSheet()?.showAssistantHint(prompt)
         assistantSession.speakThenListenAgain("${responseManager.pastDateTime()} $prompt")
     }
 

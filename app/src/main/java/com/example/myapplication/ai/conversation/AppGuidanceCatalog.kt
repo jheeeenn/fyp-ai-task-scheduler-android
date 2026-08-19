@@ -26,7 +26,7 @@ object AppGuidanceCatalog {
             "Break a larger task into smaller actionable subtasks, present the proposed breakdown for confirmation or revision, collect missing schedule details, and save only after the required approval flow.",
             "Deliver a due reminder, a later follow-up if the task is still incomplete, and a final reminder where applicable when Android notification and alarm permissions allow delivery.",
             "Accept spoken requests from the Talk Assistant button or typed requests by long-pressing the same button; both use the same assistant pipeline.",
-            "Let the user end naturally with a clear closing statement or use the Stop Assistant control.",
+            "Let the user end naturally with a clear closing statement or, while the Assistant panel is active, double-tap the panel to stop.",
             "Change Assistant Tone by voice or conversationally from its Settings card using Friendly, Neutral, or Professional; tone changes how subsequent assistant responses are phrased.",
             "Change Reply Length by voice or conversationally from its Settings card using Short, Normal, or Detailed; reply length changes how detailed subsequent assistant responses are.",
             "Change Speech Speed by voice or conversationally from its Settings card using Slow, Normal, Fast, or Very Fast; speech speed controls how quickly app-generated spoken feedback is delivered.",
@@ -42,7 +42,7 @@ object AppGuidanceCatalog {
             "Open scheduled tasks.",
             "Open Settings.",
             "Start the voice assistant with the Talk Assistant button.",
-            "Stop the current conversation with the Stop Assistant control."
+            "While the Assistant panel is active, double-tap the panel to stop the current conversation."
         ),
         inputMethods = listOf(
             "Activate the Talk Assistant button to speak.",

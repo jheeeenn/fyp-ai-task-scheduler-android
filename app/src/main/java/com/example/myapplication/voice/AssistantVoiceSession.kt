@@ -108,17 +108,6 @@ class AssistantVoiceSession(
                     forceStop()
                 }
             }
-            assistantBottomSheet?.setOnTypedInputRequestedListener {
-                activity.runOnUiThread {
-                    typedInputCancellationRecovery.onPanelTypedInputRequested(
-                        sessionActive = assistantSessionActive,
-                        forceStopping = isForceStopping
-                    )
-                    stopListeningBeforeSpeak()
-                    showAssistantState(AssistantAccessibilityState.READY)
-                    host.onAssistantTypedInputRequested()
-                }
-            }
             assistantBottomSheet?.setFocusReturnView(assistantControl)
         }
 

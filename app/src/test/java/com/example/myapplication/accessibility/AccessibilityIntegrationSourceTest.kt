@@ -63,13 +63,15 @@ class AccessibilityIntegrationSourceTest {
     }
 
     @Test
-    fun assistantStatesKeepTextLabelsAndAddAContrastingLabelBoundary() {
+    fun assistantStatesKeepExplicitTextAndACompactColourIndicator() {
         val sheetSource = File(sourceRoot, "AssistantBottomSheet.kt").readText()
         val layout = File(layoutRoot, "bottomsheet_assistant.xml").readText()
 
         listOf("LISTENING", "PROCESSING", "SPEAKING", "WAITING_FOR_CONFIRMATION", "ERROR", "STOPPED")
             .forEach { assertTrue(sheetSource.contains("AssistantAccessibilityState.$it")) }
-        assertTrue(layout.contains("@drawable/bg_assistant_state_label"))
+        assertTrue(layout.contains("@+id/assistantStateIndicator"))
+        assertTrue(layout.contains("@drawable/bg_assistant_state_indicator"))
         assertTrue(layout.contains("@+id/tvAssistantState"))
+        assertFalse(layout.contains("@drawable/bg_assistant_state_label"))
     }
 }

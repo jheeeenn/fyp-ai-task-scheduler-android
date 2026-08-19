@@ -727,21 +727,21 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 isDateFieldCommand(normalized) -> {
                     waitingForSaveConfirmation = false
                     pendingFieldTarget = EditFieldTarget.DATE
-                    promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
+                    promptHelper.speakInfo(responseManager.askChangeDate(), true)
                     return
                 }
 
                 isTimeFieldCommand(normalized) -> {
                     waitingForSaveConfirmation = false
                     pendingFieldTarget = EditFieldTarget.TIME
-                    promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
+                    promptHelper.speakInfo(responseManager.askChangeTime(), true)
                     return
                 }
 
                 isTitleFieldCommand(normalized) -> {
                     waitingForSaveConfirmation = false
                     pendingFieldTarget = EditFieldTarget.TITLE
-                    promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
+                    promptHelper.speakInfo(responseManager.askChangeTitle(), true)
                     return
                 }
 
@@ -768,19 +768,19 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         when {
             isDateFieldCommand(normalized) -> {
                 pendingFieldTarget = EditFieldTarget.DATE
-                promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
+                promptHelper.speakInfo(responseManager.askChangeDate(), true)
                 return
             }
 
             isTimeFieldCommand(normalized) -> {
                 pendingFieldTarget = EditFieldTarget.TIME
-                promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
+                promptHelper.speakInfo(responseManager.askChangeTime(), true)
                 return
             }
 
             isTitleFieldCommand(normalized) -> {
                 pendingFieldTarget = EditFieldTarget.TITLE
-                promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
+                promptHelper.speakInfo(responseManager.askChangeTitle(), true)
                 return
             }
 
@@ -1198,7 +1198,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun endAssistantConversation() {
         waitingForSaveConfirmation = false
         pendingFieldTarget = EditFieldTarget.NONE
-        assistantSession.getBottomSheet()?.clearHint()
         assistantSession.speakThenStop(responseManager.stopListening())
     }
 
@@ -1528,8 +1527,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     schedule = session.currentProposal,
                     crossedDateBoundary = initialProposalCrossedDateBoundary
                 ),
-                listenAgain = true,
-                hint = responseManager.hintYesNo()
+                listenAgain = true
             )
         } else {
             promptHelper.askSaveChanges(buildEditSummary())

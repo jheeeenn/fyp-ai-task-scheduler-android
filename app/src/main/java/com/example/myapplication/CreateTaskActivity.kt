@@ -756,17 +756,17 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             when (field) {
                 CreateDraftField.TITLE -> {
                     dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-                    promptHelper.speakInfo(responseManager.askChangeTitle(), true, responseManager.hintTitle())
+                    promptHelper.speakInfo(responseManager.askChangeTitle(), true)
                 }
 
                 CreateDraftField.DATE -> {
                     dialogState = CreateTaskDialogState.WAITING_FOR_DATE
-                    promptHelper.speakInfo(responseManager.askChangeDate(), true, responseManager.hintDate())
+                    promptHelper.speakInfo(responseManager.askChangeDate(), true)
                 }
 
                 CreateDraftField.TIME -> {
                     dialogState = CreateTaskDialogState.WAITING_FOR_TIME
-                    promptHelper.speakInfo(responseManager.askChangeTime(), true, responseManager.hintTime())
+                    promptHelper.speakInfo(responseManager.askChangeTime(), true)
                 }
             }
             return
@@ -1094,16 +1094,6 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun speakAndContinueListening(text: String) {
-        val hint = when (dialogState) {
-            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> responseManager.hintYesNo()
-            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> responseManager.hintChangeFields()
-            CreateTaskDialogState.WAITING_FOR_TITLE -> responseManager.hintTitle()
-            CreateTaskDialogState.WAITING_FOR_DATE -> responseManager.hintDate()
-            CreateTaskDialogState.WAITING_FOR_TIME -> responseManager.hintTime()
-            else -> ""
-        }
-
-        assistantSession.getBottomSheet()?.showAssistantHint(hint)
         assistantSession.speak(
             text = text,
             listenAgain = shouldContinueConversation()
@@ -1111,7 +1101,6 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun speakWithPanel(text: String) {
-        assistantSession.getBottomSheet()?.clearHint()
         assistantSession.speak(text, listenAgain = false)
     }
 
@@ -1131,7 +1120,6 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun speakThenFinish(text: String) {
         isCreateTaskExitPending = true
         setCreateDraftControlsEnabled(false)
-        assistantSession.getBottomSheet()?.showAssistantHint(responseManager.followUpAnythingElse())
         assistantSession.speakThenRun(text) {
             finish()
         }

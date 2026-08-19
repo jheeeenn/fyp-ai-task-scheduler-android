@@ -65,7 +65,7 @@ class HomeActivityObservationMigrationSourceTest {
         assertTrue(body.contains("source=${'$'}{response.source}"))
     }
 
-    @Test fun observationDeliveryPreservesHintListenAgainAndNavigationCallback() {
+    @Test fun observationDeliveryPreservesSpeechListenAgainAndNavigationCallbackWithoutVisualHint() {
         val deliveryBody = source
             .substringAfter("private fun deliverObservationResponse")
             .substringBefore("private suspend fun speakObservation")
@@ -73,7 +73,8 @@ class HomeActivityObservationMigrationSourceTest {
             .substringAfter("private suspend fun speakObservation")
             .substringBefore("private fun observedTask")
 
-        assertTrue(deliveryBody.contains("response.hint.ifBlank { observation.fallbackHint }"))
+        assertFalse(deliveryBody.contains("response.hint"))
+        assertFalse(deliveryBody.contains("observation.fallbackHint"))
         assertTrue(deliveryBody.contains("observation.listenAgain"))
         assertTrue(deliveryBody.contains("assistantSession.speakThenRun(response.speech) { afterSpeech() }"))
         assertTrue(deliveryBody.contains("assistantSession.speakThenListenAgain(response.speech)"))

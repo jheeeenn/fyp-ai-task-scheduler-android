@@ -167,8 +167,8 @@ class AccessibilitySourceContractTest {
             assertTrue(activity.contains("btnTalkAssistant.setOnLongClickListener"))
             assertTrue(activity.contains("showTypedAssistantInputDialog"))
         }
-        assertTrue(panel.contains("@+id/btnTypeAssistantInput"))
-        assertTrue(panel.contains("@+id/btnStopAssistant"))
+        assertFalse(panel.contains("@+id/btnTypeAssistantInput"))
+        assertFalse(panel.contains("@+id/btnStopAssistant"))
         assertFalse(accessibilityProduction.contains("Gemini"))
         assertFalse(accessibilityProduction.contains("AgentOrchestrator"))
         assertFalse(accessibilityProduction.contains("Regex("))

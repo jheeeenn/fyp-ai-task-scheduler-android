@@ -12,18 +12,13 @@ class AssistantBottomSheetInteractionSourceContractTest {
     private val bottomSheet = mainRoot.resolve("AssistantBottomSheet.kt").readText()
 
     @Test
-    fun visualStopAndTypeButtonsUseNativeSingleClickCallbacks() {
-        val stopButton = bottomSheet
-            .substringAfter("btnStopAssistant).setOnClickListener")
-            .substringBefore("btnTypeAssistantInput).setOnClickListener")
-        val typeButton = bottomSheet
-            .substringAfter("btnTypeAssistantInput).setOnClickListener")
-            .substringBefore("assistantRoot.contentDescription")
+    fun visualStopAndTypeButtonsAndTheirCallbacksAreAbsent() {
+        val layout = File("src/main/res/layout/bottomsheet_assistant.xml").readText()
 
-        assertTrue(stopButton.contains("onDoubleTapCancel?.invoke()"))
-        assertTrue(typeButton.contains("onTypedInputRequested?.invoke()"))
-        assertFalse(stopButton.contains("VoiceFirstGestureBinder.bindAction"))
-        assertFalse(typeButton.contains("VoiceFirstGestureBinder.bindAction"))
+        assertFalse(layout.contains("btnStopAssistant"))
+        assertFalse(layout.contains("btnTypeAssistantInput"))
+        assertFalse(bottomSheet.contains("setOnTypedInputRequestedListener"))
+        assertFalse(bottomSheet.contains("onTypedInputRequested"))
     }
 
     @Test
@@ -45,7 +40,7 @@ class AssistantBottomSheetInteractionSourceContractTest {
         assertFalse(bottomSheet.contains("VoiceFirstGestureBinder.bindInformation"))
         assertFalse(bottomSheet.contains("speakIdentification"))
         assertFalse(bottomSheet.contains("VoiceHelper"))
-        listOf("stateContainer", "tvUserSpeech", "tvAssistantReply", "tvAssistantHint")
+        listOf("stateContainer", "tvUserSpeech", "tvAssistantReply")
             .forEach { informationView ->
                 assertFalse(
                     Regex("VoiceFirstGestureBinder\\.bindInformation\\([\\s\\S]{0,200}$informationView")

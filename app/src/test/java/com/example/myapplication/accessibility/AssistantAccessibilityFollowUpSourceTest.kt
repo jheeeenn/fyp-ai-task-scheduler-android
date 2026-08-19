@@ -22,12 +22,12 @@ class AssistantAccessibilityFollowUpSourceTest {
     }
 
     @Test
-    fun panelCancellationRecoveryHasOneGuardedVoiceRestartPath() {
+    fun externalTypedCancellationRecoveryKeepsOneGuardedVoiceRestartPath() {
         val recovery = session
             .substringAfter("fun onTypedInputCancelled()")
             .substringBefore("fun startVoiceFlow()")
 
-        assertTrue(session.contains("typedInputCancellationRecovery.onPanelTypedInputRequested"))
+        assertFalse(session.contains("typedInputCancellationRecovery.onPanelTypedInputRequested"))
         assertTrue(session.contains("typedInputCancellationRecovery.onTypedInputSubmitted()"))
         assertTrue(recovery.contains("claimRecovery"))
         assertTrue(recovery.contains("postRecognitionRestart"))

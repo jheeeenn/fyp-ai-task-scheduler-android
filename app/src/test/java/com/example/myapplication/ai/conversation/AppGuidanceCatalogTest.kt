@@ -29,8 +29,10 @@ class AppGuidanceCatalogTest {
             "later follow-up",
             "final reminder",
             "Long-press the Talk Assistant button to type",
-            "Stop Assistant control"
+            "double-tap the panel to stop"
         ).forEach { fact -> assertTrue("Missing guidance fact: $fact", prompt.contains(fact)) }
+
+        assertFalse(prompt.contains("Stop Assistant control"))
     }
 
     @Test

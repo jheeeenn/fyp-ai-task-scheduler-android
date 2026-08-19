@@ -47,21 +47,19 @@
     <color name="hc_outline">#FFFFFF</color>
     <color name="hc_outline_soft">#B9CBFF</color>
 
-    <color name="assistant_idle">#2A2047</color>
-    <color name="assistant_listening_start">#7A5C00</color>
-    <color name="assistant_listening_end">#FFD54F</color>
-    <color name="assistant_processing_start">#7F1D1D</color>
-    <color name="assistant_processing_end">#FF5252</color>
-    <color name="assistant_speaking_start">#1B5E20</color>
-    <color name="assistant_speaking_end">#66BB6A</color>
+    <color name="assistant_state_neutral">#FF8E969E</color>
+    <color name="assistant_state_listening">#FF0B67E8</color>
+    <color name="assistant_state_processing">#FF7B6698</color>
+    <color name="assistant_state_waiting">#FFD09A3B</color>
+    <color name="assistant_state_speaking">#FF4F8A63</color>
+    <color name="assistant_state_error">#FFB65C58</color>
 
-    <color name="hc_assistant_idle">#17213A</color>
-    <color name="hc_assistant_listening_start">#8A6500</color>
-    <color name="hc_assistant_listening_end">#FFE16B</color>
-    <color name="hc_assistant_processing_start">#8F1027</color>
-    <color name="hc_assistant_processing_end">#FF6680</color>
-    <color name="hc_assistant_speaking_start">#075F3E</color>
-    <color name="hc_assistant_speaking_end">#59E1A7</color>
+    <color name="hc_assistant_state_neutral">#FFFFFFFF</color>
+    <color name="hc_assistant_state_listening">#FF2F80FF</color>
+    <color name="hc_assistant_state_processing">#FFC7A5FF</color>
+    <color name="hc_assistant_state_waiting">#FFFFD25A</color>
+    <color name="hc_assistant_state_speaking">#FF71D493</color>
+    <color name="hc_assistant_state_error">#FFFF7770</color>
 
     <!-- Soft task-state surfaces keep wording, rather than colour, authoritative. -->
     <color name="task_status_overdue_surface">#F1D9D6</color>
