@@ -21,6 +21,25 @@ class CreateTaskActivitySourceTest {
         .substringBefore("private fun formatDateForSpeech")
 
     @Test
+    fun assistantActivationResumesFromNativeDraftWithoutAutoSaving() {
+        val activation = source
+            .substringAfter("speechProvider = TaskFormControlSpeechRenderer::assistant")
+            .substringBefore("btnTalkAssistant.setOnLongClickListener")
+        val resume = source
+            .substringAfter("private fun resumeCreateAssistantFromDraft")
+            .substringBefore("private fun applyIncomingPrefill")
+
+        assertTrue(activation.contains("resumeCreateAssistantFromDraft()"))
+        assertFalse(activation.contains("WAITING_FOR_TITLE"))
+        assertTrue(resume.contains("etTaskTitle.text.toString().trim()"))
+        assertTrue(resume.contains("CreateDraftResumePolicy.nextState"))
+        assertTrue(resume.contains("WAITING_FOR_SAVE_CONFIRMATION"))
+        assertTrue(resume.contains("promptHelper.askSaveTask(buildTaskSummary())"))
+        assertTrue(resume.contains("CREATE_RESUME"))
+        assertFalse(resume.contains("saveTask()"))
+    }
+
+    @Test
     fun voiceInputUsesAgentPrimaryResolutionAndCentralMoveHandler() {
         assertTrue(source.contains("private val createDraftMoveInterpreter = CreateDraftMoveInterpreter()"))
         assertTrue(source.contains("private lateinit var createDraftSemanticOrchestrator: CreateDraftSemanticOrchestrator"))

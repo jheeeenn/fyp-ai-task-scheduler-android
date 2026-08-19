@@ -985,6 +985,13 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         SimpleDateFormat("hh:mm a", Locale.UK).apply { timeZone = now.timeZone }.format(now.time)
 
     private fun handleConfirmationResponse(text: String) {
+        val resolution = com.example.myapplication.voice.BoundedConfirmationPolicy.resolve(text)
+        Log.d(
+            "CONFIRMATION_RESOLUTION",
+            "raw='${resolution.normalizedText}' context=${editInteraction.name} " +
+                "result=${resolution.result.name} source=${resolution.source} " +
+                "confidence=${resolution.confidence}"
+        )
         when (TaskDetailConfirmationInterpreter.interpret(text)) {
             TaskDetailConfirmation.YES -> handleConfirmationYes()
             TaskDetailConfirmation.NO -> handleConfirmationNo()

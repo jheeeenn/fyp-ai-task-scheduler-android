@@ -15,6 +15,8 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import com.example.myapplication.accessibility.AccessibilityActivity
+import com.example.myapplication.voice.BoundedConfirmationPolicy
+import com.example.myapplication.voice.BoundedConfirmationResult
 
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.ai.AiIntent
@@ -1482,25 +1484,13 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun isYes(normalized: String): Boolean {
         val value = normalized.trim().lowercase()
-        return value == "yes" ||
-                value == "yes yes" ||
-                value == "yeah" ||
-                value == "yep" ||
-                value == "save" ||
-                value == "save it" ||
-                value == "safe" ||
-                value == "okay" ||
-                value == "ok"
+        return BoundedConfirmationPolicy.resolve(value).result ==
+            BoundedConfirmationResult.AFFIRM || value == "safe"
     }
 
     private fun isNo(normalized: String): Boolean {
-        val value = normalized.trim().lowercase()
-        return value == "no" ||
-                value == "no no" ||
-                value == "nope" ||
-                value == "not yet" ||
-                value == "don't save" ||
-                value == "do not save"
+        return BoundedConfirmationPolicy.resolve(normalized).result ==
+            BoundedConfirmationResult.REJECT
     }
     private fun buildEditSummary(): String {
         val title = etTaskTitle.text.toString().trim().ifBlank { "Untitled task" }

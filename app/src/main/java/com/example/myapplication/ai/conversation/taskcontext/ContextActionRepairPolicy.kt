@@ -37,7 +37,9 @@ object ContextActionRepairPolicy {
         )
         val validFocus = contextFocus?.available == true &&
             contextFocus.generation == capturedSnapshot.generation &&
-            capturedSnapshot.items.any { it.ref.equals(contextFocus.ref, ignoreCase = true) } &&
+            capturedSnapshot.items.count {
+                it.ref.equals(contextFocus.ref, ignoreCase = true)
+            } == 1 &&
             (ContextReferenceMutationGuard.hasFocusReference(normalizedText) ||
                 ContextFocusActionEllipsisPolicy.isBoundedActionOnly(normalizedText))
         return explicit || uniqueTitle || validFocus

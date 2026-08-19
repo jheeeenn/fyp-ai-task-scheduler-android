@@ -51,11 +51,6 @@ class ConversationDecisionParserTest {
         listOf(
             decisionJson(
                 route = "CONTEXT_ACTION",
-                contextRef = "",
-                contextAction = "RESCHEDULE"
-            ),
-            decisionJson(
-                route = "CONTEXT_ACTION",
                 contextRef = "T2",
                 contextAction = "NONE"
             ),
@@ -74,6 +69,16 @@ class ConversationDecisionParserTest {
                 parser.parse(invalid)
             }
         }
+
+        val blankRef = parser.parse(
+            decisionJson(
+                route = "CONTEXT_ACTION",
+                contextRef = "",
+                contextAction = "MARK_DONE"
+            )
+        )
+        assertEquals("", blankRef.contextRef)
+        assertEquals(ConversationContextAction.MARK_DONE, blankRef.contextAction)
     }
 
     @Test

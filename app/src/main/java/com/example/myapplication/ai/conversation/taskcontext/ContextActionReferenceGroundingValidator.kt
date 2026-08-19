@@ -99,17 +99,17 @@ object ContextActionReferenceGroundingValidator {
                     ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS
                 )
             }
-            val focusItem = capturedSnapshot.items.firstOrNull {
+            val focusItems = capturedSnapshot.items.filter {
                 it.ref.equals(currentFocus.ref, ignoreCase = true)
             }
-            if (currentFocus.generation != capturedSnapshot.generation || focusItem == null) {
+            if (currentFocus.generation != capturedSnapshot.generation || focusItems.size != 1) {
                 return GroundedContextActionReference(
                     ContextActionReferenceGroundingResult.STALE_FOCUS
                 )
             }
+            val focusItem = focusItems.single()
             val isStrictSingleFocusContext =
-                capturedSnapshot.scope == TaskContextScope.TASK_DETAIL ||
-                    capturedSnapshot.items.size == 1
+                capturedSnapshot.items.size == 1
             if (hasBareFocusReference && !isStrictSingleFocusContext) {
                 return GroundedContextActionReference(
                     ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE
@@ -128,14 +128,15 @@ object ContextActionReferenceGroundingValidator {
                     ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS
                 )
             }
-            val focusItem = capturedSnapshot.items.firstOrNull {
+            val focusItems = capturedSnapshot.items.filter {
                 it.ref.equals(currentFocus.ref, ignoreCase = true)
             }
-            if (currentFocus.generation != capturedSnapshot.generation || focusItem == null) {
+            if (currentFocus.generation != capturedSnapshot.generation || focusItems.size != 1) {
                 return GroundedContextActionReference(
                     ContextActionReferenceGroundingResult.STALE_FOCUS
                 )
             }
+            val focusItem = focusItems.single()
             return compareSelected(
                 selectedRef = selectedRef,
                 expectedRef = focusItem.ref,
@@ -167,7 +168,12 @@ object ContextActionReferenceGroundingValidator {
         expectedRef: String?,
         validResult: ContextActionReferenceGroundingResult
     ): GroundedContextActionReference {
-        if (expectedRef == null || !selectedRef.equals(expectedRef, ignoreCase = true)) {
+        if (expectedRef == null) {
+            return GroundedContextActionReference(
+                ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH
+            )
+        }
+        if (selectedRef.isNotBlank() && !selectedRef.equals(expectedRef, ignoreCase = true)) {
             return GroundedContextActionReference(
                 ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH
             )

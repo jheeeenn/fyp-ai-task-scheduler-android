@@ -136,6 +136,6 @@ object ContextReferenceMutationGuard {
         Regex("(?i)\\b(?:edit|update|change)\\s+it(?:\\s+please)?[.!?]?\\s*$")
     )
     private val MUTATION_WORDING = Regex(
-        "(?i)\\b(?:delete|remove|move|reschedule|mark|complete|finish|update|change|edit|rename|break\\s+down)\\b"
+        "(?i)\\b(?:delete|remove|move|reschedule|mark|complete|finish|undo|reopen|update|change|edit|rename|break\\s+down)\\b|\\bnot\\s+done\\b"
     )
 }

@@ -65,11 +65,26 @@ class HomeConversationStabilizationSourceTest {
         assertTrue(classifierGate.contains("LocalConversationIntentClassifier.shouldExecuteLocally"))
         assertTrue(afterNoTasks.contains("isBoundedCreateFollowUpControl(normalized)"))
         assertTrue(afterNoTasks.contains("isSimpleFollowUpEndCommand(normalized)"))
-        assertTrue(deleteConfirmation.contains("isBoundedConfirmationAgreement(normalized)"))
-        assertTrue(deleteConfirmation.contains("isBoundedConfirmationRejection(normalized)"))
-        assertTrue(source.contains("\"yes\",\n        \"yes please\""))
+        assertTrue(deleteConfirmation.contains("BoundedConfirmationPolicy.resolve(normalized)"))
+        assertTrue(deleteConfirmation.contains("BoundedConfirmationResult.AFFIRM"))
+        assertTrue(source.contains("handleBoundedDeleteConfirmation(normalized)"))
         assertTrue(AssistantExitInterpreter.isFollowUpExitUtterance("no"))
         assertFalse(AssistantExitInterpreter.isFollowUpExitUtterance("is that"))
+    }
+
+    @Test
+    fun affirmativeDeleteAnswerCannotMutateOutsidePendingDeleteContext() {
+        val boundedHandler = source
+            .substringAfter("private fun handleBoundedDeleteConfirmation")
+            .substringBefore("private fun cancelPendingDeleteConfirmation")
+
+        assertTrue(
+            boundedHandler.contains(
+                "homeFollowUpContext != HomeFollowUpContext.DELETE_CONFIRMATION"
+            )
+        )
+        assertTrue(boundedHandler.contains("BoundedConfirmationResult.AFFIRM"))
+        assertTrue(boundedHandler.contains("confirmPendingDelete()"))
     }
 
     @Test

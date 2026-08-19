@@ -22,6 +22,17 @@ class CreateDraftMoveInterpreterTest {
             CreateDraftMove.Unknown,
             interpret("the summary sounds interesting", CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )
+        listOf("yes yes", "yeah", "yep", "yes sure").forEach { text ->
+            assertEquals(
+                text,
+                CreateDraftMove.ConfirmSave,
+                interpret(text, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
+            )
+        }
+        assertEquals(
+            CreateDraftMove.RejectSave,
+            interpret("yes, don't save it", CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
+        )
     }
 
     @Test

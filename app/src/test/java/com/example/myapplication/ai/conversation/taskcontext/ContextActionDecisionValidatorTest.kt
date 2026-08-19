@@ -85,6 +85,20 @@ class ContextActionDecisionValidatorTest {
     }
 
     @Test
+    fun contextualCompletionActionsValidateOnlyAfterGroundedKnownRefIsPresent() {
+        val store = ReadOnlyTaskContextStore()
+        store.replaceTaskDetailResult(task(1))
+        val capture = store.capture()
+
+        assertTrue(validate(capture, store, "T1", action = ConversationContextAction.MARK_DONE).isValid)
+        assertTrue(validate(capture, store, "T1", action = ConversationContextAction.MARK_UNDONE).isValid)
+        assertEquals(
+            ContextActionValidationResult.UNKNOWN_REF,
+            validate(capture, store, "", action = ConversationContextAction.MARK_DONE).result
+        )
+    }
+
+    @Test
     fun privateRefSnapshotMustStillMatchTheRefetchedRoomTask() {
         val store = ReadOnlyTaskContextStore()
         val original = task(42).copy(title = "Private title", dueDate = "09/08/2026")
@@ -103,7 +117,7 @@ class ContextActionDecisionValidatorTest {
     }
 
     @Test
-    fun targetEligibilityRejectsDeletedCompletedAndSubtask() {
+    fun targetEligibilityIsActionSpecific() {
         assertFalse(ContextActionTargetValidator.isEligible(null))
         assertFalse(ContextActionTargetValidator.isEligible(task(1).copy(isDone = true)))
         assertFalse(ContextActionTargetValidator.isEligible(task(2).copy(parentTaskId = 1)))
@@ -112,6 +126,12 @@ class ContextActionDecisionValidatorTest {
             ContextActionTargetValidator.isEligible(
                 task(4).copy(isDone = true),
                 ConversationContextAction.DELETE
+            )
+        )
+        assertTrue(
+            ContextActionTargetValidator.isEligible(
+                task(5).copy(isDone = true, parentTaskId = 1),
+                ConversationContextAction.MARK_UNDONE
             )
         )
     }

@@ -4,5 +4,7 @@ enum class ConversationContextAction {
     NONE,
     UPDATE,
     RESCHEDULE,
-    DELETE
+    DELETE,
+    MARK_DONE,
+    MARK_UNDONE
 }

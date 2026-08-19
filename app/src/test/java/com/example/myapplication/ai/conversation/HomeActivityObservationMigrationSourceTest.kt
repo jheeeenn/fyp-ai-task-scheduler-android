@@ -37,17 +37,15 @@ class HomeActivityObservationMigrationSourceTest {
         val body = source.substringAfter("private fun handleTaskMatchAmbiguity").substringBefore("private fun speakThenOpen")
         assertTrue(body.contains("speakObservationThenRun(ExecutionObservation(ExecutionOperation.UPDATE_TASK"))
         assertTrue(body.contains("speakObservationThenRun(ExecutionObservation(ExecutionOperation.RESCHEDULE_TASK"))
-        assertTrue(body.contains("speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE"))
-        assertTrue(body.contains("chosenTask.copy(isDone = true)"))
-        assertTrue(body.contains("speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE"))
-        assertTrue(body.contains("chosenTask.copy(isDone = false)"))
+        assertTrue(body.contains("executeDeterministicTaskCompletion("))
+        assertTrue(body.contains("ConversationContextAction.MARK_DONE"))
+        assertTrue(body.contains("ConversationContextAction.MARK_UNDONE"))
     }
 
     @Test fun deleteCancellationProducesCancelledObservation() {
         val body = source
-            .substringAfter("private fun handleConversationFollowUp")
-            .substringAfter("HomeFollowUpContext.DELETE_CONFIRMATION -> {")
-            .substringBefore("HomeFollowUpContext.BREAKDOWN_CONFIRMATION")
+            .substringAfter("private fun cancelPendingDeleteConfirmation")
+            .substringBefore("private fun handleContextItemRestatement")
         assertTrue(body.contains("ExecutionOperation.DELETE_TASK"))
         assertTrue(body.contains("ExecutionOutcome.CANCELLED"))
     }

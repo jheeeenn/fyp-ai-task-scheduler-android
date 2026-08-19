@@ -34,6 +34,8 @@ import java.util.Locale
 
 
 import com.example.myapplication.voice.TextNormalizer
+import com.example.myapplication.voice.BoundedConfirmationPolicy
+import com.example.myapplication.voice.BoundedConfirmationResult
 
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.TaskQueryPresentation
@@ -99,6 +101,8 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextActionValida
 import com.example.myapplication.ai.conversation.taskcontext.ContextDeleteFailureFallbackPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionTargetValidator
+import com.example.myapplication.ai.conversation.taskcontext.TaskCompletionMutationPolicy
+import com.example.myapplication.ai.conversation.taskcontext.TaskCompletionReminderDirective
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadDetailCompatibilityPolicy
@@ -1170,6 +1174,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
         }
 
+        if (handleBoundedDeleteConfirmation(normalized)) {
+            return
+        }
+
         val pendingContextTargetOwnsTurn =
             homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION
         if (!pendingContextTargetOwnsTurn && handleContextItemRestatement(normalized)) {
@@ -1433,26 +1441,29 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         )
                         when (repairedDecision.route) {
                             ConversationRoute.CONTEXT_ACTION -> {
-                                val repairValidation = ContextActionDecisionValidator.validate(
+                                val repairGrounding = ContextActionReferenceGroundingValidator.validate(
+                                    normalizedText = normalized,
                                     decision = repairedDecision,
                                     capturedSnapshot = taskContextCapture.snapshot,
-                                    currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                                    currentFocus = contextFocus
                                 )
-                                val repairGrounding = if (repairValidation.isValid) {
-                                    ContextActionReferenceGroundingValidator.validate(
-                                        normalizedText = normalized,
-                                        decision = repairedDecision,
+                                val groundedRepairDecision = repairedDecision.copy(
+                                    contextRef = repairGrounding.ref
+                                )
+                                val repairValidation = if (repairGrounding.isValid) {
+                                    ContextActionDecisionValidator.validate(
+                                        decision = groundedRepairDecision,
                                         capturedSnapshot = taskContextCapture.snapshot,
-                                        currentFocus = contextFocus
+                                        currentGeneration = readOnlyTaskContextStore.currentGeneration()
                                     )
                                 } else {
                                     null
                                 }
-                                if (repairValidation.isValid && repairGrounding?.isValid == true) {
-                                    conversationDecision = repairedDecision
+                                if (repairValidation?.isValid == true) {
+                                    conversationDecision = groundedRepairDecision
                                     Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ACCEPTED")
                                 } else {
-                                    if (repairValidation.isValid && repairGrounding != null) {
+                                    if (!repairGrounding.isValid) {
                                         beginContextActionTargetClarification(
                                             action = repairedDecision.contextAction,
                                             capture = taskContextCapture,
@@ -1733,31 +1744,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         return@launch
                     }
                     ConversationRoute.CONTEXT_ACTION -> {
-                        val validation = ContextActionDecisionValidator.validate(
-                            decision = conversationDecision,
-                            capturedSnapshot = taskContextCapture.snapshot,
-                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
-                        )
-                        Log.d(
-                            "HOME_CONTEXT_ACTION",
-                            "route=${conversationDecision.route} " +
-                                "ref=${conversationDecision.contextRef} " +
-                                "action=${conversationDecision.contextAction} " +
-                                "capturedGeneration=${taskContextCapture.snapshot.generation} " +
-                                "validation=${validation.result}"
-                        )
-                        if (!validation.isValid) {
-                            val clarification = if (
-                                validation.result == ContextActionValidationResult.STALE_GENERATION
-                            ) {
-                                "Those task results changed. Please repeat your task query."
-                            } else {
-                                "Please repeat the requested change."
-                            }
-                            rejectContextAction(clarification, "android_context_action_validation")
-                            return@launch
-                        }
-
                         val pendingTargetAuthorityApplies =
                             pendingAuthorityValidatedRef != null &&
                             conversationDecision.source == "conversation_agent_pending_context_target" &&
@@ -1799,6 +1785,34 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             return@launch
                         }
 
+                        val groundedDecision = conversationDecision.copy(contextRef = groundedRef)
+                        val validation = ContextActionDecisionValidator.validate(
+                            decision = groundedDecision,
+                            capturedSnapshot = taskContextCapture.snapshot,
+                            currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                        )
+                        Log.d(
+                            "HOME_CONTEXT_ACTION",
+                            "route=${groundedDecision.route} " +
+                                "modelRef=${conversationDecision.contextRef} " +
+                                "groundedRef=$groundedRef " +
+                                "action=${groundedDecision.contextAction} " +
+                                "capturedGeneration=${taskContextCapture.snapshot.generation} " +
+                                "validation=${validation.result}"
+                        )
+                        if (!validation.isValid) {
+                            val clarification = if (
+                                validation.result == ContextActionValidationResult.STALE_GENERATION
+                            ) {
+                                "Those task results changed. Please repeat your task query."
+                            } else {
+                                "Please repeat the requested change."
+                            }
+                            rejectContextAction(clarification, "android_context_action_validation")
+                            return@launch
+                        }
+                        conversationDecision = groundedDecision
+
                         val capturedGeneration = taskContextCapture.snapshot.generation
                         val privateTaskId = readOnlyTaskContextStore.resolveRef(
                             ref = groundedRef,
@@ -1834,6 +1848,55 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             if (!isAssistantRequestCurrent(requestToken)) return@launch
                             conversationOrchestrator.commitFinalDecision(conversationDecision)
                             askDeleteConfirmation(requireNotNull(initiallyFetchedTask))
+                            return@launch
+                        }
+
+                        if (validation.action == ConversationContextAction.MARK_DONE ||
+                            validation.action == ConversationContextAction.MARK_UNDONE
+                        ) {
+                            if (!isAssistantRequestCurrent(requestToken) ||
+                                readOnlyTaskContextStore.currentGeneration() != capturedGeneration
+                            ) {
+                                rejectUnavailableContextAction()
+                                return@launch
+                            }
+                            val completionTaskId = readOnlyTaskContextStore.resolveRef(
+                                ref = groundedRef,
+                                expectedGeneration = capturedGeneration
+                            )
+                            if (completionTaskId == null || completionTaskId != privateTaskId) {
+                                rejectUnavailableContextAction()
+                                return@launch
+                            }
+                            val completionTask = withContext(Dispatchers.IO) {
+                                taskDao.getById(completionTaskId)
+                            }
+                            if (completionTask == null ||
+                                !isAssistantRequestCurrent(requestToken) ||
+                                !isEligibleContextActionTarget(completionTask, validation.action) ||
+                                !sameContextActionTaskSnapshot(initiallyFetchedTask, completionTask) ||
+                                !readOnlyTaskContextStore.matchesResolvedTask(
+                                    ref = groundedRef,
+                                    expectedGeneration = capturedGeneration,
+                                    task = completionTask
+                                )
+                            ) {
+                                rejectUnavailableContextAction()
+                                return@launch
+                            }
+                            conversationOrchestrator.commitFinalDecision(conversationDecision)
+                            speakObservation(
+                                executeDeterministicTaskCompletion(
+                                    task = requireNotNull(completionTask),
+                                    action = validation.action,
+                                    grounding = if (pendingTargetAuthorityApplies) {
+                                        "VALID_PENDING_TARGET"
+                                    } else {
+                                        grounding?.result?.name.orEmpty()
+                                    },
+                                    targetRef = groundedRef
+                                )
+                            )
                             return@launch
                         }
 
@@ -2521,22 +2584,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
-
-                                    withContext(Dispatchers.IO) {
-                                        if (matchedTask.parentTaskId == null) {
-                                            dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, true)
-                                        } else {
-                                            dao.updateDoneStatus(matchedTask.id, true)
-                                        }
-                                    }
-
-                                    if (matchedTask.parentTaskId == null) {
-                                        ReminderHelper.cancelReminder(this@HomeActivity, matchedTask.id)
-                                    }
-
-                                    refreshOverview()
-
-                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask.copy(isDone = true))), listenAgain = false, fallbackSpeech = responseManager.markDoneSuccess(matchedTask.title)))
+                                    speakObservation(
+                                        executeDeterministicTaskCompletion(
+                                            task = matchedTask,
+                                            action = ConversationContextAction.MARK_DONE,
+                                            grounding = "NAMED_TASK"
+                                        )
+                                    )
                                 }
 
                                 else -> {
@@ -2575,23 +2629,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
                                 matchResult.bestTask != null -> {
                                     val matchedTask = matchResult.bestTask
-
-                                    withContext(Dispatchers.IO) {
-                                        if (matchedTask.parentTaskId == null) {
-                                            dao.updateDoneStatusForTaskAndSubtasks(matchedTask.id, false)
-                                        } else {
-                                            dao.updateDoneStatus(matchedTask.id, false)
-                                        }
-                                    }
-
-                                    if (matchedTask.parentTaskId == null) {
-                                        val reopenedTask = matchedTask.copy(isDone = false)
-                                        ReminderHelper.scheduleReminderFromTask(this@HomeActivity, reopenedTask)
-                                    }
-
-                                    refreshOverview()
-
-                                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.SUCCESS, taskTitle = matchedTask.title, tasks = listOf(observedTask(matchedTask.copy(isDone = false))), listenAgain = false, fallbackSpeech = responseManager.markUndoneSuccess(matchedTask.title)))
+                                    speakObservation(
+                                        executeDeterministicTaskCompletion(
+                                            task = matchedTask,
+                                            action = ConversationContextAction.MARK_UNDONE,
+                                            grounding = "NAMED_TASK"
+                                        )
+                                    )
                                 }
 
                                 else -> {
@@ -3401,6 +3445,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun contextActionTargetQuestion(action: ConversationContextAction): String = when (action) {
         ConversationContextAction.RESCHEDULE -> "Which task do you want to reschedule?"
         ConversationContextAction.DELETE -> "Which task do you want to delete?"
+        ConversationContextAction.MARK_DONE -> "Which task do you want to complete?"
+        ConversationContextAction.MARK_UNDONE -> "Which task do you want to reopen?"
         else -> "Which task do you want to edit?"
     }
 
@@ -3596,6 +3642,77 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             first.isDone == second.isDone &&
             first.parentTaskId == second.parentTaskId &&
             first.subtaskOrder == second.subtaskOrder
+
+    private suspend fun executeDeterministicTaskCompletion(
+        task: TaskEntity,
+        action: ConversationContextAction,
+        grounding: String,
+        targetRef: String = ""
+    ): ExecutionObservation {
+        val plan = TaskCompletionMutationPolicy.plan(task, action)
+        val operation = if (plan.desiredDone) {
+            ExecutionOperation.MARK_DONE
+        } else {
+            ExecutionOperation.MARK_UNDONE
+        }
+        if (!plan.requiresMutation) {
+            Log.d(
+                "CONTEXT_COMPLETION",
+                "action=${action.name} grounding=$grounding targetRef=$targetRef " +
+                    "previousDone=${task.isDone} result=ALREADY_IN_STATE"
+            )
+            return ExecutionObservation(
+                operation = operation,
+                outcome = ExecutionOutcome.INFORMATION,
+                taskTitle = task.title,
+                tasks = listOf(observedTask(task)),
+                listenAgain = false,
+                fallbackSpeech = if (plan.desiredDone) {
+                    "${task.title} is already completed."
+                } else {
+                    "${task.title} is already active and not completed."
+                }
+            )
+        }
+
+        val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+        withContext(Dispatchers.IO) {
+            if (plan.propagateToSubtasks) {
+                dao.updateDoneStatusForTaskAndSubtasks(task.id, plan.desiredDone)
+            } else {
+                dao.updateDoneStatus(task.id, plan.desiredDone)
+            }
+        }
+        when (plan.reminderDirective) {
+            TaskCompletionReminderDirective.CANCEL_ROOT_SEQUENCE ->
+                ReminderHelper.cancelReminder(this@HomeActivity, task.id)
+            TaskCompletionReminderDirective.RESCHEDULE_ROOT_IF_ELIGIBLE ->
+                ReminderHelper.scheduleReminderFromTask(
+                    this@HomeActivity,
+                    task.copy(isDone = false)
+                )
+            TaskCompletionReminderDirective.NONE -> Unit
+        }
+        refreshOverview()
+        Log.d(
+            "CONTEXT_COMPLETION",
+            "action=${action.name} grounding=$grounding targetRef=$targetRef " +
+                "previousDone=${task.isDone} result=APPLIED"
+        )
+        val updatedTask = task.copy(isDone = plan.desiredDone)
+        return ExecutionObservation(
+            operation = operation,
+            outcome = ExecutionOutcome.SUCCESS,
+            taskTitle = task.title,
+            tasks = listOf(observedTask(updatedTask)),
+            listenAgain = false,
+            fallbackSpeech = if (plan.desiredDone) {
+                responseManager.markDoneSuccess(task.title)
+            } else {
+                responseManager.markUndoneSuccess(task.title)
+            }
+        )
+    }
 
     private fun rejectUnavailableContextAction() {
         rejectContextAction(
@@ -4021,19 +4138,50 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         "create one"
     )
 
-    private fun isBoundedConfirmationAgreement(normalized: String): Boolean = normalized in setOf(
-        "yes",
-        "yes please",
-        "yeah",
-        "yep",
-        "confirm",
-        "please do",
-        "do it"
-    )
+    private fun handleBoundedDeleteConfirmation(normalized: String): Boolean {
+        if (homeFollowUpContext != HomeFollowUpContext.DELETE_CONFIRMATION) return false
+        val resolution = BoundedConfirmationPolicy.resolve(normalized)
+        Log.d(
+            "CONFIRMATION_RESOLUTION",
+            "raw='${resolution.normalizedText}' context=DELETE_CONFIRMATION " +
+                "result=${resolution.result.name} source=${resolution.source} " +
+                "confidence=${resolution.confidence}"
+        )
+        return when (resolution.result) {
+            BoundedConfirmationResult.AFFIRM -> {
+                confirmPendingDelete()
+                true
+            }
+            BoundedConfirmationResult.REJECT,
+            BoundedConfirmationResult.CANCEL -> {
+                cancelPendingDeleteConfirmation()
+                true
+            }
+            BoundedConfirmationResult.UNKNOWN -> false
+        }
+    }
 
-    private fun isBoundedConfirmationRejection(normalized: String): Boolean =
-        isSimpleFollowUpEndCommand(normalized) ||
-            normalized in setOf("never mind", "nevermind")
+    private fun cancelPendingDeleteConfirmation() {
+        val title = pendingDeleteTaskTitle
+        clearPendingDeleteState()
+        clearConversationSessionContext()
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        lifecycleScope.launch {
+            speakObservation(
+                ExecutionObservation(
+                    operation = ExecutionOperation.DELETE_TASK,
+                    outcome = ExecutionOutcome.CANCELLED,
+                    taskTitle = title.orEmpty(),
+                    listenAgain = false,
+                    fallbackSpeech = if (title != null) {
+                        "Okay, I will not delete $title."
+                    } else {
+                        "Okay, I will not delete it."
+                    }
+                )
+            )
+        }
+    }
 
     private fun handleContextItemRestatement(normalized: String): Boolean {
         val isResultInteraction = homeFollowUpContext in setOf(
@@ -4939,16 +5087,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
 
     private fun isSavedRoutineConfirmation(normalized: String): Boolean =
-        normalized in setOf("yes", "yes yes", "yeah", "yep", "confirm", "delete it")
+        BoundedConfirmationPolicy.resolve(normalized).result ==
+            BoundedConfirmationResult.AFFIRM || normalized == "delete it"
 
     private fun isSavedRoutineRejection(normalized: String): Boolean =
-        normalized in setOf(
-            "no",
-            "no thanks",
-            "cancel",
-            "stop",
-            "never mind",
-            "nevermind"
+        BoundedConfirmationPolicy.resolve(normalized).result in setOf(
+            BoundedConfirmationResult.REJECT,
+            BoundedConfirmationResult.CANCEL
         )
 
     private suspend fun handleSmartRoutineBuilder(
@@ -6745,40 +6890,23 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
 
                 PendingTaskAction.MARK_DONE -> {
-                    withContext(Dispatchers.IO) {
-                        if (chosenTask.parentTaskId == null) {
-                            dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, true)
-                        } else {
-                            dao.updateDoneStatus(chosenTask.id, true)
-                        }
-                    }
-
-                    if (chosenTask.parentTaskId == null) {
-                        ReminderHelper.cancelReminder(this@HomeActivity, chosenTask.id)
-                    }
-
-                    refreshOverview()
-                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_DONE, ExecutionOutcome.SUCCESS, taskTitle = chosenTask.title, tasks = listOf(observedTask(chosenTask.copy(isDone = true))), listenAgain = false, fallbackSpeech = responseManager.markDoneSuccess(chosenTask.title)))
+                    speakObservation(
+                        executeDeterministicTaskCompletion(
+                            task = chosenTask,
+                            action = ConversationContextAction.MARK_DONE,
+                            grounding = "AMBIGUITY_SELECTION"
+                        )
+                    )
                 }
 
                 PendingTaskAction.MARK_UNDONE -> {
-                    withContext(Dispatchers.IO) {
-                        if (chosenTask.parentTaskId == null) {
-                            dao.updateDoneStatusForTaskAndSubtasks(chosenTask.id, false)
-                        } else {
-                            dao.updateDoneStatus(chosenTask.id, false)
-                        }
-                    }
-
-                    if (chosenTask.parentTaskId == null) {
-                        ReminderHelper.scheduleReminderFromTask(
-                            this@HomeActivity,
-                            chosenTask.copy(isDone = false)
+                    speakObservation(
+                        executeDeterministicTaskCompletion(
+                            task = chosenTask,
+                            action = ConversationContextAction.MARK_UNDONE,
+                            grounding = "AMBIGUITY_SELECTION"
                         )
-                    }
-
-                    refreshOverview()
-                    speakObservation(ExecutionObservation(ExecutionOperation.MARK_UNDONE, ExecutionOutcome.SUCCESS, taskTitle = chosenTask.title, tasks = listOf(observedTask(chosenTask.copy(isDone = false))), listenAgain = false, fallbackSpeech = responseManager.markUndoneSuccess(chosenTask.title)))
+                    )
                 }
 
                 PendingTaskAction.NONE -> {
@@ -6896,9 +7024,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.QUERY_PAGE -> false
             HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> {
+                val confirmation = BoundedConfirmationPolicy.resolve(normalized)
                 when (intent) {
                     ConversationIntent.CONFIRM_YES -> {
-                        if (!isBoundedConfirmationAgreement(normalized)) return false
+                        if (confirmation.result != BoundedConfirmationResult.AFFIRM) return false
                         Log.d("HOME_CONVO_ACTION", "delete confirmed")
                         confirmPendingDelete()
                         true
@@ -6906,27 +7035,12 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
                     ConversationIntent.CONFIRM_NO,
                     ConversationIntent.STOP_CONVERSATION -> {
-                        if (!isBoundedConfirmationRejection(normalized)) return false
-                        val title = pendingDeleteTaskTitle
-                        clearPendingDeleteState()
-                        clearConversationSessionContext()
-                        homeFollowUpContext = HomeFollowUpContext.NONE
-
-                        lifecycleScope.launch {
-                            speakObservation(
-                                ExecutionObservation(
-                                    operation = ExecutionOperation.DELETE_TASK,
-                                    outcome = ExecutionOutcome.CANCELLED,
-                                    taskTitle = title.orEmpty(),
-                                    listenAgain = false,
-                                    fallbackSpeech = if (title != null) {
-                                        "Okay, I will not delete $title."
-                                    } else {
-                                        "Okay, I will not delete it."
-                                    }
-                                )
+                        if (confirmation.result !in setOf(
+                                BoundedConfirmationResult.REJECT,
+                                BoundedConfirmationResult.CANCEL
                             )
-                        }
+                        ) return false
+                        cancelPendingDeleteConfirmation()
                         true
                     }
 

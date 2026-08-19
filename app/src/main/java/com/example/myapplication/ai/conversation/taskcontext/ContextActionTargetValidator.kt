@@ -7,7 +7,13 @@ object ContextActionTargetValidator {
     fun isEligible(
         task: TaskEntity?,
         action: ConversationContextAction = ConversationContextAction.UPDATE
-    ): Boolean = task != null &&
-        task.parentTaskId == null &&
-        (action == ConversationContextAction.DELETE || !task.isDone)
+    ): Boolean = when (action) {
+        ConversationContextAction.MARK_DONE,
+        ConversationContextAction.MARK_UNDONE -> task != null
+        ConversationContextAction.DELETE -> task != null && task.parentTaskId == null
+        ConversationContextAction.UPDATE,
+        ConversationContextAction.RESCHEDULE ->
+            task != null && task.parentTaskId == null && !task.isDone
+        ConversationContextAction.NONE -> false
+    }
 }

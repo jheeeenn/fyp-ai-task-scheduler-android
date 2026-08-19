@@ -51,6 +51,10 @@ object ContextFocusActionEllipsisPolicy {
             ConversationContextAction.UPDATE
         "reschedule", "reschedule please", "please reschedule" ->
             ConversationContextAction.RESCHEDULE
+        "complete", "complete please", "please complete", "mark done", "finish",
+        "finish please", "please finish" -> ConversationContextAction.MARK_DONE
+        "reopen", "reopen please", "please reopen", "undo completion", "mark undone" ->
+            ConversationContextAction.MARK_UNDONE
         else -> null
     }
 

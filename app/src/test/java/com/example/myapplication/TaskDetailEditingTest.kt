@@ -173,7 +173,13 @@ class TaskDetailEditingTest {
     @Test
     fun confirmationInterpreterDistinguishesYesNoCancelAndUnclear() {
         assertEquals(TaskDetailConfirmation.YES, TaskDetailConfirmationInterpreter.interpret("yes"))
+        assertEquals(TaskDetailConfirmation.YES, TaskDetailConfirmationInterpreter.interpret("yes sure"))
+        assertEquals(TaskDetailConfirmation.YES, TaskDetailConfirmationInterpreter.interpret("yep"))
         assertEquals(TaskDetailConfirmation.NO, TaskDetailConfirmationInterpreter.interpret("no"))
+        assertEquals(
+            TaskDetailConfirmation.NO,
+            TaskDetailConfirmationInterpreter.interpret("yes, don't save it")
+        )
         assertEquals(TaskDetailConfirmation.CANCEL, TaskDetailConfirmationInterpreter.interpret("cancel"))
         assertEquals(TaskDetailConfirmation.UNCLEAR, TaskDetailConfirmationInterpreter.interpret("perhaps"))
     }

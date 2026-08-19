@@ -9,6 +9,8 @@ import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateDraftMoveInterpreter
 import com.example.myapplication.voice.CreateTaskDialogState
+import com.example.myapplication.voice.BoundedConfirmationPolicy
+import com.example.myapplication.voice.BoundedConfirmationResult
 import com.example.myapplication.voice.TextNormalizer
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -148,14 +150,18 @@ enum class TaskDetailEditInteraction {
 enum class TaskDetailConfirmation { YES, NO, CANCEL, UNCLEAR }
 
 object TaskDetailConfirmationInterpreter {
-    fun interpret(value: String): TaskDetailConfirmation = when (TextNormalizer.normalize(value)) {
-        "yes", "yes yes", "yeah", "yep", "sure", "okay", "ok", "confirm", "save" ->
-            TaskDetailConfirmation.YES
-        "no", "no no", "nope", "do not save", "don't save", "not now" ->
-            TaskDetailConfirmation.NO
-        "cancel", "stop", "never mind", "nevermind", "go back" ->
-            TaskDetailConfirmation.CANCEL
-        else -> TaskDetailConfirmation.UNCLEAR
+    fun interpret(value: String): TaskDetailConfirmation = when (
+        BoundedConfirmationPolicy.resolve(value).result
+    ) {
+        BoundedConfirmationResult.AFFIRM -> TaskDetailConfirmation.YES
+        BoundedConfirmationResult.REJECT -> TaskDetailConfirmation.NO
+        BoundedConfirmationResult.CANCEL -> TaskDetailConfirmation.CANCEL
+        BoundedConfirmationResult.UNKNOWN ->
+            when (TextNormalizer.normalize(value)) {
+                "save", "save it" -> TaskDetailConfirmation.YES
+                "go back" -> TaskDetailConfirmation.CANCEL
+                else -> TaskDetailConfirmation.UNCLEAR
+            }
     }
 }
 

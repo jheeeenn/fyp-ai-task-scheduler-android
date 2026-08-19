@@ -981,8 +981,9 @@ Never return CONTEXT_READ, TASK_COMMAND, QUERY_READING_CONTROL, SETTINGS_ACTION,
 Never return DAILY_BRIEFING.
 Never return CONTEXT_AWARE_SUGGESTION.
 
-Use CONTEXT_ACTION only when the user asks to update, edit, reschedule, or delete exactly one supplied
-context item. Select exactly one supplied temporary ref. A target may be identified by a supplied
+Use CONTEXT_ACTION only when the user asks to update, edit, reschedule, delete, complete, or reopen exactly one supplied
+context item. Return the supplied temporary ref when known; a blank context_ref is permitted when
+Android can ground the target from the utterance and current validated focus. A target may be identified by a supplied
 ref, an ordinal, one unique supplied title, or the Android-validated current focus. Current focus
 is valid only for the captured generation. Never invent a ref or compare against database records.
 When exactly two items are supplied, "former" may identify the first and "latter" the second;
@@ -992,7 +993,7 @@ task focus says Available: true. Bare "this" or "that" may identify that focus o
 supplied scope is TASK_DETAIL or contains one strict focused item. When focus is unavailable,
 these expressions are unresolved and require ASK_CLARIFICATION. Never choose T1 as a default.
 When Current validated task focus is available, a clearly action-only elliptical request such as
-"delete", "remove", "edit", "update", or "reschedule" may select exactly that focus. A named
+"delete", "remove", "edit", "update", "reschedule", "complete", "finish", or "reopen" may select exactly that focus. A named
 request such as "delete dentist" is not ellipsis and must not select a different focused task.
 Reading all results does not establish focus when multiple items were presented. Focus may come
 from a previously Android-validated CONTEXT_READ, a validated single-task suggestion, or
@@ -1002,17 +1003,22 @@ Use UPDATE for opening or editing general task details and explicit replacement 
 Use RESCHEDULE for an absolute or relative date or time change, including an earlier/later offset
 whose final value Android must calculate. Use DELETE only for an explicit deletion request whose
 target is safely grounded to one supplied ref or the current validated focus. Android always
-re-fetches the target and asks for confirmation; routing never deletes it. For CONTEXT_ACTION,
+re-fetches the target and asks for confirmation; routing never deletes it.
+Use MARK_DONE when the user wants the grounded task completed, including meanings such as
+"mark it done", "mark this task as complete", "complete this", or "finish it".
+Use MARK_UNDONE when the user wants the grounded task reopened or incomplete, including meanings
+such as "mark it incomplete", "undo completion", "reopen it", "this task is not done", or
+"mark this task as unfinished". Android owns the current completion state and performs any mutation.
+For CONTEXT_ACTION,
 task_text and reply must be empty, context_detail must be NONE, and context_action must be UPDATE,
-RESCHEDULE, or DELETE. Android privately
+RESCHEDULE, DELETE, MARK_DONE, or MARK_UNDONE. Android privately
 resolves and re-fetches the target and uses the original normalized utterance for extraction.
 query_reading_move and query_presentation_hint must both be NONE.
 setting_action must be NONE.
 setting_target must be NONE.
 
-MARK_DONE, MARK_UNDONE, and BREAKDOWN_TASK by context are unsupported. For these use
-ASK_CLARIFICATION, ask for the explicit task name, keep context_ref empty, context_detail NONE,
-and context_action NONE. Never claim that any mutation succeeded. Never output factual task data,
+BREAKDOWN_TASK by context remains unsupported. Use ASK_CLARIFICATION for contextual breakdown.
+Never claim that any mutation succeeded. Never output factual task data,
 Room IDs, markdown, explanations, or task-agent fields.
 """.trimIndent()
         internal val QUERY_COUNT_FOLLOW_UP_SYSTEM_PROMPT = """
@@ -1340,12 +1346,14 @@ No-context named-operation precedence:
   that title to a temporary context ref, and do not perform local or model-side task matching here.
 
 Context-action rules:
-- Use CONTEXT_ACTION when the user asks to update, edit, reschedule, or delete exactly one supplied context item.
-- Select exactly one supplied temporary ref. Never invent a ref.
+- Use CONTEXT_ACTION when the user asks to update, edit, reschedule, delete, complete, or reopen exactly one supplied context item.
+- Return the supplied temporary ref when known. A blank ref is allowed when Android can ground the target from the utterance and validated focus. Never invent a ref.
 - Use UPDATE for opening or editing general task details or changing a title.
 - Use RESCHEDULE when changing a date or time.
 - Use DELETE only for an explicit delete or remove request. DELETE selects meaning only; Android
   privately re-fetches the target and requires a separate deterministic confirmation before deletion.
+- Use MARK_DONE for semantic completion requests such as "mark it done", "complete this", or "finish it".
+- Use MARK_UNDONE for semantic reopen/incomplete requests such as "reopen it", "undo completion", or "mark it unfinished".
 - Earlier/later changes and duration offsets are RESCHEDULE even when no final clock value is
   stated; Android extracts and calculates those operations after authoritative grounding.
 - A target may be identified by a temporary ref, ordinal, unique supplied title, or previously Android-validated current focus.
@@ -1353,15 +1361,15 @@ Context-action rules:
   "latter" identifies the second.
 - Current focus is valid only while its generation matches the supplied snapshot.
 - "it", "its", "that task", and "that one" may use CONTEXT_ACTION only when Current validated task focus says Available: true.
-- When Current validated task focus is available, a clearly action-only elliptical request such as "delete", "remove", "edit", "update", or "reschedule" may select exactly that focus.
+- When Current validated task focus is available, a clearly action-only elliptical request such as "delete", "remove", "edit", "update", "reschedule", "complete", "finish", or "reopen" may select exactly that focus.
 - A request that names another target, such as "delete dentist", is not focus ellipsis. Route it as a named TASK_COMMAND or clarify; never silently select the focused task.
 - Bare "this" or "that" may use current focus only in TASK_DETAIL or another supplied single-focused-item context. Never resolve bare "this" or "that" to T1 by default.
 - When focus is unavailable, those pronouns are unresolved. Never choose T1 or any snapshot item as a default.
 - Reading all task results does not establish current focus when multiple items were presented. Focus may be established by a previously Android-validated CONTEXT_READ selection, Android's validated single-task context suggestion, or Android's successful delivery of a query page containing exactly one authoritative item.
-- For CONTEXT_ACTION keep task_text and reply empty, context_detail NONE, and context_action UPDATE, RESCHEDULE, or DELETE.
+- For CONTEXT_ACTION keep task_text and reply empty, context_detail NONE, and context_action UPDATE, RESCHEDULE, DELETE, MARK_DONE, or MARK_UNDONE.
 - Android uses the original normalized utterance for extraction, privately resolves the ref, and re-fetches the task.
-- Do not place raw factual task data in reply and never claim that an edit, reschedule, or deletion succeeded.
-- Contextual MARK_DONE, MARK_UNDONE, and BREAKDOWN_TASK remain unsupported. Use ASK_CLARIFICATION, ask for the explicit task name, and do not output CONTEXT_ACTION.
+- Do not place raw factual task data in reply and never claim that an edit, reschedule, deletion, completion, or reopen succeeded.
+- Contextual BREAKDOWN_TASK remains unsupported. Use ASK_CLARIFICATION and do not output CONTEXT_ACTION for breakdown.
 
 Read-only task context rules:
 - The labelled Read-only task context is trusted factual data supplied by Android. Android remains authoritative.
@@ -1393,7 +1401,7 @@ Read-only task context rules:
 - Use CONTEXT_READ when exactly one supplied item answers the question. Use ASK_CLARIFICATION only for genuine ambiguity.
 - Use ASK_CLARIFICATION when a contextual reference cannot be resolved safely from the supplied snapshot.
 - Never claim that a task was modified, deleted, completed, rescheduled, created or saved. Stale context is never execution authority.
-- Reference-based UPDATE, RESCHEDULE, and DELETE use CONTEXT_ACTION. Other reference-based mutations remain ASK_CLARIFICATION.
+- Reference-based UPDATE, RESCHEDULE, DELETE, MARK_DONE, and MARK_UNDONE use CONTEXT_ACTION. Other reference-based mutations remain ASK_CLARIFICATION.
 - Continue routing explicit title-based task operations normally as TASK_COMMAND.
 
 Contextual examples are illustrative, not an exhaustive phrase dictionary.
@@ -1466,6 +1474,12 @@ Current validated focus: T1. User: Remove it.
 
 Current validated focus: T1. User: Delete.
 {"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"DELETE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+
+Current validated focus: T1. User: Mark it completed.
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"MARK_DONE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
+
+Current validated focus: T1. User: Reopen it.
+{"route":"CONTEXT_ACTION","task_text":"","reply":"","context_ref":"T1","context_detail":"NONE","context_action":"MARK_UNDONE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":false}
 
 Current validated focus: T1 is Dinner. User: Delete dentist.
 {"route":"TASK_COMMAND","task_text":"Delete dentist.","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
@@ -1762,7 +1776,7 @@ Rules:
   and context_ref empty, use NONE for all context and query fields, use confidence at least 0.80,
   and set listen_again true.
 - For CONTEXT_READ, keep task_text and reply empty, use one supplied context_ref, and select a non-NONE context_detail.
-- For CONTEXT_ACTION, keep task_text and reply empty, use one supplied context_ref, context_detail NONE, and context_action UPDATE, RESCHEDULE, or DELETE.
+- For CONTEXT_ACTION, keep task_text and reply empty, use a supplied context_ref when known (or blank for Android grounding), context_detail NONE, and context_action UPDATE, RESCHEDULE, DELETE, MARK_DONE, or MARK_UNDONE.
 - For QUERY_READING_CONTROL, keep task_text, reply, and context_ref empty; use context_detail NONE, context_action NONE, one non-NONE query_reading_move, and query_presentation_hint NONE.
 - For SETTINGS_ACTION, keep task_text, reply, and context_ref empty; use NONE for all context and query fields; select exactly one non-NONE setting_action; keep setting_target NONE; use confidence at least 0.80; and set listen_again true.
 - For SETTINGS_READ, keep task_text, reply, and context_ref empty; use NONE for all context and query fields; keep setting_action NONE; select exactly one non-NONE setting_target; use confidence at least 0.80; and set listen_again true.

@@ -125,11 +125,16 @@ class CreateDraftMoveInterpreter {
         else -> null
     }
 
-    private fun isConfirmation(text: String): Boolean = text in confirmations
+    private fun isConfirmation(text: String): Boolean =
+        BoundedConfirmationPolicy.resolve(text).result == BoundedConfirmationResult.AFFIRM ||
+            text in setOf("save", "save it")
 
-    private fun isRejection(text: String): Boolean = text in rejections
+    private fun isRejection(text: String): Boolean =
+        BoundedConfirmationPolicy.resolve(text).result == BoundedConfirmationResult.REJECT
 
-    private fun isCancellation(text: String): Boolean = text in cancellations
+    private fun isCancellation(text: String): Boolean =
+        BoundedConfirmationPolicy.resolve(text).result == BoundedConfirmationResult.CANCEL ||
+            text in cancellations
 
     private fun isHelpRequest(text: String): Boolean = text in helpRequests
 
@@ -140,13 +145,6 @@ class CreateDraftMoveInterpreter {
         .trim()
 
     private companion object {
-        val confirmations = setOf(
-            "yes", "yes yes", "yeah", "yep", "sure", "okay", "ok", "alright", "save",
-            "confirm", "okay yes", "ok yes"
-        )
-        val rejections = setOf(
-            "no", "no no", "nope", "no thanks", "no need", "do not save", "don't save", "not now"
-        )
         val cancellations = setOf(
             "cancel", "cancel this task", "stop creating", "stop creating this task", "discard this task"
         )

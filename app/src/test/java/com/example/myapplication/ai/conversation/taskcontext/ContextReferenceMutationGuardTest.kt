@@ -31,6 +31,8 @@ class ContextReferenceMutationGuardTest {
         assertTrue(shouldBlock("move that task to Friday"))
         assertTrue(shouldBlock("move this one to Friday"))
         assertTrue(shouldBlock("delete it"))
+        assertTrue(shouldBlock("reopen it"))
+        assertTrue(shouldBlock("undo completion for this task"))
     }
 
     @Test

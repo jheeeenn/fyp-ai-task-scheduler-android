@@ -132,6 +132,18 @@ class ConversationContextActionRepairTest {
                 focus
             )
         )
+        listOf("mark it done", "reopen it", "this task is not done").forEach { utterance ->
+            assertTrue(
+                utterance,
+                ContextActionRepairPolicy.shouldAttempt(
+                    utterance,
+                    primary,
+                    snapshot,
+                    true,
+                    focus
+                )
+            )
+        }
         assertFalse(
             ContextActionRepairPolicy.shouldAttempt(
                 "delete this task",
@@ -184,7 +196,10 @@ class ConversationContextActionRepairTest {
         assertEquals(setOf("CONTEXT_ACTION", "ASK_CLARIFICATION"), routes)
         assertEquals(setOf("NONE"), moveValues)
         assertEquals(setOf("NONE"), hintValues)
-        assertEquals(setOf("NONE", "UPDATE", "RESCHEDULE", "DELETE"), actionValues)
+        assertEquals(
+            setOf("NONE", "UPDATE", "RESCHEDULE", "DELETE", "MARK_DONE", "MARK_UNDONE"),
+            actionValues
+        )
         val routingActions = AgentResponseSchemas.conversationDecisionResponseFormat()
             .getJSONObject("json_schema")
             .getJSONObject("schema")
@@ -192,7 +207,10 @@ class ConversationContextActionRepairTest {
             .getJSONObject("context_action")
             .getJSONArray("enum")
             .toStrings()
-        assertEquals(setOf("NONE", "UPDATE", "RESCHEDULE", "DELETE"), routingActions)
+        assertEquals(
+            setOf("NONE", "UPDATE", "RESCHEDULE", "DELETE", "MARK_DONE", "MARK_UNDONE"),
+            routingActions
+        )
         assertEquals(false, schema.getBoolean("additionalProperties"))
     }
 

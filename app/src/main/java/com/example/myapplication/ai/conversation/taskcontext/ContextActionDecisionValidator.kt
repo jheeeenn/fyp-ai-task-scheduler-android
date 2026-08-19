@@ -50,7 +50,9 @@ object ContextActionDecisionValidator {
         }
         if (decision.contextAction != ConversationContextAction.UPDATE &&
             decision.contextAction != ConversationContextAction.RESCHEDULE &&
-            decision.contextAction != ConversationContextAction.DELETE
+            decision.contextAction != ConversationContextAction.DELETE &&
+            decision.contextAction != ConversationContextAction.MARK_DONE &&
+            decision.contextAction != ConversationContextAction.MARK_UNDONE
         ) {
             return ValidatedContextAction(ContextActionValidationResult.INVALID_ACTION)
         }

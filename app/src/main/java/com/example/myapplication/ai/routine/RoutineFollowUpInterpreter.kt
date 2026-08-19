@@ -1,5 +1,8 @@
 package com.example.myapplication.ai.routine
 
+import com.example.myapplication.voice.BoundedConfirmationPolicy
+import com.example.myapplication.voice.BoundedConfirmationResult
+
 sealed class RoutineFollowUpMove {
     data object Confirm : RoutineFollowUpMove()
     data object Reject : RoutineFollowUpMove()
@@ -19,6 +22,9 @@ object RoutineFollowUpInterpreter {
     fun interpret(normalizedText: String): RoutineFollowUpMove {
         val normalized = normalizedText.trim().lowercase()
         val tokens = normalized.split(Regex("""\s+"""))
+        if (tokens.any { it == "yes" } && tokens.any { it == "no" }) {
+            return RoutineFollowUpMove.Unknown
+        }
         val text = if (
             tokens.size >= 2 &&
             tokens.all { it == tokens.first() } &&
@@ -27,6 +33,12 @@ object RoutineFollowUpInterpreter {
             tokens.first()
         } else {
             normalized
+        }
+        when (BoundedConfirmationPolicy.resolve(text).result) {
+            BoundedConfirmationResult.AFFIRM -> return RoutineFollowUpMove.Confirm
+            BoundedConfirmationResult.REJECT -> return RoutineFollowUpMove.Reject
+            BoundedConfirmationResult.CANCEL -> return RoutineFollowUpMove.Cancel
+            BoundedConfirmationResult.UNKNOWN -> Unit
         }
         if (text in CONFIRMATIONS) return RoutineFollowUpMove.Confirm
         if (text in REJECTIONS) return RoutineFollowUpMove.Reject

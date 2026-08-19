@@ -1,5 +1,7 @@
 package com.example.myapplication.ai.breakdown
 
+import com.example.myapplication.voice.BoundedConfirmationPolicy
+import com.example.myapplication.voice.BoundedConfirmationResult
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONException
@@ -19,14 +21,18 @@ data class BreakdownFollowUpDecision(
 )
 
 object BreakdownControlInterpreter {
-    fun interpret(userText: String): BreakdownFollowUpMove = when (
-        userText.trim().lowercase()
-    ) {
-        "yes", "yes yes", "yeah", "yep", "sure", "confirm" ->
-            BreakdownFollowUpMove.CONFIRM
-        "no", "no thanks", "reject" -> BreakdownFollowUpMove.REJECT
-        "cancel", "stop", "never mind", "nevermind" -> BreakdownFollowUpMove.CANCEL
-        else -> BreakdownFollowUpMove.UNKNOWN
+    fun interpret(userText: String): BreakdownFollowUpMove {
+        val normalized = userText.trim().lowercase()
+        return when (BoundedConfirmationPolicy.resolve(normalized).result) {
+            BoundedConfirmationResult.AFFIRM -> BreakdownFollowUpMove.CONFIRM
+            BoundedConfirmationResult.REJECT -> BreakdownFollowUpMove.REJECT
+            BoundedConfirmationResult.CANCEL -> BreakdownFollowUpMove.CANCEL
+            BoundedConfirmationResult.UNKNOWN -> if (normalized == "reject") {
+                BreakdownFollowUpMove.REJECT
+            } else {
+                BreakdownFollowUpMove.UNKNOWN
+            }
+        }
     }
 }
 

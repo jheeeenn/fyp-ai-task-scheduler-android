@@ -157,7 +157,8 @@ class TaskDetailVoiceInteractionSourceContractTest {
 
         assertTrue(deleteFollowUp.contains("ConversationIntent.CONFIRM_YES"))
         assertTrue(deleteFollowUp.contains("confirmPendingDelete()"))
-        assertTrue(decline.contains("ExecutionOutcome.CANCELLED"))
+        assertTrue(decline.contains("cancelPendingDeleteConfirmation()"))
+        assertTrue(home.substringAfter("private fun cancelPendingDeleteConfirmation").contains("ExecutionOutcome.CANCELLED"))
         assertFalse(decline.contains("deleteTaskAndSubtasks"))
         assertFalse(decline.contains("cancelReminder"))
     }
@@ -174,8 +175,11 @@ class TaskDetailVoiceInteractionSourceContractTest {
         assertFalse(executor.contains("homeFollowUpContext ="))
         assertFalse(executor.contains("deleteTaskAndSubtasks"))
         assertTrue(deleteFollowUp.contains("confirmPendingDelete()"))
-        assertTrue(deleteFollowUp.contains("clearPendingDeleteState()"))
-        assertTrue(deleteFollowUp.contains("ExecutionOutcome.CANCELLED"))
+        assertTrue(deleteFollowUp.contains("cancelPendingDeleteConfirmation()"))
+        val cancel = home.substringAfter("private fun cancelPendingDeleteConfirmation")
+            .substringBefore("private fun handleContextItemRestatement")
+        assertTrue(cancel.contains("clearPendingDeleteState()"))
+        assertTrue(cancel.contains("ExecutionOutcome.CANCELLED"))
     }
 
     @Test

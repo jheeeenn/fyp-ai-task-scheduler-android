@@ -401,22 +401,24 @@ object ConversationDecisionContractValidator {
                 }
             }
             ConversationRoute.CONTEXT_ACTION -> {
-                if (!TEMPORARY_REF.matches(decision.contextRef)) {
+                if (decision.contextRef.isNotBlank() && !TEMPORARY_REF.matches(decision.contextRef)) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_REF,
-                        "CONTEXT_ACTION requires a temporary context_ref",
+                        "CONTEXT_ACTION context_ref must be blank or a temporary ref",
                         decision.route
                     )
                 }
                 if (decision.contextAction !in setOf(
                         ConversationContextAction.UPDATE,
                         ConversationContextAction.RESCHEDULE,
-                        ConversationContextAction.DELETE
+                        ConversationContextAction.DELETE,
+                        ConversationContextAction.MARK_DONE,
+                        ConversationContextAction.MARK_UNDONE
                     )
                 ) {
                     fail(
                         ConversationDecisionFailureCode.INVALID_CONTEXT_ACTION,
-                        "CONTEXT_ACTION requires UPDATE, RESCHEDULE, or DELETE context_action",
+                        "CONTEXT_ACTION requires UPDATE, RESCHEDULE, DELETE, MARK_DONE, or MARK_UNDONE context_action",
                         decision.route
                     )
                 }

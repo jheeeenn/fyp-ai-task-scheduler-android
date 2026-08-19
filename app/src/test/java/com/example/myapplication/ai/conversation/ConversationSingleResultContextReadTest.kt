@@ -158,20 +158,18 @@ class ConversationSingleResultContextReadTest {
     }
 
     @Test
-    fun invalidContextRefFailureMetadataDistinguishesReadFromAction() {
+    fun contextReadRequiresRefWhileContextActionMayAwaitAndroidGrounding() {
         val parser = ConversationDecisionParser()
 
         val readFailure = runCatching {
             parser.parse(decision(route = "CONTEXT_READ", contextDetail = "DATE"))
         }.exceptionOrNull() as ConversationSchemaException
-        val actionFailure = runCatching {
-            parser.parse(decision(route = "CONTEXT_ACTION", contextAction = "DELETE"))
-        }.exceptionOrNull() as ConversationSchemaException
+        val action = parser.parse(decision(route = "CONTEXT_ACTION", contextAction = "DELETE"))
 
         assertEquals(ConversationDecisionFailureCode.INVALID_CONTEXT_REF, readFailure.decisionFailureCode)
         assertEquals(ConversationRoute.CONTEXT_READ, readFailure.failedRoute)
-        assertEquals(ConversationDecisionFailureCode.INVALID_CONTEXT_REF, actionFailure.decisionFailureCode)
-        assertEquals(ConversationRoute.CONTEXT_ACTION, actionFailure.failedRoute)
+        assertEquals(ConversationRoute.CONTEXT_ACTION, action.route)
+        assertEquals("", action.contextRef)
     }
 
     @Test

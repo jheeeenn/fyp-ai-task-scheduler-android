@@ -17,6 +17,7 @@ import com.example.myapplication.voice.PendingTaskState
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateDraftMoveInterpreter
+import com.example.myapplication.voice.CreateDraftResumePolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -246,8 +247,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             speak = ::speakControlIdentification,
             activate = {
                 if (dialogState == CreateTaskDialogState.IDLE) {
-                    dialogState = CreateTaskDialogState.WAITING_FOR_TITLE
-                    promptHelper.askTitle()
+                    resumeCreateAssistantFromDraft()
                 }
                 assistantSession.startSession()
             }
@@ -263,6 +263,41 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     } // end of onCreate()
 
     //function definitions
+    private fun resumeCreateAssistantFromDraft() {
+        val nativeTitle = etTaskTitle.text.toString().trim()
+        val title = nativeTitle.ifBlank { pendingTaskState.title.orEmpty().trim() }
+        if (title.isNotBlank()) {
+            pendingTaskState.title = title
+            if (nativeTitle.isBlank()) etTaskTitle.setText(title)
+        }
+        if (!selectedDate.isNullOrBlank() && pendingTaskState.dateText.isNullOrBlank()) {
+            pendingTaskState.dateText = selectedDate
+        }
+        if (!selectedTime.isNullOrBlank() && pendingTaskState.timeText.isNullOrBlank()) {
+            pendingTaskState.timeText = selectedTime
+        }
+
+        val hasTitle = title.isNotBlank()
+        val hasDate = !selectedDate.isNullOrBlank()
+        val hasTime = !selectedTime.isNullOrBlank()
+        dialogState = CreateDraftResumePolicy.nextState(hasTitle, hasDate, hasTime)
+        pendingReplacementField = null
+        Log.d(
+            "CREATE_RESUME",
+            "hasTitle=$hasTitle hasDate=$hasDate hasTime=$hasTime next=${dialogState.name}"
+        )
+        when (dialogState) {
+            CreateTaskDialogState.WAITING_FOR_TITLE -> promptHelper.askTitle()
+            CreateTaskDialogState.WAITING_FOR_DATE -> promptHelper.askDate()
+            CreateTaskDialogState.WAITING_FOR_TIME -> promptHelper.askTime()
+            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> {
+                assistantSession.expectConfirmation()
+                promptHelper.askSaveTask(buildTaskSummary())
+            }
+            else -> Unit
+        }
+    }
+
     private fun applyIncomingPrefill() {
         if (hasConsumedPrefill) return
 

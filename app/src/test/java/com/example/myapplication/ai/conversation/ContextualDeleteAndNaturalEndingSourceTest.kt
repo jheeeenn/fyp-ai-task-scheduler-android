@@ -65,8 +65,11 @@ class ContextualDeleteAndNaturalEndingSourceTest {
         assertTrue(detail.contains("HomeAssistantEntryMode.TASK_DETAIL_DELETE_CONFIRMATION"))
         assertFalse(detail.contains("dao.deleteTaskAndSubtasks"))
         assertTrue(deleteFollowUp.contains("ConversationIntent.CONFIRM_NO"))
-        assertTrue(deleteFollowUp.contains("clearPendingDeleteState()"))
-        assertTrue(deleteFollowUp.contains("ExecutionOutcome.CANCELLED"))
+        assertTrue(deleteFollowUp.contains("cancelPendingDeleteConfirmation()"))
+        val cancel = home.substringAfter("private fun cancelPendingDeleteConfirmation")
+            .substringBefore("private fun handleContextItemRestatement")
+        assertTrue(cancel.contains("clearPendingDeleteState()"))
+        assertTrue(cancel.contains("ExecutionOutcome.CANCELLED"))
     }
 
     @Test

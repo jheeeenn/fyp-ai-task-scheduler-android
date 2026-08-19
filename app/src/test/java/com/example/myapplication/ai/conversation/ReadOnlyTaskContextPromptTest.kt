@@ -41,7 +41,7 @@ class ReadOnlyTaskContextPromptTest {
         assertTrue(prompt.contains("Use CONTEXT_READ for a read-only question"))
         assertTrue(prompt.contains("You do not write factual task replies"))
         assertTrue(prompt.contains("Android will verify the ref"))
-        assertTrue(prompt.contains("Reference-based UPDATE, RESCHEDULE, and DELETE use CONTEXT_ACTION"))
+        assertTrue(prompt.contains("Reference-based UPDATE, RESCHEDULE, DELETE, MARK_DONE, and MARK_UNDONE use CONTEXT_ACTION"))
         assertTrue(prompt.contains("Other reference-based mutations remain ASK_CLARIFICATION"))
         assertTrue(prompt.contains("Continue routing explicit title-based task operations normally as TASK_COMMAND"))
         assertTrue(prompt.contains("Never claim that a task was modified, deleted, completed, rescheduled, created or saved"))

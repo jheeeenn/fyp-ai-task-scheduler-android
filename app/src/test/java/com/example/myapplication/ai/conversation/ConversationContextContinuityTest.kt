@@ -134,6 +134,35 @@ class ConversationContextContinuityTest {
     }
 
     @Test
+    fun boundedCompletionEllipsisUsesOnlyCurrentFocus() {
+        val snapshot = snapshot("T1")
+        val focus = focus("T1", snapshot.generation)
+        val failedPrimary = ConversationDecision(
+            route = ConversationRoute.TASK_COMMAND,
+            source = "conversation_agent"
+        )
+
+        mapOf(
+            "complete" to ConversationContextAction.MARK_DONE,
+            "mark done" to ConversationContextAction.MARK_DONE,
+            "finish" to ConversationContextAction.MARK_DONE,
+            "reopen" to ConversationContextAction.MARK_UNDONE,
+            "undo completion" to ConversationContextAction.MARK_UNDONE,
+            "mark undone" to ConversationContextAction.MARK_UNDONE
+        ).forEach { (utterance, expectedAction) ->
+            val decision = ContextFocusActionEllipsisPolicy.resolve(
+                normalizedText = utterance,
+                currentDecision = failedPrimary,
+                capturedSnapshot = snapshot,
+                currentGeneration = snapshot.generation,
+                currentFocus = focus
+            )
+            assertEquals(expectedAction, decision?.contextAction)
+            assertEquals("T1", decision?.contextRef)
+        }
+    }
+
+    @Test
     fun oldFocusCannotCrossContextGeneration() {
         val oldSnapshot = snapshot("T1", generation = 8)
         val newSnapshot = snapshot("T1", generation = 9)

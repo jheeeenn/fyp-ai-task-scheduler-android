@@ -12,6 +12,51 @@ import org.junit.Test
 
 class ContextActionReferenceGroundingValidatorTest {
     @Test
+    fun taskDetailCompletionAcceptsBlankModelRefFromCurrentFocus() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Software Revision"))
+        )
+        val detailFocus = focus("T1")
+        val result = validateAgainst(
+            text = "mark it done",
+            selectedRef = "",
+            capturedSnapshot = detailSnapshot,
+            focus = detailFocus
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS, result.result)
+        assertEquals("T1", result.ref)
+    }
+
+    @Test
+    fun taskDetailCompletionStillRejectsConflictingModelRef() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Software Revision"), item("T2", "Other"))
+        )
+        val result = validateAgainst(
+            text = "mark it done",
+            selectedRef = "T2",
+            capturedSnapshot = detailSnapshot,
+            focus = focus("T1")
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH, result.result)
+    }
+
+    @Test
+    fun ordinalAndUniqueTitleMayCanonicalizeBlankModelRef() {
+        val ordinal = validate("mark the second one done", "")
+        val title = validate("mark Software Revision done", "")
+
+        assertEquals(ContextActionReferenceGroundingResult.VALID_ORDINAL, ordinal.result)
+        assertEquals("T2", ordinal.ref)
+        assertEquals(ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE, title.result)
+        assertEquals("T2", title.ref)
+    }
+
+    @Test
     fun pronounWithoutFocusWinsOverDestinationTitleMatch() {
         val destinationTitleSnapshot = snapshot.copy(
             items = listOf(item("T1", "Friday"), item("T2", "Software Revision"))

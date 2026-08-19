@@ -171,15 +171,16 @@ class HomeActivityTaskContextSourceTest {
         val open = branch.indexOf("openContextActionEditScreen(")
 
         assertTrue(validation >= 0)
-        assertTrue(validation < grounding)
-        assertTrue(grounding < resolve)
+        assertTrue(grounding >= 0)
+        assertTrue(grounding < validation)
+        assertTrue(validation < resolve)
         assertTrue(resolve < firstFetch)
         assertTrue(firstFetch < extraction)
         assertTrue(extraction < secondFetch)
         assertTrue(secondFetch < open)
         assertTrue(branch.contains("currentGeneration() != capturedGeneration"))
         assertTrue(branch.contains("reResolvedTaskId != privateTaskId"))
-        assertTrue(branch.countOccurrences("readOnlyTaskContextStore.resolveRef(") == 2)
+        assertTrue(branch.countOccurrences("readOnlyTaskContextStore.resolveRef(") >= 2)
         assertTrue(branch.contains("readOnlyTaskContextStore.matchesResolvedTask("))
         assertTrue(branch.contains("TaskMatcher").not())
         assertTrue(branch.contains("findTaskMatchResult").not())
@@ -259,7 +260,7 @@ class HomeActivityTaskContextSourceTest {
             assertTrue(log.contains("initiallyFetchedTask").not())
             assertTrue(log.contains("authoritativeTask").not())
         }
-        assertTrue(homeLog.contains("ref="))
+        assertTrue(homeLog.contains("groundedRef="))
         assertTrue(homeLog.contains("action="))
         assertTrue(homeLog.contains("capturedGeneration="))
         assertTrue(homeLog.contains("validation="))
@@ -287,8 +288,9 @@ class HomeActivityTaskContextSourceTest {
         val grounding = repairedContextAction.indexOf("ContextActionReferenceGroundingValidator.validate(")
         val acceptance = repairedContextAction.indexOf("CONTEXT_ACTION_REPAIR_ACCEPTED")
         assertTrue(structural >= 0)
-        assertTrue(structural < grounding)
-        assertTrue(grounding < acceptance)
+        assertTrue(grounding >= 0)
+        assertTrue(grounding < structural)
+        assertTrue(structural < acceptance)
     }
 
     @Test
