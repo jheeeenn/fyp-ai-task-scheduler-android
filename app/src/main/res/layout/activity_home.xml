@@ -35,7 +35,7 @@
                 android:id="@+id/greetingText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:accessibilityHeading="true"
                 android:text="@string/good_afternoon"
                 android:textColor="?attr/appColorHomeTextPrimary"
