@@ -6,8 +6,11 @@
     android:id="@+id/taskListRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/appColorBackgroundPrimary"
-    android:padding="16dp">
+    android:background="?attr/appColorTaskListBackground"
+    android:paddingStart="16dp"
+    android:paddingTop="16dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="16dp">
 
     <TextView
         android:id="@+id/titleText"
@@ -15,7 +18,7 @@
         android:layout_height="wrap_content"
         android:accessibilityHeading="true"
         android:text="@string/scheduled_tasks_title"
-        android:textColor="?attr/appColorTextPrimaryDark"
+        android:textColor="?attr/appColorTaskListTextPrimary"
         android:textSize="36sp"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
@@ -27,12 +30,12 @@
         android:id="@+id/taskRecyclerView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="14dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
         android:clipToPadding="false"
         android:paddingHorizontal="2dp"
         android:paddingTop="2dp"
-        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        app:layout_constraintBottom_toTopOf="@id/taskListBottomDock"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/titleText" />
@@ -44,7 +47,7 @@
         android:layout_marginHorizontal="24dp"
         android:gravity="center"
         android:text="@string/no_scheduled_tasks"
-        android:textColor="?attr/appColorTextSecondaryDark"
+        android:textColor="?attr/appColorTaskListTextSecondary"
         android:textSize="22sp"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@id/taskRecyclerView"
@@ -52,42 +55,53 @@
         app:layout_constraintStart_toStartOf="@id/taskRecyclerView"
         app:layout_constraintTop_toTopOf="@id/taskRecyclerView" />
 
-    <Button
-        android:id="@+id/btnGoHome"
+    <LinearLayout
+        android:id="@+id/taskListBottomDock"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="@drawable/bg_anchor_home_button"
-        android:backgroundTint="@null"
-        android:minHeight="66dp"
-        android:paddingVertical="12dp"
-        android:text="@string/home"
-        android:textAllCaps="false"
-        android:textColor="?attr/appColorTextPrimaryDark"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
-        app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <Button
-        android:id="@+id/btnTalkAssistant"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_anchor_assistant_button"
-        android:backgroundTint="@null"
-        android:hapticFeedbackEnabled="true"
-        android:minHeight="104dp"
-        android:paddingVertical="16dp"
-        android:text="@string/talk_to_assistant"
-        android:textAllCaps="false"
-        android:textColor="@color/white"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
+        android:layout_height="108dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        tools:ignore="ButtonStyle">
+
+        <Button
+            android:id="@+id/btnGoHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_task_list_home_action"
+            android:backgroundTint="@null"
+            android:hapticFeedbackEnabled="true"
+            android:minHeight="108dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="16dp"
+            android:text="@string/home"
+            android:textAllCaps="false"
+            android:textColor="?attr/appColorTaskListTextPrimary"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
+
+        <Button
+            android:id="@+id/btnTalkAssistant"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="14dp"
+            android:layout_weight="2"
+            android:background="@drawable/bg_task_list_assistant_action"
+            android:backgroundTint="@null"
+            android:hapticFeedbackEnabled="true"
+            android:minHeight="108dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="16dp"
+            android:text="@string/home_talk_to_assistant"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="23sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

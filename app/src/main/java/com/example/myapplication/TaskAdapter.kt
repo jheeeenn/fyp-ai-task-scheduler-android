@@ -4,11 +4,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.DiffUtil
+import com.example.myapplication.accessibility.resolveThemeColor
 import com.example.myapplication.data.TaskEntity
 import java.util.Date
 
@@ -22,6 +22,7 @@ class TaskAdapter(
     private var subtasksByParentId: Map<Long, List<TaskEntity>> = emptyMap()
 
     class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val statusSignifier: View = itemView.findViewById(R.id.taskStatusSignifier)
         val taskText: TextView = itemView.findViewById(R.id.taskText)
         val taskStatusText: TextView = itemView.findViewById(R.id.taskStatusText)
     }
@@ -110,17 +111,16 @@ class TaskAdapter(
         holder: TaskViewHolder,
         visualStatus: TaskVisualStatus
     ) {
-        val (background, statusColor) = when (visualStatus) {
-            TaskVisualStatus.OVERDUE -> R.drawable.bg_task_status_overdue to R.color.task_status_overdue_text
-            TaskVisualStatus.DUE_TODAY -> R.drawable.bg_task_status_today to R.color.task_status_today_text
-            TaskVisualStatus.UPCOMING -> R.drawable.bg_task_status_upcoming to R.color.task_status_upcoming_text
-            TaskVisualStatus.COMPLETED -> R.drawable.bg_task_status_completed to R.color.task_status_completed_text
-            TaskVisualStatus.UNSCHEDULED -> R.drawable.bg_task_status_unscheduled to R.color.task_status_unscheduled_text
+        val statusColorAttribute = when (visualStatus) {
+            TaskVisualStatus.OVERDUE -> R.attr.appColorTaskListStatusOverdue
+            TaskVisualStatus.DUE_TODAY -> R.attr.appColorTaskListStatusDueToday
+            TaskVisualStatus.UPCOMING -> R.attr.appColorTaskListStatusUpcoming
+            TaskVisualStatus.COMPLETED -> R.attr.appColorTaskListStatusCompleted
+            TaskVisualStatus.UNSCHEDULED -> R.attr.appColorTaskListStatusUnscheduled
         }
-        holder.itemView.setBackgroundResource(background)
-        holder.taskStatusText.setTextColor(
-            ContextCompat.getColor(holder.itemView.context, statusColor)
-        )
+        val statusColor = holder.itemView.context.resolveThemeColor(statusColorAttribute)
+        holder.statusSignifier.setBackgroundColor(statusColor)
+        holder.taskStatusText.setTextColor(statusColor)
     }
 
     private fun currentCardPresentation(holder: TaskViewHolder): TaskListCardPresentation? {

@@ -20,7 +20,12 @@ class TaskListAndDetailSourceContractTest {
         assertTrue(layout.contains("@+id/emptyTaskText"))
         assertTrue(layout.contains("@+id/btnGoHome"))
         assertTrue(layout.contains("@+id/btnTalkAssistant"))
-        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnGoHome\""))
+        assertTrue(layout.contains("@+id/taskListBottomDock"))
+        assertTrue(
+            layout.contains(
+                "app:layout_constraintBottom_toTopOf=\"@id/taskListBottomDock\""
+            )
+        )
     }
 
     @Test
@@ -29,7 +34,9 @@ class TaskListAndDetailSourceContractTest {
 
         assertTrue(item.contains("@+id/taskText"))
         assertTrue(item.contains("@+id/taskStatusText"))
-        assertTrue(item.contains("android:minHeight=\"96dp\""))
+        assertTrue(item.contains("@+id/taskStatusSignifier"))
+        assertTrue(item.contains("android:minHeight=\"112dp\""))
+        assertTrue(item.contains("android:layout_marginBottom=\"16dp\""))
         listOf(
             "taskDateText",
             "taskTimeText",
@@ -138,14 +145,44 @@ class TaskListAndDetailSourceContractTest {
     }
 
     @Test
-    fun statusTreatmentsProvideFiveSoftVisualCategories() {
-        val colors = File("src/main/res/values/colors.xml").readText()
+    fun listStatusTreatmentsUseFiveExplicitSignifierCategories() {
+        val item = layoutRoot.resolve("item_task.xml").readText()
         val adapter = mainRoot.resolve("TaskAdapter.kt").readText()
 
-        listOf("overdue", "today", "upcoming", "completed", "unscheduled").forEach { state ->
-            assertTrue(colors.contains("task_status_${state}_surface"))
-            assertTrue(colors.contains("task_status_${state}_text"))
-            assertTrue(adapter.contains("bg_task_status_$state"))
+        listOf("Overdue", "DueToday", "Upcoming", "Completed", "Unscheduled")
+            .forEach { state ->
+                assertTrue(adapter.contains("appColorTaskListStatus$state"))
+            }
+        assertTrue(item.contains("@drawable/bg_task_list_card"))
+        assertTrue(item.contains("@+id/taskStatusSignifier"))
+        assertTrue(adapter.contains("holder.statusSignifier.setBackgroundColor(statusColor)"))
+        assertFalse(adapter.contains("holder.itemView.setBackgroundResource"))
+    }
+
+    @Test
+    fun sharedListDockIsHorizontalAndAssistantHasTheLargerBlueAction() {
+        val layout = layoutRoot.resolve("activity_task_list.xml").readText()
+        val dock = layout.substringAfter("android:id=\"@+id/taskListBottomDock\"")
+            .substringBefore("</LinearLayout>")
+        val home = dock.substringAfter("android:id=\"@+id/btnGoHome\"")
+            .substringBefore("/>")
+        val assistant = dock.substringAfter("android:id=\"@+id/btnTalkAssistant\"")
+            .substringBefore("/>")
+
+        assertTrue(dock.contains("android:orientation=\"horizontal\""))
+        assertTrue(dock.contains("android:layout_height=\"108dp\""))
+        assertTrue(home.contains("android:layout_weight=\"1\""))
+        assertTrue(assistant.contains("android:layout_weight=\"2\""))
+        assertTrue(assistant.contains("android:layout_marginStart=\"14dp\""))
+        assertTrue(assistant.contains("@drawable/bg_task_list_assistant_action"))
+        assertTrue(home.contains("@drawable/bg_task_list_home_action"))
+    }
+
+    @Test
+    fun bothTaskListActivitiesInflateTheSameSharedLayout() {
+        listOf("MainActivity.kt", "TodayTasksActivity.kt").forEach { fileName ->
+            val activity = mainRoot.resolve(fileName).readText()
+            assertTrue(activity.contains("setContentView(R.layout.activity_task_list)"))
         }
     }
 

@@ -44,6 +44,19 @@
         <item name="appColorHomeStatusUpcoming">@color/home_status_upcoming</item>
         <item name="appColorHomeStatusCompleted">@color/home_status_completed</item>
         <item name="appColorHomeStatusUnscheduled">@color/home_status_unscheduled</item>
+        <item name="appColorTaskListBackground">@color/task_list_background</item>
+        <item name="appColorTaskListCardSurface">@color/task_list_card_surface</item>
+        <item name="appColorTaskListHomeAction">@color/task_list_home_action</item>
+        <item name="appColorTaskListTextPrimary">@color/task_list_text_primary</item>
+        <item name="appColorTaskListTextSecondary">@color/task_list_text_secondary</item>
+        <item name="appColorTaskListOutline">@color/task_list_outline</item>
+        <item name="appColorTaskListStatusOverdue">@color/task_list_status_overdue</item>
+        <item name="appColorTaskListStatusDueToday">@color/task_list_status_due_today</item>
+        <item name="appColorTaskListStatusUpcoming">@color/task_list_status_upcoming</item>
+        <item name="appColorTaskListStatusCompleted">@color/task_list_status_completed</item>
+        <item name="appColorTaskListStatusUnscheduled">@color/task_list_status_unscheduled</item>
+        <item name="appColorAssistantPrimaryAction">@color/assistant_primary_action</item>
+        <item name="appColorAssistantActionOutline">@color/assistant_action_outline</item>
     </style>
 
     <style name="Theme.MyApplication" parent="Base.Theme.MyApplication" />
@@ -94,5 +107,18 @@
         <item name="appColorHomeStatusUpcoming">@color/hc_home_status_upcoming</item>
         <item name="appColorHomeStatusCompleted">@color/hc_home_status_completed</item>
         <item name="appColorHomeStatusUnscheduled">@color/hc_home_status_unscheduled</item>
+        <item name="appColorTaskListBackground">@color/hc_task_list_background</item>
+        <item name="appColorTaskListCardSurface">@color/hc_task_list_card_surface</item>
+        <item name="appColorTaskListHomeAction">@color/hc_task_list_home_action</item>
+        <item name="appColorTaskListTextPrimary">@color/hc_task_list_text_primary</item>
+        <item name="appColorTaskListTextSecondary">@color/hc_task_list_text_secondary</item>
+        <item name="appColorTaskListOutline">@color/hc_task_list_outline</item>
+        <item name="appColorTaskListStatusOverdue">@color/hc_task_list_status_overdue</item>
+        <item name="appColorTaskListStatusDueToday">@color/hc_task_list_status_due_today</item>
+        <item name="appColorTaskListStatusUpcoming">@color/hc_task_list_status_upcoming</item>
+        <item name="appColorTaskListStatusCompleted">@color/hc_task_list_status_completed</item>
+        <item name="appColorTaskListStatusUnscheduled">@color/hc_task_list_status_unscheduled</item>
+        <item name="appColorAssistantPrimaryAction">@color/hc_assistant_primary_action</item>
+        <item name="appColorAssistantActionOutline">@color/hc_assistant_action_outline</item>
     </style>
 </resources>

@@ -118,4 +118,33 @@
     <color name="hc_home_status_upcoming">#FFAFC9E2</color>
     <color name="hc_home_status_completed">#FF71D493</color>
     <color name="hc_home_status_unscheduled">#FFE1E1E1</color>
+
+    <!-- Shared Today/Scheduled task-list palette. All surfaces are opaque. -->
+    <color name="task_list_background">#FF121416</color>
+    <color name="task_list_card_surface">#FF1C1F22</color>
+    <color name="task_list_home_action">#FF34383C</color>
+    <color name="task_list_text_primary">#FFF8F9FA</color>
+    <color name="task_list_text_secondary">#FFD3D7DA</color>
+    <color name="task_list_outline">#FF87919A</color>
+    <color name="task_list_status_overdue">#FFE28B84</color>
+    <color name="task_list_status_due_today">#FFE2B85F</color>
+    <color name="task_list_status_upcoming">#FF9CB5CC</color>
+    <color name="task_list_status_completed">#FF86B894</color>
+    <color name="task_list_status_unscheduled">#FFB8BEC2</color>
+    <color name="assistant_primary_action">#FF0B67E8</color>
+    <color name="assistant_action_outline">#FF073A85</color>
+
+    <color name="hc_task_list_background">#FF000000</color>
+    <color name="hc_task_list_card_surface">#FF101010</color>
+    <color name="hc_task_list_home_action">#FF1B1B1B</color>
+    <color name="hc_task_list_text_primary">#FFFFFFFF</color>
+    <color name="hc_task_list_text_secondary">#FFF2F2F2</color>
+    <color name="hc_task_list_outline">#FFFFFFFF</color>
+    <color name="hc_task_list_status_overdue">#FFFF7770</color>
+    <color name="hc_task_list_status_due_today">#FFFFD25A</color>
+    <color name="hc_task_list_status_upcoming">#FFAFC9E2</color>
+    <color name="hc_task_list_status_completed">#FF71D493</color>
+    <color name="hc_task_list_status_unscheduled">#FFE1E1E1</color>
+    <color name="hc_assistant_primary_action">#FF0068FF</color>
+    <color name="hc_assistant_action_outline">#FFFFFFFF</color>
 </resources>
