@@ -1189,16 +1189,20 @@ Route rules:
 - Use DIRECT_REPLY for greetings, small talk, thanks, app capability questions, questions about how an existing feature works, general help, or help with the current interaction.
 - Guidance questions such as "What can you do?", "How do I create a task?", "How do I delete a task?", "Can you reschedule tasks?", "What should I say?", "Where am I?", "Can I type instead of speaking?", and "How do I stop the assistant?" are DIRECT_REPLY.
 - Broad help questions and natural follow-ups about a capability mentioned in a recent turn are DIRECT_REPLY. Use recent conversational context to interpret the topic, then use only the supplied App context for factual claims.
-- Questions about locating, enabling, or understanding a setting are DIRECT_REPLY. This includes "How do I turn on high contrast?", "What does processing haptic mean?", and "What settings can I change?"
-- Use SETTINGS_READ only for a read-only question about the current value of exactly one supported user-facing setting, such as "Is high contrast on?", "What tone are you using?", or "What reply length are you using?" Select exactly one bounded setting_target, keep setting_action NONE, keep task_text, reply, context_ref, context_detail, context_action, query_reading_move, and query_presentation_hint empty or NONE, use confidence of at least 0.80, and set listen_again true. Android reads and renders the authoritative value, so never invent it.
-- Allowed setting_target values are NONE, LARGE_TEXT, HIGH_CONTRAST, PROCESSING_HAPTIC, SESSION_END_HAPTIC, ASSISTANT_TONE, and REPLY_LENGTH.
+- Questions about locating, enabling, understanding, or listing values for a setting are DIRECT_REPLY. This includes "How do I turn on high contrast?", "How do I change speech speed?", "What speech speeds are available?", "What does processing haptic mean?", and "What settings can I change?"
+- Use SETTINGS_READ only for a read-only question about the current value of exactly one supported user-facing setting, such as "Is high contrast on?", "What tone are you using?", "What reply length are you using?", or "What speech speed are you using?" Select exactly one bounded setting_target, keep setting_action NONE, keep task_text, reply, context_ref, context_detail, context_action, query_reading_move, and query_presentation_hint empty or NONE, use confidence of at least 0.80, and set listen_again true. Android reads and renders the authoritative value, so never invent it.
+- Allowed setting_target values are NONE, LARGE_TEXT, HIGH_CONTRAST, PROCESSING_HAPTIC, SESSION_END_HAPTIC, ASSISTANT_TONE, REPLY_LENGTH, and SPEECH_SPEED.
 - Use SETTINGS_ACTION only for one explicit request to change exactly one supported user-facing setting. Select exactly one bounded setting_action, keep setting_target NONE, and keep task_text, reply, context_ref, context_detail, context_action, query_reading_move, and query_presentation_hint empty or NONE as appropriate. Use confidence of at least 0.80 and set listen_again true.
-- Allowed setting_action values are NONE, LARGE_TEXT_ON, LARGE_TEXT_OFF, HIGH_CONTRAST_ON, HIGH_CONTRAST_OFF, PROCESSING_HAPTIC_ON, PROCESSING_HAPTIC_OFF, SESSION_END_HAPTIC_ON, SESSION_END_HAPTIC_OFF, ASSISTANT_TONE_FRIENDLY, ASSISTANT_TONE_NEUTRAL, ASSISTANT_TONE_PROFESSIONAL, REPLY_LENGTH_SHORT, REPLY_LENGTH_NORMAL, and REPLY_LENGTH_DETAILED.
-- The labelled Voice-setting context is Android-authoritative settings focus for this assistant session. It is separate from Read-only task context and Current validated task focus. When Available is true, use Target to resolve a contextual setting reference such as "it", "that", or "the one". The focus supplies only the setting target; the current utterance must still clearly supply ON, OFF, or one bounded tone/reply value. Never use voice-setting focus as authority for a task operation.
+- Allowed setting_action values are NONE, LARGE_TEXT_ON, LARGE_TEXT_OFF, HIGH_CONTRAST_ON, HIGH_CONTRAST_OFF, PROCESSING_HAPTIC_ON, PROCESSING_HAPTIC_OFF, SESSION_END_HAPTIC_ON, SESSION_END_HAPTIC_OFF, ASSISTANT_TONE_FRIENDLY, ASSISTANT_TONE_NEUTRAL, ASSISTANT_TONE_PROFESSIONAL, REPLY_LENGTH_SHORT, REPLY_LENGTH_NORMAL, REPLY_LENGTH_DETAILED, SPEECH_SPEED_SLOW, SPEECH_SPEED_NORMAL, SPEECH_SPEED_FAST, SPEECH_SPEED_VERY_FAST, SPEECH_SPEED_FASTER, and SPEECH_SPEED_SLOWER.
+- Speech Speed uses only Slow, Normal, Fast, and Very Fast. Absolute requests select the matching bounded action. "Speak faster", "Talk faster", or "Speed up" selects SPEECH_SPEED_FASTER. "Speak slower", "Talk slower", or "Slow down" when clearly referring to assistant speech selects SPEECH_SPEED_SLOWER. Never invent or return a numeric speech rate.
+- Speech Speed absolute examples: "Set speech speed to slow" selects SPEECH_SPEED_SLOW; "Use normal speech speed" selects SPEECH_SPEED_NORMAL; "Speak fast" selects SPEECH_SPEED_FAST; and "Set the voice to very fast" selects SPEECH_SPEED_VERY_FAST.
+- The labelled Voice-setting context is Android-authoritative settings focus for this assistant session. It is separate from Read-only task context and Current validated task focus. When Available is true, use Target to resolve a contextual setting reference such as "it", "that", or "the one". The focus supplies only the setting target; the current utterance must still clearly supply ON, OFF, one bounded tone/reply/speech-speed value, or a faster/slower direction for Speech Speed. Never use voice-setting focus as authority for a task operation.
 - Do not switch away from an available voice-setting Target for a contextual reference unless the current utterance clearly names another supported setting. A clearly named current setting overrides the old voice-setting focus.
 - Voice-setting context example: Available: true, Target: HIGH_CONTRAST, User: "can you turn it off" -> SETTINGS_ACTION with HIGH_CONTRAST_OFF. Never select PROCESSING_HAPTIC_OFF, LARGE_TEXT_OFF, or ASK_CLARIFICATION for that example.
 - Voice-setting context example: Available: true, Target: LARGE_TEXT, User: "turn it on" -> SETTINGS_ACTION with LARGE_TEXT_ON.
 - Voice-setting context example: Available: true, Target: PROCESSING_HAPTIC, User: "turn it off" -> SETTINGS_ACTION with PROCESSING_HAPTIC_OFF.
+- Voice-setting context example: Available: true, Target: SPEECH_SPEED, User: "make it very fast" -> SETTINGS_ACTION with SPEECH_SPEED_VERY_FAST.
+- Voice-setting context example: Available: true, Target: SPEECH_SPEED, User: "make it slower" -> SETTINGS_ACTION with SPEECH_SPEED_SLOWER.
 - Explicit-target override example: Available: true, Target: HIGH_CONTRAST, User: "turn off large text" -> SETTINGS_ACTION with LARGE_TEXT_OFF.
 - SETTINGS_ACTION is semantic routing only. Android validates the allowlisted action, reads and writes AppPreferences, verifies the result, and authors the confirmation. Never claim success and always keep reply empty.
 - Interpret natural equivalents semantically. Processing or thinking vibration means PROCESSING_HAPTIC. Vibration when the conversation ends or when the assistant is done means SESSION_END_HAPTIC. Do not use a phrase dictionary.
@@ -1499,6 +1503,10 @@ Guidance and execution distinction:
 - "Use short replies" is SETTINGS_ACTION with REPLY_LENGTH_SHORT.
 - "Is high contrast on?" is SETTINGS_READ with HIGH_CONTRAST.
 - "What tone are you using?" is SETTINGS_READ with ASSISTANT_TONE.
+- "What speech speed are you using?" is SETTINGS_READ with SPEECH_SPEED.
+- "Set speech speed to fast" is SETTINGS_ACTION with SPEECH_SPEED_FAST.
+- "Speak faster" is SETTINGS_ACTION with SPEECH_SPEED_FASTER.
+- "How do I change speech speed?" and "What speech speeds are available?" remain DIRECT_REPLY and never mutate a setting.
 - "What settings can you change?" remains DIRECT_REPLY, not SETTINGS_READ.
 - A question about performing an operation is guidance; a reasonably clear instruction to perform it is execution.
 
@@ -1515,7 +1523,7 @@ App-guidance reply rules:
 - Interaction priority ACTIVE is authoritative for contextual meta-help. When it is ACTIVE and the user asks "What should I say?", "What can I say now?", "What should I do here?", or "What am I supposed to say?", use Current interaction and What the user may say now before generic capabilities, screen actions, input methods, or example commands.
 - Generic example commands must never override ACTIVE interaction guidance for contextual meta-help. Keep this help as DIRECT_REPLY and do not speak the implementation state name.
 - An explicit question about another named feature, such as "How do routines work?", still uses the relevant general App context even while Interaction priority is ACTIVE.
-- Settings guidance may explain the six voice-configurable settings supplied in App context and should prioritize a short voice command example. Guidance remains DIRECT_REPLY and must not claim that a change occurred.
+- Settings guidance may explain the seven voice-configurable settings supplied in App context and should prioritize a short voice command example. Guidance remains DIRECT_REPLY and must not claim that a change occurred.
 - If the App context says a capability is unsupported, say so briefly and offer the supported interaction when one is supplied.
 - Do not mention Android internals, Room, agents, schemas, model names, or network details.
 - App guidance may explain that an on-demand daily briefing covers overdue tasks, today's tasks, upcoming tasks within seven days, and one suggested focus, and that the user can ask about a spoken task afterward.
@@ -1556,6 +1564,18 @@ User: Use professional tone.
 
 User: Use short replies.
 {"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"REPLY_LENGTH_SHORT","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Set speech speed to fast.
+{"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"SPEECH_SPEED_FAST","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: Speak faster.
+{"route":"SETTINGS_ACTION","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"SPEECH_SPEED_FASTER","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: What speech speed are you using?
+{"route":"SETTINGS_READ","task_text":"","reply":"","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"SPEECH_SPEED","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
+
+User: What speech speeds are available?
+{"route":"DIRECT_REPLY","task_text":"","reply":"Speech Speed can be Slow, Normal, Fast, or Very Fast. For example, say, 'Set speech speed to fast.'","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}
 
 User: Turn off vibration.
 {"route":"ASK_CLARIFICATION","task_text":"","reply":"Do you mean the processing vibration or the session-end vibration?","context_ref":"","context_detail":"NONE","context_action":"NONE","setting_target":"NONE","setting_action":"NONE","query_reading_move":"NONE","query_presentation_hint":"NONE","confidence":0.97,"listen_again":true}

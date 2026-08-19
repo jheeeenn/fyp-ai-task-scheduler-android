@@ -97,6 +97,28 @@ class VoiceSettingContextualActionResolverTest {
         )
     }
 
+    @Test
+    fun speechSpeedFocusResolvesOnlyBoundedAbsoluteAndRelativeValues() {
+        val cases = mapOf(
+            "make it fast" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "make it very fast" to ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            "make it faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "make it slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "set it to normal" to ConversationSettingAction.SPEECH_SPEED_NORMAL,
+            "set it back to normal" to ConversationSettingAction.SPEECH_SPEED_NORMAL
+        )
+        cases.forEach { (utterance, expected) ->
+            assertResolved(VoiceSettingTarget.SPEECH_SPEED, utterance, expected)
+        }
+
+        assertNull(
+            VoiceSettingContextualActionResolver.resolve(
+                "make it professional",
+                VoiceSettingConversationFocus(VoiceSettingTarget.SPEECH_SPEED)
+            )
+        )
+    }
+
     private fun assertResolved(
         target: VoiceSettingTarget,
         utterance: String,

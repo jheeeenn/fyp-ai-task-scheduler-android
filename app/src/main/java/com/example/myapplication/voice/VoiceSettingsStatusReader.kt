@@ -54,6 +54,11 @@ class VoiceSettingsStatusReader(
             "Reply length",
             preferences.replyLength
         )
+        ConversationSettingTarget.SPEECH_SPEED -> valueResult(
+            target,
+            "Speech speed",
+            preferences.speechRatePreset.displayName
+        )
     }
 
     private fun booleanResult(
@@ -85,4 +90,5 @@ fun ConversationSettingTarget.voiceSettingTarget(): VoiceSettingTarget? = when (
     ConversationSettingTarget.SESSION_END_HAPTIC -> VoiceSettingTarget.SESSION_END_HAPTIC
     ConversationSettingTarget.ASSISTANT_TONE -> VoiceSettingTarget.ASSISTANT_TONE
     ConversationSettingTarget.REPLY_LENGTH -> VoiceSettingTarget.REPLY_LENGTH
+    ConversationSettingTarget.SPEECH_SPEED -> VoiceSettingTarget.SPEECH_SPEED
 }

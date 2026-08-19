@@ -7,5 +7,6 @@ enum class ConversationSettingTarget {
     PROCESSING_HAPTIC,
     SESSION_END_HAPTIC,
     ASSISTANT_TONE,
-    REPLY_LENGTH
+    REPLY_LENGTH,
+    SPEECH_SPEED
 }

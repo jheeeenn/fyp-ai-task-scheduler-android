@@ -2,13 +2,15 @@ package com.example.myapplication.preferences
 
 import com.example.myapplication.ai.conversation.ConversationSettingTarget
 import com.example.myapplication.voice.VoiceSettingReadStatus
+import com.example.myapplication.voice.VoiceSettingTarget
 import com.example.myapplication.voice.VoiceSettingsStatusReader
+import com.example.myapplication.voice.voiceSettingTarget
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class VoiceSettingsStatusReaderTest {
     @Test
-    fun readsAllSixCurrentValuesWithDeterministicSpeechAndNoWrites() {
+    fun readsAllSevenCurrentValuesWithDeterministicSpeechAndNoWrites() {
         val storage = TrackingPreferenceStorage()
         val preferences = AppPreferences(storage).apply {
             setLargeTextEnabled(true, PreferenceChangeSource.SYSTEM)
@@ -17,6 +19,7 @@ class VoiceSettingsStatusReaderTest {
             setSessionEndHapticEnabled(false)
             setAssistantTone("Professional")
             setReplyLength("Short")
+            setSpeechRatePreset(SpeechRatePreset.FAST)
         }
         storage.writeCount = 0
         val reader = VoiceSettingsStatusReader(preferences)
@@ -30,7 +33,8 @@ class VoiceSettingsStatusReaderTest {
                 "Session end haptic feedback is currently off.",
             ConversationSettingTarget.ASSISTANT_TONE to
                 "Assistant tone is currently Professional.",
-            ConversationSettingTarget.REPLY_LENGTH to "Reply length is currently Short."
+            ConversationSettingTarget.REPLY_LENGTH to "Reply length is currently Short.",
+            ConversationSettingTarget.SPEECH_SPEED to "Speech speed is currently Fast."
         )
 
         expected.forEach { (target, speech) ->
@@ -49,6 +53,14 @@ class VoiceSettingsStatusReaderTest {
 
         assertEquals(VoiceSettingReadStatus.REJECTED, result.status)
         assertEquals(0, storage.writeCount)
+    }
+
+    @Test
+    fun speechSpeedConversationTargetMapsToAndroidTarget() {
+        assertEquals(
+            VoiceSettingTarget.SPEECH_SPEED,
+            ConversationSettingTarget.SPEECH_SPEED.voiceSettingTarget()
+        )
     }
 }
 

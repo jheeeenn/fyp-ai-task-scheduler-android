@@ -597,7 +597,13 @@ object AgentResponseSchemas {
         "ASSISTANT_TONE_PROFESSIONAL",
         "REPLY_LENGTH_SHORT",
         "REPLY_LENGTH_NORMAL",
-        "REPLY_LENGTH_DETAILED"
+        "REPLY_LENGTH_DETAILED",
+        "SPEECH_SPEED_SLOW",
+        "SPEECH_SPEED_NORMAL",
+        "SPEECH_SPEED_FAST",
+        "SPEECH_SPEED_VERY_FAST",
+        "SPEECH_SPEED_FASTER",
+        "SPEECH_SPEED_SLOWER"
     )
 
     private fun conversationSettingTargetEnum(): JSONObject = stringEnum(
@@ -607,7 +613,8 @@ object AgentResponseSchemas {
         "PROCESSING_HAPTIC",
         "SESSION_END_HAPTIC",
         "ASSISTANT_TONE",
-        "REPLY_LENGTH"
+        "REPLY_LENGTH",
+        "SPEECH_SPEED"
     )
 
     private fun numberType(minimum: Double, maximum: Double): JSONObject = JSONObject().apply {

@@ -29,11 +29,12 @@ object AppGuidanceCatalog {
             "Let the user end naturally with a clear closing statement or use the Stop Assistant control.",
             "Change Assistant Tone by voice or in Settings using Friendly, Neutral, or Professional; tone changes how subsequent assistant responses are phrased.",
             "Change Reply Length by voice or in Settings using Short, Normal, or Detailed; reply length changes how detailed subsequent assistant responses are.",
+            "Change Speech Speed by voice or in Settings using Slow, Normal, Fast, or Very Fast; speech speed controls how quickly app-generated spoken feedback is delivered.",
             "Turn Large Text on or off by voice or in Settings under Accessibility; it increases text size throughout the app in addition to Android's system font scaling.",
             "Turn High Contrast on or off by voice or in Settings under Accessibility; it increases foreground and background contrast across supported app screens.",
             "Turn Processing Haptic Feedback on or off by voice or in Settings; while enabled, a repeating heartbeat or lub-dub vibration means the assistant is genuinely processing a submitted request and is still working.",
             "Turn Session End Haptic Feedback on or off by voice or in Settings; while enabled, a distinct terminal vibration means the assistant conversation has completely finished and is separate from the processing heartbeat.",
-            "The six voice-configurable user settings are Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, and Reply Length; users may ask to change them or ask what they are currently set to."
+            "The seven voice-configurable user settings are Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, Reply Length, and Speech Speed; users may ask to change them or ask what they are currently set to."
         ),
         screenActions = listOf(
             "Open today's tasks.",
@@ -60,11 +61,12 @@ object AppGuidanceCatalog {
             "Say, 'How do I reschedule a task?' for guidance without changing a task.",
             "Say, 'Turn on large text' or 'Turn on high contrast.'",
             "Say, 'Turn off processing haptic feedback' or 'Turn off session end haptic feedback.'",
-            "Say, 'Use a professional tone' or 'Use short replies.'"
+            "Say, 'Use a professional tone' or 'Use short replies.'",
+            "Say, 'Set speech speed to fast.'"
         ),
         limitations = listOf(
             "App guidance explains features but never performs an operation merely because the user asks how the operation works.",
-            "Voice can change or read the current value of only these six user-facing settings: Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, and Reply Length.",
+            "Voice can change or read the current value of only these seven user-facing settings: Large Text, High Contrast, Processing Haptic Feedback, Session End Haptic Feedback, Assistant Tone, Reply Length, and Speech Speed.",
             "The app has no wake word or background always-listening activation; use the Talk Assistant control.",
             "The app does not provide calendar or email integration, weather, news, traffic, cloud or cross-device synchronisation, or arbitrary third-party integrations.",
             "A voice create request opens task creation with recognised fields prefilled for review; update and reschedule requests open the matched task for review.",
@@ -78,7 +80,7 @@ object AppGuidanceCatalog {
             "Saved routines do not recur automatically, generate future occurrences automatically, learn habits, or integrate with calendars.",
             "Processing haptic feedback stops when processing ends or speaking begins. Processing and session-end haptic feedback can each be changed by voice or in Settings.",
             "Large Text and High Contrast can be changed by voice or in Settings under Accessibility; High Contrast does not imply formal accessibility-standard compliance.",
-            "Assistant Tone and Reply Length can be changed by voice or in Settings.",
+            "Assistant Tone, Reply Length, and Speech Speed can be changed by voice or in Settings; Speech Speed supports only Slow, Normal, Fast, and Very Fast.",
             "Conversation Agent Endpoint and Task Agent Endpoint are developer AI connection settings and cannot be changed by voice; never expose their configured URLs in app guidance.",
             "App guidance must not claim that an operation occurred unless the app successfully completed it."
         )

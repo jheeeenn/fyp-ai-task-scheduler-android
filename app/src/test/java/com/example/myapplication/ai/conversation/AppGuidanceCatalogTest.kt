@@ -45,14 +45,17 @@ class AppGuidanceCatalogTest {
             "heartbeat or lub-dub vibration",
             "processing ends or speaking begins",
             "Session End Haptic Feedback",
-            "conversation has completely finished"
+            "conversation has completely finished",
+            "Speech Speed",
+            "Slow, Normal, Fast, or Very Fast",
+            "Set speech speed to fast"
         ).forEach { fact -> assertTrue("Missing preference fact: $fact", prompt.contains(fact)) }
     }
 
     @Test
     fun recordsGuidanceSafetyAndUnsupportedFeatures() {
         listOf(
-            "six voice-configurable user settings",
+            "seven voice-configurable user settings",
             "cannot be changed by voice",
             "no wake word",
             "calendar or email integration",

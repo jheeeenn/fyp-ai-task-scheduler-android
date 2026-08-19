@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.preferences.PreferenceChangeSource
+import com.example.myapplication.preferences.SpeechRatePreset
 
 enum class VoiceSettingExecutionStatus {
     APPLIED,
@@ -141,6 +142,30 @@ class VoiceSettingsExecutor(
                 preferences::setReplyLength,
                 { preferences.replyLength }
             )
+            ConversationSettingAction.SPEECH_SPEED_SLOW -> speechSpeedSetting(
+                action,
+                SpeechRatePreset.SLOW
+            )
+            ConversationSettingAction.SPEECH_SPEED_NORMAL -> speechSpeedSetting(
+                action,
+                SpeechRatePreset.NORMAL
+            )
+            ConversationSettingAction.SPEECH_SPEED_FAST -> speechSpeedSetting(
+                action,
+                SpeechRatePreset.FAST
+            )
+            ConversationSettingAction.SPEECH_SPEED_VERY_FAST -> speechSpeedSetting(
+                action,
+                SpeechRatePreset.VERY_FAST
+            )
+            ConversationSettingAction.SPEECH_SPEED_FASTER -> speechSpeedSetting(
+                action,
+                fasterPreset(preferences.speechRatePreset)
+            )
+            ConversationSettingAction.SPEECH_SPEED_SLOWER -> speechSpeedSetting(
+                action,
+                slowerPreset(preferences.speechRatePreset)
+            )
         }
         Log.d(
             LOG_TAG,
@@ -204,6 +229,41 @@ class VoiceSettingsExecutor(
             VoiceSettingExecutionStatus.APPLIED,
             "$label is now $requested."
         )
+    }
+
+    private fun speechSpeedSetting(
+        action: ConversationSettingAction,
+        requested: SpeechRatePreset
+    ): VoiceSettingExecutionResult {
+        val current = preferences.speechRatePreset
+        if (current == requested) {
+            return VoiceSettingExecutionResult(
+                action,
+                VoiceSettingExecutionStatus.UNCHANGED,
+                "Speech speed is already ${requested.displayName}."
+            )
+        }
+        preferences.setSpeechRatePreset(requested)
+        if (preferences.speechRatePreset != requested) return rejected(action)
+        return VoiceSettingExecutionResult(
+            action,
+            VoiceSettingExecutionStatus.APPLIED,
+            "Speech speed is now ${requested.displayName}."
+        )
+    }
+
+    private fun fasterPreset(current: SpeechRatePreset): SpeechRatePreset = when (current) {
+        SpeechRatePreset.SLOW -> SpeechRatePreset.NORMAL
+        SpeechRatePreset.NORMAL -> SpeechRatePreset.FAST
+        SpeechRatePreset.FAST -> SpeechRatePreset.VERY_FAST
+        SpeechRatePreset.VERY_FAST -> SpeechRatePreset.VERY_FAST
+    }
+
+    private fun slowerPreset(current: SpeechRatePreset): SpeechRatePreset = when (current) {
+        SpeechRatePreset.SLOW -> SpeechRatePreset.SLOW
+        SpeechRatePreset.NORMAL -> SpeechRatePreset.SLOW
+        SpeechRatePreset.FAST -> SpeechRatePreset.NORMAL
+        SpeechRatePreset.VERY_FAST -> SpeechRatePreset.FAST
     }
 
     private fun rejected(action: ConversationSettingAction) = VoiceSettingExecutionResult(

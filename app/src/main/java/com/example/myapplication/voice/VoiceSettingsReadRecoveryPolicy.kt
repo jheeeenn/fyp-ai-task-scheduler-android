@@ -36,8 +36,11 @@ object VoiceSettingsReadRecoveryPolicy {
         val isValueStatusQuestion = asksCurrentValue ||
             (target in setOf(
                 VoiceSettingTarget.ASSISTANT_TONE,
-                VoiceSettingTarget.REPLY_LENGTH
+                VoiceSettingTarget.REPLY_LENGTH,
+                VoiceSettingTarget.SPEECH_SPEED
             ) && asksWhatOrWhich && containsAny(text, "using", "do you use"))
+            || (target == VoiceSettingTarget.SPEECH_SPEED && asksWhatOrWhich &&
+                containsAny(text, "speaking at"))
         if (!isBooleanStatusQuestion && !isValueStatusQuestion) return null
         return target.conversationSettingTarget()
     }
@@ -50,6 +53,7 @@ object VoiceSettingsReadRecoveryPolicy {
             VoiceSettingTarget.SESSION_END_HAPTIC -> ConversationSettingTarget.SESSION_END_HAPTIC
             VoiceSettingTarget.ASSISTANT_TONE -> ConversationSettingTarget.ASSISTANT_TONE
             VoiceSettingTarget.REPLY_LENGTH -> ConversationSettingTarget.REPLY_LENGTH
+            VoiceSettingTarget.SPEECH_SPEED -> ConversationSettingTarget.SPEECH_SPEED
         }
 
     private fun containsAny(text: String, vararg values: String): Boolean =

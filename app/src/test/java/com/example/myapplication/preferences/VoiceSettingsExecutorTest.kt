@@ -61,6 +61,74 @@ class VoiceSettingsExecutorTest {
     }
 
     @Test
+    fun absoluteSpeechSpeedActionsPersistBoundedPresetsWithDeterministicSpeech() {
+        val cases = mapOf(
+            ConversationSettingAction.SPEECH_SPEED_SLOW to SpeechRatePreset.SLOW,
+            ConversationSettingAction.SPEECH_SPEED_NORMAL to SpeechRatePreset.NORMAL,
+            ConversationSettingAction.SPEECH_SPEED_FAST to SpeechRatePreset.FAST,
+            ConversationSettingAction.SPEECH_SPEED_VERY_FAST to SpeechRatePreset.VERY_FAST
+        )
+
+        cases.forEach { (action, expected) ->
+            val preferences = AppPreferences(FakeVoicePreferenceStorage()).apply {
+                setSpeechRatePreset(SpeechRatePreset.NORMAL)
+            }
+            val result = VoiceSettingsExecutor(preferences).execute(action)
+
+            assertEquals(action.name, expected, preferences.speechRatePreset)
+            assertEquals(action.name, false, result.displayRefreshRequired)
+            assertEquals(
+                action.name,
+                if (expected == SpeechRatePreset.NORMAL) {
+                    VoiceSettingExecutionStatus.UNCHANGED
+                } else {
+                    VoiceSettingExecutionStatus.APPLIED
+                },
+                result.status
+            )
+            assertEquals(
+                action.name,
+                "Speech speed is ${if (expected == SpeechRatePreset.NORMAL) "already" else "now"} ${expected.displayName}.",
+                result.speech
+            )
+        }
+    }
+
+    @Test
+    fun relativeSpeechSpeedActionsStepAndStopAtBoundaries() {
+        val cases = listOf(
+            Triple(SpeechRatePreset.SLOW, ConversationSettingAction.SPEECH_SPEED_FASTER, SpeechRatePreset.NORMAL),
+            Triple(SpeechRatePreset.NORMAL, ConversationSettingAction.SPEECH_SPEED_FASTER, SpeechRatePreset.FAST),
+            Triple(SpeechRatePreset.FAST, ConversationSettingAction.SPEECH_SPEED_FASTER, SpeechRatePreset.VERY_FAST),
+            Triple(SpeechRatePreset.VERY_FAST, ConversationSettingAction.SPEECH_SPEED_FASTER, SpeechRatePreset.VERY_FAST),
+            Triple(SpeechRatePreset.VERY_FAST, ConversationSettingAction.SPEECH_SPEED_SLOWER, SpeechRatePreset.FAST),
+            Triple(SpeechRatePreset.FAST, ConversationSettingAction.SPEECH_SPEED_SLOWER, SpeechRatePreset.NORMAL),
+            Triple(SpeechRatePreset.NORMAL, ConversationSettingAction.SPEECH_SPEED_SLOWER, SpeechRatePreset.SLOW),
+            Triple(SpeechRatePreset.SLOW, ConversationSettingAction.SPEECH_SPEED_SLOWER, SpeechRatePreset.SLOW)
+        )
+
+        cases.forEach { (initial, action, expected) ->
+            val preferences = AppPreferences(FakeVoicePreferenceStorage()).apply {
+                setSpeechRatePreset(initial)
+            }
+            val result = VoiceSettingsExecutor(preferences).execute(action)
+
+            assertEquals("$initial $action", expected, preferences.speechRatePreset)
+            assertEquals(
+                "$initial $action",
+                if (initial == expected) VoiceSettingExecutionStatus.UNCHANGED else VoiceSettingExecutionStatus.APPLIED,
+                result.status
+            )
+            assertEquals(
+                "$initial $action",
+                "Speech speed is ${if (initial == expected) "already" else "now"} ${expected.displayName}.",
+                result.speech
+            )
+            assertFalse("$initial $action", result.displayRefreshRequired)
+        }
+    }
+
+    @Test
     fun hapticClarificationChangesOnlyTheExplicitFollowUpTarget() {
         val preferences = AppPreferences(FakeVoicePreferenceStorage())
         preferences.setProcessingHapticEnabled(true)
@@ -213,6 +281,18 @@ class VoiceSettingsExecutorTest {
                 preferences.setReplyLength("Short")
             ConversationSettingAction.REPLY_LENGTH_DETAILED ->
                 preferences.setReplyLength("Normal")
+            ConversationSettingAction.SPEECH_SPEED_SLOW ->
+                preferences.setSpeechRatePreset(SpeechRatePreset.NORMAL)
+            ConversationSettingAction.SPEECH_SPEED_NORMAL ->
+                preferences.setSpeechRatePreset(SpeechRatePreset.SLOW)
+            ConversationSettingAction.SPEECH_SPEED_FAST ->
+                preferences.setSpeechRatePreset(SpeechRatePreset.NORMAL)
+            ConversationSettingAction.SPEECH_SPEED_VERY_FAST ->
+                preferences.setSpeechRatePreset(SpeechRatePreset.FAST)
+            ConversationSettingAction.SPEECH_SPEED_FASTER ->
+                preferences.setSpeechRatePreset(SpeechRatePreset.FAST)
+            ConversationSettingAction.SPEECH_SPEED_SLOWER ->
+                preferences.setSpeechRatePreset(SpeechRatePreset.NORMAL)
             ConversationSettingAction.NONE -> Unit
         }
     }
@@ -236,6 +316,12 @@ class VoiceSettingsExecutorTest {
             ConversationSettingAction.REPLY_LENGTH_SHORT -> assertEquals("Short", preferences.replyLength)
             ConversationSettingAction.REPLY_LENGTH_NORMAL -> assertEquals("Normal", preferences.replyLength)
             ConversationSettingAction.REPLY_LENGTH_DETAILED -> assertEquals("Detailed", preferences.replyLength)
+            ConversationSettingAction.SPEECH_SPEED_SLOW -> assertEquals(SpeechRatePreset.SLOW, preferences.speechRatePreset)
+            ConversationSettingAction.SPEECH_SPEED_NORMAL -> assertEquals(SpeechRatePreset.NORMAL, preferences.speechRatePreset)
+            ConversationSettingAction.SPEECH_SPEED_FAST -> assertEquals(SpeechRatePreset.FAST, preferences.speechRatePreset)
+            ConversationSettingAction.SPEECH_SPEED_VERY_FAST -> assertEquals(SpeechRatePreset.VERY_FAST, preferences.speechRatePreset)
+            ConversationSettingAction.SPEECH_SPEED_FASTER -> assertEquals(SpeechRatePreset.VERY_FAST, preferences.speechRatePreset)
+            ConversationSettingAction.SPEECH_SPEED_SLOWER -> assertEquals(SpeechRatePreset.SLOW, preferences.speechRatePreset)
             ConversationSettingAction.NONE -> error("NONE has no requested value")
         }
     }
@@ -254,6 +340,7 @@ class VoiceSettingsExecutorTest {
         preferences.sessionEndHapticEnabled,
         preferences.assistantTone,
         preferences.replyLength,
+        preferences.speechRatePreset,
         preferences.conversationAgentEndpoint,
         preferences.taskAgentEndpoint
     )

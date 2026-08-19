@@ -10,6 +10,8 @@ class SpeechSpeedSourceContractTest {
     private val voiceHelper = mainRoot.resolve("VoiceHelper.kt").readText()
     private val settings = mainRoot.resolve("SettingsActivity.kt").readText()
     private val reminder = mainRoot.resolve("ReminderSpeechService.kt").readText()
+    private val executor = mainRoot.resolve("voice/VoiceSettingsExecutor.kt").readText()
+    private val home = mainRoot.resolve("HomeActivity.kt").readText()
     private val settingsLayout = File("src/main/res/layout/activity_settings.xml").readText()
 
     @Test
@@ -46,6 +48,21 @@ class SpeechSpeedSourceContractTest {
         assertTrue(reminder.contains("helper.speak(request.spokenText)"))
         assertFalse(reminder.contains("setSpeechRate"))
         assertFalse(reminder.contains("SpeechRatePreset"))
+    }
+
+    @Test
+    fun voiceSettingsExecutorPersistsBeforeSharedVoiceHelperSpeaksConfirmation() {
+        assertTrue(executor.contains("preferences.setSpeechRatePreset(requested)"))
+        assertFalse(executor.contains("TextToSpeech"))
+        assertFalse(executor.contains("VoiceHelper"))
+        val executeAllowed = home
+            .substringAfter("private fun executeAllowedVoiceSetting(action: ConversationSettingAction)")
+            .substringBefore("private fun deliverVoiceSettingsSafetyResponse")
+        assertOrdered(
+            executeAllowed,
+            "voiceSettingsExecutor.execute(action)",
+            "assistantSession.speak(result.speech"
+        )
     }
 
     private fun assertOrdered(source: String, first: String, second: String) {

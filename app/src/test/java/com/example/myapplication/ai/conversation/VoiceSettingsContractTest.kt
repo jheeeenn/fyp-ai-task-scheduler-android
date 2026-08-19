@@ -35,6 +35,32 @@ class VoiceSettingsContractTest {
     }
 
     @Test
+    fun strictSchemaAcceptsAllSpeechSpeedActionsAndReadTarget() {
+        listOf(
+            ConversationSettingAction.SPEECH_SPEED_SLOW,
+            ConversationSettingAction.SPEECH_SPEED_NORMAL,
+            ConversationSettingAction.SPEECH_SPEED_FAST,
+            ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            ConversationSettingAction.SPEECH_SPEED_FASTER,
+            ConversationSettingAction.SPEECH_SPEED_SLOWER
+        ).forEach { action ->
+            val parsed = parser.parse(
+                decisionJson(route = "SETTINGS_ACTION", settingAction = action.name)
+            )
+            assertEquals(action.name, action, parsed.settingAction)
+            assertEquals(action.name, ConversationSettingTarget.NONE, parsed.settingTarget)
+            assertTrue(action.name, VoiceSettingsDecisionValidator.isValid(parsed))
+        }
+
+        val read = parser.parse(
+            decisionJson(route = "SETTINGS_READ", settingTarget = "SPEECH_SPEED")
+        )
+        assertEquals(ConversationSettingTarget.SPEECH_SPEED, read.settingTarget)
+        assertEquals(ConversationSettingAction.NONE, read.settingAction)
+        assertTrue(VoiceSettingsReadDecisionValidator.isValid(read))
+    }
+
+    @Test
     fun settingsReadRequiresOneTargetAndCanonicalizesMutationAuthorityAway() {
         val parsed = parser.parseWithReport(
             decisionJson(
@@ -169,6 +195,11 @@ class VoiceSettingsContractTest {
         assertTrue(prompt.contains("\"Turn off processing haptic\" is SETTINGS_ACTION"))
         assertTrue(prompt.contains("\"Use professional tone\" is SETTINGS_ACTION"))
         assertTrue(prompt.contains("\"Use short replies\" is SETTINGS_ACTION"))
+        assertTrue(prompt.contains("\"Set speech speed to fast\" is SETTINGS_ACTION with SPEECH_SPEED_FAST"))
+        assertTrue(prompt.contains("\"Speak faster\" is SETTINGS_ACTION with SPEECH_SPEED_FASTER"))
+        assertTrue(prompt.contains("\"What speech speed are you using?\" is SETTINGS_READ with SPEECH_SPEED"))
+        assertTrue(prompt.contains("\"How do I change speech speed?\" and \"What speech speeds are available?\" remain DIRECT_REPLY"))
+        assertTrue(prompt.contains("Never invent or return a numeric speech rate"))
         assertTrue(prompt.contains("\"Turn off vibration\" is ambiguous"))
         assertTrue(prompt.contains("Conversation Agent Endpoint, Task Agent Endpoint"))
         assertTrue(prompt.contains("ask the user to change them one at a time"))
@@ -206,10 +237,27 @@ class VoiceSettingsContractTest {
             ConversationSettingTarget.REPLY_LENGTH,
             VoiceSettingsReadRecoveryPolicy.recoverTarget("what reply length are you using")
         )
+        listOf(
+            "what speech speed are you using",
+            "what is the speech speed set to",
+            "which speaking speed do you use",
+            "what speed are you speaking at"
+        ).forEach { utterance ->
+            assertEquals(
+                utterance,
+                ConversationSettingTarget.SPEECH_SPEED,
+                VoiceSettingsReadRecoveryPolicy.recoverTarget(utterance)
+            )
+        }
         assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("what settings can you change"))
         assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("what does high contrast do"))
         assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("turn on high contrast"))
         assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("is vibration on"))
+        assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("how does speech speed work"))
+        assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("how do i change speech speed"))
+        assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("what speech speeds are available"))
+        assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("change speech speed to fast"))
+        assertEquals(null, VoiceSettingsReadRecoveryPolicy.recoverTarget("speak faster"))
 
         val recovered = requireNotNull(
             VoiceSettingsReadRecoveryPolicy.recoverDecision("is high contrast on")

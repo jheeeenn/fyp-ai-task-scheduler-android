@@ -8,7 +8,8 @@ enum class VoiceSettingTarget {
     PROCESSING_HAPTIC,
     SESSION_END_HAPTIC,
     ASSISTANT_TONE,
-    REPLY_LENGTH
+    REPLY_LENGTH,
+    SPEECH_SPEED
 }
 
 data class VoiceSettingConversationFocus(val target: VoiceSettingTarget)
@@ -63,6 +64,12 @@ fun ConversationSettingAction.voiceSettingTarget(): VoiceSettingTarget? = when (
     ConversationSettingAction.REPLY_LENGTH_SHORT,
     ConversationSettingAction.REPLY_LENGTH_NORMAL,
     ConversationSettingAction.REPLY_LENGTH_DETAILED -> VoiceSettingTarget.REPLY_LENGTH
+    ConversationSettingAction.SPEECH_SPEED_SLOW,
+    ConversationSettingAction.SPEECH_SPEED_NORMAL,
+    ConversationSettingAction.SPEECH_SPEED_FAST,
+    ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+    ConversationSettingAction.SPEECH_SPEED_FASTER,
+    ConversationSettingAction.SPEECH_SPEED_SLOWER -> VoiceSettingTarget.SPEECH_SPEED
     ConversationSettingAction.NONE -> null
 }
 
@@ -136,7 +143,7 @@ object VoiceSettingsMutationSafetyPolicy {
         )
     }
 
-    /** Finds one of the six targets only from trustworthy words in this turn. */
+    /** Finds one of the seven targets only from trustworthy words in this turn. */
     fun groundedTarget(normalizedUtterance: String): VoiceSettingTarget? =
         groundedTarget(safetyText(normalizedUtterance), allowTargetOnly = true)
 
@@ -252,6 +259,18 @@ object VoiceSettingsMutationSafetyPolicy {
             hasSettingValueRequest(text) && containsAny(text, "normal", "default")
         ConversationSettingAction.REPLY_LENGTH_DETAILED ->
             hasSettingValueRequest(text) && containsAny(text, "detailed", "more detail", "longer", "thorough")
+        ConversationSettingAction.SPEECH_SPEED_SLOW ->
+            hasSettingValueRequest(text) &&
+                (containsWord(text, "slow") || containsWord(text, "slowly"))
+        ConversationSettingAction.SPEECH_SPEED_NORMAL ->
+            hasSettingValueRequest(text) && containsAny(text, "normal", "default")
+        ConversationSettingAction.SPEECH_SPEED_FAST ->
+            hasSettingValueRequest(text) && containsWord(text, "fast") &&
+                !containsAny(text, "very fast")
+        ConversationSettingAction.SPEECH_SPEED_VERY_FAST ->
+            hasSettingValueRequest(text) && containsAny(text, "very fast")
+        ConversationSettingAction.SPEECH_SPEED_FASTER -> hasFasterSpeechRequest(text)
+        ConversationSettingAction.SPEECH_SPEED_SLOWER -> hasSlowerSpeechRequest(text)
         ConversationSettingAction.NONE -> false
     }
 
@@ -268,6 +287,7 @@ object VoiceSettingsMutationSafetyPolicy {
             hasHighContrastTarget(text) -> VoiceSettingTarget.HIGH_CONTRAST
             haptic.processing && !haptic.sessionEnd -> VoiceSettingTarget.PROCESSING_HAPTIC
             haptic.sessionEnd && !haptic.processing -> VoiceSettingTarget.SESSION_END_HAPTIC
+            hasSpeechSpeedTarget(text) -> VoiceSettingTarget.SPEECH_SPEED
             containsAny(text, "tone", "tones", "professional", "formal", "friendly", "warmer", "neutral") ->
                 VoiceSettingTarget.ASSISTANT_TONE
             containsAny(
@@ -286,6 +306,16 @@ object VoiceSettingsMutationSafetyPolicy {
     )
 
     private fun hasHighContrastTarget(text: String): Boolean = containsWord(text, "contrast")
+
+    private fun hasSpeechSpeedTarget(text: String): Boolean = containsAny(
+        text,
+        "speech speed", "speaking speed", "voice speed", "tts speed", "talking speed",
+        "speed up your speech", "speed up the speech", "slow down your speech",
+        "slow down the speech", "make your speech faster", "make the speech faster",
+        "make your speech slower", "make the speech slower"
+    ) || SPEAKING_SPEED_REQUEST.containsMatchIn(text) ||
+        SPOKEN_SPEED_STATUS.containsMatchIn(text) || VOICE_SPEED_VALUE_REQUEST.containsMatchIn(text) ||
+        text == "speed up" || text == "slow down"
 
     private fun requestedBoolean(text: String, target: VoiceSettingTarget?): Boolean? {
         val off = containsAny(
@@ -318,8 +348,25 @@ object VoiceSettingsMutationSafetyPolicy {
     }
 
     private fun hasSettingValueRequest(text: String): Boolean = containsAny(
-        text, "use", "be ", "make", "keep", "give", "set", "switch", "change", "go back"
+        text, "use", "be ", "make", "keep", "give", "set", "switch", "change", "go back",
+        "speak", "talk", "speed up", "slow down"
     )
+
+    private fun hasFasterSpeechRequest(text: String): Boolean =
+        containsWord(text, "faster") &&
+            (SPEAKING_SPEED_REQUEST.containsMatchIn(text) || containsAny(
+                text,
+                "speech faster", "make it faster", "make that faster", "make the one faster"
+            )) || containsAny(text, "speed up your speech", "speed up the speech") ||
+            text == "speed up"
+
+    private fun hasSlowerSpeechRequest(text: String): Boolean =
+        containsWord(text, "slower") &&
+            (SPEAKING_SPEED_REQUEST.containsMatchIn(text) || containsAny(
+                text,
+                "speech slower", "make it slower", "make that slower", "make the one slower"
+            )) || containsAny(text, "slow down your speech", "slow down the speech") ||
+            text == "slow down"
 
     private fun hasBoundedContextReference(text: String): Boolean =
         containsWord(text, "it") || containsWord(text, "that") || containsWord(text, "one")
@@ -360,7 +407,7 @@ object VoiceSettingsMutationSafetyPolicy {
     private fun guidanceSpeech(text: String, proposedAction: ConversationSettingAction): String {
         if (containsAny(text, "what settings", "which settings", "settings can", "change settings by voice")) {
             return "You can ask me to change Large Text, High Contrast, processing and " +
-                "session-end haptics, Assistant Tone, and Reply Length, or ask what they are currently set to."
+                "session-end haptics, Assistant Tone, Reply Length, and Speech Speed, or ask what they are currently set to."
         }
         val haptic = hapticEvidence(text)
         if (haptic.mentionsHaptic && haptic.processing == haptic.sessionEnd) {
@@ -380,6 +427,8 @@ object VoiceSettingsMutationSafetyPolicy {
                 "You can ask me to use a Friendly, Neutral, or Professional tone."
             VoiceSettingTarget.REPLY_LENGTH ->
                 "You can ask me to use Short, Normal, or Detailed replies."
+            VoiceSettingTarget.SPEECH_SPEED ->
+                "Speech Speed controls spoken feedback. You can use Slow, Normal, Fast, or Very Fast."
             null -> "Which setting would you like help with?"
         }
     }
@@ -391,7 +440,8 @@ object VoiceSettingsMutationSafetyPolicy {
             VoiceSettingTarget.PROCESSING_HAPTIC -> if (enabled) ConversationSettingAction.PROCESSING_HAPTIC_ON else ConversationSettingAction.PROCESSING_HAPTIC_OFF
             VoiceSettingTarget.SESSION_END_HAPTIC -> if (enabled) ConversationSettingAction.SESSION_END_HAPTIC_ON else ConversationSettingAction.SESSION_END_HAPTIC_OFF
             VoiceSettingTarget.ASSISTANT_TONE,
-            VoiceSettingTarget.REPLY_LENGTH -> ConversationSettingAction.NONE
+            VoiceSettingTarget.REPLY_LENGTH,
+            VoiceSettingTarget.SPEECH_SPEED -> ConversationSettingAction.NONE
         }
 
     private fun clarifyHaptic(enabled: Boolean?) = VoiceSettingsSafetyResult(
@@ -470,5 +520,14 @@ object VoiceSettingsMutationSafetyPolicy {
     )
     private val CONTEXT_OFF_REQUEST = Regex(
         "\\b(?:turn|switch)\\s+(?:it|that|the one)(?:\\s+back)?\\s+off\\b"
+    )
+    private val SPEAKING_SPEED_REQUEST = Regex(
+        "\\b(?:speak|talk|speaking|talking)(?:\\s+a\\s+little)?\\s+(?:slow|slowly|slower|fast|faster)\\b"
+    )
+    private val SPOKEN_SPEED_STATUS = Regex(
+        "\\b(?:what|which)\\s+speed\\s+(?:are\\s+you|do\\s+you)\\s+(?:speak|speaking|talk|talking)(?:\\s+at)?\\b"
+    )
+    private val VOICE_SPEED_VALUE_REQUEST = Regex(
+        "\\b(?:set|make|use)\\s+(?:the\\s+|your\\s+)?voice(?:\\s+to)?\\s+(?:slow|normal|default|fast|very\\s+fast)\\b"
     )
 }

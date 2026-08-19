@@ -38,6 +38,86 @@ class VoiceSettingsMutationSafetyPolicyTest {
     }
 
     @Test
+    fun clearSpeechSpeedAbsoluteAndRelativeRequestsAreAllowed() {
+        listOf(
+            "set speech speed to slow" to ConversationSettingAction.SPEECH_SPEED_SLOW,
+            "use normal speech speed" to ConversationSettingAction.SPEECH_SPEED_NORMAL,
+            "set speech speed to fast" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "use very fast speech speed" to ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            "make your speaking speed very fast" to ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            "set speaking speed to normal" to ConversationSettingAction.SPEECH_SPEED_NORMAL,
+            "set the voice to very fast" to ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            "speak faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "talk faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "can you speak a little faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "speed up" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "speed up your speech" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "speak slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "talk slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "slow down" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "slow down your speech" to ConversationSettingAction.SPEECH_SPEED_SLOWER
+        ).forEach { (utterance, action) ->
+            assertDisposition(utterance, action, VoiceSettingsSafetyDisposition.ALLOW)
+        }
+    }
+
+    @Test
+    fun genericSpeedWordsNeverGroundSpeechSpeed() {
+        listOf(
+            "create the task quickly",
+            "give me a fast answer",
+            "use short replies",
+            "make the app faster"
+        ).forEach { utterance ->
+            assertTrue(
+                utterance,
+                VoiceSettingsMutationSafetyPolicy.groundedTarget(utterance) !=
+                    VoiceSettingTarget.SPEECH_SPEED
+            )
+            assertDisposition(
+                utterance,
+                ConversationSettingAction.SPEECH_SPEED_FAST,
+                VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET
+            )
+        }
+    }
+
+    @Test
+    fun veryFastTakesPrecedenceOverFastGrounding() {
+        assertDisposition(
+            "set speech speed to very fast",
+            ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            VoiceSettingsSafetyDisposition.ALLOW
+        )
+        assertDisposition(
+            "set speech speed to very fast",
+            ConversationSettingAction.SPEECH_SPEED_FAST,
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET
+        )
+    }
+
+    @Test
+    fun speechSpeedFocusAuthorizesOnlyBoundedContextualSpeedValues() {
+        val focus = VoiceSettingConversationFocus(VoiceSettingTarget.SPEECH_SPEED)
+        listOf(
+            "make it fast" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "make it very fast" to ConversationSettingAction.SPEECH_SPEED_VERY_FAST,
+            "make it faster" to ConversationSettingAction.SPEECH_SPEED_FASTER,
+            "make it slower" to ConversationSettingAction.SPEECH_SPEED_SLOWER,
+            "set it to normal" to ConversationSettingAction.SPEECH_SPEED_NORMAL
+        ).forEach { (utterance, action) ->
+            assertDisposition(utterance, action, VoiceSettingsSafetyDisposition.ALLOW, focus)
+        }
+
+        assertDisposition(
+            "make it short",
+            ConversationSettingAction.REPLY_LENGTH_SHORT,
+            VoiceSettingsSafetyDisposition.CLARIFY_SETTING_TARGET,
+            focus
+        )
+    }
+
+    @Test
     fun explicitTurnBackDirectionsAreAllowedOnlyWithGroundedMatchingTargets() {
         listOf(
             "turn the processing vibration back on" to
@@ -70,7 +150,9 @@ class VoiceSettingsMutationSafetyPolicyTest {
             "what does high contrast do" to ConversationSettingAction.HIGH_CONTRAST_ON,
             "what is processing haptic feedback" to ConversationSettingAction.PROCESSING_HAPTIC_ON,
             "what settings can i change" to ConversationSettingAction.HIGH_CONTRAST_ON,
-            "can i change the settings by voice" to ConversationSettingAction.LARGE_TEXT_ON
+            "can i change the settings by voice" to ConversationSettingAction.LARGE_TEXT_ON,
+            "how does speech speed work" to ConversationSettingAction.SPEECH_SPEED_FAST,
+            "what speech speeds are available" to ConversationSettingAction.SPEECH_SPEED_FAST
         ).forEach { (utterance, action) ->
             val result = VoiceSettingsMutationSafetyPolicy.evaluate(utterance, action)
             assertEquals(utterance, VoiceSettingsSafetyDisposition.GUIDANCE_ONLY, result.disposition)

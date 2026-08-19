@@ -45,6 +45,7 @@ object VoiceSettingContextualActionResolver {
             )
             VoiceSettingTarget.ASSISTANT_TONE -> toneAction(text)
             VoiceSettingTarget.REPLY_LENGTH -> replyLengthAction(text)
+            VoiceSettingTarget.SPEECH_SPEED -> speechSpeedAction(text)
         }
     }
 
@@ -83,6 +84,19 @@ object VoiceSettingContextualActionResolver {
                 ConversationSettingAction.REPLY_LENGTH_NORMAL
             containsAny(text, "detailed", "more detail", "longer", "thorough") ->
                 ConversationSettingAction.REPLY_LENGTH_DETAILED
+            else -> null
+        }
+    }
+
+    private fun speechSpeedAction(text: String): ConversationSettingAction? {
+        if (!hasValueSelectionRequest(text)) return null
+        return when {
+            containsAny(text, "very fast") -> ConversationSettingAction.SPEECH_SPEED_VERY_FAST
+            containsWord(text, "faster") -> ConversationSettingAction.SPEECH_SPEED_FASTER
+            containsWord(text, "slower") -> ConversationSettingAction.SPEECH_SPEED_SLOWER
+            containsWord(text, "fast") -> ConversationSettingAction.SPEECH_SPEED_FAST
+            containsAny(text, "normal", "default") -> ConversationSettingAction.SPEECH_SPEED_NORMAL
+            containsAny(text, "slow", "slowly") -> ConversationSettingAction.SPEECH_SPEED_SLOW
             else -> null
         }
     }
