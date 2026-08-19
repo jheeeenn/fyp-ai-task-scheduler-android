@@ -59,4 +59,9 @@
     <attr name="appColorTaskDetailUnsavedSurface" format="color" />
     <attr name="appColorTaskDetailUnsavedOutline" format="color" />
     <attr name="appColorTaskDetailUnsavedText" format="color" />
+    <attr name="appColorSettingsCardSurface" format="color" />
+    <attr name="appColorSettingsAdvancedSurface" format="color" />
+    <attr name="appColorSettingsOutline" format="color" />
+    <attr name="appColorSettingsStateOn" format="color" />
+    <attr name="appColorSettingsStateOff" format="color" />
 </resources>

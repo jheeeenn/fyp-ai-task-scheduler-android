@@ -47,39 +47,35 @@ class UnifiedTouchInteractionSourceContractTest {
     }
 
     @Test
-    fun settingsCardsAndNavigationUseSharedBindingButSwitchesAndRadiosStayNative() {
+    fun settingsCardsAndNavigationUseSharedBindingWithoutSwitchesOrRadios() {
         val settings = source("SettingsActivity.kt")
+        val advanced = source("AdvancedSettingsActivity.kt")
 
+        listOf("cardTone", "cardReplyLength", "cardSpeechSpeed").forEach { card ->
+            assertTrue(settings.contains("R.id.$card"))
+        }
+        assertTrue(settings.contains("bindSelectionCard("))
+        assertTrue(settings.contains("bindBooleanCard("))
         listOf(
-            "findViewById<LinearLayout>(R.id.cardTone)" to
-                "SettingsControlSpeechRenderer.assistantTone",
-            "findViewById<LinearLayout>(R.id.cardReplyLength)" to
-                "SettingsControlSpeechRenderer.replyLength",
-            "findViewById<LinearLayout>(R.id.cardSpeechSpeed)" to
-                "SettingsControlSpeechRenderer.speechSpeed",
             "findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint)" to
                 "SettingsControlSpeechRenderer::conversationEndpoint",
             "findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint)" to
                 "SettingsControlSpeechRenderer::taskEndpoint",
+            "findViewById<Button>(R.id.btnBackToSettings)" to
+                "getString(R.string.back_to_settings)"
+        ).forEach { (view, speech) ->
+            assertActionBinding(advanced, view, speech)
+        }
+        listOf(
             "findViewById<Button>(R.id.btnGoHome)" to "SettingsControlSpeechRenderer::home",
-            "findViewById<Button>(R.id.btnTalkAssistant)" to
-                "SettingsControlSpeechRenderer::assistant",
-            "view.findViewById<Button>(R.id.btnDialogSave)" to
-                "SettingsControlSpeechRenderer::saveOption"
+            "assistantButton" to "SettingsControlSpeechRenderer::assistant"
         ).forEach { (view, speech) ->
             assertActionBinding(settings, view, speech)
         }
 
-        listOf(
-            "switchLargeText",
-            "switchHighContrast",
-            "switchProcessingHaptic",
-            "switchSessionEndHaptic"
-        ).forEach { switchName ->
-            assertTrue(settings.contains("$switchName.setOnCheckedChangeListener"))
-            assertFalse(settings.contains("view = $switchName"))
-        }
-        assertTrue(settings.contains("RadioButton(this)"))
+        assertFalse(settings.contains("SwitchMaterial"))
+        assertFalse(settings.contains("RadioButton"))
+        assertFalse(settings.contains("showOptionDialog"))
         assertFalse(settings.contains("setOnClickListenerWithHaptic"))
     }
 

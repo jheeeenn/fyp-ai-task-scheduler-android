@@ -73,7 +73,7 @@ class ProcessingHapticIntegrationSourceTest {
         assertTrue(preferencesSource.contains("getBoolean(KEY_PROCESSING_HAPTIC_FEEDBACK, true)"))
         assertTrue(settingsSource.contains("setProcessingHapticEnabled(enabled)"))
         assertTrue(settingsLayout.contains("android:id=\"@+id/cardProcessingHaptic\""))
-        assertTrue(settingsLayout.contains("android:id=\"@+id/switchProcessingHaptic\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/tvProcessingHapticValue\""))
         assertTrue(settingsLayout.contains("android:text=\"@string/processing_haptic_feedback\""))
     }
 
@@ -83,7 +83,7 @@ class ProcessingHapticIntegrationSourceTest {
         assertTrue(preferencesSource.contains("getBoolean(KEY_SESSION_END_HAPTIC_FEEDBACK, true)"))
         assertTrue(settingsSource.contains("setSessionEndHapticEnabled(enabled)"))
         assertTrue(settingsLayout.contains("android:id=\"@+id/cardSessionEndHaptic\""))
-        assertTrue(settingsLayout.contains("android:id=\"@+id/switchSessionEndHaptic\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/tvSessionEndHapticValue\""))
         assertTrue(settingsLayout.contains("android:text=\"@string/session_end_haptic_feedback\""))
     }
 

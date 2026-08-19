@@ -20,7 +20,7 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">12dp</item>
-        <item name="android:background">@drawable/bg_task_card</item>
+        <item name="android:background">@drawable/bg_settings_card</item>
         <item name="android:hapticFeedbackEnabled">true</item>
         <item name="android:minHeight">96dp</item>
         <item name="android:orientation">vertical</item>
@@ -28,7 +28,7 @@
     </style>
 
     <style name="SettingsTechnicalCard" parent="SettingsCard">
-        <item name="android:background">@drawable/bg_info_panel</item>
+        <item name="android:background">@drawable/bg_settings_card</item>
     </style>
 
     <style name="SettingsTitleText">
@@ -61,12 +61,12 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">8dp</item>
         <item name="android:breakStrategy">simple</item>
-        <item name="android:textColor">?attr/appColorTextSecondaryDark</item>
+        <item name="android:textColor">?attr/appColorTextSecondaryLight</item>
         <item name="android:textSize">16sp</item>
     </style>
 
     <style name="SettingsTechnicalTitleText" parent="SettingsTitleText">
-        <item name="android:textColor">?attr/appColorTextPrimaryDark</item>
+        <item name="android:textColor">?attr/appColorTextPrimaryLight</item>
     </style>
 
     <style name="SettingsSwitch" parent="Widget.MaterialComponents.CompoundButton.Switch">

@@ -63,6 +63,11 @@
         <item name="appColorTaskDetailUnsavedSurface">@color/task_detail_unsaved_surface</item>
         <item name="appColorTaskDetailUnsavedOutline">@color/task_detail_unsaved_outline</item>
         <item name="appColorTaskDetailUnsavedText">@color/task_detail_unsaved_text</item>
+        <item name="appColorSettingsCardSurface">@color/settings_card_surface</item>
+        <item name="appColorSettingsAdvancedSurface">@color/settings_advanced_surface</item>
+        <item name="appColorSettingsOutline">@color/settings_outline</item>
+        <item name="appColorSettingsStateOn">@color/settings_state_on</item>
+        <item name="appColorSettingsStateOff">@color/settings_state_off</item>
     </style>
 
     <style name="Theme.MyApplication" parent="Base.Theme.MyApplication" />
@@ -132,5 +137,10 @@
         <item name="appColorTaskDetailUnsavedSurface">@color/hc_task_detail_unsaved_surface</item>
         <item name="appColorTaskDetailUnsavedOutline">@color/hc_task_detail_unsaved_outline</item>
         <item name="appColorTaskDetailUnsavedText">@color/hc_task_detail_unsaved_text</item>
+        <item name="appColorSettingsCardSurface">@color/hc_settings_card_surface</item>
+        <item name="appColorSettingsAdvancedSurface">@color/hc_settings_advanced_surface</item>
+        <item name="appColorSettingsOutline">@color/hc_settings_outline</item>
+        <item name="appColorSettingsStateOn">@color/hc_settings_state_on</item>
+        <item name="appColorSettingsStateOff">@color/hc_settings_state_off</item>
     </style>
 </resources>

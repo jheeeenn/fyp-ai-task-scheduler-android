@@ -162,4 +162,16 @@
     <color name="hc_task_detail_unsaved_surface">#FFFFD25A</color>
     <color name="hc_task_detail_unsaved_outline">#FFFFFFFF</color>
     <color name="hc_task_detail_unsaved_text">#FF2A1C00</color>
+
+    <!-- Settings-only palette. All surfaces are fully opaque. -->
+    <color name="settings_card_surface">#FFE2E2E0</color>
+    <color name="settings_advanced_surface">#FFD9DEE3</color>
+    <color name="settings_outline">#FF777873</color>
+    <color name="settings_state_on">#FF39553E</color>
+    <color name="settings_state_off">#FF555854</color>
+    <color name="hc_settings_card_surface">#FFFFFFFF</color>
+    <color name="hc_settings_advanced_surface">#FFEAF0FF</color>
+    <color name="hc_settings_outline">#FF000000</color>
+    <color name="hc_settings_state_on">#FF0A572F</color>
+    <color name="hc_settings_state_off">#FF202020</color>
 </resources>

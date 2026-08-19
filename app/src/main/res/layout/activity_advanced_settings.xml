@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/appColorBackgroundPrimary"
+    android:padding="16dp"
+    tools:ignore="Overdraw">
+
+    <ScrollView
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:fillViewport="true"
+        app:layout_constraintBottom_toTopOf="@id/btnBackToSettings"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvAdvancedSettingsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityHeading="true"
+                android:text="@string/advanced_settings"
+                android:textColor="?attr/appColorTextPrimaryDark"
+                android:textSize="32sp"
+                android:textStyle="bold"
+                tools:ignore="UnusedAttribute" />
+
+            <TextView
+                android:id="@+id/tvAiConnectionsHeading"
+                style="@style/SettingsSectionHeading"
+                android:layout_marginTop="22dp"
+                android:text="@string/ai_connections_heading" />
+
+            <LinearLayout
+                android:id="@+id/cardConversationAgentEndpoint"
+                style="@style/SettingsTechnicalCard"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView style="@style/SettingsTechnicalTitleText" android:text="@string/conversation_agent_endpoint" />
+                <TextView
+                    android:id="@+id/tvConversationAgentEndpointValue"
+                    style="@style/SettingsTechnicalValueText"
+                    tools:text="http://192.168.0.132:1234/v1/chat/completions" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardTaskAgentEndpoint"
+                style="@style/SettingsTechnicalCard"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView style="@style/SettingsTechnicalTitleText" android:text="@string/task_agent_endpoint" />
+                <TextView
+                    android:id="@+id/tvTaskAgentEndpointValue"
+                    style="@style/SettingsTechnicalValueText"
+                    tools:text="http://192.168.0.132:1234/v1/chat/completions" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <Button
+        android:id="@+id/btnBackToSettings"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_settings_advanced_card"
+        android:backgroundTint="@null"
+        android:minHeight="88dp"
+        android:text="@string/back_to_settings"
+        android:textAllCaps="false"
+        android:textColor="?attr/appColorTextPrimaryLight"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        app:backgroundTint="@null"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

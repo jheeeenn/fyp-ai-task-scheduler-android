@@ -18,7 +18,8 @@ class AccessibilityIntegrationSourceTest {
             "CreateTaskActivity.kt",
             "EditTaskActivity.kt",
             "TaskDetailActivity.kt",
-            "SettingsActivity.kt"
+            "SettingsActivity.kt",
+            "AdvancedSettingsActivity.kt"
         ).forEach { fileName ->
             assertTrue(
                 "$fileName must inherit AccessibilityActivity",
@@ -47,16 +48,18 @@ class AccessibilityIntegrationSourceTest {
     }
 
     @Test
-    fun binarySettingsUseOneSwitchListenerAndNoParentClickHandler() {
+    fun binarySettingsUseWholeCardVoiceFirstActionsWithoutSwitches() {
         val settingsSource = File(sourceRoot, "SettingsActivity.kt").readText()
         val settingsLayout = File(layoutRoot, "activity_settings.xml").readText()
 
         listOf("LargeText", "HighContrast", "ProcessingHaptic", "SessionEndHaptic").forEach { name ->
-            assertTrue(settingsLayout.contains("@+id/switch$name"))
-            assertTrue(settingsSource.contains("switch$name.setOnCheckedChangeListener"))
+            assertTrue(settingsLayout.contains("@+id/card$name"))
+            assertTrue(settingsLayout.contains("@+id/tv${name}Value"))
         }
-        listOf("cardLargeText", "cardHighContrast", "cardProcessingHaptic", "cardSessionEndHaptic")
-            .forEach { card -> assertFalse(settingsSource.contains("$card).setOnClickListener")) }
+        assertTrue(settingsSource.contains("bindBooleanCard("))
+        assertTrue(settingsSource.contains("VoiceFirstGestureBinder.bindAction("))
+        assertFalse(settingsLayout.contains("SwitchMaterial"))
+        assertFalse(settingsSource.contains("setOnCheckedChangeListener"))
     }
 
     @Test

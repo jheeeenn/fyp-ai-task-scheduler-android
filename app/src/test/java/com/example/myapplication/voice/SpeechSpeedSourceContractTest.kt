@@ -28,17 +28,16 @@ class SpeechSpeedSourceContractTest {
     }
 
     @Test
-    fun settingsCardPersistsAppliesAndPreviewsTheBoundedSelection() {
+    fun settingsCardUsesAuthoritativeExecutorAndAppliesStoredBoundedRateBeforeConfirmation() {
         assertTrue(settingsLayout.contains("android:id=\"@+id/cardSpeechSpeed\""))
         assertTrue(settingsLayout.contains("android:id=\"@+id/tvSpeechSpeedValue\""))
         assertTrue(settingsLayout.contains("android:text=\"@string/speech_speed\""))
-        assertTrue(settings.contains("SpeechRatePreset.values().map(SpeechRatePreset::displayName)"))
         val selection = settings
-            .substringAfter("val preset = SpeechRatePreset.fromStoredValue(selected)")
-            .substringBefore("switchLargeText.setOnCheckedChangeListener")
-        assertOrdered(selection, "appPreferences.setSpeechRatePreset(preset)", "voiceHelper.applySpeechRate(preset)")
-        assertOrdered(selection, "voiceHelper.applySpeechRate(preset)", "tvSpeechSpeedValue.text = preset.displayName")
-        assertTrue(selection.contains("SettingsControlSpeechRenderer.speechSpeed(preset.displayName)"))
+            .substringAfter("SettingsCardSelectionMove.SELECT_VALUE ->")
+            .substringBefore("SettingsCardSelectionMove.ASK_OPTIONS")
+        assertOrdered(selection, "voiceSettingsExecutor.execute", "voiceHelper.applySpeechRate")
+        assertTrue(selection.contains("appPreferences.speechRatePreset"))
+        assertTrue(settings.contains("SettingsCardSelectionAuthority"))
         assertFalse(settings.contains("recreateAfterVisualSettingChange(R.id.cardSpeechSpeed"))
     }
 

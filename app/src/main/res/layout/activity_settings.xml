@@ -7,14 +7,16 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/appColorBackgroundPrimary"
-    android:padding="16dp">
+    android:padding="16dp"
+    tools:ignore="Overdraw">
 
     <ScrollView
         android:id="@+id/settingsScrollView"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_marginBottom="14dp"
         android:fillViewport="true"
-        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        app:layout_constraintBottom_toTopOf="@id/settingsBottomDock"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
@@ -23,7 +25,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="16dp">
+            android:paddingBottom="2dp">
 
             <TextView
                 android:id="@+id/tvSettingsTitle"
@@ -46,19 +48,8 @@
                 style="@style/SettingsCard"
                 android:clickable="true"
                 android:focusable="true">
-
-                <TextView
-                    style="@style/SettingsTitleText"
-                    android:text="@string/assistant_tone" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:text="@string/assistant_tone_description" />
-
-                <TextView
-                    android:id="@+id/tvToneValue"
-                    style="@style/SettingsValueText"
-                    tools:text="Friendly" />
+                <TextView style="@style/SettingsTitleText" android:text="@string/assistant_tone" />
+                <TextView android:id="@+id/tvToneValue" style="@style/SettingsValueText" tools:text="Friendly" />
             </LinearLayout>
 
             <LinearLayout
@@ -66,19 +57,17 @@
                 style="@style/SettingsCard"
                 android:clickable="true"
                 android:focusable="true">
+                <TextView style="@style/SettingsTitleText" android:text="@string/reply_length" />
+                <TextView android:id="@+id/tvReplyLengthValue" style="@style/SettingsValueText" tools:text="Normal" />
+            </LinearLayout>
 
-                <TextView
-                    style="@style/SettingsTitleText"
-                    android:text="@string/reply_length" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:text="@string/reply_length_description" />
-
-                <TextView
-                    android:id="@+id/tvReplyLengthValue"
-                    style="@style/SettingsValueText"
-                    tools:text="Normal" />
+            <LinearLayout
+                android:id="@+id/cardSpeechSpeed"
+                style="@style/SettingsCard"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView style="@style/SettingsTitleText" android:text="@string/speech_speed" />
+                <TextView android:id="@+id/tvSpeechSpeedValue" style="@style/SettingsValueText" tools:text="Normal" />
             </LinearLayout>
 
             <TextView
@@ -88,165 +77,96 @@
                 android:text="@string/accessibility_settings_heading" />
 
             <LinearLayout
-                android:id="@+id/cardSpeechSpeed"
+                android:id="@+id/cardLargeText"
                 style="@style/SettingsCard"
                 android:clickable="true"
                 android:focusable="true">
-
-                <TextView
-                    style="@style/SettingsTitleText"
-                    android:text="@string/speech_speed" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:text="@string/speech_speed_description" />
-
-                <TextView
-                    android:id="@+id/tvSpeechSpeedValue"
-                    style="@style/SettingsValueText"
-                    tools:text="Normal" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/cardLargeText"
-                style="@style/SettingsCard">
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchLargeText"
-                    style="@style/SettingsSwitch"
-                    android:text="@string/large_text" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:importantForAccessibility="no"
-                    android:text="@string/large_text_description" />
+                <TextView style="@style/SettingsTitleText" android:text="@string/large_text" />
+                <TextView android:id="@+id/tvLargeTextValue" style="@style/SettingsValueText" tools:text="Off" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardHighContrast"
-                style="@style/SettingsCard">
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchHighContrast"
-                    style="@style/SettingsSwitch"
-                    android:text="@string/high_contrast" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:importantForAccessibility="no"
-                    android:text="@string/high_contrast_description" />
+                style="@style/SettingsCard"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView style="@style/SettingsTitleText" android:text="@string/high_contrast" />
+                <TextView android:id="@+id/tvHighContrastValue" style="@style/SettingsValueText" tools:text="Off" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardProcessingHaptic"
-                style="@style/SettingsCard">
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchProcessingHaptic"
-                    style="@style/SettingsSwitch"
-                    android:text="@string/processing_haptic_feedback" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:importantForAccessibility="no"
-                    android:text="@string/processing_haptic_description" />
+                style="@style/SettingsCard"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView style="@style/SettingsTitleText" android:text="@string/processing_haptic_feedback" />
+                <TextView android:id="@+id/tvProcessingHapticValue" style="@style/SettingsValueText" tools:text="On" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/cardSessionEndHaptic"
-                style="@style/SettingsCard">
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchSessionEndHaptic"
-                    style="@style/SettingsSwitch"
-                    android:text="@string/session_end_haptic_feedback" />
-
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:importantForAccessibility="no"
-                    android:text="@string/session_end_haptic_description" />
+                style="@style/SettingsCard"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView style="@style/SettingsTitleText" android:text="@string/session_end_haptic_feedback" />
+                <TextView android:id="@+id/tvSessionEndHapticValue" style="@style/SettingsValueText" tools:text="On" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvDeveloperHeading"
-                style="@style/SettingsSectionHeading"
+            <LinearLayout
+                android:id="@+id/cardAdvancedSettings"
+                style="@style/SettingsCard"
                 android:layout_marginTop="24dp"
-                android:text="@string/developer_connection_heading" />
-
-            <TextView
-                style="@style/SettingsSectionDescription"
-                android:text="@string/developer_connection_description" />
-
-            <LinearLayout
-                android:id="@+id/cardConversationAgentEndpoint"
-                style="@style/SettingsTechnicalCard"
+                android:background="@drawable/bg_settings_advanced_card"
                 android:clickable="true"
-                android:focusable="true">
-
-                <TextView
-                    style="@style/SettingsTechnicalTitleText"
-                    android:text="@string/conversation_agent_endpoint" />
-
-                <TextView
-                    android:id="@+id/tvConversationAgentEndpointValue"
-                    style="@style/SettingsTechnicalValueText"
-                    tools:text="http://192.168.0.132:1234/v1/chat/completions" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/cardTaskAgentEndpoint"
-                style="@style/SettingsTechnicalCard"
-                android:clickable="true"
-                android:focusable="true">
-
-                <TextView
-                    style="@style/SettingsTechnicalTitleText"
-                    android:text="@string/task_agent_endpoint" />
-
-                <TextView
-                    android:id="@+id/tvTaskAgentEndpointValue"
-                    style="@style/SettingsTechnicalValueText"
-                    tools:text="http://192.168.0.132:1234/v1/chat/completions" />
+                android:focusable="true"
+                android:gravity="center_vertical">
+                <TextView style="@style/SettingsTitleText" android:text="@string/advanced_settings" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
 
-    <Button
-        android:id="@+id/btnGoHome"
+    <LinearLayout
+        android:id="@+id/settingsBottomDock"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="@drawable/bg_anchor_home_button"
-        android:backgroundTint="@null"
-        android:minHeight="66dp"
-        android:paddingVertical="12dp"
-        android:text="@string/home"
-        android:textAllCaps="false"
-        android:textColor="?attr/appColorTextPrimaryDark"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
-        app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <Button
-        android:id="@+id/btnTalkAssistant"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_anchor_assistant_button"
-        android:backgroundTint="@null"
-        android:hapticFeedbackEnabled="true"
-        android:minHeight="104dp"
-        android:paddingVertical="16dp"
-        android:text="@string/talk_to_assistant"
-        android:textAllCaps="false"
-        android:textColor="@color/white"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
+        android:layout_height="108dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        tools:ignore="ButtonStyle">
+
+        <Button
+            android:id="@+id/btnGoHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_task_list_home_action"
+            android:backgroundTint="@null"
+            android:minHeight="108dp"
+            android:text="@string/home"
+            android:textAllCaps="false"
+            android:textColor="?attr/appColorTaskListTextPrimary"
+            android:textSize="19sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
+
+        <Button
+            android:id="@+id/btnTalkAssistant"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="14dp"
+            android:layout_weight="2"
+            android:background="@drawable/bg_task_list_assistant_action"
+            android:backgroundTint="@null"
+            android:hapticFeedbackEnabled="true"
+            android:minHeight="108dp"
+            android:text="@string/talk_to_assistant"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

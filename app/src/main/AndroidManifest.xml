@@ -66,6 +66,11 @@
 
         <activity android:name=".SettingsActivity" />
 
+        <activity
+            android:name=".AdvancedSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <service
             android:name=".ReminderSpeechService"
             android:exported="false"

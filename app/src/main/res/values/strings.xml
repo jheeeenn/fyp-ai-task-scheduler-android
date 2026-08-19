@@ -80,7 +80,7 @@
         <item quantity="one">%1$d overdue</item>
         <item quantity="other">%1$d overdue</item>
     </plurals>
-    <string name="assistant_preferences">Assistant Preferences</string>
+    <string name="assistant_preferences">Voice &amp; Conversation</string>
     <string name="accessibility_settings_heading">Accessibility</string>
     <string name="speech_speed">Speech Speed</string>
     <string name="speech_speed_description">Controls how quickly spoken feedback is read</string>
@@ -100,4 +100,7 @@
     <string name="task_agent_endpoint">Task Agent Endpoint</string>
     <string name="reset_to_default">Reset to Default</string>
     <string name="endpoint_blank_error">Endpoint cannot be blank.</string>
+    <string name="advanced_settings">Advanced Settings</string>
+    <string name="ai_connections_heading">AI Connections</string>
+    <string name="back_to_settings">Back to Settings</string>
 </resources>

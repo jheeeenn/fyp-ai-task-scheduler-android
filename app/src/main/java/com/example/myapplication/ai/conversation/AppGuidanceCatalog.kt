@@ -27,9 +27,9 @@ object AppGuidanceCatalog {
             "Deliver a due reminder, a later follow-up if the task is still incomplete, and a final reminder where applicable when Android notification and alarm permissions allow delivery.",
             "Accept spoken requests from the Talk Assistant button or typed requests by long-pressing the same button; both use the same assistant pipeline.",
             "Let the user end naturally with a clear closing statement or use the Stop Assistant control.",
-            "Change Assistant Tone by voice or in Settings using Friendly, Neutral, or Professional; tone changes how subsequent assistant responses are phrased.",
-            "Change Reply Length by voice or in Settings using Short, Normal, or Detailed; reply length changes how detailed subsequent assistant responses are.",
-            "Change Speech Speed by voice or in Settings using Slow, Normal, Fast, or Very Fast; speech speed controls how quickly app-generated spoken feedback is delivered.",
+            "Change Assistant Tone by voice or conversationally from its Settings card using Friendly, Neutral, or Professional; tone changes how subsequent assistant responses are phrased.",
+            "Change Reply Length by voice or conversationally from its Settings card using Short, Normal, or Detailed; reply length changes how detailed subsequent assistant responses are.",
+            "Change Speech Speed by voice or conversationally from its Settings card using Slow, Normal, Fast, or Very Fast; speech speed controls how quickly app-generated spoken feedback is delivered.",
             "Turn Large Text on or off by voice or in Settings under Accessibility; it increases text size throughout the app in addition to Android's system font scaling.",
             "Turn High Contrast on or off by voice or in Settings under Accessibility; it increases foreground and background contrast across supported app screens.",
             "Turn Processing Haptic Feedback on or off by voice or in Settings; while enabled, a repeating heartbeat or lub-dub vibration means the assistant is genuinely processing a submitted request and is still working.",
@@ -81,7 +81,7 @@ object AppGuidanceCatalog {
             "Processing haptic feedback stops when processing ends or speaking begins. Processing and session-end haptic feedback can each be changed by voice or in Settings.",
             "Large Text and High Contrast can be changed by voice or in Settings under Accessibility; High Contrast does not imply formal accessibility-standard compliance.",
             "Assistant Tone, Reply Length, and Speech Speed can be changed by voice or in Settings; Speech Speed supports only Slow, Normal, Fast, and Very Fast.",
-            "Conversation Agent Endpoint and Task Agent Endpoint are developer AI connection settings and cannot be changed by voice; never expose their configured URLs in app guidance.",
+            "Conversation Agent Endpoint and Task Agent Endpoint are under Advanced Settings, are developer AI connection settings, and cannot be changed by voice; never expose their configured URLs in app guidance.",
             "App guidance must not claim that an operation occurred unless the app successfully completed it."
         )
     )
