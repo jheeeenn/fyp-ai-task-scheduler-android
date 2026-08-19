@@ -30,7 +30,10 @@
         <item name="appColorAssistantSpeakingEnd">@color/assistant_speaking_end</item>
         <item name="appColorHomeBackground">@color/home_background</item>
         <item name="appColorHomePreviewSurface">@color/home_preview_surface</item>
-        <item name="appColorHomeSecondarySurface">@color/home_secondary_surface</item>
+        <item name="appColorHomeTodayAction">@color/home_today_action</item>
+        <item name="appColorHomeCreateAction">@color/home_create_action</item>
+        <item name="appColorHomeScheduledAction">@color/home_scheduled_action</item>
+        <item name="appColorHomeSettingsAction">@color/home_settings_action</item>
         <item name="appColorHomeTextPrimary">@color/home_text_primary</item>
         <item name="appColorHomeTextSecondary">@color/home_text_secondary</item>
         <item name="appColorHomeOutline">@color/home_outline</item>
@@ -77,7 +80,10 @@
         <item name="appColorAssistantSpeakingEnd">@color/hc_assistant_speaking_end</item>
         <item name="appColorHomeBackground">@color/hc_home_background</item>
         <item name="appColorHomePreviewSurface">@color/hc_home_preview_surface</item>
-        <item name="appColorHomeSecondarySurface">@color/hc_home_secondary_surface</item>
+        <item name="appColorHomeTodayAction">@color/hc_home_today_action</item>
+        <item name="appColorHomeCreateAction">@color/hc_home_create_action</item>
+        <item name="appColorHomeScheduledAction">@color/hc_home_scheduled_action</item>
+        <item name="appColorHomeSettingsAction">@color/hc_home_settings_action</item>
         <item name="appColorHomeTextPrimary">@color/hc_home_text_primary</item>
         <item name="appColorHomeTextSecondary">@color/hc_home_text_secondary</item>
         <item name="appColorHomeOutline">@color/hc_home_outline</item>

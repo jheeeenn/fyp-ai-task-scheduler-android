@@ -87,7 +87,7 @@ class AccessibilitySourceContractTest {
             assertFalse(xml.contains("android:layout_height=\"112dp\""))
             Regex("<Button[\\s\\S]*?/>").findAll(xml).forEach { button ->
                 val isFixedHomeAssistant = button.value.contains("@+id/btnTalkAssistant") &&
-                    button.value.contains("android:layout_height=\"136dp\"")
+                    button.value.contains("android:layout_height=\"220dp\"")
                 if (isFixedHomeAssistant) {
                     return@forEach
                 }
@@ -118,7 +118,7 @@ class AccessibilitySourceContractTest {
         assertTrue(scrollView.contains("app:layout_constraintTop_toTopOf=\"parent\""))
         assertTrue(scrollView.contains("app:layout_constraintBottom_toTopOf=\"@id/btnTalkAssistant\""))
         assertTrue(assistantButton.contains("android:layout_width=\"0dp\""))
-        assertTrue(assistantButton.contains("android:layout_height=\"136dp\""))
+        assertTrue(assistantButton.contains("android:layout_height=\"220dp\""))
         assertFalse(assistantButton.contains("android:layout_height=\"wrap_content\""))
         assertFalse(assistantButton.contains("android:minHeight="))
         assertTrue(assistantButton.contains("app:layout_constraintStart_toStartOf=\"parent\""))

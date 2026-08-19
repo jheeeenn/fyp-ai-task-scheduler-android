@@ -87,7 +87,10 @@
     <!-- Home-only redesign palette. Every surface is fully opaque. -->
     <color name="home_background">#FF121416</color>
     <color name="home_preview_surface">#FF1C1F22</color>
-    <color name="home_secondary_surface">#FF25292D</color>
+    <color name="home_today_action">#FF8A672F</color>
+    <color name="home_create_action">#FF346966</color>
+    <color name="home_scheduled_action">#FF63557B</color>
+    <color name="home_settings_action">#FF705244</color>
     <color name="home_text_primary">#FFF8F9FA</color>
     <color name="home_text_secondary">#FFD3D7DA</color>
     <color name="home_outline">#FF87919A</color>
@@ -101,7 +104,10 @@
 
     <color name="hc_home_background">#FF000000</color>
     <color name="hc_home_preview_surface">#FF101010</color>
-    <color name="hc_home_secondary_surface">#FF1B1B1B</color>
+    <color name="hc_home_today_action">#FF8A5A00</color>
+    <color name="hc_home_create_action">#FF006B62</color>
+    <color name="hc_home_scheduled_action">#FF5A3F83</color>
+    <color name="hc_home_settings_action">#FF6B3F2D</color>
     <color name="hc_home_text_primary">#FFFFFFFF</color>
     <color name="hc_home_text_secondary">#FFF2F2F2</color>
     <color name="hc_home_outline">#FFFFFFFF</color>

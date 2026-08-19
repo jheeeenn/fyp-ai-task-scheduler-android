@@ -26,7 +26,10 @@
     <attr name="appColorAssistantSpeakingEnd" format="color" />
     <attr name="appColorHomeBackground" format="color" />
     <attr name="appColorHomePreviewSurface" format="color" />
-    <attr name="appColorHomeSecondarySurface" format="color" />
+    <attr name="appColorHomeTodayAction" format="color" />
+    <attr name="appColorHomeCreateAction" format="color" />
+    <attr name="appColorHomeScheduledAction" format="color" />
+    <attr name="appColorHomeSettingsAction" format="color" />
     <attr name="appColorHomeTextPrimary" format="color" />
     <attr name="appColorHomeTextSecondary" format="color" />
     <attr name="appColorHomeOutline" format="color" />
