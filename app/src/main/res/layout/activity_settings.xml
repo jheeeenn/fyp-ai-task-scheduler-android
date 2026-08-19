@@ -88,6 +88,26 @@
                 android:text="@string/accessibility_settings_heading" />
 
             <LinearLayout
+                android:id="@+id/cardSpeechSpeed"
+                style="@style/SettingsCard"
+                android:clickable="true"
+                android:focusable="true">
+
+                <TextView
+                    style="@style/SettingsTitleText"
+                    android:text="@string/speech_speed" />
+
+                <TextView
+                    style="@style/SettingsDescriptionText"
+                    android:text="@string/speech_speed_description" />
+
+                <TextView
+                    android:id="@+id/tvSpeechSpeedValue"
+                    style="@style/SettingsValueText"
+                    tools:text="Normal" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/cardLargeText"
                 style="@style/SettingsCard">
 

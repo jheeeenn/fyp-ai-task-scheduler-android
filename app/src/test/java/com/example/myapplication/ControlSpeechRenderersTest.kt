@@ -2,22 +2,38 @@ package com.example.myapplication
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ControlSpeechRenderersTest {
     @Test
-    fun homeIdentificationDescribesFutureActivationWithoutClaimingNavigationStarted() {
+    fun appControlIdentificationIsConciseAndContainsNoGestureInstruction() {
         val descriptions = listOf(
             HomeControlSpeechRenderer.todayTasks(),
             HomeControlSpeechRenderer.createTask(),
             HomeControlSpeechRenderer.scheduledTasks(),
             HomeControlSpeechRenderer.settings(),
-            HomeControlSpeechRenderer.assistant()
+            HomeControlSpeechRenderer.assistant(),
+            TaskFormControlSpeechRenderer.pickDate(),
+            TaskFormControlSpeechRenderer.pickTime(),
+            TaskFormControlSpeechRenderer.saveTask(),
+            TaskFormControlSpeechRenderer.deleteTask(),
+            TaskFormControlSpeechRenderer.cancel(),
+            TaskFormControlSpeechRenderer.home(),
+            TaskFormControlSpeechRenderer.assistant(),
+            SettingsControlSpeechRenderer.assistantTone("Friendly"),
+            SettingsControlSpeechRenderer.replyLength("Short"),
+            SettingsControlSpeechRenderer.speechSpeed("Fast"),
+            SettingsControlSpeechRenderer.conversationEndpoint(),
+            SettingsControlSpeechRenderer.taskEndpoint(),
+            SettingsControlSpeechRenderer.saveOption(),
+            SettingsControlSpeechRenderer.home(),
+            SettingsControlSpeechRenderer.assistant(),
+            AssistantPanelControlSpeechRenderer.stop(),
+            AssistantPanelControlSpeechRenderer.typeInput()
         )
 
         descriptions.forEach { description ->
-            assertTrue(description.contains("Double tap"))
+            assertFalse(description.contains("double tap", ignoreCase = true))
             assertFalse(description.contains("Opening", ignoreCase = true))
         }
     }
@@ -25,12 +41,21 @@ class ControlSpeechRenderersTest {
     @Test
     fun settingsIdentificationIncludesTheCurrentOption() {
         assertEquals(
-            "Assistant Tone, Friendly. Double tap to change.",
+            "Assistant Tone, Friendly",
             SettingsControlSpeechRenderer.assistantTone("Friendly")
         )
         assertEquals(
-            "Reply Length, Detailed. Double tap to change.",
+            "Reply Length, Detailed",
             SettingsControlSpeechRenderer.replyLength("Detailed")
         )
+        assertEquals(
+            "Speech Speed, Fast",
+            SettingsControlSpeechRenderer.speechSpeed("Fast")
+        )
+        assertEquals(
+            "Conversation Agent Endpoint",
+            SettingsControlSpeechRenderer.conversationEndpoint()
+        )
+        assertEquals("Task Agent Endpoint", SettingsControlSpeechRenderer.taskEndpoint())
     }
 }

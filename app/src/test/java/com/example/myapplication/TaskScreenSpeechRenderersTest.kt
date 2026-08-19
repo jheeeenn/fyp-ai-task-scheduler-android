@@ -105,40 +105,23 @@ class TaskScreenSpeechRenderersTest {
     }
 
     @Test
-    fun buttonSingleTapDescriptionsExplainTheFutureActivation() {
-        assertEquals("Home. Double tap to return.", TaskScreenControlSpeechRenderer.homeDescription())
-        assertEquals(
-            "Talk to Assistant. Double tap to open.",
-            TaskScreenControlSpeechRenderer.assistantDescription()
+    fun buttonSingleTapDescriptionsAreConciseLabels() {
+        val descriptions = listOf(
+            TaskScreenControlSpeechRenderer.homeDescription() to "Home",
+            TaskScreenControlSpeechRenderer.assistantDescription() to "Talk to Assistant",
+            TaskScreenControlSpeechRenderer.taskAssistantDescription() to "Talk to Assistant",
+            TaskScreenControlSpeechRenderer.readAllDescription() to "Read All",
+            TaskScreenControlSpeechRenderer.saveDescription() to "Save",
+            TaskScreenControlSpeechRenderer.toggleDescription(false) to "Mark Done",
+            TaskScreenControlSpeechRenderer.toggleDescription(true) to "Undo",
+            TaskScreenControlSpeechRenderer.editDescription() to "Edit",
+            TaskScreenControlSpeechRenderer.deleteDescription() to "Delete"
         )
-        assertEquals(
-            "Talk to Assistant. Double tap to open task assistance.",
-            TaskScreenControlSpeechRenderer.taskAssistantDescription()
-        )
-        assertEquals(
-            "Read All. Double tap to read the task.",
-            TaskScreenControlSpeechRenderer.readAllDescription()
-        )
-        assertEquals(
-            "Save. Double tap to save changes.",
-            TaskScreenControlSpeechRenderer.saveDescription()
-        )
-        assertEquals(
-            "Mark Done. Double tap to complete the task.",
-            TaskScreenControlSpeechRenderer.toggleDescription(false)
-        )
-        assertEquals(
-            "Undo. Double tap to mark not done.",
-            TaskScreenControlSpeechRenderer.toggleDescription(true)
-        )
-        assertEquals(
-            "Edit. Double tap to edit the task.",
-            TaskScreenControlSpeechRenderer.editDescription()
-        )
-        assertEquals(
-            "Delete. Double tap to delete the task.",
-            TaskScreenControlSpeechRenderer.deleteDescription()
-        )
+
+        descriptions.forEach { (actual, expected) ->
+            assertEquals(expected, actual)
+            assertFalse(actual.contains("double tap", ignoreCase = true))
+        }
     }
 
     @Test

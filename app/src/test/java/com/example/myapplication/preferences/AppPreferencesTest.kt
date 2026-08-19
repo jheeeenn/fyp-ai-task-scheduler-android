@@ -32,17 +32,29 @@ class AppPreferencesTest {
         assertEquals("Normal", preferences.replyLength)
         assertTrue(preferences.processingHapticEnabled)
         assertTrue(preferences.sessionEndHapticEnabled)
+        assertEquals(SpeechRatePreset.NORMAL, preferences.speechRatePreset)
 
         preferences.setAssistantTone("Professional")
         preferences.setReplyLength("Detailed")
         preferences.setProcessingHapticEnabled(false)
         preferences.setSessionEndHapticEnabled(false)
+        preferences.setSpeechRatePreset(SpeechRatePreset.FAST)
 
         val recreated = AppPreferences(storage)
         assertEquals("Professional", recreated.assistantTone)
         assertEquals("Detailed", recreated.replyLength)
         assertFalse(recreated.processingHapticEnabled)
         assertFalse(recreated.sessionEndHapticEnabled)
+        assertEquals(SpeechRatePreset.FAST, recreated.speechRatePreset)
+    }
+
+    @Test
+    fun corruptedSpeechRateFallsBackToNormal() {
+        val storage = FakePreferenceStorage().apply {
+            putString(AppPreferences.KEY_SPEECH_RATE, "unsupported-rate")
+        }
+
+        assertEquals(SpeechRatePreset.NORMAL, AppPreferences(storage).speechRatePreset)
     }
 
     @Test

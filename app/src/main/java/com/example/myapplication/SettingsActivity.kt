@@ -21,6 +21,7 @@ import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.example.myapplication.accessibility.resolveThemeColor
 import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.preferences.PreferenceChangeSource
+import com.example.myapplication.preferences.SpeechRatePreset
 import com.google.android.material.switchmaterial.SwitchMaterial
 
 class SettingsActivity : AccessibilityActivity() {
@@ -29,6 +30,7 @@ class SettingsActivity : AccessibilityActivity() {
         const val PREFS_NAME = AppPreferences.PREFS_NAME
         const val KEY_ASSISTANT_TONE = AppPreferences.KEY_ASSISTANT_TONE
         const val KEY_REPLY_LENGTH = AppPreferences.KEY_REPLY_LENGTH
+        const val KEY_SPEECH_RATE = AppPreferences.KEY_SPEECH_RATE
         const val KEY_LARGE_TEXT = AppPreferences.KEY_LARGE_TEXT
         const val KEY_HIGH_CONTRAST = AppPreferences.KEY_HIGH_CONTRAST
         const val KEY_PROCESSING_HAPTIC_FEEDBACK = AppPreferences.KEY_PROCESSING_HAPTIC_FEEDBACK
@@ -37,6 +39,7 @@ class SettingsActivity : AccessibilityActivity() {
         const val KEY_CONVERSATION_AGENT_ENDPOINT = AppPreferences.KEY_CONVERSATION_AGENT_ENDPOINT
         const val KEY_TASK_AGENT_ENDPOINT = AppPreferences.KEY_TASK_AGENT_ENDPOINT
         const val DEFAULT_LM_STUDIO_ENDPOINT = AppPreferences.DEFAULT_CONVERSATION_AGENT_ENDPOINT
+        const val DEFAULT_SPEECH_RATE = AppPreferences.DEFAULT_SPEECH_RATE
         const val DEFAULT_CONVERSATION_AGENT_ENDPOINT = AppPreferences.DEFAULT_CONVERSATION_AGENT_ENDPOINT
         const val DEFAULT_TASK_AGENT_ENDPOINT = AppPreferences.DEFAULT_TASK_AGENT_ENDPOINT
         private const val EXTRA_RESTORE_SETTING_FOCUS = "restore_setting_focus"
@@ -45,6 +48,7 @@ class SettingsActivity : AccessibilityActivity() {
     private lateinit var appPreferences: AppPreferences
     private lateinit var tvToneValue: TextView
     private lateinit var tvReplyLengthValue: TextView
+    private lateinit var tvSpeechSpeedValue: TextView
     private lateinit var tvConversationAgentEndpointValue: TextView
     private lateinit var tvTaskAgentEndpointValue: TextView
 
@@ -79,6 +83,7 @@ class SettingsActivity : AccessibilityActivity() {
     private fun bindViews() {
         tvToneValue = findViewById(R.id.tvToneValue)
         tvReplyLengthValue = findViewById(R.id.tvReplyLengthValue)
+        tvSpeechSpeedValue = findViewById(R.id.tvSpeechSpeedValue)
         tvConversationAgentEndpointValue = findViewById(R.id.tvConversationAgentEndpointValue)
         tvTaskAgentEndpointValue = findViewById(R.id.tvTaskAgentEndpointValue)
         switchLargeText = findViewById(R.id.switchLargeText)
@@ -96,6 +101,7 @@ class SettingsActivity : AccessibilityActivity() {
     private fun renderCurrentValues() {
         tvToneValue.text = appPreferences.assistantTone
         tvReplyLengthValue.text = appPreferences.replyLength
+        tvSpeechSpeedValue.text = appPreferences.speechRatePreset.displayName
         tvConversationAgentEndpointValue.text = appPreferences.conversationAgentEndpoint
         tvTaskAgentEndpointValue.text = appPreferences.taskAgentEndpoint
 
@@ -151,6 +157,32 @@ class SettingsActivity : AccessibilityActivity() {
             }
         )
 
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardSpeechSpeed),
+            speechProvider = {
+                SettingsControlSpeechRenderer.speechSpeed(
+                    appPreferences.speechRatePreset.displayName
+                )
+            },
+            speak = ::speakControlIdentification,
+            activate = {
+                showOptionDialog(
+                    title = getString(R.string.speech_speed),
+                    options = SpeechRatePreset.values().map(SpeechRatePreset::displayName),
+                    currentValue = appPreferences.speechRatePreset.displayName
+                ) { selected ->
+                    val preset = SpeechRatePreset.fromStoredValue(selected)
+                    appPreferences.setSpeechRatePreset(preset)
+                    voiceHelper.applySpeechRate(preset)
+                    tvSpeechSpeedValue.text = preset.displayName
+                    updateMultiOptionSemantics()
+                    voiceHelper.speak(
+                        SettingsControlSpeechRenderer.speechSpeed(preset.displayName)
+                    )
+                }
+            }
+        )
+
         switchLargeText.setOnCheckedChangeListener { button, enabled ->
             button.performTapHapticFeedback()
             appPreferences.setLargeTextEnabled(enabled, PreferenceChangeSource.TOUCH)
@@ -179,11 +211,7 @@ class SettingsActivity : AccessibilityActivity() {
 
         VoiceFirstGestureBinder.bindAction(
             view = findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint),
-            speechProvider = {
-                SettingsControlSpeechRenderer.conversationEndpoint(
-                    appPreferences.conversationAgentEndpoint
-                )
-            },
+            speechProvider = SettingsControlSpeechRenderer::conversationEndpoint,
             speak = ::speakControlIdentification,
             activate = {
                 showEndpointDialog(
@@ -200,9 +228,7 @@ class SettingsActivity : AccessibilityActivity() {
 
         VoiceFirstGestureBinder.bindAction(
             view = findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint),
-            speechProvider = {
-                SettingsControlSpeechRenderer.taskEndpoint(appPreferences.taskAgentEndpoint)
-            },
+            speechProvider = SettingsControlSpeechRenderer::taskEndpoint,
             speak = ::speakControlIdentification,
             activate = {
                 showEndpointDialog(
@@ -269,6 +295,9 @@ class SettingsActivity : AccessibilityActivity() {
         findViewById<LinearLayout>(R.id.cardReplyLength).contentDescription =
             "${getString(R.string.reply_length)}, ${appPreferences.replyLength}. " +
                 getString(R.string.reply_length_description)
+        findViewById<LinearLayout>(R.id.cardSpeechSpeed).contentDescription =
+            "${getString(R.string.speech_speed)}, ${appPreferences.speechRatePreset.displayName}. " +
+                getString(R.string.speech_speed_description)
     }
 
     private fun updateEndpointSemantics() {

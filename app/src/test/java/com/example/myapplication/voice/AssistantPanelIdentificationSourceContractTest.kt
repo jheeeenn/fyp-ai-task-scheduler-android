@@ -56,11 +56,21 @@ class AssistantPanelIdentificationSourceContractTest {
     }
 
     @Test
-    fun bottomSheetKeepsActionInformationAndStandardClickContracts() {
+    fun bottomSheetKeepsActionsButDynamicInformationAndPanelBackgroundAreQuiet() {
         assertTrue(bottomSheet.countOccurrences("VoiceFirstGestureBinder.bindAction") >= 3)
-        assertTrue(bottomSheet.countOccurrences("VoiceFirstGestureBinder.bindInformation") >= 2)
+        assertFalse(bottomSheet.contains("VoiceFirstGestureBinder.bindInformation"))
+        assertFalse(bottomSheet.contains("AssistantPanelControlSpeechRenderer::panel"))
+        assertTrue(bottomSheet.contains("view = assistantRoot"))
+        assertTrue(bottomSheet.contains("speechProvider = { null }"))
         assertTrue(bottomSheet.contains("activate = { onDoubleTapCancel?.invoke() }"))
         assertTrue(bottomSheet.contains("activate = { onTypedInputRequested?.invoke() }"))
+        listOf("stateContainer", "tvUserSpeech", "tvAssistantReply", "tvAssistantHint")
+            .forEach { informationView ->
+                assertFalse(
+                    Regex("VoiceFirstGestureBinder\\.bindInformation\\([\\s\\S]{0,200}$informationView")
+                        .containsMatchIn(bottomSheet)
+                )
+            }
         val binder = mainRoot.resolve("VoiceFirstGestureBinder.kt").readText()
         assertTrue(binder.contains("view.setOnClickListener { activate() }"))
         assertTrue(binder.contains("view.performClick()"))

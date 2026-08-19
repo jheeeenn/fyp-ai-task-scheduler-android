@@ -33,6 +33,11 @@ class AppPreferences internal constructor(
         get() = storage.getString(KEY_REPLY_LENGTH, DEFAULT_REPLY_LENGTH)
             ?: DEFAULT_REPLY_LENGTH
 
+    val speechRatePreset: SpeechRatePreset
+        get() = SpeechRatePreset.fromStoredValue(
+            storage.getString(KEY_SPEECH_RATE, DEFAULT_SPEECH_RATE)
+        )
+
     val conversationAgentEndpoint: String
         get() = configuredEndpoint(KEY_CONVERSATION_AGENT_ENDPOINT)
             ?: DEFAULT_CONVERSATION_AGENT_ENDPOINT
@@ -64,6 +69,10 @@ class AppPreferences internal constructor(
 
     fun setReplyLength(value: String) {
         storage.putString(KEY_REPLY_LENGTH, value)
+    }
+
+    fun setSpeechRatePreset(preset: SpeechRatePreset) {
+        storage.putString(KEY_SPEECH_RATE, preset.displayName)
     }
 
     fun setConversationAgentEndpoint(value: String) {
@@ -106,6 +115,7 @@ class AppPreferences internal constructor(
         const val PREFS_NAME = "assistant_settings"
         const val KEY_ASSISTANT_TONE = "assistant_tone"
         const val KEY_REPLY_LENGTH = "reply_length"
+        const val KEY_SPEECH_RATE = "speech_rate"
         const val KEY_LARGE_TEXT = "large_text"
         const val KEY_HIGH_CONTRAST = "high_contrast"
         const val KEY_PROCESSING_HAPTIC_FEEDBACK = "processing_haptic_feedback"
@@ -116,6 +126,7 @@ class AppPreferences internal constructor(
 
         const val DEFAULT_ASSISTANT_TONE = "Friendly"
         const val DEFAULT_REPLY_LENGTH = "Normal"
+        const val DEFAULT_SPEECH_RATE = "Normal"
         const val DEFAULT_CONVERSATION_AGENT_ENDPOINT =
             "http://192.168.0.132:1234/v1/chat/completions"
         const val DEFAULT_TASK_AGENT_ENDPOINT =

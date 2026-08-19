@@ -54,10 +54,12 @@ class UnifiedTouchInteractionSourceContractTest {
                 "SettingsControlSpeechRenderer.assistantTone",
             "findViewById<LinearLayout>(R.id.cardReplyLength)" to
                 "SettingsControlSpeechRenderer.replyLength",
+            "findViewById<LinearLayout>(R.id.cardSpeechSpeed)" to
+                "SettingsControlSpeechRenderer.speechSpeed",
             "findViewById<LinearLayout>(R.id.cardConversationAgentEndpoint)" to
-                "SettingsControlSpeechRenderer.conversationEndpoint",
+                "SettingsControlSpeechRenderer::conversationEndpoint",
             "findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint)" to
-                "SettingsControlSpeechRenderer.taskEndpoint",
+                "SettingsControlSpeechRenderer::taskEndpoint",
             "findViewById<Button>(R.id.btnGoHome)" to "SettingsControlSpeechRenderer::home",
             "findViewById<Button>(R.id.btnTalkAssistant)" to
                 "SettingsControlSpeechRenderer::assistant",
@@ -101,8 +103,8 @@ class UnifiedTouchInteractionSourceContractTest {
         assertFalse(edit.contains("setOnClickListenerWithHaptic"))
 
         assertTrue(panel.countOccurrences("VoiceFirstGestureBinder.bindAction") >= 3)
-        assertTrue(panel.countOccurrences("VoiceFirstGestureBinder.bindInformation") >= 2)
-        assertTrue(panel.contains("listOf(tvUserSpeech, tvAssistantReply, tvAssistantHint)"))
+        assertFalse(panel.contains("VoiceFirstGestureBinder.bindInformation"))
+        assertTrue(panel.contains("speechProvider = { null }"))
         assertFalse(panel.contains("System.currentTimeMillis"))
         assertFalse(panel.contains("lastTapTime"))
         assertFalse(panel.contains("doubleTapWindowMs"))
@@ -145,7 +147,10 @@ class UnifiedTouchInteractionSourceContractTest {
         assertTrue("Missing shared action binding for $view", viewIndex >= 0)
         val bindingStart = source.lastIndexOf("VoiceFirstGestureBinder.bindAction(", viewIndex)
         assertTrue("$view is not in a shared action binding", bindingStart >= 0)
-        val bindingWindow = source.substring(bindingStart, minOf(source.length, viewIndex + 500))
+        val nextBinding = source.indexOf("VoiceFirstGestureBinder.bindAction(", viewIndex + 1)
+            .takeIf { it >= 0 }
+            ?: source.length
+        val bindingWindow = source.substring(bindingStart, nextBinding)
         assertTrue("Missing identification speech for $view", bindingWindow.contains(speech))
     }
 

@@ -45,23 +45,23 @@ class TaskDetailScreenSpeechState {
 }
 
 object TaskScreenControlSpeechRenderer {
-    fun homeDescription(): String = "Home. Double tap to return."
+    fun homeDescription(): String = "Home"
     fun returningHome(): String = "Returning home."
     fun goingBack(): String = "Going back."
-    fun assistantDescription(): String = "Talk to Assistant. Double tap to open."
+    fun assistantDescription(): String = "Talk to Assistant"
     fun openingAssistant(): String = "Opening assistant."
-    fun readAllDescription(): String = "Read All. Double tap to read the task."
-    fun saveDescription(): String = "Save. Double tap to save changes."
+    fun readAllDescription(): String = "Read All"
+    fun saveDescription(): String = "Save"
     fun toggleDescription(isDone: Boolean): String = if (isDone) {
-        "Undo. Double tap to mark not done."
+        "Undo"
     } else {
-        "Mark Done. Double tap to complete the task."
+        "Mark Done"
     }
-    fun editDescription(): String = "Edit. Double tap to edit the task."
+    fun editDescription(): String = "Edit"
     fun openingTaskEditor(): String = "Opening task editor."
-    fun deleteDescription(): String = "Delete. Double tap to delete the task."
+    fun deleteDescription(): String = "Delete"
     fun openingDeleteConfirmation(): String = "Opening assistant to confirm deletion."
-    fun taskAssistantDescription(): String = "Talk to Assistant. Double tap to open task assistance."
+    fun taskAssistantDescription(): String = "Talk to Assistant"
     fun openingTaskAssistant(title: String): String =
         "Opening assistant for ${title.ifBlank { "this task" }}."
 }

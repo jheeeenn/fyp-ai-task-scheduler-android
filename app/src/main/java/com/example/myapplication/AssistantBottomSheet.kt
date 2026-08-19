@@ -86,22 +86,10 @@ class AssistantBottomSheet(
         assistantRoot.contentDescription = "Assistant panel"
         VoiceFirstGestureBinder.bindAction(
             view = assistantRoot,
-            speechProvider = AssistantPanelControlSpeechRenderer::panel,
+            speechProvider = { null },
             speak = speakIdentification,
             activate = { onDoubleTapCancel?.invoke() }
         )
-        VoiceFirstGestureBinder.bindInformation(
-            view = stateContainer,
-            speechProvider = { AssistantPanelControlSpeechRenderer.status(tvState.text) },
-            speak = speakIdentification
-        )
-        listOf(tvUserSpeech, tvAssistantReply, tvAssistantHint).forEach { informationView ->
-            VoiceFirstGestureBinder.bindInformation(
-                view = informationView,
-                speechProvider = { informationView.contentDescription?.toString() },
-                speak = speakIdentification
-            )
-        }
 
         setOnDismissListener {
             onPanelDismissed()

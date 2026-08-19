@@ -59,6 +59,8 @@
     <string name="settings">Settings</string>
     <string name="assistant_preferences">Assistant Preferences</string>
     <string name="accessibility_settings_heading">Accessibility</string>
+    <string name="speech_speed">Speech Speed</string>
+    <string name="speech_speed_description">Controls how quickly spoken feedback is read</string>
     <string name="developer_connection_heading">Developer / AI Connection</string>
     <string name="developer_connection_description">Technical connection settings for local AI agents</string>
     <string name="assistant_tone">Assistant Tone</string>

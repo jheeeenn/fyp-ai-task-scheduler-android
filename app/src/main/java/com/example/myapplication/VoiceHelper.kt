@@ -4,12 +4,16 @@ import android.content.Context
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import com.example.myapplication.preferences.AppPreferences
+import com.example.myapplication.preferences.SpeechRatePreset
 import java.util.Locale
 
 class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
 
+    private val appPreferences = AppPreferences(context.applicationContext)
     private var tts: TextToSpeech = TextToSpeech(context.applicationContext, this)
     private var isReady = false
+    private var speechRatePreset = appPreferences.speechRatePreset
 
     private var pendingText: String? = null
     private var pendingOnFinished: ((Boolean) -> Unit)? = null
@@ -25,6 +29,8 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
                     result != TextToSpeech.LANG_NOT_SUPPORTED
 
             if (isReady) {
+                speechRatePreset = appPreferences.speechRatePreset
+                applySpeechRate(speechRatePreset)
                 val text = pendingText
                 val callback = pendingOnFinished
                 pendingText = null
@@ -57,6 +63,7 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun speakWithResult(text: String, onFinished: (Boolean) -> Unit) {
+        refreshSpeechRateFromPreferences()
         if (!isReady) {
             pendingText = text
             pendingOnFinished = onFinished
@@ -64,6 +71,20 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
         }
 
         speakInternal(text, onFinished)
+    }
+
+    fun applySpeechRate(preset: SpeechRatePreset) {
+        speechRatePreset = preset
+        if (isReady) {
+            tts.setSpeechRate(preset.rate)
+        }
+    }
+
+    private fun refreshSpeechRateFromPreferences() {
+        val storedPreset = appPreferences.speechRatePreset
+        if (storedPreset != speechRatePreset) {
+            applySpeechRate(storedPreset)
+        }
     }
 
     private fun speakInternal(text: String, onFinished: ((Boolean) -> Unit)?) {
