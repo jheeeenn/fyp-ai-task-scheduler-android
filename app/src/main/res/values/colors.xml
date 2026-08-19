@@ -135,4 +135,31 @@
     <color name="hc_task_list_outline">#FFFFFFFF</color>
     <color name="hc_assistant_primary_action">#FF0068FF</color>
     <color name="hc_assistant_action_outline">#FFFFFFFF</color>
+
+    <!-- Task Detail-only palette. All surfaces are fully opaque. -->
+    <color name="task_detail_surface">#FF23272B</color>
+    <color name="task_detail_outline">#FF87919A</color>
+    <color name="task_detail_action_read">#FF625F78</color>
+    <color name="task_detail_action_mark_done">#FF4F7259</color>
+    <color name="task_detail_action_undo">#FF8A672F</color>
+    <color name="task_detail_action_save_clean">#FF34383C</color>
+    <color name="task_detail_action_save_dirty">#FF346966</color>
+    <color name="task_detail_action_delete">#FF8B4A4E</color>
+    <color name="task_detail_action_text">#FFF8F9FA</color>
+    <color name="task_detail_unsaved_surface">#FFEEE2C5</color>
+    <color name="task_detail_unsaved_outline">#FF957023</color>
+    <color name="task_detail_unsaved_text">#FF65480C</color>
+
+    <color name="hc_task_detail_surface">#FF101010</color>
+    <color name="hc_task_detail_outline">#FFFFFFFF</color>
+    <color name="hc_task_detail_action_read">#FF4B3D70</color>
+    <color name="hc_task_detail_action_mark_done">#FF145C35</color>
+    <color name="hc_task_detail_action_undo">#FF704B00</color>
+    <color name="hc_task_detail_action_save_clean">#FF1B1B1B</color>
+    <color name="hc_task_detail_action_save_dirty">#FF006B62</color>
+    <color name="hc_task_detail_action_delete">#FF7A1F2B</color>
+    <color name="hc_task_detail_action_text">#FFFFFFFF</color>
+    <color name="hc_task_detail_unsaved_surface">#FFFFD25A</color>
+    <color name="hc_task_detail_unsaved_outline">#FFFFFFFF</color>
+    <color name="hc_task_detail_unsaved_text">#FF2A1C00</color>
 </resources>

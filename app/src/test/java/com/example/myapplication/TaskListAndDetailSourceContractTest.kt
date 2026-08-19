@@ -140,8 +140,8 @@ class TaskListAndDetailSourceContractTest {
             "btnTalkAssistant"
         ).forEach { id -> assertTrue(layout.contains("@+id/$id")) }
         assertTrue(layout.contains("<ScrollView"))
-        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnGoHome\""))
-        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnTalkAssistant\""))
+        assertTrue(layout.contains("@+id/taskDetailBottomDock"))
+        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/taskDetailBottomDock\""))
     }
 
     @Test

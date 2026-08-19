@@ -51,6 +51,18 @@
         <item name="appColorTaskListOutline">@color/task_list_outline</item>
         <item name="appColorAssistantPrimaryAction">@color/assistant_primary_action</item>
         <item name="appColorAssistantActionOutline">@color/assistant_action_outline</item>
+        <item name="appColorTaskDetailSurface">@color/task_detail_surface</item>
+        <item name="appColorTaskDetailOutline">@color/task_detail_outline</item>
+        <item name="appColorTaskDetailActionRead">@color/task_detail_action_read</item>
+        <item name="appColorTaskDetailActionMarkDone">@color/task_detail_action_mark_done</item>
+        <item name="appColorTaskDetailActionUndo">@color/task_detail_action_undo</item>
+        <item name="appColorTaskDetailActionSaveClean">@color/task_detail_action_save_clean</item>
+        <item name="appColorTaskDetailActionSaveDirty">@color/task_detail_action_save_dirty</item>
+        <item name="appColorTaskDetailActionDelete">@color/task_detail_action_delete</item>
+        <item name="appColorTaskDetailActionText">@color/task_detail_action_text</item>
+        <item name="appColorTaskDetailUnsavedSurface">@color/task_detail_unsaved_surface</item>
+        <item name="appColorTaskDetailUnsavedOutline">@color/task_detail_unsaved_outline</item>
+        <item name="appColorTaskDetailUnsavedText">@color/task_detail_unsaved_text</item>
     </style>
 
     <style name="Theme.MyApplication" parent="Base.Theme.MyApplication" />
@@ -108,5 +120,17 @@
         <item name="appColorTaskListOutline">@color/hc_task_list_outline</item>
         <item name="appColorAssistantPrimaryAction">@color/hc_assistant_primary_action</item>
         <item name="appColorAssistantActionOutline">@color/hc_assistant_action_outline</item>
+        <item name="appColorTaskDetailSurface">@color/hc_task_detail_surface</item>
+        <item name="appColorTaskDetailOutline">@color/hc_task_detail_outline</item>
+        <item name="appColorTaskDetailActionRead">@color/hc_task_detail_action_read</item>
+        <item name="appColorTaskDetailActionMarkDone">@color/hc_task_detail_action_mark_done</item>
+        <item name="appColorTaskDetailActionUndo">@color/hc_task_detail_action_undo</item>
+        <item name="appColorTaskDetailActionSaveClean">@color/hc_task_detail_action_save_clean</item>
+        <item name="appColorTaskDetailActionSaveDirty">@color/hc_task_detail_action_save_dirty</item>
+        <item name="appColorTaskDetailActionDelete">@color/hc_task_detail_action_delete</item>
+        <item name="appColorTaskDetailActionText">@color/hc_task_detail_action_text</item>
+        <item name="appColorTaskDetailUnsavedSurface">@color/hc_task_detail_unsaved_surface</item>
+        <item name="appColorTaskDetailUnsavedOutline">@color/hc_task_detail_unsaved_outline</item>
+        <item name="appColorTaskDetailUnsavedText">@color/hc_task_detail_unsaved_text</item>
     </style>
 </resources>

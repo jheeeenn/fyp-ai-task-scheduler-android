@@ -25,9 +25,10 @@ class TaskDetailEditableSourceContractTest {
     fun dirtyStateHasVisibleTextAndNonColourSignal() {
         assertTrue(layout.contains("@+id/detailUnsavedChanges"))
         assertTrue(layout.contains("@string/unsaved_changes"))
-        assertTrue(detail.contains("R.drawable.bg_save_changes_dirty"))
+        assertTrue(layout.contains("@drawable/bg_task_detail_unsaved"))
         assertTrue(detail.contains("unsavedChangesText.visibility"))
-        assertTrue(detail.contains("if (dirty) R.drawable.bg_save_changes_dirty else R.drawable.bg_action_button"))
+        assertTrue(detail.contains("R.drawable.bg_task_detail_action_save_dirty"))
+        assertTrue(detail.contains("R.drawable.bg_task_detail_action_save_clean"))
     }
 
     @Test
@@ -88,13 +89,13 @@ class TaskDetailEditableSourceContractTest {
     }
 
     @Test
-    fun detailsScrollWhileActionGridHomeAndAssistantStayAnchored() {
+    fun detailsAndActionGridScrollWhileOnlyNavigationDockStaysAnchored() {
         val scrollEnd = layout.indexOf("</ScrollView>")
-        assertTrue(layout.indexOf("@+id/detailActionGrid") > scrollEnd)
+        assertTrue(layout.indexOf("@+id/detailActionGrid") < scrollEnd)
         assertTrue(layout.indexOf("@+id/btnGoHome") > scrollEnd)
         assertTrue(layout.indexOf("@+id/btnTalkAssistant") > scrollEnd)
-        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/detailActionGrid\""))
-        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/btnGoHome\""))
+        assertTrue(layout.contains("@+id/taskDetailBottomDock"))
+        assertTrue(layout.contains("app:layout_constraintBottom_toTopOf=\"@id/taskDetailBottomDock\""))
         assertTrue(layout.contains("@+id/detailDateTimeRow"))
         assertFalse(layout.contains("<Space"))
     }

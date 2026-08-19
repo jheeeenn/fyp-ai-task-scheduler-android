@@ -10,7 +10,7 @@ class TaskDetailVoiceInteractionSourceContractTest {
     private val layoutRoot = File("src/main/res/layout")
 
     @Test
-    fun darkInformationPanelsUseLightOnDarkTextTokens() {
+    fun taskDetailInformationSurfacesUseDedicatedOpaquePanelsAndLightOnDarkText() {
         val layout = layoutRoot.resolve("activity_task_detail.xml").readText()
         listOf(
             "detailTitleSurface",
@@ -20,7 +20,7 @@ class TaskDetailVoiceInteractionSourceContractTest {
         ).forEach { id ->
             val panel = layout.substringAfter("android:id=\"@+id/$id\"")
                 .substringBefore("</LinearLayout>")
-            assertTrue(panel.contains("android:background=\"@drawable/bg_info_panel\""))
+            assertTrue(panel.contains("android:background=\"@drawable/bg_task_detail_surface\""))
             assertTrue(panel.contains("android:textColor=\"?attr/appColorTextSecondaryDark\""))
             assertTrue(panel.contains("android:textColor=\"?attr/appColorTextPrimaryDark\""))
             assertFalse(panel.contains("android:textColor=\"?attr/appColorTextSecondaryLight\""))
@@ -35,6 +35,7 @@ class TaskDetailVoiceInteractionSourceContractTest {
             .substringBefore("private fun readAll")
 
         assertTrue(rowRenderer.contains("R.drawable.bg_subtask_item"))
+        assertTrue(rowRenderer.contains("R.drawable.bg_task_status_completed"))
         assertTrue(rowRenderer.contains("R.attr.appColorTextPrimaryLight"))
         assertFalse(rowRenderer.contains("R.attr.appColorTextPrimaryDark"))
     }

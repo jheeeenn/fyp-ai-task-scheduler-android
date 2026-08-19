@@ -28,9 +28,10 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginTop="12dp"
+        android:layout_marginBottom="14dp"
         android:clipToPadding="false"
         android:fillViewport="true"
-        app:layout_constraintBottom_toTopOf="@id/detailActionGrid"
+        app:layout_constraintBottom_toTopOf="@id/taskDetailBottomDock"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/taskDetailHeading">
@@ -39,20 +40,21 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="2dp">
+            android:paddingHorizontal="2dp"
+            android:paddingBottom="2dp">
 
             <LinearLayout
                 android:id="@+id/detailTitleSurface"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_info_panel"
+                android:background="@drawable/bg_task_detail_surface"
                 android:clickable="true"
                 android:focusable="true"
                 android:hapticFeedbackEnabled="true"
                 android:importantForAccessibility="yes"
-                android:minHeight="88dp"
+                android:minHeight="100dp"
                 android:orientation="vertical"
-                android:padding="18dp">
+                android:padding="20dp">
 
                 <TextView
                     android:layout_width="match_parent"
@@ -79,95 +81,94 @@
                 android:id="@+id/detailDateTimeRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="14dp"
                 android:baselineAligned="false"
                 android:orientation="horizontal">
 
-            <LinearLayout
-                android:id="@+id/detailDateSurface"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_marginEnd="6dp"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_info_panel"
-                android:clickable="true"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:importantForAccessibility="yes"
-                android:minHeight="82dp"
-                android:orientation="vertical"
-                android:padding="18dp">
-
-                <TextView
-                    android:layout_width="match_parent"
+                <LinearLayout
+                    android:id="@+id/detailDateSurface"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="@string/detail_due_date_label"
-                    android:textColor="?attr/appColorTextSecondaryDark"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
+                    android:layout_marginEnd="7dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_task_detail_surface"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:hapticFeedbackEnabled="true"
+                    android:importantForAccessibility="yes"
+                    android:minHeight="100dp"
+                    android:orientation="vertical"
+                    android:padding="18dp">
 
-                <TextView
-                    android:id="@+id/detailDateText"
-                    android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAccessibility="no"
+                        android:text="@string/detail_due_date_label"
+                        android:textColor="?attr/appColorTextSecondaryDark"
+                        android:textSize="17sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/detailDateText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:importantForAccessibility="no"
+                        android:text="@string/no_date_set"
+                        android:textColor="?attr/appColorTextPrimaryDark"
+                        android:textSize="21sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/detailTimeSurface"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/no_date_set"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="21sp" />
-            </LinearLayout>
+                    android:layout_marginStart="7dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_task_detail_surface"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:hapticFeedbackEnabled="true"
+                    android:importantForAccessibility="yes"
+                    android:minHeight="100dp"
+                    android:orientation="vertical"
+                    android:padding="18dp">
 
-            <LinearLayout
-                android:id="@+id/detailTimeSurface"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_info_panel"
-                android:clickable="true"
-                android:focusable="true"
-                android:hapticFeedbackEnabled="true"
-                android:importantForAccessibility="yes"
-                android:minHeight="82dp"
-                android:orientation="vertical"
-                android:padding="18dp">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAccessibility="no"
+                        android:text="@string/detail_due_time_label"
+                        android:textColor="?attr/appColorTextSecondaryDark"
+                        android:textSize="17sp"
+                        android:textStyle="bold" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="@string/detail_due_time_label"
-                    android:textColor="?attr/appColorTextSecondaryDark"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/detailTimeText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/no_time_set"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="21sp" />
-            </LinearLayout>
-
+                    <TextView
+                        android:id="@+id/detailTimeText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:importantForAccessibility="no"
+                        android:text="@string/no_time_set"
+                        android:textColor="?attr/appColorTextPrimaryDark"
+                        android:textSize="21sp" />
+                </LinearLayout>
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/detailStatusSurface"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="14dp"
                 android:background="@drawable/bg_task_status_unscheduled"
                 android:clickable="true"
                 android:focusable="true"
                 android:hapticFeedbackEnabled="true"
                 android:importantForAccessibility="yes"
-                android:minHeight="88dp"
+                android:minHeight="96dp"
                 android:orientation="vertical"
-                android:padding="18dp">
+                android:padding="20dp">
 
                 <TextView
                     android:layout_width="match_parent"
@@ -194,7 +195,7 @@
                 android:id="@+id/detailSubtasksSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="20dp"
                 android:orientation="vertical"
                 android:visibility="gone">
 
@@ -213,12 +214,12 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_info_panel"
+                    android:background="@drawable/bg_task_detail_surface"
                     android:clickable="true"
                     android:focusable="true"
                     android:hapticFeedbackEnabled="true"
                     android:importantForAccessibility="yes"
-                    android:minHeight="76dp"
+                    android:minHeight="80dp"
                     android:orientation="vertical"
                     android:padding="18dp">
 
@@ -250,144 +251,152 @@
                     android:orientation="vertical" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/detailActionGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="vertical"
+                tools:ignore="ButtonStyle">
+
+                <TextView
+                    android:id="@+id/detailUnsavedChanges"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/bg_task_detail_unsaved"
+                    android:gravity="center"
+                    android:minHeight="48dp"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="10dp"
+                    android:text="@string/unsaved_changes"
+                    android:textColor="?attr/appColorTaskDetailUnsavedText"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnReadAll"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_task_detail_action_read"
+                        android:backgroundTint="@null"
+                        android:minHeight="80dp"
+                        android:text="@string/read_all"
+                        android:textAllCaps="false"
+                        android:textColor="?attr/appColorTaskDetailActionText"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+
+                    <Button
+                        android:id="@+id/btnToggleDone"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_task_detail_action_mark_done"
+                        android:backgroundTint="@null"
+                        android:minHeight="80dp"
+                        android:text="@string/mark_done"
+                        android:textAllCaps="false"
+                        android:textColor="?attr/appColorTaskDetailActionText"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnSaveChanges"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_task_detail_action_save_clean"
+                        android:backgroundTint="@null"
+                        android:minHeight="80dp"
+                        android:text="@string/save_changes"
+                        android:textAllCaps="false"
+                        android:textColor="?attr/appColorTaskDetailActionText"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+
+                    <Button
+                        android:id="@+id/btnDeleteTask"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_task_detail_action_delete"
+                        android:backgroundTint="@null"
+                        android:minHeight="80dp"
+                        android:text="@string/delete"
+                        android:textAllCaps="false"
+                        android:textColor="?attr/appColorTaskDetailActionText"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="@null" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 
     <LinearLayout
-        android:id="@+id/detailActionGrid"
+        android:id="@+id/taskDetailBottomDock"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:orientation="vertical"
-        app:layout_constraintBottom_toTopOf="@id/btnGoHome"
+        android:layout_height="108dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         tools:ignore="ButtonStyle">
 
-        <TextView
-            android:id="@+id/detailUnsavedChanges"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:gravity="center"
-            android:text="@string/unsaved_changes"
-            android:textColor="?attr/appColorSuccess"
-            android:textSize="17sp"
+        <Button
+            android:id="@+id/btnGoHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_task_list_home_action"
+            android:backgroundTint="@null"
+            android:minHeight="108dp"
+            android:text="@string/home"
+            android:textAllCaps="false"
+            android:textColor="?attr/appColorTaskListTextPrimary"
+            android:textSize="19sp"
             android:textStyle="bold"
-            android:visibility="gone" />
+            app:backgroundTint="@null" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnReadAll"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/read_all"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorTextPrimaryLight"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-
-            <Button
-                android:id="@+id/btnToggleDone"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/mark_done"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorTextPrimaryLight"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnSaveChanges"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/save_changes"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorTextPrimaryLight"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-
-            <Button
-                android:id="@+id/btnDeleteTask"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_action_button"
-                android:backgroundTint="@null"
-                android:minHeight="64dp"
-                android:text="@string/delete"
-                android:textAllCaps="false"
-                android:textColor="?attr/appColorDanger"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null" />
-        </LinearLayout>
+        <Button
+            android:id="@+id/btnTalkAssistant"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="14dp"
+            android:layout_weight="2"
+            android:background="@drawable/bg_task_list_assistant_action"
+            android:backgroundTint="@null"
+            android:hapticFeedbackEnabled="true"
+            android:minHeight="108dp"
+            android:text="@string/talk_to_assistant"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            app:backgroundTint="@null" />
     </LinearLayout>
-
-    <Button
-        android:id="@+id/btnGoHome"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="@drawable/bg_anchor_home_button"
-        android:backgroundTint="@null"
-        android:minHeight="60dp"
-        android:text="@string/home"
-        android:textAllCaps="false"
-        android:textColor="?attr/appColorTextPrimaryDark"
-        android:textSize="19sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
-        app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <Button
-        android:id="@+id/btnTalkAssistant"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_anchor_assistant_button"
-        android:backgroundTint="@null"
-        android:hapticFeedbackEnabled="true"
-        android:minHeight="88dp"
-        android:text="@string/talk_to_assistant"
-        android:textAllCaps="false"
-        android:textColor="@color/white"
-        android:textSize="23sp"
-        android:textStyle="bold"
-        app:backgroundTint="@null"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

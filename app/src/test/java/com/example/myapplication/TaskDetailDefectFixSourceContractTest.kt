@@ -127,22 +127,23 @@ class TaskDetailDefectFixSourceContractTest {
     }
 
     @Test
-    fun actionGridIsFixedBetweenScrollableDetailsAndHomeWithoutSpacer() {
+    fun actionGridScrollsWithDetailsAndNavigationDockIsFixedWithoutSpacer() {
         val scrollEnd = layout.indexOf("</ScrollView>")
         val gridStart = layout.indexOf("android:id=\"@+id/detailActionGrid\"")
-        val homeStart = layout.indexOf("android:id=\"@+id/btnGoHome\"")
-        val grid = layout.substring(gridStart, homeStart)
+        val dockStart = layout.indexOf("android:id=\"@+id/taskDetailBottomDock\"")
+        val grid = layout.substring(gridStart, scrollEnd)
 
-        assertTrue(gridStart > scrollEnd)
-        assertTrue(homeStart > gridStart)
+        assertTrue(gridStart < scrollEnd)
+        assertTrue(dockStart > scrollEnd)
         assertTrue(layout.substring(0, scrollEnd).contains(
-            "app:layout_constraintBottom_toTopOf=\"@id/detailActionGrid\""
+            "app:layout_constraintBottom_toTopOf=\"@id/taskDetailBottomDock\""
         ))
-        assertTrue(grid.contains("app:layout_constraintBottom_toTopOf=\"@id/btnGoHome\""))
         assertTrue(grid.contains("@+id/btnReadAll"))
         assertTrue(grid.contains("@+id/btnToggleDone"))
         assertTrue(grid.contains("@+id/btnSaveChanges"))
         assertTrue(grid.contains("@+id/btnDeleteTask"))
+        assertTrue(layout.substring(dockStart).contains("@+id/btnGoHome"))
+        assertTrue(layout.substring(dockStart).contains("@+id/btnTalkAssistant"))
         assertFalse(layout.contains("<Space"))
     }
 

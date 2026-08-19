@@ -47,4 +47,16 @@
     <attr name="appColorTaskListOutline" format="color" />
     <attr name="appColorAssistantPrimaryAction" format="color" />
     <attr name="appColorAssistantActionOutline" format="color" />
+    <attr name="appColorTaskDetailSurface" format="color" />
+    <attr name="appColorTaskDetailOutline" format="color" />
+    <attr name="appColorTaskDetailActionRead" format="color" />
+    <attr name="appColorTaskDetailActionMarkDone" format="color" />
+    <attr name="appColorTaskDetailActionUndo" format="color" />
+    <attr name="appColorTaskDetailActionSaveClean" format="color" />
+    <attr name="appColorTaskDetailActionSaveDirty" format="color" />
+    <attr name="appColorTaskDetailActionDelete" format="color" />
+    <attr name="appColorTaskDetailActionText" format="color" />
+    <attr name="appColorTaskDetailUnsavedSurface" format="color" />
+    <attr name="appColorTaskDetailUnsavedOutline" format="color" />
+    <attr name="appColorTaskDetailUnsavedText" format="color" />
 </resources>

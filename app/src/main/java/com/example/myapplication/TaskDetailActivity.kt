@@ -358,6 +358,13 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         dateText.text = TaskCardAccessibilitySemantics.spokenDate(draft.dueDate)
         timeText.text = TaskCardAccessibilitySemantics.spokenTime(draft.dueTime)
         toggleDoneButton.setText(if (task.isDone) R.string.undo else R.string.mark_done)
+        toggleDoneButton.setBackgroundResource(
+            if (task.isDone) {
+                R.drawable.bg_task_detail_action_undo
+            } else {
+                R.drawable.bg_task_detail_action_mark_done
+            }
+        )
 
         titleSurface.contentDescription = TaskDetailSpeechRenderer.title(draft.title)
         statusSurface.contentDescription = TaskDetailSpeechRenderer.status(status)
@@ -399,7 +406,13 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
                 contentDescription = "$state. ${subtask.title}."
                 gravity = Gravity.CENTER_VERTICAL
                 minHeight = resources.getDimensionPixelSize(R.dimen.task_detail_subtask_min_height)
-                setBackgroundResource(R.drawable.bg_subtask_item)
+                setBackgroundResource(
+                    if (subtask.isDone) {
+                        R.drawable.bg_task_status_completed
+                    } else {
+                        R.drawable.bg_subtask_item
+                    }
+                )
                 setPadding(dp(16), dp(12), dp(16), dp(12))
                 setTextColor(context.resolveThemeColor(R.attr.appColorTextPrimaryLight))
                 textSize = 18f
@@ -586,15 +599,13 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         val dirty = draftController?.isDirty == true
         unsavedChangesText.visibility = if (dirty) View.VISIBLE else View.GONE
         saveButton.setBackgroundResource(
-            if (dirty) R.drawable.bg_save_changes_dirty else R.drawable.bg_action_button
-        )
-        saveButton.setTextColor(
             if (dirty) {
-                ContextCompat.getColor(this, R.color.white)
+                R.drawable.bg_task_detail_action_save_dirty
             } else {
-                resolveThemeColor(R.attr.appColorTextPrimaryLight)
+                R.drawable.bg_task_detail_action_save_clean
             }
         )
+        saveButton.setTextColor(resolveThemeColor(R.attr.appColorTaskDetailActionText))
     }
 
     private fun startFieldEdit(interaction: TaskDetailEditInteraction) {
