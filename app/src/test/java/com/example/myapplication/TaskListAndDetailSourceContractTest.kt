@@ -34,7 +34,7 @@ class TaskListAndDetailSourceContractTest {
 
         assertTrue(item.contains("@+id/taskText"))
         assertTrue(item.contains("@+id/taskStatusText"))
-        assertTrue(item.contains("@+id/taskStatusSignifier"))
+        assertFalse(item.contains("taskStatusSignifier"))
         assertTrue(item.contains("android:minHeight=\"112dp\""))
         assertTrue(item.contains("android:layout_marginBottom=\"16dp\""))
         listOf(
@@ -145,18 +145,18 @@ class TaskListAndDetailSourceContractTest {
     }
 
     @Test
-    fun listStatusTreatmentsUseFiveExplicitSignifierCategories() {
+    fun listStatusTreatmentsUseFiveExplicitFullCardCategories() {
         val item = layoutRoot.resolve("item_task.xml").readText()
         val adapter = mainRoot.resolve("TaskAdapter.kt").readText()
 
-        listOf("Overdue", "DueToday", "Upcoming", "Completed", "Unscheduled")
+        listOf("overdue", "today", "upcoming", "completed", "unscheduled")
             .forEach { state ->
-                assertTrue(adapter.contains("appColorTaskListStatus$state"))
+                assertTrue(adapter.contains("bg_task_status_$state"))
             }
-        assertTrue(item.contains("@drawable/bg_task_list_card"))
-        assertTrue(item.contains("@+id/taskStatusSignifier"))
-        assertTrue(adapter.contains("holder.statusSignifier.setBackgroundColor(statusColor)"))
-        assertFalse(adapter.contains("holder.itemView.setBackgroundResource"))
+        assertTrue(item.contains("@drawable/bg_task_status_unscheduled"))
+        assertFalse(item.contains("taskStatusSignifier"))
+        assertTrue(adapter.contains("holder.itemView.setBackgroundResource(background)"))
+        assertTrue(adapter.contains("holder.taskStatusText.setTextColor("))
     }
 
     @Test

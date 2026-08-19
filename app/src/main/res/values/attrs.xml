@@ -41,16 +41,10 @@
     <attr name="appColorHomeStatusCompleted" format="color" />
     <attr name="appColorHomeStatusUnscheduled" format="color" />
     <attr name="appColorTaskListBackground" format="color" />
-    <attr name="appColorTaskListCardSurface" format="color" />
     <attr name="appColorTaskListHomeAction" format="color" />
     <attr name="appColorTaskListTextPrimary" format="color" />
     <attr name="appColorTaskListTextSecondary" format="color" />
     <attr name="appColorTaskListOutline" format="color" />
-    <attr name="appColorTaskListStatusOverdue" format="color" />
-    <attr name="appColorTaskListStatusDueToday" format="color" />
-    <attr name="appColorTaskListStatusUpcoming" format="color" />
-    <attr name="appColorTaskListStatusCompleted" format="color" />
-    <attr name="appColorTaskListStatusUnscheduled" format="color" />
     <attr name="appColorAssistantPrimaryAction" format="color" />
     <attr name="appColorAssistantActionOutline" format="color" />
 </resources>

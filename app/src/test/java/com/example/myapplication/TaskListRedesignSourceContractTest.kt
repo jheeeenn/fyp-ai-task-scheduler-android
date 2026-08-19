@@ -13,15 +13,31 @@ class TaskListRedesignSourceContractTest {
     private val cardLayout = resources.resolve("layout/item_task.xml").readText()
 
     @Test
-    fun cardKeepsNeutralSurfaceAndUsesStatusOnlyForStripAndWording() {
-        assertTrue(cardLayout.contains("android:background=\"@drawable/bg_task_list_card\""))
-        assertTrue(cardLayout.contains("@+id/taskStatusSignifier"))
+    fun cardUsesFullStatusBackgroundsWithVisibleStatusWordingAndNoStrip() {
+        assertTrue(
+            cardLayout.contains(
+                "android:background=\"@drawable/bg_task_status_unscheduled\""
+            )
+        )
+        assertFalse(cardLayout.contains("taskStatusSignifier"))
         assertTrue(cardLayout.contains("@+id/taskStatusText"))
+        assertTrue(cardLayout.contains("android:text=\"@string/task_status_preview\""))
+        assertTrue(cardLayout.contains("?attr/appColorTextPrimaryLight"))
         assertTrue(adapter.contains("TaskStatusPresenter.present("))
         assertTrue(adapter.contains("TaskListCardSpeechRenderer.render("))
-        assertTrue(adapter.contains("holder.statusSignifier.setBackgroundColor(statusColor)"))
-        assertTrue(adapter.contains("holder.taskStatusText.setTextColor(statusColor)"))
-        assertFalse(adapter.contains("holder.itemView.setBackgroundResource"))
+        listOf(
+            "OVERDUE" to "bg_task_status_overdue",
+            "DUE_TODAY" to "bg_task_status_today",
+            "UPCOMING" to "bg_task_status_upcoming",
+            "COMPLETED" to "bg_task_status_completed",
+            "UNSCHEDULED" to "bg_task_status_unscheduled"
+        ).forEach { (status, background) ->
+            assertTrue(adapter.contains("TaskVisualStatus.$status"))
+            assertTrue(adapter.contains("R.drawable.$background"))
+        }
+        assertTrue(adapter.contains("holder.itemView.setBackgroundResource(background)"))
+        assertTrue(adapter.contains("holder.taskStatusText.setTextColor("))
+        assertFalse(adapter.contains("statusSignifier"))
     }
 
     @Test
@@ -53,9 +69,13 @@ class TaskListRedesignSourceContractTest {
     @Test
     fun redesignedListSurfacesAreSolidOpaqueAndAssistantUsesDedicatedBlue() {
         listOf(
-            "bg_task_list_card.xml",
             "bg_task_list_home_action.xml",
-            "bg_task_list_assistant_action.xml"
+            "bg_task_list_assistant_action.xml",
+            "bg_task_status_overdue.xml",
+            "bg_task_status_today.xml",
+            "bg_task_status_upcoming.xml",
+            "bg_task_status_completed.xml",
+            "bg_task_status_unscheduled.xml"
         ).forEach { fileName ->
             val drawable = resources.resolve("drawable/$fileName").readText()
             assertTrue("$fileName needs a solid surface", drawable.contains("<solid"))
@@ -68,13 +88,7 @@ class TaskListRedesignSourceContractTest {
         assertTrue(colors.contains("name=\"hc_assistant_primary_action\">#FF0068FF"))
         listOf(
             "task_list_background",
-            "task_list_card_surface",
-            "task_list_home_action",
-            "task_list_status_overdue",
-            "task_list_status_due_today",
-            "task_list_status_upcoming",
-            "task_list_status_completed",
-            "task_list_status_unscheduled"
+            "task_list_home_action"
         ).forEach { name ->
             assertTrue(colors.contains("name=\"$name\">#FF"))
         }

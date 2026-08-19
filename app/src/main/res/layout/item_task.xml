@@ -1,64 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/taskCardRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="16dp"
-    android:background="@drawable/bg_task_list_card"
+    android:background="@drawable/bg_task_status_unscheduled"
     android:clickable="true"
     android:focusable="true"
     android:hapticFeedbackEnabled="true"
     android:importantForAccessibility="yes"
-    android:minHeight="112dp">
+    android:minHeight="112dp"
+    android:orientation="vertical"
+    android:paddingHorizontal="20dp"
+    android:paddingVertical="18dp">
 
-    <View
-        android:id="@+id/taskStatusSignifier"
-        android:layout_width="8dp"
-        android:layout_height="0dp"
-        android:background="?attr/appColorTaskListStatusUnscheduled"
-        android:importantForAccessibility="no"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <LinearLayout
-        android:layout_width="0dp"
+    <TextView
+        android:id="@+id/taskText"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="18dp"
-        android:orientation="vertical"
-        android:paddingStart="0dp"
-        android:paddingTop="18dp"
-        android:paddingEnd="20dp"
-        android:paddingBottom="18dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/taskStatusSignifier"
-        app:layout_constraintTop_toTopOf="parent">
+        android:importantForAccessibility="no"
+        android:lineSpacingExtra="2dp"
+        android:text="@string/untitled_task"
+        android:textColor="?attr/appColorTextPrimaryLight"
+        android:textSize="22sp"
+        android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/taskText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:importantForAccessibility="no"
-            android:lineSpacingExtra="2dp"
-            android:text="@string/untitled_task"
-            android:textColor="?attr/appColorTaskListTextPrimary"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+    <TextView
+        android:id="@+id/taskStatusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:importantForAccessibility="no"
+        android:lineSpacingExtra="2dp"
+        android:text="@string/task_status_preview"
+        android:textColor="@color/task_status_unscheduled_text"
+        android:textSize="18sp"
+        android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/taskStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:importantForAccessibility="no"
-            android:lineSpacingExtra="2dp"
-            android:text="@string/task_status_preview"
-            android:textColor="?attr/appColorTaskListStatusUnscheduled"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>
