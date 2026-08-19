@@ -2,29 +2,25 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/homeRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/appColorBackgroundPrimary"
+    android:background="?attr/appColorHomeBackground"
     android:paddingStart="20dp"
     android:paddingTop="14dp"
     android:paddingEnd="20dp"
     android:paddingBottom="20dp">
 
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/homeAssistantSplit"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        app:layout_constraintGuide_percent="0.52" />
-
     <ScrollView
         android:id="@+id/homeScrollView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:fillViewport="true"
+        android:layout_marginBottom="16dp"
+        android:clipToPadding="false"
+        android:fillViewport="false"
         android:importantForAccessibility="no"
-        app:layout_constraintBottom_toTopOf="@id/homeAssistantSplit"
+        app:layout_constraintBottom_toTopOf="@id/btnTalkAssistant"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
@@ -33,130 +29,242 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="18dp">
+            android:paddingBottom="4dp">
 
             <TextView
                 android:id="@+id/greetingText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
+                android:layout_marginTop="8dp"
                 android:accessibilityHeading="true"
-                android:text="Good Evening"
-                android:textColor="?attr/appColorTextPrimaryDark"
-                android:textSize="34sp"
+                android:text="@string/good_afternoon"
+                android:textColor="?attr/appColorHomeTextPrimary"
+                android:textSize="32sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/overviewText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="8dp"
                 android:accessibilityLiveRegion="polite"
-                android:lineSpacingExtra="4dp"
-                android:text="You have 0 tasks today"
-                android:textColor="?attr/appColorTextSecondaryDark"
+                android:text="@string/home_zero_tasks_today"
+                android:textColor="?attr/appColorHomeTextSecondary"
                 android:textSize="20sp" />
 
-            <LinearLayout
-                android:id="@+id/topCardRow"
+            <TextView
+                android:id="@+id/overdueText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="30dp"
-                android:baselineAligned="false"
+                android:layout_marginTop="2dp"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/home_one_overdue"
+                android:textColor="?attr/appColorHomeStatusOverdue"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/todayHeaderRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:gravity="center_vertical"
                 android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/todaySectionHeading"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/home_today_heading"
+                    android:textAllCaps="true"
+                    android:textColor="?attr/appColorHomeTextPrimary"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnTodayTasks"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_home_view_all_action"
+                    android:backgroundTint="@null"
+                    android:hapticFeedbackEnabled="true"
+                    android:minHeight="56dp"
+                    android:minWidth="104dp"
+                    android:paddingHorizontal="18dp"
+                    android:text="@string/home_view_all"
+                    android:textAllCaps="false"
+                    android:textColor="?attr/appColorHomeTextPrimary"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@null" />
+            </LinearLayout>
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/todayPreviewSurface"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_home_today_preview"
+                android:clickable="true"
+                android:focusable="true"
+                android:hapticFeedbackEnabled="true"
+                android:importantForAccessibility="yes"
+                android:minHeight="112dp"
+                android:paddingStart="0dp"
+                android:paddingTop="18dp"
+                android:paddingEnd="18dp"
+                android:paddingBottom="18dp"
+                android:visibility="gone">
+
+                <View
+                    android:id="@+id/todayPreviewStatusSignifier"
+                    android:layout_width="8dp"
+                    android:layout_height="0dp"
+                    android:background="?attr/appColorHomeStatusUnscheduled"
+                    android:importantForAccessibility="no"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="18dp"
+                    android:orientation="vertical"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/todayPreviewStatusSignifier"
+                    app:layout_constraintTop_toTopOf="parent">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:baselineAligned="false"
+                        android:gravity="top"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/todayPreviewTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:importantForAccessibility="no"
+                            android:lineSpacingExtra="2dp"
+                            android:maxLines="3"
+                            android:text="@string/untitled_task"
+                            android:textColor="?attr/appColorHomeTextPrimary"
+                            android:textSize="22sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/todayPreviewTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:importantForAccessibility="no"
+                            android:maxLines="1"
+                            android:textColor="?attr/appColorHomeTextPrimary"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/todayPreviewStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:importantForAccessibility="no"
+                        android:letterSpacing="0.04"
+                        android:text="@string/home_status_due_today"
+                        android:textColor="?attr/appColorHomeStatusDueToday"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <LinearLayout
+                android:id="@+id/homeMainActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal"
+                tools:ignore="ButtonStyle">
 
                 <Button
                     android:id="@+id/btnCreateTask"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_home_secondary_card"
+                    android:background="@drawable/bg_home_secondary_action"
                     android:backgroundTint="@null"
                     android:hapticFeedbackEnabled="true"
-                    android:minHeight="112dp"
-                    android:paddingVertical="16dp"
-                    android:text="Create\nTask"
+                    android:maxLines="2"
+                    android:minHeight="80dp"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="14dp"
+                    android:text="@string/home_create_task"
                     android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:textSize="22sp"
+                    android:textColor="?attr/appColorHomeTextPrimary"
+                    android:textSize="20sp"
                     android:textStyle="bold"
                     app:backgroundTint="@null" />
-
-                <Button
-                    android:id="@+id/btnTodayTasks"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_home_primary_card"
-                    android:backgroundTint="@null"
-                    android:hapticFeedbackEnabled="true"
-                    android:minHeight="112dp"
-                    android:paddingVertical="16dp"
-                    android:text="Today\nTasks"
-                    android:textAllCaps="false"
-                    android:textColor="?attr/appColorTextPrimaryLight"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
-                    app:backgroundTint="@null" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/secondCardRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:baselineAligned="false"
-                android:orientation="horizontal">
 
                 <Button
                     android:id="@+id/btnScheduledTasks"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_home_primary_card"
+                    android:background="@drawable/bg_home_secondary_action"
                     android:backgroundTint="@null"
                     android:hapticFeedbackEnabled="true"
-                    android:minHeight="112dp"
-                    android:paddingVertical="16dp"
-                    android:text="Scheduled\nTasks"
+                    android:maxLines="2"
+                    android:minHeight="80dp"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="14dp"
+                    android:text="@string/home_scheduled"
                     android:textAllCaps="false"
-                    android:textColor="?attr/appColorTextPrimaryLight"
-                    android:textSize="21sp"
-                    android:textStyle="bold"
-                    app:backgroundTint="@null" />
-
-                <Button
-                    android:id="@+id/btnSettings"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_anchor_home_button"
-                    android:backgroundTint="@null"
-                    android:hapticFeedbackEnabled="true"
-                    android:minHeight="112dp"
-                    android:paddingVertical="16dp"
-                    android:text="Settings"
-                    android:textAllCaps="false"
-                    android:textColor="?attr/appColorTextPrimaryDark"
-                    android:textSize="22sp"
+                    android:textColor="?attr/appColorHomeTextPrimary"
+                    android:textSize="20sp"
                     android:textStyle="bold"
                     app:backgroundTint="@null" />
             </LinearLayout>
+
+            <Button
+                android:id="@+id/btnSettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_home_secondary_action"
+                android:backgroundTint="@null"
+                android:gravity="center_vertical|start"
+                android:hapticFeedbackEnabled="true"
+                android:minHeight="72dp"
+                android:paddingHorizontal="20dp"
+                android:paddingVertical="14dp"
+                android:text="@string/settings"
+                android:textAllCaps="false"
+                android:textColor="?attr/appColorHomeTextPrimary"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null" />
         </LinearLayout>
     </ScrollView>
 
     <Button
         android:id="@+id/btnTalkAssistant"
         android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:background="@drawable/bg_anchor_assistant_button"
+        android:layout_height="136dp"
+        android:background="@drawable/bg_home_assistant_action"
         android:backgroundTint="@null"
         android:gravity="center"
         android:hapticFeedbackEnabled="true"
+        android:paddingHorizontal="20dp"
         android:paddingVertical="18dp"
-        android:text="Talk to Assistant"
+        android:text="@string/home_talk_to_assistant"
         android:textAllCaps="false"
         android:textColor="@color/white"
         android:textSize="28sp"
@@ -164,7 +272,6 @@
         app:backgroundTint="@null"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/homeAssistantSplit" />
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

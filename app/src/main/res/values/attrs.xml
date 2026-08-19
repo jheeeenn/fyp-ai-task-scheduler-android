@@ -24,4 +24,17 @@
     <attr name="appColorAssistantProcessingEnd" format="color" />
     <attr name="appColorAssistantSpeakingStart" format="color" />
     <attr name="appColorAssistantSpeakingEnd" format="color" />
+    <attr name="appColorHomeBackground" format="color" />
+    <attr name="appColorHomePreviewSurface" format="color" />
+    <attr name="appColorHomeSecondarySurface" format="color" />
+    <attr name="appColorHomeTextPrimary" format="color" />
+    <attr name="appColorHomeTextSecondary" format="color" />
+    <attr name="appColorHomeOutline" format="color" />
+    <attr name="appColorHomeAssistantPrimary" format="color" />
+    <attr name="appColorHomeAssistantOutline" format="color" />
+    <attr name="appColorHomeStatusOverdue" format="color" />
+    <attr name="appColorHomeStatusDueToday" format="color" />
+    <attr name="appColorHomeStatusUpcoming" format="color" />
+    <attr name="appColorHomeStatusCompleted" format="color" />
+    <attr name="appColorHomeStatusUnscheduled" format="color" />
 </resources>

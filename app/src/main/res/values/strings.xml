@@ -57,6 +57,29 @@
     <string name="save_changes">Save</string>
     <string name="unsaved_changes">Unsaved changes</string>
     <string name="settings">Settings</string>
+    <string name="good_morning">Good Morning</string>
+    <string name="good_afternoon">Good Afternoon</string>
+    <string name="good_evening">Good Evening</string>
+    <string name="home_today_heading">Today</string>
+    <string name="home_view_all">View all</string>
+    <string name="home_create_task">Create Task</string>
+    <string name="home_scheduled">Scheduled</string>
+    <string name="home_talk_to_assistant">TALK TO ASSISTANT</string>
+    <string name="home_zero_tasks_today">0 tasks today</string>
+    <string name="home_one_overdue">1 overdue</string>
+    <string name="home_status_overdue">OVERDUE</string>
+    <string name="home_status_due_today">DUE TODAY</string>
+    <string name="home_status_upcoming">UPCOMING</string>
+    <string name="home_status_completed">COMPLETED</string>
+    <string name="home_status_unscheduled">UNSCHEDULED</string>
+    <plurals name="home_tasks_today">
+        <item quantity="one">%1$d task today</item>
+        <item quantity="other">%1$d tasks today</item>
+    </plurals>
+    <plurals name="home_overdue_tasks">
+        <item quantity="one">%1$d overdue</item>
+        <item quantity="other">%1$d overdue</item>
+    </plurals>
     <string name="assistant_preferences">Assistant Preferences</string>
     <string name="accessibility_settings_heading">Accessibility</string>
     <string name="speech_speed">Speech Speed</string>

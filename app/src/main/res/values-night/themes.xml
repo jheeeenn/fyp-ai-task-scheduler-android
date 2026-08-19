@@ -28,6 +28,19 @@
         <item name="appColorAssistantProcessingEnd">@color/assistant_processing_end</item>
         <item name="appColorAssistantSpeakingStart">@color/assistant_speaking_start</item>
         <item name="appColorAssistantSpeakingEnd">@color/assistant_speaking_end</item>
+        <item name="appColorHomeBackground">@color/home_background</item>
+        <item name="appColorHomePreviewSurface">@color/home_preview_surface</item>
+        <item name="appColorHomeSecondarySurface">@color/home_secondary_surface</item>
+        <item name="appColorHomeTextPrimary">@color/home_text_primary</item>
+        <item name="appColorHomeTextSecondary">@color/home_text_secondary</item>
+        <item name="appColorHomeOutline">@color/home_outline</item>
+        <item name="appColorHomeAssistantPrimary">@color/home_assistant_primary</item>
+        <item name="appColorHomeAssistantOutline">@color/home_assistant_outline</item>
+        <item name="appColorHomeStatusOverdue">@color/home_status_overdue</item>
+        <item name="appColorHomeStatusDueToday">@color/home_status_due_today</item>
+        <item name="appColorHomeStatusUpcoming">@color/home_status_upcoming</item>
+        <item name="appColorHomeStatusCompleted">@color/home_status_completed</item>
+        <item name="appColorHomeStatusUnscheduled">@color/home_status_unscheduled</item>
     </style>
 
     <style name="Theme.MyApplication" parent="Base.Theme.MyApplication" />
@@ -62,5 +75,18 @@
         <item name="appColorAssistantProcessingEnd">@color/hc_assistant_processing_end</item>
         <item name="appColorAssistantSpeakingStart">@color/hc_assistant_speaking_start</item>
         <item name="appColorAssistantSpeakingEnd">@color/hc_assistant_speaking_end</item>
+        <item name="appColorHomeBackground">@color/hc_home_background</item>
+        <item name="appColorHomePreviewSurface">@color/hc_home_preview_surface</item>
+        <item name="appColorHomeSecondarySurface">@color/hc_home_secondary_surface</item>
+        <item name="appColorHomeTextPrimary">@color/hc_home_text_primary</item>
+        <item name="appColorHomeTextSecondary">@color/hc_home_text_secondary</item>
+        <item name="appColorHomeOutline">@color/hc_home_outline</item>
+        <item name="appColorHomeAssistantPrimary">@color/hc_home_assistant_primary</item>
+        <item name="appColorHomeAssistantOutline">@color/hc_home_assistant_outline</item>
+        <item name="appColorHomeStatusOverdue">@color/hc_home_status_overdue</item>
+        <item name="appColorHomeStatusDueToday">@color/hc_home_status_due_today</item>
+        <item name="appColorHomeStatusUpcoming">@color/hc_home_status_upcoming</item>
+        <item name="appColorHomeStatusCompleted">@color/hc_home_status_completed</item>
+        <item name="appColorHomeStatusUnscheduled">@color/hc_home_status_unscheduled</item>
     </style>
 </resources>

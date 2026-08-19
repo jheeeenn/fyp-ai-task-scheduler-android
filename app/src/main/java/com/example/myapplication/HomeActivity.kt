@@ -10,13 +10,13 @@ import android.os.Bundle
 import android.provider.Settings
 
 import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import com.example.myapplication.accessibility.AccessibilityActivity
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.Guideline
+import com.example.myapplication.accessibility.resolveThemeColor
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -27,6 +27,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
 
@@ -233,6 +234,8 @@ import com.example.myapplication.preferences.AppPreferences
 class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var pendingAssistantEntry: HomeAssistantEntry? = null
     private var assistantEntryGeneration: Long = 0
+    private var homePreviewTask: TaskEntity? = null
+    private var homePreviewSpeech: String? = null
     private lateinit var conversationIntentClassifier: LocalConversationIntentClassifier
 
     private lateinit var responseManager: AssistantResponseManager
@@ -357,7 +360,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
-        applyHomeContentSplit()
 
         val taskAgentClient = LaptopAgentClient(this)
         agentOrchestrator = AgentOrchestrator(
@@ -389,7 +391,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
 
         val greetingText = findViewById<TextView>(R.id.greetingText)
-        val overviewText = findViewById<TextView>(R.id.overviewText)
 
         // declaring btns
         val btnTodayTasks = findViewById<Button>(R.id.btnTodayTasks)
@@ -397,21 +398,19 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         val btnScheduledTasks = findViewById<Button>(R.id.btnScheduledTasks)
         val btnTalkAssistant = findViewById<Button>(R.id.btnTalkAssistant)
         val btnSettings = findViewById<Button>(R.id.btnSettings)
+        val todayPreviewSurface = findViewById<View>(R.id.todayPreviewSurface)
 
         // Greeting
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         val greeting = when {
-            hour < 12 -> "Good Morning ^-^"
-            hour < 18 -> "Good Afternoon ;)"
-            else -> "Good Evening _zZZ"
+            hour < 12 -> getString(R.string.good_morning)
+            hour < 18 -> getString(R.string.good_afternoon)
+            else -> getString(R.string.good_evening)
         }
         greetingText.text = greeting
-        greetingText.contentDescription = when {
-            hour < 12 -> "Good Morning"
-            hour < 18 -> "Good Afternoon"
-            else -> "Good Evening"
-        }
+        greetingText.contentDescription = greeting
         AccessibilityStateHelper.markHeading(greetingText)
+        AccessibilityStateHelper.markHeading(findViewById(R.id.todaySectionHeading))
 
 
         // Navigation buttons
@@ -454,6 +453,20 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             activate = {
                 speakThenOpen("opening settings.") {
                     startActivity(Intent(this, SettingsActivity::class.java))
+                }
+            }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = todayPreviewSurface,
+            speechProvider = { homePreviewSpeech },
+            speak = ::speakControlIdentification,
+            activate = {
+                homePreviewTask?.let { task ->
+                    speakThenOpen(TaskNavigationSpeechRenderer.openingDetails(task.title)) {
+                        startActivity(Intent(this, TaskDetailActivity::class.java).apply {
+                            putExtra(TaskDetailActivity.EXTRA_TASK_ID, task.id)
+                        })
+                    }
                 }
             }
         )
@@ -527,17 +540,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         ) { typedText ->
             assistantSession.submitTypedText(typedText)
         }
-    }
-
-    private fun applyHomeContentSplit() {
-        val splitGuideline = findViewById<Guideline>(R.id.homeAssistantSplit)
-        val layoutParams = splitGuideline.layoutParams as ConstraintLayout.LayoutParams
-        layoutParams.guidePercent = if (AppPreferences(this).largeTextEnabled) {
-            LARGE_TEXT_HOME_CONTENT_PERCENT
-        } else {
-            NORMAL_HOME_CONTENT_PERCENT
-        }
-        splitGuideline.layoutParams = layoutParams
     }
 
     override fun onAssistantFinalText(text: String) {
@@ -735,24 +737,83 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         assistantSession.speak("That task is no longer available.", listenAgain = false)
     }
 
-    private fun refreshOverview(){
-        val overviewText = findViewById<TextView>(R.id.overviewText)
+    private fun refreshOverview() {
         val dao = AppDatabase.getInstance(this).taskDao()
 
-        lifecycleScope.launch{
-
-            val tasks = withContext(Dispatchers.IO){dao.getRootTasks()}
-
-            val today = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-                .format(Calendar.getInstance().time)
-            val todayCount = tasks.count { task ->
-                !task.isDone && task.dueDate == today
+        lifecycleScope.launch {
+            val now = Date()
+            val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(now)
+            val presentation = withContext(Dispatchers.IO) {
+                val rootTasks = dao.getRootTasks()
+                val todayRootTasks = dao.getRootTasksForDate(today)
+                HomeOverviewPresenter.present(
+                    rootTasks = rootTasks,
+                    todayRootTasks = todayRootTasks,
+                    todayDate = today,
+                    now = now
+                )
             }
-            val updatedOverview = "You have $todayCount tasks today"
-            if (overviewText.text.toString() != updatedOverview) {
-                overviewText.text = updatedOverview
+            renderHomeOverview(presentation)
+        }
+    }
+
+    private fun renderHomeOverview(presentation: HomeOverviewPresentation) {
+        findViewById<TextView>(R.id.overviewText).text = resources.getQuantityString(
+            R.plurals.home_tasks_today,
+            presentation.todayTaskCount,
+            presentation.todayTaskCount
+        )
+
+        findViewById<TextView>(R.id.overdueText).apply {
+            visibility = if (presentation.overdueTaskCount == 0) View.GONE else View.VISIBLE
+            if (presentation.overdueTaskCount > 0) {
+                text = resources.getQuantityString(
+                    R.plurals.home_overdue_tasks,
+                    presentation.overdueTaskCount,
+                    presentation.overdueTaskCount
+                )
             }
         }
+
+        val previewSurface = findViewById<View>(R.id.todayPreviewSurface)
+        val preview = presentation.preview
+        homePreviewTask = preview?.task
+        homePreviewSpeech = preview?.spokenSummary
+        if (preview == null) {
+            previewSurface.visibility = View.GONE
+            previewSurface.contentDescription = null
+            return
+        }
+
+        findViewById<TextView>(R.id.todayPreviewTitle).text = preview.title
+        findViewById<TextView>(R.id.todayPreviewTime).apply {
+            text = preview.dueTime
+            visibility = if (preview.dueTime == null) View.GONE else View.VISIBLE
+        }
+        val statusColor = resolveThemeColor(homeStatusColorAttribute(preview.visualStatus))
+        findViewById<View>(R.id.todayPreviewStatusSignifier).setBackgroundColor(statusColor)
+        findViewById<TextView>(R.id.todayPreviewStatus).apply {
+            setText(homeStatusText(preview.visualStatus))
+            setTextColor(statusColor)
+        }
+        previewSurface.contentDescription = preview.contentDescription
+        previewSurface.visibility = View.VISIBLE
+    }
+
+    private fun homeStatusText(status: TaskVisualStatus): Int = when (status) {
+        TaskVisualStatus.OVERDUE -> R.string.home_status_overdue
+        TaskVisualStatus.DUE_TODAY -> R.string.home_status_due_today
+        TaskVisualStatus.UPCOMING -> R.string.home_status_upcoming
+        TaskVisualStatus.COMPLETED -> R.string.home_status_completed
+        TaskVisualStatus.UNSCHEDULED -> R.string.home_status_unscheduled
+    }
+
+    private fun homeStatusColorAttribute(status: TaskVisualStatus): Int = when (status) {
+        TaskVisualStatus.OVERDUE -> R.attr.appColorHomeStatusOverdue
+        TaskVisualStatus.DUE_TODAY -> R.attr.appColorHomeStatusDueToday
+        TaskVisualStatus.UPCOMING -> R.attr.appColorHomeStatusUpcoming
+        TaskVisualStatus.COMPLETED -> R.attr.appColorHomeStatusCompleted
+        TaskVisualStatus.UNSCHEDULED -> R.attr.appColorHomeStatusUnscheduled
     }
 
     private fun allRequiredPermissionsReady(): Boolean {
@@ -7034,8 +7095,6 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private companion object {
         const val TASK_DETAIL_ENTRY_TAG = "TASK_DETAIL_ENTRY"
-        const val NORMAL_HOME_CONTENT_PERCENT = 0.52f
-        const val LARGE_TEXT_HOME_CONTENT_PERCENT = 0.60f
     }
 }
 
