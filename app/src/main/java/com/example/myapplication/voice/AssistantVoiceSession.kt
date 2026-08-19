@@ -48,6 +48,8 @@ class AssistantVoiceSession(
     private var sessionGeneration = 0L
     private var pendingRecognitionRestart: Runnable? = null
     private var terminalDeliveryActive = false
+    private var panelIdentificationSpeechActive = false
+    private var currentAssistantState = AssistantAccessibilityState.STOPPED
     private val typedInputCancellationRecovery = TypedInputCancellationRecoveryPolicy()
     private val processingHapticFeedback = ProcessingHapticFeedbackController(
         scheduler = MainLooperProcessingHapticScheduler(),
@@ -99,7 +101,7 @@ class AssistantVoiceSession(
         if (assistantBottomSheet == null) {
             assistantBottomSheet = AssistantBottomSheet(
                 activity = activity,
-                speakIdentification = voiceHelper::speak,
+                speakIdentification = ::speakPanelIdentification,
                 onStateChanged = onAccessibilityStateChanged,
                 onPanelDismissed = { processingHapticFeedback.stop("PANEL_DISMISSED") }
             )
@@ -692,6 +694,7 @@ class AssistantVoiceSession(
         submittedCommand: Boolean = false,
         errorText: String = ""
     ) {
+        currentAssistantState = state
         if (state == AssistantAccessibilityState.PROCESSING && submittedCommand) {
             processingHapticFeedback.start()
         } else {
@@ -717,9 +720,67 @@ class AssistantVoiceSession(
 
     private fun invalidateSessionCallbacks() {
         sessionGeneration += 1L
+        panelIdentificationSpeechActive = false
         pendingRecognitionRestart?.let(activity.window.decorView::removeCallbacks)
         pendingRecognitionRestart = null
     }
+
+    private fun speakPanelIdentification(text: String) {
+        val identification = text.trim()
+        if (identification.isEmpty()) return
+
+        val recognitionActiveOrPending =
+            isListening ||
+                recognitionRequestActive ||
+                pendingRecognitionRestart != null ||
+                currentAssistantState == AssistantAccessibilityState.LISTENING ||
+                currentAssistantState == AssistantAccessibilityState.WAITING_FOR_CONFIRMATION
+        val disposition = AssistantPanelIdentificationPolicy.decide(
+            sessionActive = assistantSessionActive,
+            forceStopping = isForceStopping,
+            terminalDeliveryActive = terminalDeliveryActive,
+            lifecycleEligible = isPanelSpeechLifecycleEligible(),
+            identificationSpeechActive = panelIdentificationSpeechActive,
+            assistantState = currentAssistantState,
+            recognitionActiveOrPending = recognitionActiveOrPending
+        )
+        if (disposition == AssistantPanelIdentificationDisposition.IGNORE) return
+
+        val shouldRestartRecognition =
+            disposition ==
+                AssistantPanelIdentificationDisposition.PAUSE_RECOGNITION_AND_SPEAK
+        if (shouldRestartRecognition) {
+            stopListeningBeforeSpeak()
+        }
+
+        val callbackGeneration = sessionGeneration
+        panelIdentificationSpeechActive = true
+        voiceHelper.speak(identification) {
+            activity.runOnUiThread {
+                if (callbackGeneration != sessionGeneration) return@runOnUiThread
+                panelIdentificationSpeechActive = false
+                if (
+                    shouldRestartRecognition &&
+                    AssistantPanelIdentificationPolicy.canRestartRecognition(
+                        callbackGeneration = callbackGeneration,
+                        currentGeneration = sessionGeneration,
+                        sessionActive = assistantSessionActive,
+                        forceStopping = isForceStopping,
+                        terminalDeliveryActive = terminalDeliveryActive,
+                        lifecycleEligible = isPanelSpeechLifecycleEligible(),
+                        assistantState = currentAssistantState
+                    )
+                ) {
+                    postRecognitionRestart(PANEL_IDENTIFICATION_RESTART_DELAY_MS)
+                }
+            }
+        }
+    }
+
+    private fun isPanelSpeechLifecycleEligible(): Boolean =
+        activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            !activity.isFinishing &&
+            !activity.isDestroyed
 
     private fun postRecognitionRestart(
         delayMs: Long,
@@ -734,6 +795,8 @@ class AssistantVoiceSession(
                 callbackGeneration != sessionGeneration ||
                 !assistantSessionActive ||
                 isForceStopping ||
+                terminalDeliveryActive ||
+                !isPanelSpeechLifecycleEligible() ||
                 isListening ||
                 recognitionRequestActive
             ) {
@@ -761,6 +824,7 @@ class AssistantVoiceSession(
 
     private companion object {
         const val TYPED_INPUT_RECOVERY_DELAY_MS = 200L
+        const val PANEL_IDENTIFICATION_RESTART_DELAY_MS = 350L
     }
 
 }

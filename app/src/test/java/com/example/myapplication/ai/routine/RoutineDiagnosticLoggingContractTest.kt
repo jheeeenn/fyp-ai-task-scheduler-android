@@ -51,13 +51,21 @@ class RoutineDiagnosticLoggingContractTest {
 
     @Test
     fun everyDirectAssistantSpeechDeliveryHasExactlyOneTranscriptCall() {
-        val directSpeechCalls = Regex("""voiceHelper\.speak\(""").findAll(voice).count()
+        val panelIdentification = voice
+            .substringAfter("private fun speakPanelIdentification(text: String)")
+            .substringBefore("private fun isPanelSpeechLifecycleEligible()")
+        val conversationalVoice = voice.replace(panelIdentification, "")
+        val directSpeechCalls = Regex("""voiceHelper\.speak\(""")
+            .findAll(conversationalVoice)
+            .count()
         val transcriptCalls = Regex("""logAssistantTranscript\(""")
             .findAll(voice)
             .count() - 1 // private helper declaration
 
         assertEquals(6, directSpeechCalls)
         assertEquals(directSpeechCalls, transcriptCalls)
+        assertTrue(panelIdentification.contains("voiceHelper.speak(identification)"))
+        assertFalse(panelIdentification.contains("logAssistantTranscript"))
         assertTrue(transcriptLog.contains("role=ASSISTANT\\ndelivery=SPEAK"))
         assertTrue(transcriptLog.contains("content=REDACTED"))
         assertTrue(transcriptLog.contains("characterCount="))

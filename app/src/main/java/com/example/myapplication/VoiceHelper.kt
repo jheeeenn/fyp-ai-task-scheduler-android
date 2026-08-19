@@ -13,6 +13,8 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
 
     private var pendingText: String? = null
     private var pendingOnFinished: ((Boolean) -> Unit)? = null
+    private var utteranceSequence = 0L
+    private var currentUtteranceId: String? = null
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -65,30 +67,35 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
     }
 
     private fun speakInternal(text: String, onFinished: ((Boolean) -> Unit)?) {
-        val utteranceId = "voice_helper_${System.currentTimeMillis()}"
+        val utteranceId = "voice_helper_${++utteranceSequence}"
 
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
 
             override fun onDone(utteranceId: String?) {
+                if (utteranceId != this@VoiceHelper.currentUtteranceId) return
                 onFinished?.invoke(true)
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
+                if (utteranceId != this@VoiceHelper.currentUtteranceId) return
                 onFinished?.invoke(false)
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
+                if (utteranceId != this@VoiceHelper.currentUtteranceId) return
                 onFinished?.invoke(false)
             }
         })
 
         val params = Bundle()
+        currentUtteranceId = utteranceId
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
 
     fun shutdown() {
+        currentUtteranceId = null
         pendingText = null
         pendingOnFinished = null
         tts.stop()
