@@ -28,13 +28,21 @@ class CreateTaskActivitySourceTest {
         val resume = source
             .substringAfter("private fun resumeCreateAssistantFromDraft")
             .substringBefore("private fun applyIncomingPrefill")
+        val sessionStart = activation.indexOf("assistantSession.startSession()")
+        val draftResume = activation.indexOf("resumeCreateAssistantFromDraft()")
+        val completeResume = resume
+            .substringAfter("CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ->")
+            .substringBefore("else -> Unit")
 
         assertTrue(activation.contains("resumeCreateAssistantFromDraft()"))
+        assertTrue(sessionStart >= 0)
+        assertTrue(sessionStart < draftResume)
         assertFalse(activation.contains("WAITING_FOR_TITLE"))
         assertTrue(resume.contains("etTaskTitle.text.toString().trim()"))
         assertTrue(resume.contains("CreateDraftResumePolicy.nextState"))
         assertTrue(resume.contains("WAITING_FOR_SAVE_CONFIRMATION"))
-        assertTrue(resume.contains("promptHelper.askSaveTask(buildTaskSummary())"))
+        assertTrue(completeResume.contains("assistantSession.expectConfirmation()"))
+        assertTrue(completeResume.contains("promptHelper.askSaveTask(buildTaskSummary())"))
         assertTrue(resume.contains("CREATE_RESUME"))
         assertFalse(resume.contains("saveTask()"))
     }

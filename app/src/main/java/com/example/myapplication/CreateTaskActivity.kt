@@ -247,9 +247,11 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             speak = ::speakControlIdentification,
             activate = {
                 if (dialogState == CreateTaskDialogState.IDLE) {
+                    assistantSession.startSession()
                     resumeCreateAssistantFromDraft()
+                } else {
+                    assistantSession.startSession()
                 }
-                assistantSession.startSession()
             }
         )
         btnTalkAssistant.setOnLongClickListener {

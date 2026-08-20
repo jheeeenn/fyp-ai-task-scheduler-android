@@ -132,7 +132,11 @@ class ConversationContextActionRepairTest {
                 focus
             )
         )
-        listOf("mark it done", "reopen it", "this task is not done").forEach { utterance ->
+        listOf(
+            "this task is completed",
+            "this task is not done",
+            "mark it as completed"
+        ).forEach { utterance ->
             assertTrue(
                 utterance,
                 ContextActionRepairPolicy.shouldAttempt(
@@ -141,6 +145,16 @@ class ConversationContextActionRepairTest {
                     snapshot,
                     true,
                     focus
+                )
+            )
+            assertFalse(
+                utterance,
+                ContextActionRepairPolicy.shouldAttempt(
+                    utterance,
+                    primary,
+                    snapshot,
+                    true,
+                    null
                 )
             )
         }

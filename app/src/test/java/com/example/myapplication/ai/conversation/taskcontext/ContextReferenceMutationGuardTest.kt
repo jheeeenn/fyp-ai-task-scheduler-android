@@ -31,8 +31,28 @@ class ContextReferenceMutationGuardTest {
         assertTrue(shouldBlock("move that task to Friday"))
         assertTrue(shouldBlock("move this one to Friday"))
         assertTrue(shouldBlock("delete it"))
-        assertTrue(shouldBlock("reopen it"))
-        assertTrue(shouldBlock("undo completion for this task"))
+        listOf(
+            "mark it done",
+            "mark it as done",
+            "mark it complete",
+            "mark it completed",
+            "mark it as complete",
+            "mark it as completed",
+            "mark it incomplete",
+            "mark it as incomplete",
+            "complete it",
+            "complete this",
+            "complete this task",
+            "finish it",
+            "finish this task",
+            "reopen this task",
+            "this task is completed",
+            "reopen it",
+            "this task is not done",
+            "undo completion for this task"
+        ).forEach { utterance ->
+            assertTrue(utterance, shouldBlock(utterance))
+        }
     }
 
     @Test

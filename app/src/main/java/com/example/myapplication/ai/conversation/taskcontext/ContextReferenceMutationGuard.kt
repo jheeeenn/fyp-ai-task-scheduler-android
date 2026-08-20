@@ -130,12 +130,15 @@ object ContextReferenceMutationGuard {
     private val FOCUS_PRONOUN = Regex("(?i)\\b(?:it|its|that one|that task)\\b")
     private val CONTEXTUAL_IT = listOf(
         Regex("(?i)\\b(?:delete|remove|complete|finish|undo|reopen)\\s+it(?:\\s+(?:please|now))?[.!?]?\\s*$"),
-        Regex("(?i)\\bmark\\s+it\\s+(?:complete|done|unfinished|undone|active)\\b"),
+        Regex("(?i)\\bmark\\s+it\\s+(?:as\\s+)?(?:complete|completed|done|incomplete|unfinished|undone|active)\\b"),
+        Regex("(?i)\\b(?:complete|finish|reopen)\\s+this(?:\\s+task)?(?:\\s+(?:please|now))?[.!?]?\\s*$"),
         Regex("(?i)\\b(?:move|reschedule|change|update)\\s+it\\s+(?:to|on|for|with)\\b"),
         Regex("(?i)\\b(?:edit|update|change|rename)\\s+its\\b"),
         Regex("(?i)\\b(?:edit|update|change)\\s+it(?:\\s+please)?[.!?]?\\s*$")
     )
     private val MUTATION_WORDING = Regex(
-        "(?i)\\b(?:delete|remove|move|reschedule|mark|complete|finish|undo|reopen|update|change|edit|rename|break\\s+down)\\b|\\bnot\\s+done\\b"
+        "(?i)\\b(?:delete|remove|move|reschedule|mark|complete|finish|undo|reopen|update|change|edit|rename|break\\s+down)\\b|" +
+            "\\b(?:this|that)\\s+(?:task|one)\\s+(?:is\\s+)?(?:completed|incomplete|unfinished)\\b|" +
+            "\\b(?:this|that)\\s+(?:task|one)\\s+is\\s+not\\s+done\\b"
     )
 }
