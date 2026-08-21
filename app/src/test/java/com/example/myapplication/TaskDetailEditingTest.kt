@@ -144,13 +144,13 @@ class TaskDetailEditingTest {
     }
 
     @Test
-    fun invalidAndPastSchedulesAreRejected() {
+    fun invalidSchedulesAreRejectedAndPastExistingTaskEditsAreAllowed() {
         val draft = EditableTaskDraft("Task", "10/08/2026", "09:00 PM", 0)
 
         assertEquals(TaskFieldEditResult.Invalid, resolver.resolveDate("31 February", draft, now))
         assertEquals(TaskFieldEditResult.Invalid, resolver.resolveTime("twenty five o'clock", draft, now))
         assertEquals(
-            TaskFieldEditResult.PastSchedule,
+            TaskFieldEditResult.Schedule("07/08/2026", "09:00 PM"),
             resolver.resolveDate("7 August 2026", draft, now)
         )
     }

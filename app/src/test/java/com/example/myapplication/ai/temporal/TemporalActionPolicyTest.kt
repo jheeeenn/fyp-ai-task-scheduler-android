@@ -33,4 +33,26 @@ class TemporalActionPolicyTest {
     }
 
     @Test fun tonightStrictSameDateWindow() { val w = r("tonight", null); assertEquals("16/07/2026", w.startDateInclusive); assertEquals("16/07/2026", w.endDateInclusive); assertEquals(1260, w.startMinuteInclusive); assertEquals(299, w.endMinuteInclusive); assertTrue(w.wrapsMidnight) }
+
+    @Test
+    fun pastExactScheduleIsRejectedForCreationButAllowedForExistingTaskMutations() {
+        val past = r("today", "9 am")
+
+        assertTrue(
+            TemporalActionPolicy.evaluate(past, TemporalUseCase.CREATE, base()) is
+                TemporalPolicyResult.InvalidPastSchedule
+        )
+        assertTrue(
+            TemporalActionPolicy.evaluate(past, TemporalUseCase.BREAKDOWN, base()) is
+                TemporalPolicyResult.InvalidPastSchedule
+        )
+        assertTrue(
+            TemporalActionPolicy.evaluate(past, TemporalUseCase.UPDATE, base()) is
+                TemporalPolicyResult.Ready
+        )
+        assertTrue(
+            TemporalActionPolicy.evaluate(past, TemporalUseCase.RESCHEDULE, base()) is
+                TemporalPolicyResult.Ready
+        )
+    }
 }

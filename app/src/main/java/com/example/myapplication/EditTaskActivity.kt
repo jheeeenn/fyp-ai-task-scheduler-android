@@ -31,6 +31,7 @@ import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.reminder.ReminderEligibilityPolicy
 import com.example.myapplication.reminder.ReminderSchedulingEligibility
+import com.example.myapplication.reminder.ReminderSchedulingRejection
 import com.example.myapplication.voice.AssistantPromptHelper
 import com.example.myapplication.voice.AssistantResponseManager
 import com.example.myapplication.voice.TextNormalizer
@@ -99,6 +100,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var relativeTemporalSession: RelativeTemporalProposalSession? = null
     private var relativeTemporalCorrectionInFlight = false
     private var initialProposalCrossedDateBoundary = false
+    private var isEditSaveInFlight = false
 
     private var authoritativeOriginalTitle: String = ""
     private var authoritativeOriginalDate: String? = null
@@ -409,7 +411,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             month,
             day
         )
-        dialog.datePicker.minDate = System.currentTimeMillis() - 1000
         dialog.show()
     }
 
@@ -446,6 +447,11 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun saveTask(expectedProposalRevision: Int? = null) {
+        if (isEditSaveInFlight) {
+            Log.d("EDIT_SAVE", "state=IGNORED reason=SAVE_ALREADY_IN_FLIGHT")
+            speak("I am still saving the task. Please wait.")
+            return
+        }
         val proposedTitle = etTaskTitle.text.toString().trim()
 
         if (proposedTitle.isEmpty()) {
@@ -466,6 +472,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                         "RELATIVE_TEMPORAL_PROPOSAL",
                         "revision=${session.revision} state=${session.state} saveClaim=REJECTED"
                     )
+                    markEditSaveFailed("SAVE_CLAIM_REJECTED")
                     speak("That confirmation is no longer current. Please review the latest proposal.")
                     return
                 }
@@ -490,22 +497,27 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
         }
 
+        isEditSaveInFlight = true
+        Log.d("EDIT_SAVE", "state=STARTED panelDismissed=false")
+
         val dao = AppDatabase.getInstance(this).taskDao()
 
         lifecycleScope.launch {
-            val existingTask = withContext(Dispatchers.IO) {
-                dao.getById(claimedTaskId)
-            }
-            if (existingTask == null) {
-                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
-                Toast.makeText(
-                    this@EditTaskActivity,
-                    "Task no longer exists.",
-                    Toast.LENGTH_LONG
-                ).show()
-                finish()
-                return@launch
-            }
+            try {
+                val existingTask = withContext(Dispatchers.IO) {
+                    dao.getById(claimedTaskId)
+                }
+                if (existingTask == null) {
+                    failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
+                    markEditSaveFailed("TASK_NOT_FOUND")
+                    Toast.makeText(
+                        this@EditTaskActivity,
+                        "Task no longer exists.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    finish()
+                    return@launch
+                }
             if (saveClaim != null && !authoritativeSnapshotMatches(
                     task = existingTask,
                     expectedTaskId = claimedTaskId,
@@ -516,6 +528,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 )
             ) {
                 failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
+                markEditSaveFailed("AUTHORITATIVE_SNAPSHOT_STALE")
                 speak("That task changed since this proposal was created. I did not save anything.")
                 return@launch
             }
@@ -524,6 +537,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     "RELATIVE_TEMPORAL_PROPOSAL",
                     "revision=${saveClaim.revision} state=STALE_SAVE_CLAIM mutation=SKIPPED"
                 )
+                markEditSaveFailed("SAVE_CLAIM_STALE")
                 speak("That confirmation is no longer current. I did not save anything.")
                 return@launch
             }
@@ -533,10 +547,15 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 claimedTime,
                 listOfNotNull(claimedDate, claimedTime).joinToString(" ")
             )
-            if (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.UPDATE) is TemporalPolicyResult.InvalidPastSchedule) {
-                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = true)
-                speak(responseManager.pastDateTime())
-                return@launch
+            val schedulePast = TemporalActionPolicy.isWhollyPast(
+                finalResolution,
+                Calendar.getInstance()
+            )
+            if (schedulePast) {
+                Log.d(
+                    "EDIT_SAVE_TEMPORAL",
+                    "schedulePast=true result=ALLOWED_EXISTING_TASK_EDIT"
+                )
             }
 
             val updated = withContext(Dispatchers.IO) {
@@ -565,6 +584,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
             if (!updated) {
                 failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
+                markEditSaveFailed("CONDITIONAL_UPDATE_REJECTED")
                 speak("That task changed before I could save it. I did not apply the proposal.")
                 return@launch
             }
@@ -579,6 +599,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     "RELATIVE_TEMPORAL_PROPOSAL",
                     "revision=${saveClaim?.revision ?: -1} state=SAVE_COMPLETION_REJECTED"
                 )
+                markEditSaveFailed("SAVE_STATE_COMPLETION_REJECTED")
                 speak("The save could not be completed safely. Please review the task before trying again.")
                 return@launch
             }
@@ -621,7 +642,22 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 !reminderExpected
             }
 
-            if (reminderExpected) {
+            val dueNotInFuture = schedulingEligibility is ReminderSchedulingEligibility.Rejected &&
+                schedulingEligibility.reason == ReminderSchedulingRejection.DUE_NOT_IN_FUTURE
+            if (dueNotInFuture) {
+                Log.d(
+                    "EDIT_REMINDER",
+                    "eligibility=DUE_NOT_IN_FUTURE result=NOT_SCHEDULED_EXPECTED"
+                )
+            }
+
+            if (dueNotInFuture) {
+                Toast.makeText(
+                    this@EditTaskActivity,
+                    "Task updated. No reminder was scheduled because the task time is in the past.",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else if (reminderExpected) {
                 if (scheduled) {
                     Toast.makeText(
                         this@EditTaskActivity,
@@ -644,9 +680,26 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
 
             waitingForSaveConfirmation = false
+            isEditSaveInFlight = false
             assistantSession.dismissPanel()
+            Log.d("EDIT_SAVE", "state=SUCCEEDED panelDismissed=true")
             finish()
+            } catch (exception: CancellationException) {
+                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = true)
+                markEditSaveFailed("COROUTINE_CANCELLED")
+                throw exception
+            } catch (exception: Exception) {
+                failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = true)
+                markEditSaveFailed("UNEXPECTED_SAVE_FAILURE")
+                Log.e("EDIT_SAVE", "state=FAILED exception=${exception.javaClass.simpleName}")
+                speak("I could not save the task. Please try again.")
+            }
         }
+    }
+
+    private fun markEditSaveFailed(reason: String) {
+        isEditSaveInFlight = false
+        Log.d("EDIT_SAVE", "state=FAILED panelRetained=true reason=$reason")
     }
 
     private fun failRelativeTemporalSaveClaim(
@@ -663,13 +716,23 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun ignoreInputWhileRelativeTemporalSaveIsInFlight(): Boolean {
-        val session = relativeTemporalSession ?: return false
-        if (session.state != RelativeTemporalProposalState.SAVING) return false
-        Log.d(
-            "RELATIVE_TEMPORAL_PROPOSAL",
-            "revision=${session.revision} state=SAVING action=IGNORED"
-        )
-        speak("I am saving the confirmed proposal. Please wait.")
+        val session = relativeTemporalSession
+        if (session?.state == RelativeTemporalProposalState.SAVING) {
+            Log.d(
+                "RELATIVE_TEMPORAL_PROPOSAL",
+                "revision=${session.revision} state=SAVING action=IGNORED"
+            )
+        } else if (isEditSaveInFlight) {
+            Log.d("EDIT_SAVE", "state=IN_FLIGHT action=IGNORED")
+        } else {
+            return false
+        }
+        val message = if (session?.state == RelativeTemporalProposalState.SAVING) {
+            "I am saving the confirmed proposal. Please wait."
+        } else {
+            "I am saving the task. Please wait."
+        }
+        speak(message)
         return true
     }
 
@@ -721,7 +784,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 return
             }
             waitingForSaveConfirmation = false
-            assistantSession.dismissPanel()
             saveTask()
             return
         }
@@ -743,7 +805,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                         return
                     }
                     waitingForSaveConfirmation = false
-                    assistantSession.dismissPanel()
                     saveTask()
                     return
                 }
@@ -869,7 +930,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
             isSaveCommand(normalized) || isYes(normalized) -> {
                 waitingForSaveConfirmation = false
-                assistantSession.dismissPanel()
                 saveTask(session.revision)
             }
             isNo(normalized) -> {

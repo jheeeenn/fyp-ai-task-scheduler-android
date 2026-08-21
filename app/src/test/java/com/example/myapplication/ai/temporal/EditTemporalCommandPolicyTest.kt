@@ -56,6 +56,14 @@ class EditTemporalCommandPolicyTest {
     }
 
     @Test
+    fun deliberatePastScheduleIsReadyForExistingTaskEdit() {
+        val result = resolve("reschedule it to 26/07/2026 at 4 pm")
+
+        assertReady(result, date = "26/07/2026", minute = 16 * 60)
+        assertTrue(result.policy is TemporalPolicyResult.Ready)
+    }
+
+    @Test
     fun legacyFieldSelectionAndUnrelatedCommandsAreNotIntercepted() {
         listOf(
             "date",

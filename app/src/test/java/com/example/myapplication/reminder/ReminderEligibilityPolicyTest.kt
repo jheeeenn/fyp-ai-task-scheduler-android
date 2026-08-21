@@ -28,6 +28,19 @@ class ReminderEligibilityPolicyTest {
     }
 
     @Test
+    fun activeRootWithPastDueTimeIsExpectedlyIneligibleForNewReminder() {
+        val scheduling = ReminderEligibilityPolicy.evaluateForScheduling(
+            task(),
+            nowEpochMillis = dueEpoch + 1
+        )
+
+        assertEquals(
+            ReminderSchedulingRejection.DUE_NOT_IN_FUTURE,
+            (scheduling as ReminderSchedulingEligibility.Rejected).reason
+        )
+    }
+
+    @Test
     fun completedTaskIsSuppressed() {
         assertSuppressed(
             task(isDone = true),

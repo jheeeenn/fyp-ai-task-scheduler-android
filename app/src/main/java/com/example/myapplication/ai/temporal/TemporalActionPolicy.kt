@@ -28,7 +28,9 @@ object TemporalActionPolicy {
         val hasExactTime = resolution.isExactTime
         val hasDate = resolution.hasDateConstraint
         val hasTime = resolution.hasTimeConstraint
-        if (isWhollyPast(resolution, baseCalendar)) return TemporalPolicyResult.InvalidPastSchedule(resolution)
+        if (useCase in FUTURE_ONLY_USE_CASES && isWhollyPast(resolution, baseCalendar)) {
+            return TemporalPolicyResult.InvalidPastSchedule(resolution)
+        }
         return when (useCase) {
             TemporalUseCase.CREATE, TemporalUseCase.BREAKDOWN -> when {
                 hasExactDate && hasExactTime -> TemporalPolicyResult.Ready(resolution)
@@ -69,7 +71,7 @@ object TemporalActionPolicy {
         return true
     }
 
-    private fun isWhollyPast(r: TemporalResolution, base: Calendar): Boolean {
+    internal fun isWhollyPast(r: TemporalResolution, base: Calendar): Boolean {
         val endDate = parseDate(
             r.endDateInclusive ?: r.startDateInclusive,
             base.timeZone
@@ -95,4 +97,9 @@ object TemporalActionPolicy {
     } catch (_: Exception) {
         null
     }
+
+    private val FUTURE_ONLY_USE_CASES = setOf(
+        TemporalUseCase.CREATE,
+        TemporalUseCase.BREAKDOWN
+    )
 }

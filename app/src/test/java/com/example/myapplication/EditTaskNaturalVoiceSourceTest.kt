@@ -9,6 +9,8 @@ import java.io.File
 class EditTaskNaturalVoiceSourceTest {
     private val source =
         File("src/main/java/com/example/myapplication/EditTaskActivity.kt").readText()
+    private val createSource =
+        File("src/main/java/com/example/myapplication/CreateTaskActivity.kt").readText()
 
     @Test
     fun oneSentenceTemporalCommandsRunBeforeGenericEditHelp() {
@@ -99,6 +101,102 @@ class EditTaskNaturalVoiceSourceTest {
         assertFalse(isTitlePrefillChanged(" leave home ", "leave home"))
         assertFalse(isTitlePrefillChanged("", "leave home"))
         assertFalse(isTitlePrefillChanged(null, "leave home"))
+    }
+
+    @Test
+    fun editAllowsPastPickerDatesWhileCreateRemainsFutureOnly() {
+        val editPicker = source
+            .substringAfter("private fun openDatePicker()")
+            .substringBefore("private fun openTimePicker()")
+        val createPicker = createSource
+            .substringAfter("private fun openDatePicker()")
+            .substringBefore("private fun openTimePicker()")
+
+        assertFalse(editPicker.contains("datePicker.minDate"))
+        assertTrue(createPicker.contains("datePicker.minDate"))
+    }
+
+    @Test
+    fun overdueTitleOnlyEditRetainsScheduleAndUsesRoomMutation() {
+        val save = source
+            .substringAfter("private fun saveTask(expectedProposalRevision")
+            .substringBefore("private fun markEditSaveFailed(")
+
+        assertTrue(save.contains("ExactTemporalSchedule(selectedDate, selectedTime)"))
+        assertTrue(save.contains("val claimedSchedule = saveClaim?.schedule ?: ordinaryScheduleSnapshot"))
+        assertTrue(save.contains("dao.updateTask(claimedTaskId, claimedTitle, claimedDate, claimedTime)"))
+        assertTrue(save.contains("schedulePast=true result=ALLOWED_EXISTING_TASK_EDIT"))
+        assertFalse(save.contains("InvalidPastSchedule"))
+        assertFalse(save.contains("responseManager.pastDateTime()"))
+    }
+
+    @Test
+    fun confirmationKeepsPanelVisibleUntilAsyncSaveSucceeds() {
+        val voice = source
+            .substringAfter("private fun handleVoiceInput(text: String)")
+            .substringBefore("private fun handleRelativeTemporalProposalInput(")
+        val directSave = voice
+            .substringAfter("if (isSaveCommand(normalized))")
+            .substringBefore("if (isConversationExitCommand(normalized))")
+        val affirmative = voice
+            .substringAfter("isYes(normalized) ->")
+            .substringBefore("isNo(normalized) ->")
+        val relative = source
+            .substringAfter("private fun handleRelativeTemporalProposalInput(")
+            .substringBefore("private fun processRelativeTemporalCorrection(")
+        val relativeSave = relative
+            .substringAfter("isSaveCommand(normalized) || isYes(normalized) ->")
+            .substringBefore("isNo(normalized) ->")
+        val save = source
+            .substringAfter("private fun saveTask(expectedProposalRevision")
+            .substringBefore("private fun markEditSaveFailed(")
+        val successDismiss = save.indexOf("assistantSession.dismissPanel()")
+
+        assertTrue(directSave.contains("saveTask()"))
+        assertFalse(directSave.contains("dismissPanel()"))
+        assertTrue(affirmative.contains("saveTask()"))
+        assertFalse(affirmative.contains("dismissPanel()"))
+        assertTrue(relativeSave.contains("saveTask(session.revision)"))
+        assertFalse(relativeSave.contains("dismissPanel()"))
+        assertTrue(successDismiss > save.indexOf("ReminderEligibilityPolicy.evaluateForScheduling"))
+        assertTrue(successDismiss < save.indexOf("state=SUCCEEDED panelDismissed=true"))
+    }
+
+    @Test
+    fun editSaveGuardPreventsDuplicateOrdinaryAndRelativeMutations() {
+        val save = source
+            .substringAfter("private fun saveTask(expectedProposalRevision")
+            .substringBefore("private fun markEditSaveFailed(")
+        val failure = source
+            .substringAfter("private fun markEditSaveFailed(")
+            .substringBefore("private fun failRelativeTemporalSaveClaim(")
+
+        assertTrue(source.contains("private var isEditSaveInFlight = false"))
+        assertTrue(save.contains("if (isEditSaveInFlight)"))
+        assertTrue(save.contains("isEditSaveInFlight = true"))
+        assertTrue(save.contains("state=STARTED panelDismissed=false"))
+        assertTrue(save.contains("session.claimSave("))
+        assertTrue(save.contains("claimedSession?.isCurrentSaveClaim(saveClaim)"))
+        assertTrue(failure.contains("isEditSaveInFlight = false"))
+        assertTrue(failure.contains("state=FAILED panelRetained=true"))
+    }
+
+    @Test
+    fun pastReminderRejectionIsReportedAsSuccessfulSaveWithoutScheduling() {
+        val save = source
+            .substringAfter("private fun saveTask(expectedProposalRevision")
+            .substringBefore("private fun markEditSaveFailed(")
+        val duePast = save
+            .substringAfter("if (dueNotInFuture) {")
+            .substringBefore("} else if (reminderExpected)")
+
+        assertTrue(save.indexOf("ReminderHelper.cancelReminder(") < save.indexOf("evaluateForScheduling("))
+        assertTrue(save.contains("schedulingEligibility is ReminderSchedulingEligibility.Eligible"))
+        assertTrue(save.contains("ReminderSchedulingRejection.DUE_NOT_IN_FUTURE"))
+        assertTrue(save.contains("result=NOT_SCHEDULED_EXPECTED"))
+        assertTrue(duePast.contains("Task updated. No reminder was scheduled"))
+        assertFalse(duePast.contains("scheduleReminderFromTask"))
+        assertFalse(duePast.contains("could not be scheduled"))
     }
 
     @Test

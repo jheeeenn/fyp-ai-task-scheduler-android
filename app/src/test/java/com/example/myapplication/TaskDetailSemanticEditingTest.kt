@@ -169,9 +169,9 @@ class TaskDetailSemanticEditingTest {
     }
 
     @Test
-    fun androidRejectsPastModelScheduleAndCommandWrapperTitle() {
+    fun androidAllowsPastExistingTaskScheduleButRejectsCommandWrapperTitle() {
         assertEquals(
-            TaskFieldEditResult.PastSchedule,
+            TaskFieldEditResult.Schedule("02/08/2026", "09:00 PM"),
             resolver.resolveScheduleProposal(
                 "02/08/2026", "09:00 PM", draft("03/08/2026", "10:00 PM"),
                 calendar("03/08/2026 11:26 PM")

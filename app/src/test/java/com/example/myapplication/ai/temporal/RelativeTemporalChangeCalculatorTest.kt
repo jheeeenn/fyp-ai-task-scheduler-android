@@ -53,17 +53,17 @@ class RelativeTemporalChangeCalculatorTest {
     }
 
     @Test
-    fun calculatedPastResultIsRejected() {
+    fun calculatedPastResultIsAllowedForExistingTaskReschedule() {
         val result = calculator.calculate(
             authoritativeOriginal = ExactTemporalSchedule("31/07/2026", "1:00 PM"),
             currentProposal = null,
             proposal = offset(-120),
             now = now(hour = 12)
         )
-        assertTrue(result is RelativeTemporalCalculationResult.PastSchedule)
+        assertTrue(result is RelativeTemporalCalculationResult.Success)
         assertEquals(
             ExactTemporalSchedule("31/07/2026", "11:00 AM"),
-            (result as RelativeTemporalCalculationResult.PastSchedule).schedule
+            (result as RelativeTemporalCalculationResult.Success).schedule
         )
     }
 
