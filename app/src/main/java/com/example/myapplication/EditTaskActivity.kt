@@ -101,6 +101,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var relativeTemporalCorrectionInFlight = false
     private var initialProposalCrossedDateBoundary = false
     private var isEditSaveInFlight = false
+    private var waitingForDeleteConfirmation = false
+    private var isEditDeleteInFlight = false
 
     private var authoritativeOriginalTitle: String = ""
     private var authoritativeOriginalDate: String? = null
@@ -509,13 +511,24 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
                 if (existingTask == null) {
                     failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = false)
-                    markEditSaveFailed("TASK_NOT_FOUND")
+                    isEditSaveInFlight = false
+                    waitingForSaveConfirmation = false
+                    Log.d(
+                        "EDIT_SAVE",
+                        "state=FAILED reason=TASK_NOT_FOUND terminalFeedback=PENDING"
+                    )
                     Toast.makeText(
                         this@EditTaskActivity,
                         "Task no longer exists.",
                         Toast.LENGTH_LONG
                     ).show()
-                    finish()
+                    assistantSession.speakThenRun("That task no longer exists.") {
+                        Log.d(
+                            "EDIT_SAVE",
+                            "terminalFeedback=DELIVERED activityFinish=true reason=TASK_NOT_FOUND"
+                        )
+                        finish()
+                    }
                     return@launch
                 }
             if (saveClaim != null && !authoritativeSnapshotMatches(
@@ -651,39 +664,36 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 )
             }
 
-            if (dueNotInFuture) {
-                Toast.makeText(
-                    this@EditTaskActivity,
-                    "Task updated. No reminder was scheduled because the task time is in the past.",
-                    Toast.LENGTH_LONG
-                ).show()
-            } else if (reminderExpected) {
-                if (scheduled) {
-                    Toast.makeText(
-                        this@EditTaskActivity,
-                        "Task updated and reminder rescheduled",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    Toast.makeText(
-                        this@EditTaskActivity,
-                        "Task updated, but reminder could not be scheduled",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            } else {
-                Toast.makeText(
-                    this@EditTaskActivity,
-                    "Task updated. Reminder removed.",
-                    Toast.LENGTH_SHORT
-                ).show()
+            val terminalMessage = when {
+                dueNotInFuture ->
+                    "Task updated. No reminder was scheduled because the task time is in the past."
+                reminderExpected && scheduled ->
+                    "Task updated and reminder rescheduled."
+                reminderExpected ->
+                    "Task updated, but the reminder could not be scheduled."
+                else ->
+                    "Task updated. Reminder removed."
             }
+            Toast.makeText(
+                this@EditTaskActivity,
+                terminalMessage,
+                if (dueNotInFuture || reminderExpected && !scheduled) {
+                    Toast.LENGTH_LONG
+                } else {
+                    Toast.LENGTH_SHORT
+                }
+            ).show()
 
             waitingForSaveConfirmation = false
             isEditSaveInFlight = false
-            assistantSession.dismissPanel()
-            Log.d("EDIT_SAVE", "state=SUCCEEDED panelDismissed=true")
-            finish()
+            Log.d("EDIT_SAVE", "state=SUCCEEDED mutationComplete=true")
+            assistantSession.speakThenRun(terminalMessage) {
+                Log.d(
+                    "EDIT_SAVE",
+                    "terminalFeedback=DELIVERED activityFinish=true"
+                )
+                finish()
+            }
             } catch (exception: CancellationException) {
                 failRelativeTemporalSaveClaim(claimedSession, saveClaim, retryable = true)
                 markEditSaveFailed("COROUTINE_CANCELLED")
@@ -724,13 +734,18 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
         } else if (isEditSaveInFlight) {
             Log.d("EDIT_SAVE", "state=IN_FLIGHT action=IGNORED")
+        } else if (isEditDeleteInFlight) {
+            Log.d("EDIT_DELETE", "state=IN_FLIGHT action=IGNORED")
         } else {
             return false
         }
-        val message = if (session?.state == RelativeTemporalProposalState.SAVING) {
-            "I am saving the confirmed proposal. Please wait."
-        } else {
-            "I am saving the task. Please wait."
+        val message = when {
+            session?.state == RelativeTemporalProposalState.SAVING ->
+                "I am saving the confirmed proposal. Please wait."
+            isEditSaveInFlight ->
+                "I am saving the task. Please wait."
+            else ->
+                "I am still deleting the task. Please wait."
         }
         speak(message)
         return true
@@ -738,29 +753,103 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun confirmDeleteTask() {
         if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
-        val dao = AppDatabase.getInstance(this).taskDao()
 
         AlertDialog.Builder(this)
             .setTitle("Delete task?")
             .setMessage("Are you sure you want to delete this task?")
             .setPositiveButton("Delete") { _, _ ->
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
-                        dao.deleteTaskAndSubtasks(taskId)
-                    }
-                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
-                    Toast.makeText(
-                        this@EditTaskActivity,
-                        "Task deleted",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    waitingForSaveConfirmation = false
-                    assistantSession.dismissPanel()
-                    finish()
-                }
+                performConfirmedDelete(source = "TOUCH_CONFIRMATION")
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun requestVoiceDeleteConfirmation() {
+        if (isEditDeleteInFlight) {
+            speak("I am still deleting the task. Please wait.")
+            return
+        }
+        waitingForSaveConfirmation = false
+        waitingForDeleteConfirmation = true
+        assistantSession.expectConfirmation()
+        Log.d(
+            "EDIT_DELETE",
+            "state=WAITING_FOR_DELETE_CONFIRMATION mutationStarted=false"
+        )
+        speak("Are you sure you want to delete this task?")
+    }
+
+    private fun handlePendingDeleteConfirmation(normalized: String): Boolean {
+        if (!waitingForDeleteConfirmation) return false
+
+        val decision = BoundedConfirmationPolicy.resolve(normalized)
+        Log.d(
+            "CONFIRMATION_RESOLUTION",
+            "context=EDIT_DELETE_CONFIRMATION raw=${decision.normalizedText} " +
+                "result=${decision.result} source=${decision.source} confidence=${decision.confidence}"
+        )
+        when (decision.result) {
+            BoundedConfirmationResult.AFFIRM -> {
+                waitingForDeleteConfirmation = false
+                performConfirmedDelete(source = "VOICE_CONFIRMATION")
+            }
+            BoundedConfirmationResult.REJECT,
+            BoundedConfirmationResult.CANCEL -> {
+                waitingForDeleteConfirmation = false
+                speak("Okay. I didn't delete the task.")
+            }
+            BoundedConfirmationResult.UNKNOWN -> {
+                assistantSession.expectConfirmation()
+                speak("Please say yes to delete the task, or no to keep it.")
+            }
+        }
+        return true
+    }
+
+    private fun performConfirmedDelete(source: String) {
+        if (isEditDeleteInFlight) {
+            Log.d("EDIT_DELETE", "state=IGNORED reason=DELETE_ALREADY_IN_FLIGHT")
+            return
+        }
+        isEditDeleteInFlight = true
+        waitingForDeleteConfirmation = false
+        waitingForSaveConfirmation = false
+        Log.d("EDIT_DELETE", "state=STARTED source=$source panelDismissed=false")
+
+        lifecycleScope.launch {
+            try {
+                val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
+                withContext(Dispatchers.IO) {
+                    dao.deleteTaskAndSubtasks(taskId)
+                }
+                ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
+                Toast.makeText(
+                    this@EditTaskActivity,
+                    "Task deleted",
+                    Toast.LENGTH_SHORT
+                ).show()
+                isEditDeleteInFlight = false
+                Log.d("EDIT_DELETE", "state=SUCCEEDED mutationComplete=true")
+                assistantSession.speakThenRun("Task deleted.") {
+                    Log.d(
+                        "EDIT_DELETE",
+                        "terminalFeedback=DELIVERED activityFinish=true"
+                    )
+                    finish()
+                }
+            } catch (exception: CancellationException) {
+                isEditDeleteInFlight = false
+                Log.d("EDIT_DELETE", "state=FAILED reason=COROUTINE_CANCELLED")
+                throw exception
+            } catch (exception: Exception) {
+                isEditDeleteInFlight = false
+                Log.e(
+                    "EDIT_DELETE",
+                    "state=FAILED panelRetained=true exception=${exception.javaClass.simpleName}"
+                )
+                speak("I could not delete the task. Please try again.")
+            }
+        }
     }
 
     private fun handleVoiceInput(text: String) {
@@ -775,6 +864,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     "relativeProposalActive=${relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE}"
             )
         }
+
+        if (handlePendingDeleteConfirmation(normalized)) return
 
         if (handleRelativeTemporalProposalInput(normalized)) return
 
@@ -877,17 +968,9 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
             normalized == "delete" ||
                     normalized == "delete task" ||
-                    normalized == "delete this" -> {
-                speak(responseManager.editDeleteCurrent())
-                lifecycleScope.launch {
-                    val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
-                    withContext(Dispatchers.IO) {
-                        dao.deleteTaskAndSubtasks(taskId)
-                    }
-                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
-                    assistantSession.dismissPanel()
-                    finish()
-                }
+                    normalized == "delete this" ||
+                    normalized == "delete this task" -> {
+                requestVoiceDeleteConfirmation()
                 return
             }
         }
@@ -1216,16 +1299,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
 
             AiIntent.DELETE_TASK.name -> {
-                speak(responseManager.editDeleteCurrent())
-                lifecycleScope.launch {
-                    val dao = AppDatabase.getInstance(this@EditTaskActivity).taskDao()
-                    withContext(Dispatchers.IO) {
-                        dao.deleteTaskAndSubtasks(taskId)
-                    }
-                    ReminderHelper.cancelReminder(this@EditTaskActivity, taskId)
-                    assistantSession.dismissPanel()
-                    finish()
-                }
+                requestVoiceDeleteConfirmation()
             }
 
             AiIntent.QUERY_TASK.name -> {
@@ -1287,6 +1361,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun endAssistantConversation() {
         waitingForSaveConfirmation = false
+        waitingForDeleteConfirmation = false
         pendingFieldTarget = EditFieldTarget.NONE
         assistantSession.speakThenStop(responseManager.stopListening())
     }
@@ -1722,6 +1797,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     override fun onAssistantCancelled() {
         waitingForSaveConfirmation = false
+        waitingForDeleteConfirmation = false
         pendingFieldTarget = EditFieldTarget.NONE
         relativeTemporalSession?.invalidatePendingCorrection()
         isForceStoppingAssistant = false
@@ -1729,6 +1805,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     override fun onAssistantSessionStopped() {
         waitingForSaveConfirmation = false
+        waitingForDeleteConfirmation = false
         pendingFieldTarget = EditFieldTarget.NONE
         relativeTemporalSession?.invalidatePendingCorrection()
         isForceStoppingAssistant = false

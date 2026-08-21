@@ -150,7 +150,7 @@ class EditTaskNaturalVoiceSourceTest {
         val save = source
             .substringAfter("private fun saveTask(expectedProposalRevision")
             .substringBefore("private fun markEditSaveFailed(")
-        val successDismiss = save.indexOf("assistantSession.dismissPanel()")
+        val terminalDelivery = save.indexOf("assistantSession.speakThenRun(terminalMessage)")
 
         assertTrue(directSave.contains("saveTask()"))
         assertFalse(directSave.contains("dismissPanel()"))
@@ -158,8 +158,9 @@ class EditTaskNaturalVoiceSourceTest {
         assertFalse(affirmative.contains("dismissPanel()"))
         assertTrue(relativeSave.contains("saveTask(session.revision)"))
         assertFalse(relativeSave.contains("dismissPanel()"))
-        assertTrue(successDismiss > save.indexOf("ReminderEligibilityPolicy.evaluateForScheduling"))
-        assertTrue(successDismiss < save.indexOf("state=SUCCEEDED panelDismissed=true"))
+        assertFalse(save.contains("assistantSession.dismissPanel()"))
+        assertTrue(terminalDelivery > save.indexOf("ReminderEligibilityPolicy.evaluateForScheduling"))
+        assertTrue(terminalDelivery < save.lastIndexOf("terminalFeedback=DELIVERED activityFinish=true"))
     }
 
     @Test
@@ -186,17 +187,17 @@ class EditTaskNaturalVoiceSourceTest {
         val save = source
             .substringAfter("private fun saveTask(expectedProposalRevision")
             .substringBefore("private fun markEditSaveFailed(")
-        val duePast = save
-            .substringAfter("if (dueNotInFuture) {")
-            .substringBefore("} else if (reminderExpected)")
+        val terminalMessage = save
+            .substringAfter("val terminalMessage = when")
+            .substringBefore("Toast.makeText(")
 
         assertTrue(save.indexOf("ReminderHelper.cancelReminder(") < save.indexOf("evaluateForScheduling("))
         assertTrue(save.contains("schedulingEligibility is ReminderSchedulingEligibility.Eligible"))
         assertTrue(save.contains("ReminderSchedulingRejection.DUE_NOT_IN_FUTURE"))
         assertTrue(save.contains("result=NOT_SCHEDULED_EXPECTED"))
-        assertTrue(duePast.contains("Task updated. No reminder was scheduled"))
-        assertFalse(duePast.contains("scheduleReminderFromTask"))
-        assertFalse(duePast.contains("could not be scheduled"))
+        assertTrue(terminalMessage.contains("Task updated. No reminder was scheduled"))
+        assertTrue(terminalMessage.contains("Task updated, but the reminder could not be scheduled."))
+        assertFalse(terminalMessage.contains("scheduleReminderFromTask"))
     }
 
     @Test
