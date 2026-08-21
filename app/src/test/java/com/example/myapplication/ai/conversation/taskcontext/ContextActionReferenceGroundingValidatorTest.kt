@@ -98,27 +98,70 @@ class ContextActionReferenceGroundingValidatorTest {
     }
 
     @Test
-    fun implicitFocusAuthorityDoesNotApplyToRecentQueryResults() {
+    fun strictSingleResultImplicitFocusAcceptsMatchingOrBlankAndRejectsConflict() {
         val oneResultSnapshot = snapshot.copy(items = listOf(item("T1", "Medicine")))
-        val oneResult = validateAgainst(
-            text = "reschedule the date to today",
-            selectedRef = "T1",
+        listOf("T1", "").forEach { selectedRef ->
+            val result = validateAgainst(
+                text = "can you change the title to leaving home",
+                selectedRef = selectedRef,
+                capturedSnapshot = oneResultSnapshot,
+                focus = focus("T1"),
+                action = ConversationContextAction.UPDATE
+            )
+
+            assertEquals(
+                ContextActionReferenceGroundingResult.VALID_SINGLE_RESULT_IMPLICIT_FOCUS,
+                result.result
+            )
+            assertEquals("T1", result.ref)
+            assertTrue(result.isValid)
+        }
+
+        val conflict = validateAgainst(
+            text = "can you change the title to leaving home",
+            selectedRef = "T2",
             capturedSnapshot = oneResultSnapshot,
-            focus = focus("T1")
-        )
-        val multipleResults = validateAgainst(
-            text = "reschedule the date to today",
-            selectedRef = "T1",
-            capturedSnapshot = snapshot,
-            focus = focus("T1")
+            focus = focus("T1"),
+            action = ConversationContextAction.UPDATE
         )
 
-        assertEquals(ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE, oneResult.result)
+        assertEquals(ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH, conflict.result)
+        assertFalse(conflict.isValid)
+    }
+
+    @Test
+    fun strictSingleResultImplicitFocusRequiresCurrentNonstaleUniqueFocus() {
+        val oneResultSnapshot = snapshot.copy(items = listOf(item("T1", "Medicine")))
+        val missing = validateAgainst(
+            text = "can you change the title to leaving home",
+            selectedRef = "T1",
+            capturedSnapshot = oneResultSnapshot,
+            focus = null,
+            action = ConversationContextAction.UPDATE
+        )
+        val stale = validateAgainst(
+            text = "can you change the title to leaving home",
+            selectedRef = "T1",
+            capturedSnapshot = oneResultSnapshot,
+            focus = focus("T1").copy(generation = oneResultSnapshot.generation - 1),
+            action = ConversationContextAction.UPDATE
+        )
+        val multipleResults = validateAgainst(
+            text = "can you change the title to leaving home",
+            selectedRef = "T1",
+            capturedSnapshot = snapshot,
+            focus = focus("T1"),
+            action = ConversationContextAction.UPDATE
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS, missing.result)
+        assertEquals(ContextActionReferenceGroundingResult.STALE_FOCUS, stale.result)
         assertEquals(
             ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE,
             multipleResults.result
         )
-        assertFalse(oneResult.isValid)
+        assertFalse(missing.isValid)
+        assertFalse(stale.isValid)
         assertFalse(multipleResults.isValid)
     }
 

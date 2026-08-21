@@ -1,5 +1,6 @@
 package com.example.myapplication
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,7 +54,7 @@ class EditTaskNaturalVoiceSourceTest {
     @Test
     fun emptyAssistantRescheduleEntersFocusedDateOrTimeCollection() {
         val initialization = source
-            .substringAfter("val changed = applyProposedTemporalChange(")
+            .substringAfter("val temporalChanged = applyProposedTemporalChange(")
             .substringBefore("private fun openDatePicker()")
         val pendingValue = source
             .substringAfter("EditFieldTarget.DATE_OR_TIME -> {")
@@ -64,6 +65,40 @@ class EditTaskNaturalVoiceSourceTest {
         assertTrue(source.contains("What date or time would you like to use?"))
         assertTrue(pendingValue.contains("applyProposedTemporalChange("))
         assertTrue(pendingValue.contains("askToSaveChanges()"))
+    }
+
+    @Test
+    fun assistantTitlePrefillUsesExistingSingleSaveConfirmationPath() {
+        val initialization = source
+            .substringAfter("val titlePrefillChanged = isTitlePrefillChanged(")
+            .substringBefore("private fun openDatePicker()")
+        val confirmation = initialization.indexOf(
+            "hasPendingPrefillChange -> askToSaveChanges()"
+        )
+        val genericIntro = initialization.indexOf("responseManager.editIntro(")
+        val askToSave = source
+            .substringAfter("private fun askToSaveChanges()")
+            .substringBefore("private fun authoritativeSnapshotMatches")
+
+        assertTrue(initialization.contains("etTaskTitle.setText(prefillTitle)"))
+        assertTrue(initialization.contains("titlePrefillChanged || temporalChanged"))
+        assertTrue(initialization.contains("EDIT_ASSISTANT_PREFILL"))
+        assertTrue(initialization.contains("next=\$prefillNextState"))
+        assertTrue(confirmation >= 0)
+        assertTrue(confirmation < genericIntro)
+        assertEquals(1, initialization.split("askToSaveChanges()").size - 1)
+        assertTrue(askToSave.contains("waitingForSaveConfirmation = true"))
+        assertTrue(askToSave.contains("assistantSession.expectConfirmation()"))
+        assertTrue(askToSave.contains("promptHelper.askSaveChanges(buildEditSummary())"))
+        assertFalse(initialization.contains("saveTask()"))
+    }
+
+    @Test
+    fun titlePrefillChangeDetectionUsesTrimmedAuthoritativeTitle() {
+        assertTrue(isTitlePrefillChanged("leaving home", "leave home"))
+        assertFalse(isTitlePrefillChanged(" leave home ", "leave home"))
+        assertFalse(isTitlePrefillChanged("", "leave home"))
+        assertFalse(isTitlePrefillChanged(null, "leave home"))
     }
 
     @Test

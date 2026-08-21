@@ -10,6 +10,7 @@ enum class ContextActionReferenceGroundingResult {
     VALID_UNIQUE_TITLE,
     VALID_CURRENT_FOCUS,
     VALID_TASK_DETAIL_IMPLICIT_FOCUS,
+    VALID_SINGLE_RESULT_IMPLICIT_FOCUS,
     NO_REFERENCE_EVIDENCE,
     MISSING_CURRENT_FOCUS,
     SELECTED_REF_MISMATCH,
@@ -30,7 +31,8 @@ data class GroundedContextActionReference(
             ContextActionReferenceGroundingResult.VALID_ORDINAL,
             ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE,
             ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS,
-            ContextActionReferenceGroundingResult.VALID_TASK_DETAIL_IMPLICIT_FOCUS
+            ContextActionReferenceGroundingResult.VALID_TASK_DETAIL_IMPLICIT_FOCUS,
+            ContextActionReferenceGroundingResult.VALID_SINGLE_RESULT_IMPLICIT_FOCUS
         )
     }
 }
@@ -182,6 +184,28 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
+        if (capturedSnapshot.scope == TaskContextScope.RECENT_QUERY_RESULTS &&
+            capturedSnapshot.items.size == 1
+        ) {
+            if (currentFocus == null || !currentFocus.available) {
+                return GroundedContextActionReference(
+                    ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS
+                )
+            }
+            val expectedRef = strictSingleResultImplicitFocusRef(
+                capturedSnapshot,
+                currentFocus
+            ) ?: return GroundedContextActionReference(
+                ContextActionReferenceGroundingResult.STALE_FOCUS
+            )
+            return compareSelected(
+                selectedRef = selectedRef,
+                expectedRef = expectedRef,
+                validResult =
+                    ContextActionReferenceGroundingResult.VALID_SINGLE_RESULT_IMPLICIT_FOCUS
+            )
+        }
+
         return GroundedContextActionReference(
             ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE
         )
@@ -260,8 +284,27 @@ object ContextActionReferenceGroundingValidator {
 internal fun strictTaskDetailImplicitFocusRef(
     capturedSnapshot: ReadOnlyTaskContextSnapshot,
     currentFocus: ConversationContextFocus?
+): String? = strictImplicitFocusRef(
+    capturedSnapshot = capturedSnapshot,
+    currentFocus = currentFocus,
+    requiredScope = TaskContextScope.TASK_DETAIL
+)
+
+internal fun strictSingleResultImplicitFocusRef(
+    capturedSnapshot: ReadOnlyTaskContextSnapshot,
+    currentFocus: ConversationContextFocus?
+): String? = strictImplicitFocusRef(
+    capturedSnapshot = capturedSnapshot,
+    currentFocus = currentFocus,
+    requiredScope = TaskContextScope.RECENT_QUERY_RESULTS
+)
+
+private fun strictImplicitFocusRef(
+    capturedSnapshot: ReadOnlyTaskContextSnapshot,
+    currentFocus: ConversationContextFocus?,
+    requiredScope: TaskContextScope
 ): String? {
-    if (capturedSnapshot.scope != TaskContextScope.TASK_DETAIL ||
+    if (capturedSnapshot.scope != requiredScope ||
         capturedSnapshot.items.size != 1 ||
         currentFocus?.available != true ||
         currentFocus.generation != capturedSnapshot.generation

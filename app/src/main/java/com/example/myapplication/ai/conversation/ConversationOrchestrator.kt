@@ -494,19 +494,26 @@ class ConversationOrchestrator(
         }
     }
 
-    /** CONTEXT_ACTION may select only authority already supplied by Android. */
+    /** Nonblank CONTEXT_ACTION refs may select only authority already supplied by Android. */
     private fun validateContextActionAuthority(
         decision: ConversationDecision,
         readOnlyTaskContextSnapshot: String,
         contextFocus: ConversationContextFocus?
     ) {
         if (decision.route != ConversationRoute.CONTEXT_ACTION) return
+        val selectedRef = decision.contextRef.trim().uppercase(Locale.ROOT)
+        if (selectedRef.isBlank()) {
+            Log.d(
+                "CONTEXT_ACTION_AUTHORITY",
+                "modelRef= result=DEFERRED_TO_ANDROID_GROUNDING"
+            )
+            return
+        }
         val suppliedRefs = suppliedContextRefs(readOnlyTaskContextSnapshot)
         val focusRef = contextFocus
             ?.takeIf { it.available }
             ?.ref
             ?.uppercase(Locale.ROOT)
-        val selectedRef = decision.contextRef.uppercase(Locale.ROOT)
         if (selectedRef !in suppliedRefs && selectedRef != focusRef) {
             throw ConversationSchemaException(
                 message = "CONTEXT_ACTION selected a ref not supplied by Android",

@@ -77,6 +77,12 @@ private enum class EditFieldTarget {
     NONE, TITLE, DATE, TIME, DATE_OR_TIME
 }
 
+internal fun isTitlePrefillChanged(
+    prefillTitle: String?,
+    authoritativeOriginalTitle: String
+): Boolean = !prefillTitle.isNullOrBlank() &&
+    prefillTitle.trim() != authoritativeOriginalTitle.trim()
+
 
 class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
@@ -213,6 +219,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             false
         )
 
+        val titlePrefillChanged = isTitlePrefillChanged(
+            prefillTitle,
+            authoritativeOriginalTitle
+        )
         if (!prefillTitle.isNullOrBlank()) {
             etTaskTitle.setText(prefillTitle)
         }
@@ -319,8 +329,16 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             } else {
                 "You are editing ${etTaskTitle.text}. What would you like to change?"
             }*/
-            val changed = applyProposedTemporalChange(prefillNewDateText, prefillNewTimeText, askForMissing = false)
-            if (relativeTemporalProposal && changed && initialRelativeTemporalSemanticProposal != null) {
+            val temporalChanged = applyProposedTemporalChange(
+                prefillNewDateText,
+                prefillNewTimeText,
+                askForMissing = false
+            )
+            val hasPendingPrefillChange = titlePrefillChanged || temporalChanged
+            if (relativeTemporalProposal &&
+                temporalChanged &&
+                initialRelativeTemporalSemanticProposal != null
+            ) {
                 relativeTemporalSession = RelativeTemporalProposalSession(
                     authoritativeOriginal = ExactTemporalSchedule(
                         authoritativeOriginalDate,
@@ -332,10 +350,22 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 )
                 logRelativeTemporalProposal("WAITING_CONFIRMATION")
             }
+            val prefillNextState = when {
+                pendingTemporalClarification != null -> "WAITING_FOR_TEMPORAL_CLARIFICATION"
+                hasPendingPrefillChange -> "WAITING_FOR_SAVE_CONFIRMATION"
+                assistantMode == "reschedule" || rescheduleCollectionRequired ->
+                    "WAITING_FOR_TEMPORAL_COLLECTION"
+                else -> "WAITING_FOR_EDIT_REQUEST"
+            }
+            Log.d(
+                "EDIT_ASSISTANT_PREFILL",
+                "titleChanged=$titlePrefillChanged temporalChanged=$temporalChanged " +
+                    "next=$prefillNextState"
+            )
             window.decorView.postDelayed({
                 when {
                     pendingTemporalClarification != null -> advanceTemporalClarification()
-                    changed -> askToSaveChanges()
+                    hasPendingPrefillChange -> askToSaveChanges()
                     assistantMode == "reschedule" || rescheduleCollectionRequired -> {
                         waitingForSaveConfirmation = false
                         enterTemporalCollection(EditTemporalTarget.DATE_OR_TIME)

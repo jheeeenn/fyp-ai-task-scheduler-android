@@ -46,6 +46,11 @@ object ContextActionRepairPolicy {
             capturedSnapshot,
             contextFocus
         ) != null
-        return explicit || uniqueTitle || validFocus || validTaskDetailImplicitFocus
+        val validSingleResultImplicitFocus = strictSingleResultImplicitFocusRef(
+            capturedSnapshot,
+            contextFocus
+        ) != null
+        return explicit || uniqueTitle || validFocus || validTaskDetailImplicitFocus ||
+            validSingleResultImplicitFocus
     }
 }

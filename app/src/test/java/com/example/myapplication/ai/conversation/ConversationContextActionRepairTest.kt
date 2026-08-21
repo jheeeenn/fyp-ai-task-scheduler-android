@@ -187,7 +187,6 @@ class ConversationContextActionRepairTest {
             detail = ConversationContextDetail.SUMMARY,
             title = "Medicine"
         )
-        val recentSnapshot = detailSnapshot.copy(scope = TaskContextScope.RECENT_QUERY_RESULTS)
 
         listOf(ConversationRoute.TASK_COMMAND, ConversationRoute.UNKNOWN).forEach { route ->
             assertTrue(
@@ -205,18 +204,72 @@ class ConversationContextActionRepairTest {
             ContextActionRepairPolicy.shouldAttempt(
                 "reschedule the date to today",
                 primary,
-                recentSnapshot,
+                detailSnapshot,
                 isResultInteraction = true,
-                contextFocus = detailFocus
+                contextFocus = detailFocus.copy(generation = detailSnapshot.generation - 1)
+            )
+        )
+    }
+
+    @Test
+    fun strictSingleResultImplicitFocusEnablesRepairWithoutTargetWording() {
+        val primary = ConversationDecision(
+            route = ConversationRoute.TASK_COMMAND,
+            taskText = "can you change the title to leaving home",
+            source = "conversation_agent"
+        )
+        val singleResultSnapshot = snapshot.copy(items = listOf(item("T1", "Leave Home")))
+        val singleResultFocus = ConversationContextFocus(
+            available = true,
+            ref = "T1",
+            generation = singleResultSnapshot.generation,
+            detail = ConversationContextDetail.SUMMARY,
+            title = "Leave Home"
+        )
+
+        listOf(
+            ConversationRoute.TASK_COMMAND,
+            ConversationRoute.ASK_CLARIFICATION,
+            ConversationRoute.UNKNOWN
+        ).forEach { route ->
+            assertTrue(
+                route.name,
+                ContextActionRepairPolicy.shouldAttempt(
+                    "can you change the title to leaving home",
+                    primary.copy(route = route),
+                    singleResultSnapshot,
+                    isResultInteraction = true,
+                    contextFocus = singleResultFocus
+                )
+            )
+        }
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "can you change the title to leaving home",
+                primary,
+                snapshot,
+                isResultInteraction = true,
+                contextFocus = singleResultFocus
             )
         )
         assertFalse(
             ContextActionRepairPolicy.shouldAttempt(
-                "reschedule the date to today",
+                "can you change the title to leaving home",
                 primary,
-                detailSnapshot,
+                singleResultSnapshot,
                 isResultInteraction = true,
-                contextFocus = detailFocus.copy(generation = detailSnapshot.generation - 1)
+                contextFocus = singleResultFocus.copy(
+                    generation = singleResultSnapshot.generation - 1
+                )
+            )
+        )
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "can you change the title to leaving home",
+                primary,
+                singleResultSnapshot,
+                isResultInteraction = true,
+                contextFocus = null
             )
         )
     }
