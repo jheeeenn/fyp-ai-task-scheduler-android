@@ -42,6 +42,10 @@ object ContextActionRepairPolicy {
             } == 1 &&
             (ContextReferenceMutationGuard.hasFocusReference(normalizedText) ||
                 ContextFocusActionEllipsisPolicy.isBoundedActionOnly(normalizedText))
-        return explicit || uniqueTitle || validFocus
+        val validTaskDetailImplicitFocus = strictTaskDetailImplicitFocusRef(
+            capturedSnapshot,
+            contextFocus
+        ) != null
+        return explicit || uniqueTitle || validFocus || validTaskDetailImplicitFocus
     }
 }

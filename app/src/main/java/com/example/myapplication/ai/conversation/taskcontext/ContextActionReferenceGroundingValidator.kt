@@ -9,6 +9,7 @@ enum class ContextActionReferenceGroundingResult {
     VALID_ORDINAL,
     VALID_UNIQUE_TITLE,
     VALID_CURRENT_FOCUS,
+    VALID_TASK_DETAIL_IMPLICIT_FOCUS,
     NO_REFERENCE_EVIDENCE,
     MISSING_CURRENT_FOCUS,
     SELECTED_REF_MISMATCH,
@@ -28,7 +29,8 @@ data class GroundedContextActionReference(
             ContextActionReferenceGroundingResult.VALID_EXPLICIT_REF,
             ContextActionReferenceGroundingResult.VALID_ORDINAL,
             ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE,
-            ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS
+            ContextActionReferenceGroundingResult.VALID_CURRENT_FOCUS,
+            ContextActionReferenceGroundingResult.VALID_TASK_DETAIL_IMPLICIT_FOCUS
         )
     }
 }
@@ -158,6 +160,28 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
+        if (capturedSnapshot.scope == TaskContextScope.TASK_DETAIL &&
+            capturedSnapshot.items.size == 1
+        ) {
+            if (currentFocus == null || !currentFocus.available) {
+                return GroundedContextActionReference(
+                    ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS
+                )
+            }
+            val expectedRef = strictTaskDetailImplicitFocusRef(
+                capturedSnapshot,
+                currentFocus
+            ) ?: return GroundedContextActionReference(
+                ContextActionReferenceGroundingResult.STALE_FOCUS
+            )
+            return compareSelected(
+                selectedRef = selectedRef,
+                expectedRef = expectedRef,
+                validResult =
+                    ContextActionReferenceGroundingResult.VALID_TASK_DETAIL_IMPLICIT_FOCUS
+            )
+        }
+
         return GroundedContextActionReference(
             ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE
         )
@@ -231,4 +255,21 @@ object ContextActionReferenceGroundingValidator {
         "(?i)\\b(?:it|its|that\\s+(?:task|one)|this\\s+(?:task|one))\\b"
     )
     private val BARE_FOCUS_REFERENCE = Regex("(?i)\\b(?:this|that)\\b")
+}
+
+internal fun strictTaskDetailImplicitFocusRef(
+    capturedSnapshot: ReadOnlyTaskContextSnapshot,
+    currentFocus: ConversationContextFocus?
+): String? {
+    if (capturedSnapshot.scope != TaskContextScope.TASK_DETAIL ||
+        capturedSnapshot.items.size != 1 ||
+        currentFocus?.available != true ||
+        currentFocus.generation != capturedSnapshot.generation
+    ) {
+        return null
+    }
+    return capturedSnapshot.items
+        .filter { it.ref.equals(currentFocus.ref, ignoreCase = true) }
+        .singleOrNull()
+        ?.ref
 }

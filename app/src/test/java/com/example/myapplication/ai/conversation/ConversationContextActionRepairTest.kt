@@ -170,6 +170,58 @@ class ConversationContextActionRepairTest {
     }
 
     @Test
+    fun strictTaskDetailImplicitFocusEnablesRepairOnlyWithCurrentAuthority() {
+        val primary = ConversationDecision(
+            route = ConversationRoute.TASK_COMMAND,
+            taskText = "reschedule the date to today",
+            source = "conversation_agent"
+        )
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Medicine"))
+        )
+        val detailFocus = ConversationContextFocus(
+            available = true,
+            ref = "T1",
+            generation = detailSnapshot.generation,
+            detail = ConversationContextDetail.SUMMARY,
+            title = "Medicine"
+        )
+        val recentSnapshot = detailSnapshot.copy(scope = TaskContextScope.RECENT_QUERY_RESULTS)
+
+        listOf(ConversationRoute.TASK_COMMAND, ConversationRoute.UNKNOWN).forEach { route ->
+            assertTrue(
+                route.name,
+                ContextActionRepairPolicy.shouldAttempt(
+                    "reschedule the date to today",
+                    primary.copy(route = route),
+                    detailSnapshot,
+                    isResultInteraction = true,
+                    contextFocus = detailFocus
+                )
+            )
+        }
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "reschedule the date to today",
+                primary,
+                recentSnapshot,
+                isResultInteraction = true,
+                contextFocus = detailFocus
+            )
+        )
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "reschedule the date to today",
+                primary,
+                detailSnapshot,
+                isResultInteraction = true,
+                contextFocus = detailFocus.copy(generation = detailSnapshot.generation - 1)
+            )
+        )
+    }
+
+    @Test
     fun noFocusDeleteCanClarifyAndDeleteSchemaRemainsBounded() {
         val repairedDelete = ConversationDecisionParser().parse(
             decision(

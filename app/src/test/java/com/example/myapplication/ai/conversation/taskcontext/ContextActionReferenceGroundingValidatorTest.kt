@@ -12,6 +12,148 @@ import org.junit.Test
 
 class ContextActionReferenceGroundingValidatorTest {
     @Test
+    fun strictTaskDetailImplicitFocusAcceptsMatchingOrBlankModelRef() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Medicine"))
+        )
+        val detailFocus = focus("T1")
+
+        listOf("T1", "").forEach { selectedRef ->
+            val result = validateAgainst(
+                text = "reschedule the date to today",
+                selectedRef = selectedRef,
+                capturedSnapshot = detailSnapshot,
+                focus = detailFocus
+            )
+
+            assertEquals(
+                ContextActionReferenceGroundingResult.VALID_TASK_DETAIL_IMPLICIT_FOCUS,
+                result.result
+            )
+            assertEquals("T1", result.ref)
+            assertTrue(result.isValid)
+        }
+    }
+
+    @Test
+    fun strictTaskDetailImplicitFocusRejectsConflictingModelRef() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Medicine"))
+        )
+        val result = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T2",
+            capturedSnapshot = detailSnapshot,
+            focus = focus("T1")
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH, result.result)
+        assertFalse(result.isValid)
+    }
+
+    @Test
+    fun strictTaskDetailImplicitFocusRequiresAvailableCurrentFocus() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Medicine"))
+        )
+        val missing = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T1",
+            capturedSnapshot = detailSnapshot,
+            focus = null
+        )
+        val unavailable = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T1",
+            capturedSnapshot = detailSnapshot,
+            focus = focus("T1").copy(available = false)
+        )
+        val stale = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T1",
+            capturedSnapshot = detailSnapshot,
+            focus = focus("T1").copy(generation = detailSnapshot.generation - 1)
+        )
+        val missingRef = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T1",
+            capturedSnapshot = detailSnapshot,
+            focus = focus("T1").copy(ref = "T2")
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS, missing.result)
+        assertEquals(
+            ContextActionReferenceGroundingResult.MISSING_CURRENT_FOCUS,
+            unavailable.result
+        )
+        assertEquals(ContextActionReferenceGroundingResult.STALE_FOCUS, stale.result)
+        assertEquals(ContextActionReferenceGroundingResult.STALE_FOCUS, missingRef.result)
+        assertFalse(missing.isValid)
+        assertFalse(unavailable.isValid)
+        assertFalse(stale.isValid)
+        assertFalse(missingRef.isValid)
+    }
+
+    @Test
+    fun implicitFocusAuthorityDoesNotApplyToRecentQueryResults() {
+        val oneResultSnapshot = snapshot.copy(items = listOf(item("T1", "Medicine")))
+        val oneResult = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T1",
+            capturedSnapshot = oneResultSnapshot,
+            focus = focus("T1")
+        )
+        val multipleResults = validateAgainst(
+            text = "reschedule the date to today",
+            selectedRef = "T1",
+            capturedSnapshot = snapshot,
+            focus = focus("T1")
+        )
+
+        assertEquals(ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE, oneResult.result)
+        assertEquals(
+            ContextActionReferenceGroundingResult.NO_REFERENCE_EVIDENCE,
+            multipleResults.result
+        )
+        assertFalse(oneResult.isValid)
+        assertFalse(multipleResults.isValid)
+    }
+
+    @Test
+    fun strictTaskDetailImplicitFocusGroundsOtherSemanticContextActions() {
+        val detailSnapshot = snapshot.copy(
+            scope = TaskContextScope.TASK_DETAIL,
+            items = listOf(item("T1", "Medicine"))
+        )
+        val cases = listOf(
+            "change the time to 5 PM" to ConversationContextAction.RESCHEDULE,
+            "change the title to Buy Milk" to ConversationContextAction.UPDATE,
+            "mark as done" to ConversationContextAction.MARK_DONE,
+            "mark as completed" to ConversationContextAction.MARK_DONE
+        )
+
+        cases.forEach { (text, action) ->
+            val result = validateAgainst(
+                text = text,
+                selectedRef = "T1",
+                capturedSnapshot = detailSnapshot,
+                focus = focus("T1"),
+                action = action
+            )
+
+            assertEquals(
+                text,
+                ContextActionReferenceGroundingResult.VALID_TASK_DETAIL_IMPLICIT_FOCUS,
+                result.result
+            )
+            assertEquals(text, "T1", result.ref)
+        }
+    }
+
+    @Test
     fun taskDetailCompletionAcceptsBlankModelRefFromCurrentFocus() {
         val detailSnapshot = snapshot.copy(
             scope = TaskContextScope.TASK_DETAIL,
@@ -284,18 +426,22 @@ class ContextActionReferenceGroundingValidatorTest {
         text: String,
         selectedRef: String,
         capturedSnapshot: ReadOnlyTaskContextSnapshot,
-        focus: ConversationContextFocus?
+        focus: ConversationContextFocus?,
+        action: ConversationContextAction = ConversationContextAction.RESCHEDULE
     ) = ContextActionReferenceGroundingValidator.validate(
         normalizedText = text,
-        decision = decision(selectedRef),
+        decision = decision(selectedRef, action),
         capturedSnapshot = capturedSnapshot,
         currentFocus = focus
     )
 
-    private fun decision(ref: String) = ConversationDecision(
+    private fun decision(
+        ref: String,
+        action: ConversationContextAction = ConversationContextAction.RESCHEDULE
+    ) = ConversationDecision(
         route = ConversationRoute.CONTEXT_ACTION,
         contextRef = ref,
-        contextAction = ConversationContextAction.RESCHEDULE,
+        contextAction = action,
         confidence = 0.97
     )
 
