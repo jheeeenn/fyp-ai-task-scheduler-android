@@ -46,6 +46,8 @@ object RelativeTemporalSpeechRenderer {
                 "What exact time would you like me to use?"
             RelativeTemporalCalculationFailure.CURRENT_PROPOSAL_UNAVAILABLE ->
                 "There is no current schedule proposal to build on. Please state the change again."
+            RelativeTemporalCalculationFailure.UNMENTIONED_FIELD_CHANGED ->
+                "Please restate the schedule change so I can preserve the other proposed field."
             RelativeTemporalCalculationFailure.NO_EFFECTIVE_CHANGE ->
                 "That would keep the same schedule. What different date, time, or offset should I use?"
         }

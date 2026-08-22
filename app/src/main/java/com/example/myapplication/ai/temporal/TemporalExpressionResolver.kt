@@ -146,7 +146,8 @@ class TemporalExpressionResolver {
     private fun extractTimePhrase(text: String): String = listOf(
         Regex("\\bbetween .+? and .+?(?:am|pm|noon|midnight)\\b"), Regex("\\bfrom .+? to .+?(?:am|pm|noon|midnight)\\b"),
         Regex("\\b(?:before|after|at) (?:\\d{1,2}(?::\\d{2})? ?(?:am|pm)?|noon|midnight)\\b"), Regex("\\bin the (morning|afternoon|evening)\\b"),
-        Regex("\\b(morning|afternoon|evening|night|tonight)\\b"), Regex("\\b(noon|midnight)\\b")
+        Regex("\\b(morning|afternoon|evening|night|tonight)\\b"), Regex("\\b(noon|midnight)\\b"),
+        Regex("\\b\\d{1,2}(?::\\d{2})? ?(?:am|pm)\\b")
     ).firstNotNullOfOrNull { it.find(text)?.value?.removePrefix("in the ")?.trim() }.orEmpty()
 
     private fun parseDateWindow(text: String, base: Calendar): TemporalResolution? {

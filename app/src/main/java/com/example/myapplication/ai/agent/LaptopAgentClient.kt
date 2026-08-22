@@ -412,6 +412,12 @@ For a date or time field:
 Date offsets are whole days from -365 through 365. Time offsets are whole minutes from -10080
 through 10080. Never convert an offset into a model-authored final date or time.
 
+Calendar-selection words such as "today", "tomorrow", "day after tomorrow", "next Monday", and
+"Friday" are literal date expressions for SET when the user is selecting that calendar date.
+They are not OFFSET merely because their meaning is relative to the current day. OFFSET is only
+for an amount applied relative to a task or proposal, such as "one day later", "two days earlier",
+"three hours later", or "30 minutes earlier".
+
 Before returning JSON, self-check every temporal field:
 - An unchanged field must use KEEP.
 - A pure time offset must use date_operation=KEEP.
@@ -435,6 +441,12 @@ Illustrative semantic mapping: moving a task to next Friday at 3 PM uses date SE
 "next Friday", time SET with literal "3 PM", and AUTHORITATIVE_TASK. Moving it thirty minutes
 later keeps the date and uses time OFFSET +30. These illustrate meaning; accept natural
 paraphrases rather than matching these word sequences.
+
+Example: "move it to tomorrow at 6 AM" must use date_operation=SET,
+replacement_date_text="tomorrow", date_offset_days=0, time_operation=SET,
+replacement_time_text="6 AM", and time_offset_minutes=0.
+Example: "move it one day later" must use date_operation=OFFSET,
+replacement_date_text="", date_offset_days=1, and time_operation=KEEP.
 
 Do not output markdown or explanations.
 """.trimIndent()
@@ -471,6 +483,14 @@ this change on top of the current unsaved proposal. UNCLEAR means that relations
 determined safely. Substitution and deliberate accumulation are semantic distinctions rather than
 word matching; the illustrations are not an exhaustive vocabulary or phrase dictionary. For
 UNCLEAR set need_clarification=true.
+
+When the current proposal already changes one field and the user corrects only another field,
+preserve the existing proposed value of the unmentioned field. For example, if the current
+proposal is today at 6 AM and the user says "move it to tomorrow", change the date and retain
+6 AM. A field-specific correction is not permission to restore another field from the
+authoritative task. Use REPLACE_PREVIOUS only when there is clear semantic evidence that the user
+is discarding or replacing the previous proposal, not merely because another schedule fragment
+was supplied.
 
 Use RESTORE_ORIGINAL only when the user semantically asks to return to the original schedule. For
 RESTORE_ORIGINAL use KEEP, KEEP, REPLACE_PREVIOUS, empty replacement texts, and zero offsets.

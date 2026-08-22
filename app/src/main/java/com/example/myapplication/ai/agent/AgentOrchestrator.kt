@@ -103,7 +103,7 @@ class AgentOrchestrator(
             val validation = try {
                 contextActionExtractionValidator.validateWithReport(response, expectedAction)
             } catch (exception: RelativeTemporalProposalValidationException) {
-                if (exception.failure != RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED) {
+                if (exception.failure !in INITIAL_CONTEXT_RECOVERABLE_FAILURES) {
                     throw exception
                 }
                 when (
@@ -488,6 +488,11 @@ class AgentOrchestrator(
             ?: exception::class.java.simpleName
 
     private companion object {
+        val INITIAL_CONTEXT_RECOVERABLE_FAILURES = setOf(
+            RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
+            RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION,
+            RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION
+        )
         val REPAIRABLE_CORRECTION_FAILURES = setOf(
             RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION,
             RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION,

@@ -20,6 +20,7 @@ enum class RelativeTemporalCalculationFailure {
     REPLACEMENT_TIME_UNRESOLVED,
     REPLACEMENT_DATE_NEEDS_CLARIFICATION,
     REPLACEMENT_TIME_NEEDS_CLARIFICATION,
+    UNMENTIONED_FIELD_CHANGED,
     NO_EFFECTIVE_CHANGE
 }
 
@@ -67,8 +68,28 @@ class RelativeTemporalChangeCalculator(
                 )
         }
 
-        var proposedDate = base.date.cleanStoredValue()
-        var proposedTime = base.time.cleanStoredValue()
+        // The selected relative base controls arithmetic for changed fields. During correction,
+        // KEEP remains Android-owned and preserves the currently visible unsaved proposal.
+        val visibleProposal = currentProposal ?: base
+        val timeOffsetCanMoveDate =
+            validated.timeOperation == RelativeTemporalOperation.OFFSET
+        var proposedDate = if (
+            currentProposal != null &&
+            validated.dateOperation == RelativeTemporalOperation.KEEP &&
+            !timeOffsetCanMoveDate
+        ) {
+            currentProposal.date.cleanStoredValue()
+        } else {
+            base.date.cleanStoredValue()
+        }
+        var proposedTime = if (
+            currentProposal != null &&
+            validated.timeOperation == RelativeTemporalOperation.KEEP
+        ) {
+            currentProposal.time.cleanStoredValue()
+        } else {
+            base.time.cleanStoredValue()
+        }
 
         when (validated.dateOperation) {
             RelativeTemporalOperation.KEEP -> Unit
@@ -186,13 +207,33 @@ class RelativeTemporalChangeCalculator(
         }
 
         val calculated = ExactTemporalSchedule(proposedDate, proposedTime)
-        if (calculated == base) {
+        if (currentProposal != null &&
+            validated.timeOperation == RelativeTemporalOperation.KEEP &&
+            calculated.time.cleanStoredValue() != currentProposal.time.cleanStoredValue()
+        ) {
+            return failure(
+                RelativeTemporalCalculationFailure.UNMENTIONED_FIELD_CHANGED,
+                validated.relativeBase
+            )
+        }
+        if (currentProposal != null &&
+            validated.dateOperation == RelativeTemporalOperation.KEEP &&
+            !timeOffsetCanMoveDate &&
+            calculated.date.cleanStoredValue() != currentProposal.date.cleanStoredValue()
+        ) {
+            return failure(
+                RelativeTemporalCalculationFailure.UNMENTIONED_FIELD_CHANGED,
+                validated.relativeBase
+            )
+        }
+        if (calculated == visibleProposal) {
             return failure(
                 RelativeTemporalCalculationFailure.NO_EFFECTIVE_CHANGE,
                 validated.relativeBase
             )
         }
-        val crossedDateBoundary = base.date.cleanStoredValue() != calculated.date
+        val crossedDateBoundary =
+            visibleProposal.date.cleanStoredValue() != calculated.date.cleanStoredValue()
         val combinedResolution = resolver.resolve(
             agentDateText = calculated.date,
             agentTimeText = calculated.time,

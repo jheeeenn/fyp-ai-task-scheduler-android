@@ -31,9 +31,10 @@ sealed class InitialContextRescheduleRecoveryResult {
 }
 
 /**
- * Recovers only an unnecessary model abstention for an exact initial contextual reschedule.
- * Android independently resolves both the original utterance and every model SET literal before
- * returning a response that must pass the normal extraction validator again.
+ * Recovers only an unnecessary model abstention or a redundant SET-plus-offset hybrid for an
+ * exact initial contextual reschedule. Android independently resolves both the original utterance
+ * and every model SET literal before returning a response that must pass the normal extraction
+ * validator again.
  */
 class InitialContextRescheduleClarificationRecoveryPolicy(
     private val resolver: TemporalExpressionResolver = TemporalExpressionResolver(),
@@ -47,7 +48,7 @@ class InitialContextRescheduleClarificationRecoveryPolicy(
         expectedAction: ConversationContextAction,
         validationFailure: RelativeTemporalValidationFailure
     ): InitialContextRescheduleRecoveryResult {
-        if (validationFailure != RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED) {
+        if (validationFailure !in RECOVERABLE_FAILURES) {
             return rejected(InitialContextRescheduleRecoveryReason.WRONG_VALIDATION_FAILURE)
         }
         if (expectedAction != ConversationContextAction.RESCHEDULE ||
@@ -56,7 +57,7 @@ class InitialContextRescheduleClarificationRecoveryPolicy(
         ) {
             return rejected(InitialContextRescheduleRecoveryReason.WRONG_ACTION)
         }
-        if (!response.needClarification || response.replacementTitle.isNotBlank()) {
+        if (response.replacementTitle.isNotBlank()) {
             return rejected(InitialContextRescheduleRecoveryReason.MALFORMED_PROPOSAL)
         }
         if (!response.confidence.isFinite() ||
@@ -70,22 +71,64 @@ class InitialContextRescheduleClarificationRecoveryPolicy(
             ?: return rejected(InitialContextRescheduleRecoveryReason.MALFORMED_PROPOSAL)
         val timeOperation = response.timeOperation.toOperationOrNull()
             ?: return rejected(InitialContextRescheduleRecoveryReason.MALFORMED_PROPOSAL)
-        if (dateOperation == RelativeTemporalOperation.OFFSET ||
-            timeOperation == RelativeTemporalOperation.OFFSET
-        ) {
-            return rejected(InitialContextRescheduleRecoveryReason.OFFSET_NOT_RECOVERABLE)
+        val dateSetOffsetHybrid = dateOperation == RelativeTemporalOperation.SET &&
+            response.replacementDateText.isNotBlank() &&
+            response.dateOffsetDays != 0
+        val timeSetOffsetHybrid = timeOperation == RelativeTemporalOperation.SET &&
+            response.replacementTimeText.isNotBlank() &&
+            response.timeOffsetMinutes != 0
+
+        val recoveredResponse = when (validationFailure) {
+            RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED -> {
+                if (!response.needClarification) {
+                    return rejected(InitialContextRescheduleRecoveryReason.MALFORMED_PROPOSAL)
+                }
+                if (dateOperation == RelativeTemporalOperation.OFFSET ||
+                    timeOperation == RelativeTemporalOperation.OFFSET
+                ) {
+                    return rejected(InitialContextRescheduleRecoveryReason.OFFSET_NOT_RECOVERABLE)
+                }
+                response.copy(needClarification = false)
+            }
+            RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION -> {
+                if (!dateSetOffsetHybrid ||
+                    dateOperation == RelativeTemporalOperation.OFFSET ||
+                    timeOperation == RelativeTemporalOperation.OFFSET
+                ) {
+                    return rejected(InitialContextRescheduleRecoveryReason.MALFORMED_PROPOSAL)
+                }
+                response.copy(
+                    dateOffsetDays = 0,
+                    timeOffsetMinutes = if (timeSetOffsetHybrid) 0 else response.timeOffsetMinutes,
+                    needClarification = false
+                )
+            }
+            RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION -> {
+                if (!timeSetOffsetHybrid ||
+                    dateOperation == RelativeTemporalOperation.OFFSET ||
+                    timeOperation == RelativeTemporalOperation.OFFSET
+                ) {
+                    return rejected(InitialContextRescheduleRecoveryReason.MALFORMED_PROPOSAL)
+                }
+                response.copy(
+                    dateOffsetDays = if (dateSetOffsetHybrid) 0 else response.dateOffsetDays,
+                    timeOffsetMinutes = 0,
+                    needClarification = false
+                )
+            }
+            else -> return rejected(InitialContextRescheduleRecoveryReason.WRONG_VALIDATION_FAILURE)
         }
 
         val candidate = RelativeTemporalProposal(
             dateOperation = dateOperation,
             timeOperation = timeOperation,
             relativeBase = RelativeTemporalBase.AUTHORITATIVE_TASK,
-            replacementDateText = response.replacementDateText,
-            replacementTimeText = response.replacementTimeText,
-            dateOffsetDays = response.dateOffsetDays,
-            timeOffsetMinutes = response.timeOffsetMinutes,
-            confidence = response.confidence,
-            needClarification = false
+            replacementDateText = recoveredResponse.replacementDateText,
+            replacementTimeText = recoveredResponse.replacementTimeText,
+            dateOffsetDays = recoveredResponse.dateOffsetDays,
+            timeOffsetMinutes = recoveredResponse.timeOffsetMinutes,
+            confidence = recoveredResponse.confidence,
+            needClarification = recoveredResponse.needClarification
         )
         try {
             proposalValidator.validate(candidate)
@@ -143,7 +186,7 @@ class InitialContextRescheduleClarificationRecoveryPolicy(
         }
 
         return InitialContextRescheduleRecoveryResult.Accepted(
-            response.copy(needClarification = false)
+            recoveredResponse
         )
     }
 
@@ -154,4 +197,12 @@ class InitialContextRescheduleClarificationRecoveryPolicy(
         InitialContextRescheduleRecoveryResult.Rejected(reason)
 
     private fun clone(calendar: Calendar): Calendar = calendar.clone() as Calendar
+
+    private companion object {
+        val RECOVERABLE_FAILURES = setOf(
+            RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
+            RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION,
+            RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION
+        )
+    }
 }

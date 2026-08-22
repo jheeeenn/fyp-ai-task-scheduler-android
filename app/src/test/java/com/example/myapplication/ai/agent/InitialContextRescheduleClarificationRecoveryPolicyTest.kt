@@ -24,7 +24,7 @@ class InitialContextRescheduleClarificationRecoveryPolicyTest {
             response = response(dateOperation = "SET", replacementDate = "Friday")
         )
 
-        assertTrue(result is InitialContextRescheduleRecoveryResult.Accepted)
+        assertTrue(result.toString(), result is InitialContextRescheduleRecoveryResult.Accepted)
         val recovered = (result as InitialContextRescheduleRecoveryResult.Accepted).response
         assertFalse(recovered.needClarification)
         val validation = ContextActionExtractionValidator().validateWithReport(
@@ -54,6 +54,96 @@ class InitialContextRescheduleClarificationRecoveryPolicyTest {
         )
 
         assertTrue(result is InitialContextRescheduleRecoveryResult.Accepted)
+    }
+
+    @Test
+    fun exactTomorrowSetOffsetHybridIsCanonicalizedAndRevalidated() {
+        val result = policy.recover(
+            originalNormalizedRequest = "can you move it to tomorrow 6:00 a.m.",
+            response = response(
+                dateOperation = "SET",
+                timeOperation = "SET",
+                replacementDate = "tomorrow",
+                replacementTime = "6 AM",
+                dateOffsetDays = 1,
+                needClarification = false
+            ),
+            expectedAction = ConversationContextAction.RESCHEDULE,
+            validationFailure = RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION
+        )
+
+        assertTrue(result is InitialContextRescheduleRecoveryResult.Accepted)
+        val recovered = (result as InitialContextRescheduleRecoveryResult.Accepted).response
+        assertEquals("SET", recovered.dateOperation)
+        assertEquals("tomorrow", recovered.replacementDateText)
+        assertEquals(0, recovered.dateOffsetDays)
+        val validated = ContextActionExtractionValidator().validateWithReport(
+            recovered,
+            ConversationContextAction.RESCHEDULE
+        )
+        assertEquals(RelativeTemporalOperation.SET, validated.changeSet.temporalProposal?.dateOperation)
+        assertEquals(RelativeTemporalOperation.SET, validated.changeSet.temporalProposal?.timeOperation)
+    }
+
+    @Test
+    fun setOffsetHybridFailsClosedWhenModelLiteralDisagreesWithOriginal() {
+        val result = policy.recover(
+            originalNormalizedRequest = "move it to tomorrow at 6 AM",
+            response = response(
+                dateOperation = "SET",
+                timeOperation = "SET",
+                replacementDate = "next Tuesday",
+                replacementTime = "6 AM",
+                dateOffsetDays = 1,
+                needClarification = false
+            ),
+            expectedAction = ConversationContextAction.RESCHEDULE,
+            validationFailure = RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION
+        )
+
+        assertRejected(InitialContextRescheduleRecoveryReason.MODEL_ORIGINAL_MISMATCH, result)
+    }
+
+    @Test
+    fun exactTimeSetOffsetHybridUsesTheSameMinuteAgreementRule() {
+        val result = policy.recover(
+            originalNormalizedRequest = "move it to 6 AM",
+            response = response(
+                timeOperation = "SET",
+                replacementTime = "6 AM",
+                timeOffsetMinutes = 60,
+                needClarification = false
+            ),
+            expectedAction = ConversationContextAction.RESCHEDULE,
+            validationFailure = RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION
+        )
+
+        assertTrue(result.toString(), result is InitialContextRescheduleRecoveryResult.Accepted)
+        val recovered = (result as InitialContextRescheduleRecoveryResult.Accepted).response
+        assertEquals("6 AM", recovered.replacementTimeText)
+        assertEquals(0, recovered.timeOffsetMinutes)
+        ContextActionExtractionValidator().validateWithReport(
+            recovered,
+            ConversationContextAction.RESCHEDULE
+        )
+    }
+
+    @Test
+    fun validTrueOffsetStillUsesTheNormalStrictValidatorWithoutRecovery() {
+        val validation = ContextActionExtractionValidator().validateWithReport(
+            response(
+                dateOperation = "OFFSET",
+                dateOffsetDays = 1,
+                needClarification = false
+            ),
+            ConversationContextAction.RESCHEDULE
+        )
+
+        assertEquals(
+            RelativeTemporalOperation.OFFSET,
+            validation.changeSet.temporalProposal?.dateOperation
+        )
+        assertEquals(1, validation.changeSet.temporalProposal?.dateOffsetDays)
     }
 
     @Test
@@ -187,6 +277,32 @@ class InitialContextRescheduleClarificationRecoveryPolicyTest {
     }
 
     @Test
+    fun orchestratorRecoversRedundantTomorrowOffsetBeforeReturningChangeSet() = runBlocking {
+        val recovered = orchestrator(
+            responseJson(
+                response(
+                    dateOperation = "SET",
+                    timeOperation = "SET",
+                    replacementDate = "tomorrow",
+                    replacementTime = "6 AM",
+                    dateOffsetDays = 1,
+                    needClarification = false
+                )
+            )
+        ).processContextAction(
+            "move it to tomorrow at 6 AM",
+            ConversationContextAction.RESCHEDULE
+        )
+
+        val proposal = requireNotNull(recovered.temporalProposal)
+        assertEquals(RelativeTemporalOperation.SET, proposal.dateOperation)
+        assertEquals("tomorrow", proposal.replacementDateText)
+        assertEquals(0, proposal.dateOffsetDays)
+        assertEquals(RelativeTemporalOperation.SET, proposal.timeOperation)
+        assertEquals(0, proposal.timeOffsetMinutes)
+    }
+
+    @Test
     fun diagnosticReportsEnumFailureAndRecoveryIsInitialExtractionOnly() {
         val source = File(
             "src/main/java/com/example/myapplication/ai/agent/AgentOrchestrator.kt"
@@ -197,7 +313,7 @@ class InitialContextRescheduleClarificationRecoveryPolicyTest {
         val correction = source.substringAfter("suspend fun processRelativeTemporalCorrection(")
 
         assertTrue(initial.contains("INITIAL_CONTEXT_RESCHEDULE_RECOVERY"))
-        assertTrue(initial.contains("exception.failure != RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED"))
+        assertTrue(initial.contains("exception.failure !in INITIAL_CONTEXT_RECOVERABLE_FAILURES"))
         assertTrue(initial.contains("val recoveredValidation ="))
         assertTrue(initial.contains("recovery.response"))
         assertTrue(initial.contains("relativeTemporalFailureReason(e)"))

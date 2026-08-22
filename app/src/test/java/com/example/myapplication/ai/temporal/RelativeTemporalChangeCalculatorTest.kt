@@ -112,6 +112,64 @@ class RelativeTemporalChangeCalculatorTest {
     }
 
     @Test
+    fun dateOffsetFromAuthoritativeBasePreservesCurrentProposedTime() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("21/08/2026", "6:00 AM"),
+            proposal = dateOffset(1, RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("22/08/2026", "6:00 AM"), result.schedule)
+    }
+
+    @Test
+    fun dateSetPreservesCurrentProposedTime() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("21/08/2026", "6:00 AM"),
+            proposal = setDate("tomorrow", RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("22/08/2026", "6:00 AM"), result.schedule)
+    }
+
+    @Test
+    fun timeSetPreservesCurrentProposedDate() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "6:00 PM"),
+            proposal = setTime("5 PM", RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("22/08/2026", "5:00 PM"), result.schedule)
+    }
+
+    @Test
+    fun noEffectAndBoundaryComparisonUseTheVisibleCurrentProposal() {
+        val noEffect = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "6:00 AM"),
+            proposal = setDate("22 August 2026", RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        )
+        assertEquals(
+            RelativeTemporalCalculationFailure.NO_EFFECTIVE_CHANGE,
+            (noEffect as RelativeTemporalCalculationResult.Failure).reason
+        )
+
+        val changedTime = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "6:00 AM"),
+            proposal = setTime("7 AM", RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+        assertFalse(changedTime.crossedDateBoundary)
+    }
+
+    @Test
     fun dateOnlySchedulesRemainAllowedForExactDateChanges() {
         val result = success("31/07/2026", null, setDate("2 August 2026"))
         assertEquals(ExactTemporalSchedule("02/08/2026", null), result.schedule)
@@ -158,18 +216,30 @@ class RelativeTemporalChangeCalculatorTest {
         timeOffsetMinutes = minutes
     )
 
-    private fun dateOffset(days: Int) = proposal(
+    private fun dateOffset(
+        days: Int,
+        base: RelativeTemporalBase = RelativeTemporalBase.AUTHORITATIVE_TASK
+    ) = proposal(
         dateOperation = RelativeTemporalOperation.OFFSET,
+        base = base,
         dateOffsetDays = days
     )
 
-    private fun setTime(text: String) = proposal(
+    private fun setTime(
+        text: String,
+        base: RelativeTemporalBase = RelativeTemporalBase.AUTHORITATIVE_TASK
+    ) = proposal(
         timeOperation = RelativeTemporalOperation.SET,
+        base = base,
         replacementTimeText = text
     )
 
-    private fun setDate(text: String) = proposal(
+    private fun setDate(
+        text: String,
+        base: RelativeTemporalBase = RelativeTemporalBase.AUTHORITATIVE_TASK
+    ) = proposal(
         dateOperation = RelativeTemporalOperation.SET,
+        base = base,
         replacementDateText = text
     )
 
@@ -196,5 +266,10 @@ class RelativeTemporalChangeCalculatorTest {
     private fun now(hour: Int = 8): Calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
         clear()
         set(2026, Calendar.JULY, 31, hour, 0, 0)
+    }
+
+    private fun augustNow(): Calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        clear()
+        set(2026, Calendar.AUGUST, 21, 8, 0, 0)
     }
 }

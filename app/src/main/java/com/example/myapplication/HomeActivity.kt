@@ -271,6 +271,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         QUERY_COUNT,
         QUERY_PAGE,
         CONTEXT_ACTION_TARGET_CLARIFICATION,
+        CONTEXT_ACTION_CHANGE_CLARIFICATION,
         TASK_MATCH_AMBIGUITY,
         DELETE_CONFIRMATION,
         BREAKDOWN_CONFIRMATION,
@@ -281,6 +282,14 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         val originalNormalizedRequest: String,
         val capturedGeneration: Long,
         val suppliedRefs: Set<String>,
+        val returnContext: HomeFollowUpContext
+    )
+    private data class PendingContextActionChangeClarification(
+        val action: ConversationContextAction,
+        val authorityValidatedRef: String,
+        val capturedGeneration: Long,
+        val authoritativeTaskSnapshot: TaskEntity,
+        val originalNormalizedRequest: String,
         val returnContext: HomeFollowUpContext
     )
     private data class PendingContextActionResolution(
@@ -313,6 +322,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var taskResolutionState = TaskResolutionState()
     private var homeFollowUpContext = HomeFollowUpContext.NONE
     private var pendingContextActionClarification: PendingContextActionClarification? = null
+    private var pendingContextActionChangeClarification:
+        PendingContextActionChangeClarification? = null
     private val temporalQueryResolver = TemporalQueryResolver()
     private var accessibleTaskQuerySession: AccessibleTaskQuerySession? = null
     private var authoritativeRepeatState: AuthoritativeRepeatState? = null
@@ -1041,6 +1052,15 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 )
             )
 
+            HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION -> Pair(
+                "A task and contextual action are already grounded, and the assistant is waiting " +
+                    "for the requested change details.",
+                listOf(
+                    "Provide the missing title or schedule change for the already selected task.",
+                    "Cancel or stop without changing the task."
+                )
+            )
+
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> Pair(
                 "More than one task matched the request.",
                 listOf(
@@ -1179,7 +1199,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
 
         val pendingContextTargetOwnsTurn =
-            homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION
+            homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION ||
+                homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION
         if (!pendingContextTargetOwnsTurn && handleContextItemRestatement(normalized)) {
             return
         }
@@ -1268,7 +1289,8 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         homeFollowUpContext == HomeFollowUpContext.AFTER_CONTEXT_SUGGESTION ||
                         homeFollowUpContext == HomeFollowUpContext.QUERY_PAGE ||
                         homeFollowUpContext == HomeFollowUpContext.DELETE_CONFIRMATION ||
-                        homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION
+                        homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION ||
+                        homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION
                 val contextFocus = conversationOrchestrator.contextFocusForSnapshot(
                     taskContextCapture.snapshot
                 )
@@ -1295,12 +1317,21 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         "itemCount=${taskContextCapture.snapshot.items.size} " +
                         "truncated=${taskContextCapture.snapshot.truncated}"
                 )
-                val pendingTargetResolution = resolvePendingContextActionTarget(
-                    normalizedText = normalized,
-                    taskContextCapture = taskContextCapture,
-                    contextFocus = contextFocus,
-                    requestToken = requestToken
-                )
+                val pendingTargetResolution =
+                    if (pendingContextActionChangeClarification != null) {
+                        resolvePendingContextActionChange(
+                            normalizedText = normalized,
+                            taskContextCapture = taskContextCapture,
+                            requestToken = requestToken
+                        )
+                    } else {
+                        resolvePendingContextActionTarget(
+                            normalizedText = normalized,
+                            taskContextCapture = taskContextCapture,
+                            contextFocus = contextFocus,
+                            requestToken = requestToken
+                        )
+                    }
                 val contextActionRequestText =
                     pendingTargetResolution.originalActionRequest ?: normalized
                 val pendingAuthorityValidatedRef = pendingTargetResolution.authorityValidatedRef
@@ -1746,7 +1777,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     ConversationRoute.CONTEXT_ACTION -> {
                         val pendingTargetAuthorityApplies =
                             pendingAuthorityValidatedRef != null &&
-                            conversationDecision.source == "conversation_agent_pending_context_target" &&
+                            conversationDecision.source in setOf(
+                                "conversation_agent_pending_context_target",
+                                "android_pending_context_change"
+                            ) &&
                             conversationDecision.contextRef.equals(
                                 pendingAuthorityValidatedRef,
                                 ignoreCase = true
@@ -1767,7 +1801,11 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             "HOME_CONTEXT_ACTION_GROUNDING",
                             "ref=${conversationDecision.contextRef} result=" +
                                 if (pendingTargetAuthorityApplies) {
-                                    "VALID_PENDING_TARGET"
+                                    if (conversationDecision.source == "android_pending_context_change") {
+                                        "VALID_PENDING_CHANGE"
+                                    } else {
+                                        "VALID_PENDING_TARGET"
+                                    }
                                 } else {
                                     grounding?.result
                                 }
@@ -1920,6 +1958,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             } else {
                                 "Please repeat the requested change."
                             }
+                            beginOrRetainContextActionChangeClarification(
+                                action = validation.action,
+                                groundedRef = groundedRef,
+                                capturedGeneration = capturedGeneration,
+                                authoritativeTaskSnapshot = requireNotNull(initiallyFetchedTask),
+                                originalNormalizedRequest = contextActionRequestText
+                            )
                             rejectContextAction(
                                 clarification,
                                 "android_context_action_extraction"
@@ -1997,6 +2042,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                                     "result=REJECTED crossedDateBoundary=false " +
                                         "source=${calculation.source}"
                                 )
+                                beginOrRetainContextActionChangeClarification(
+                                    action = validation.action,
+                                    groundedRef = groundedRef,
+                                    capturedGeneration = capturedGeneration,
+                                    authoritativeTaskSnapshot = requireNotNull(calculationTask),
+                                    originalNormalizedRequest = contextActionRequestText
+                                )
                                 rejectContextAction(
                                     RelativeTemporalSpeechRenderer.calculationClarification(
                                         calculation.reason
@@ -2015,6 +2067,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                                     "RELATIVE_TEMPORAL_CALCULATION",
                                     "result=PAST crossedDateBoundary=${calculation.crossedDateBoundary} " +
                                         "source=${calculation.source}"
+                                )
+                                beginOrRetainContextActionChangeClarification(
+                                    action = validation.action,
+                                    groundedRef = groundedRef,
+                                    capturedGeneration = capturedGeneration,
+                                    authoritativeTaskSnapshot = requireNotNull(calculationTask),
+                                    originalNormalizedRequest = contextActionRequestText
                                 )
                                 rejectContextAction(
                                     RelativeTemporalSpeechRenderer.pastSchedule(calculation.schedule),
@@ -2061,6 +2120,15 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                                 "BEFORE_OPEN"
                             )
                         ) return@launch
+                        pendingContextActionChangeClarification?.let { pending ->
+                            Log.d(
+                                "CONTEXT_ACTION_CHANGE_CLARIFICATION",
+                                "action=${pending.action.name} " +
+                                    "ref=${pending.authorityValidatedRef} " +
+                                    "generation=${pending.capturedGeneration} state=RESOLVED"
+                            )
+                        }
+                        clearPendingContextActionChangeClarification(restoreContext = true)
                         conversationOrchestrator.commitFinalDecision(conversationDecision)
                         if (!isRelativeTemporalRequestCurrent(
                                 requestToken,
@@ -3483,6 +3551,136 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
     }
 
+    private fun beginOrRetainContextActionChangeClarification(
+        action: ConversationContextAction,
+        groundedRef: String,
+        capturedGeneration: Long,
+        authoritativeTaskSnapshot: TaskEntity,
+        originalNormalizedRequest: String
+    ) {
+        if (action !in setOf(
+                ConversationContextAction.UPDATE,
+                ConversationContextAction.RESCHEDULE
+            )
+        ) return
+
+        val existing = pendingContextActionChangeClarification
+        if (existing != null) {
+            homeFollowUpContext = HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION
+            Log.d(
+                "CONTEXT_ACTION_CHANGE_CLARIFICATION",
+                "action=${existing.action.name} ref=${existing.authorityValidatedRef} " +
+                    "generation=${existing.capturedGeneration} state=RETAINED"
+            )
+            return
+        }
+
+        pendingContextActionChangeClarification = PendingContextActionChangeClarification(
+            action = action,
+            authorityValidatedRef = groundedRef,
+            capturedGeneration = capturedGeneration,
+            authoritativeTaskSnapshot = authoritativeTaskSnapshot,
+            originalNormalizedRequest = originalNormalizedRequest,
+            returnContext = homeFollowUpContext
+        )
+        homeFollowUpContext = HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION
+        Log.d(
+            "CONTEXT_ACTION_CHANGE_CLARIFICATION",
+            "action=${action.name} ref=$groundedRef generation=$capturedGeneration state=WAITING_FOR_CHANGE"
+        )
+    }
+
+    private fun clearPendingContextActionChangeClarification(restoreContext: Boolean) {
+        val pending = pendingContextActionChangeClarification
+        pendingContextActionChangeClarification = null
+        if (restoreContext &&
+            pending != null &&
+            homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION
+        ) {
+            homeFollowUpContext = pending.returnContext
+        }
+    }
+
+    private suspend fun resolvePendingContextActionChange(
+        normalizedText: String,
+        taskContextCapture: ReadOnlyTaskContextCapture,
+        requestToken: AssistantRequestToken
+    ): PendingContextActionResolution {
+        val pending = pendingContextActionChangeClarification
+            ?: return PendingContextActionResolution()
+        val normalizedRef = pending.authorityValidatedRef.uppercase(Locale.ROOT)
+        val snapshotRefCount = taskContextCapture.snapshot.items.count {
+            it.ref.uppercase(Locale.ROOT) == normalizedRef
+        }
+        val generationCurrent =
+            pending.capturedGeneration == taskContextCapture.snapshot.generation &&
+                pending.capturedGeneration == readOnlyTaskContextStore.currentGeneration()
+        val resolvedTaskId = if (generationCurrent && snapshotRefCount == 1) {
+            readOnlyTaskContextStore.resolveRef(
+                ref = normalizedRef,
+                expectedGeneration = pending.capturedGeneration
+            )
+        } else {
+            null
+        }
+        val resolvedTask = resolvedTaskId?.let { taskId ->
+            withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(this@HomeActivity).taskDao().getById(taskId)
+            }
+        }
+        if (!isAssistantRequestCurrent(requestToken) ||
+            pendingContextActionChangeClarification != pending
+        ) {
+            throw CancellationException("Pending context change result is stale")
+        }
+
+        val authorityCurrent = generationCurrent &&
+            snapshotRefCount == 1 &&
+            resolvedTask != null &&
+            readOnlyTaskContextStore.matchesResolvedTask(
+                ref = normalizedRef,
+                expectedGeneration = pending.capturedGeneration,
+                task = resolvedTask
+            ) &&
+            sameContextActionTaskSnapshot(pending.authoritativeTaskSnapshot, resolvedTask) &&
+            isEligibleContextActionTarget(resolvedTask, pending.action)
+        if (!authorityCurrent) {
+            clearPendingContextActionChangeClarification(restoreContext = false)
+            homeFollowUpContext = HomeFollowUpContext.NONE
+            Log.d(
+                "CONTEXT_ACTION_CHANGE_CLARIFICATION",
+                "action=${pending.action.name} ref=$normalizedRef " +
+                    "generation=${pending.capturedGeneration} state=STALE"
+            )
+            return PendingContextActionResolution(
+                decision = ConversationDecision(
+                    route = ConversationRoute.ASK_CLARIFICATION,
+                    reply = "That task changed while I was waiting. Please repeat your task query.",
+                    listenAgain = true,
+                    source = "android_context_action_change_clarification_stale"
+                )
+            )
+        }
+
+        Log.d(
+            "CONTEXT_ACTION_CHANGE_CLARIFICATION",
+            "action=${pending.action.name} ref=$normalizedRef " +
+                "generation=${pending.capturedGeneration} state=CONTINUING"
+        )
+        return PendingContextActionResolution(
+            decision = ConversationDecision(
+                route = ConversationRoute.CONTEXT_ACTION,
+                contextRef = normalizedRef,
+                contextAction = pending.action,
+                confidence = 1.0,
+                listenAgain = false,
+                source = "android_pending_context_change"
+            ),
+            originalActionRequest = normalizedText,
+            authorityValidatedRef = normalizedRef
+        )
+    }
+
     private suspend fun resolvePendingContextActionTarget(
         normalizedText: String,
         taskContextCapture: ReadOnlyTaskContextCapture,
@@ -3715,6 +3913,10 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun rejectUnavailableContextAction() {
+        if (pendingContextActionChangeClarification != null) {
+            clearPendingContextActionChangeClarification(restoreContext = false)
+            homeFollowUpContext = HomeFollowUpContext.NONE
+        }
         rejectContextAction(
             reply = "That task is no longer available. Please repeat your task query.",
             source = "android_context_action_target_unavailable"
@@ -4584,6 +4786,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun clearConversationSessionContext() {
         voiceSettingConversationContext.clear()
         clearPendingContextActionClarification(restoreContext = false)
+        clearPendingContextActionChangeClarification(restoreContext = false)
         clearAccessibleTaskQuerySession(clearTaskContext = true)
         if (::conversationOrchestrator.isInitialized) {
             conversationOrchestrator.clearSessionMemory()
@@ -5832,6 +6035,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.QUERY_COUNT,
             HomeFollowUpContext.QUERY_PAGE -> false
             HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION -> false
+            HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION -> false
             HomeFollowUpContext.NONE -> false
             HomeFollowUpContext.TASK_MATCH_AMBIGUITY -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> false
@@ -7023,6 +7227,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.QUERY_COUNT,
             HomeFollowUpContext.QUERY_PAGE -> false
             HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION -> false
+            HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> {
                 val confirmation = BoundedConfirmationPolicy.resolve(normalized)
                 when (intent) {
