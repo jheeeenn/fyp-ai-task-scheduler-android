@@ -69,14 +69,15 @@ class RelativeTemporalChangeCalculator(
         }
 
         // The selected relative base controls arithmetic for changed fields. During correction,
-        // KEEP remains Android-owned and preserves the currently visible unsaved proposal.
+        // KEEP remains Android-owned and preserves the currently visible unsaved proposal. In
+        // particular, a time offset starts on that visible date, so only a genuine midnight
+        // crossing from the selected base time can move it.
         val visibleProposal = currentProposal ?: base
         val timeOffsetCanMoveDate =
             validated.timeOperation == RelativeTemporalOperation.OFFSET
         var proposedDate = if (
             currentProposal != null &&
-            validated.dateOperation == RelativeTemporalOperation.KEEP &&
-            !timeOffsetCanMoveDate
+            validated.dateOperation == RelativeTemporalOperation.KEEP
         ) {
             currentProposal.date.cleanStoredValue()
         } else {

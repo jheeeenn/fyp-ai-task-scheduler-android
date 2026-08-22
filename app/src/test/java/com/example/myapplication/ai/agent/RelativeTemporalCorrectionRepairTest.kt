@@ -109,8 +109,8 @@ class RelativeTemporalCorrectionRepairTest {
             now = nowBeforeOriginal()
         ) as RelativeTemporalCalculationResult.Success
 
-        assertEquals(ExactTemporalSchedule("04/08/2026", "12:45 AM"), calculation.schedule)
-        assertFalse(calculation.schedule == ExactTemporalSchedule("04/08/2026", "1:15 AM"))
+        assertEquals(ExactTemporalSchedule("05/08/2026", "12:45 AM"), calculation.schedule)
+        assertFalse(calculation.schedule == ExactTemporalSchedule("04/08/2026", "12:45 AM"))
         assertEquals(
             RelativeTemporalRevisionResult.APPLIED,
             session.applyCorrection(token, calculation.schedule, correction.proposal)
@@ -249,7 +249,7 @@ class RelativeTemporalCorrectionRepairTest {
             nowBeforeOriginal()
         ) as RelativeTemporalCalculationResult.Success
 
-        assertEquals(ExactTemporalSchedule("04/08/2026", "12:45 AM"), replacementResult.schedule)
+        assertEquals(ExactTemporalSchedule("05/08/2026", "12:45 AM"), replacementResult.schedule)
         assertEquals(ExactTemporalSchedule("04/08/2026", "1:15 AM"), cumulativeResult.schedule)
     }
 

@@ -148,6 +148,58 @@ class RelativeTemporalChangeCalculatorTest {
     }
 
     @Test
+    fun authoritativeTimeOffsetKeepsCurrentProposedDateWithoutCrossingMidnight() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "9:00 AM"),
+            proposal = offset(60, RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("22/08/2026", "7:00 PM"), result.schedule)
+        assertFalse(result.crossedDateBoundary)
+    }
+
+    @Test
+    fun authoritativeTimeOffsetAppliesForwardMidnightDeltaToCurrentProposedDate() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "11:30 PM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "9:00 AM"),
+            proposal = offset(60, RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("23/08/2026", "12:30 AM"), result.schedule)
+        assertTrue(result.crossedDateBoundary)
+    }
+
+    @Test
+    fun authoritativeTimeOffsetAppliesBackwardMidnightDeltaToCurrentProposedDate() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "12:30 AM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "9:00 AM"),
+            proposal = offset(-60, RelativeTemporalBase.AUTHORITATIVE_TASK),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("21/08/2026", "11:30 PM"), result.schedule)
+        assertTrue(result.crossedDateBoundary)
+    }
+
+    @Test
+    fun currentProposalTimeOffsetStillUsesCurrentProposedTimeAndDate() {
+        val result = calculator.calculate(
+            authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
+            currentProposal = ExactTemporalSchedule("22/08/2026", "9:00 PM"),
+            proposal = offset(60, RelativeTemporalBase.CURRENT_PROPOSAL),
+            now = augustNow()
+        ) as RelativeTemporalCalculationResult.Success
+
+        assertEquals(ExactTemporalSchedule("22/08/2026", "10:00 PM"), result.schedule)
+        assertFalse(result.crossedDateBoundary)
+    }
+
+    @Test
     fun noEffectAndBoundaryComparisonUseTheVisibleCurrentProposal() {
         val noEffect = calculator.calculate(
             authoritativeOriginal = ExactTemporalSchedule("21/08/2026", "6:00 PM"),
