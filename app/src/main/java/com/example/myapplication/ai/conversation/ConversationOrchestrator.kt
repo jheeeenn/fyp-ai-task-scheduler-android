@@ -277,10 +277,26 @@ class ConversationOrchestrator(
         firstFailure: Exception
     ): ConversationDecision {
         val failureCode = repairFailureCode(firstFailure)
+        val failedRoute = (firstFailure as? ConversationSchemaException)?.failedRoute
+        val repairProfile = ConversationRepairProfileSelector.select(
+            failureCode = failureCode,
+            failedRoute = failedRoute,
+            suppliedTemporaryRefCount = suppliedContextRefs(readOnlyTaskContextSnapshot).size,
+            validatedFocusAvailable = contextFocus
+                ?.takeIf { it.available }
+                ?.ref
+                ?.isNotBlank() == true
+        )
         Log.e(
             "CONVO_ORCH_SCHEMA",
             "first response invalid; failureCode=$failureCode; retrying once"
         )
+        if (repairProfile == ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR) {
+            Log.d(
+                "NO_CONTEXT_MUTATION_REPAIR",
+                "state=SELECTED allowedRoutes=TASK_COMMAND,ASK_CLARIFICATION"
+            )
+        }
 
         return try {
             val repairContent = conversationAgentClient.processRepair(
@@ -289,15 +305,17 @@ class ConversationOrchestrator(
                     appContextSummary = appContextSummary,
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
                     contextFocus = contextFocus,
-                    voiceSettingRoutingContext = voiceSettingRoutingContext
+                    voiceSettingRoutingContext = voiceSettingRoutingContext,
+                    repairProfile = repairProfile
                 ),
                 failureCode = failureCode,
-                failedRoute = (firstFailure as? ConversationSchemaException)?.failedRoute
+                failedRoute = failedRoute
             )
             val repairedDecision = parseCanonicalDecision(
                 rawContent = repairContent,
                 source = SOURCE_SCHEMA_REPAIR
             )
+            validateRepairProfileResult(repairProfile, repairedDecision)
             validateOperationalBreakdownRouting(normalizedText, repairedDecision)
             validateContextReadAuthority(
                 decision = repairedDecision,
@@ -312,6 +330,12 @@ class ConversationOrchestrator(
                 Log.d(
                     "BREAKDOWN_ROUTING_GUARD",
                     "result=REPAIRED route=${repairedDecision.route.name}"
+                )
+            }
+            if (repairProfile == ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR) {
+                Log.d(
+                    "NO_CONTEXT_MUTATION_REPAIR",
+                    "result=${repairedDecision.route.name}"
                 )
             }
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
@@ -502,6 +526,23 @@ class ConversationOrchestrator(
         else -> FAILURE_CODE_UNEXPECTED
     }
 
+    private fun validateRepairProfileResult(
+        repairProfile: ConversationRepairProfile,
+        decision: ConversationDecision
+    ) {
+        if (repairProfile != ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR) return
+        if (
+            decision.route == ConversationRoute.TASK_COMMAND ||
+            decision.route == ConversationRoute.ASK_CLARIFICATION
+        ) {
+            return
+        }
+        throw ConversationSchemaException(
+            message = "No-context mutation repair returned a forbidden route",
+            failedRoute = decision.route
+        )
+    }
+
     /** CONTEXT_READ may select only a temporary ref in Android's captured snapshot. */
     private fun validateContextReadAuthority(
         decision: ConversationDecision,
@@ -567,7 +608,8 @@ class ConversationOrchestrator(
         appContextSummary: String,
         readOnlyTaskContextSnapshot: String,
         contextFocus: ConversationContextFocus?,
-        voiceSettingRoutingContext: VoiceSettingRoutingContext
+        voiceSettingRoutingContext: VoiceSettingRoutingContext,
+        repairProfile: ConversationRepairProfile
     ): String = buildString {
         append(appContextSummary.trim())
         appendLine()
@@ -591,7 +633,9 @@ class ConversationOrchestrator(
         )
         appendLine()
         appendLine()
-        append(voiceSettingRoutingContext.toPromptText())
+        appendLine(voiceSettingRoutingContext.toPromptText())
+        appendLine()
+        append(ConversationRepairProfileSelector.marker(repairProfile))
     }
 
     fun recordAuthoritativeContextRead(

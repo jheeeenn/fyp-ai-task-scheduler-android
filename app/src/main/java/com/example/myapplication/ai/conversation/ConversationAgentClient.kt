@@ -77,7 +77,20 @@ $userText
 
     open suspend fun processRepair(userText: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
-            val repairPrompt = """
+            val repairProfile =
+                ConversationRepairProfileSelector.fromBoundedContext(appContextSummary)
+            val repairPrompt = if (
+                repairProfile == ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR
+            ) {
+                """
+Bounded Android repair context:
+$appContextSummary
+
+Current normalized utterance:
+$userText
+""".trimIndent()
+            } else {
+                """
 App context:
 $appContextSummary
 
@@ -95,8 +108,14 @@ Use context_detail DATE_TIME when the user asks for both the date and time or as
 one supplied task is scheduled. DATE and TIME remain for single-field questions; SUMMARY is for
 broad task-detail requests.
 """.trimIndent()
+            }
 
-            executeConversationRequest(repairPrompt, RequestKind.ROUTING)
+            val requestKind = when (repairProfile) {
+                ConversationRepairProfile.GENERAL -> RequestKind.ROUTING
+                ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR ->
+                    RequestKind.NO_CONTEXT_MUTATION_REPAIR
+            }
+            executeConversationRequest(repairPrompt, requestKind)
         }
 
     open suspend fun processRepair(
@@ -352,6 +371,7 @@ $snapshotJson
     private fun executeConversationRequest(userPrompt: String, kind: RequestKind): String {
         val temperature = when (kind) {
             RequestKind.ROUTING -> ROUTING_TEMPERATURE
+            RequestKind.NO_CONTEXT_MUTATION_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.CONTEXT_READ_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.CONTEXT_ACTION_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.QUERY_COUNT_FOLLOW_UP -> ROUTING_TEMPERATURE
@@ -366,6 +386,8 @@ $snapshotJson
         }
         val maxTokens = when (kind) {
             RequestKind.ROUTING -> 256
+            RequestKind.NO_CONTEXT_MUTATION_REPAIR ->
+                NO_CONTEXT_MUTATION_REPAIR_MAX_TOKENS
             RequestKind.CONTEXT_READ_REPAIR -> CONTEXT_READ_REPAIR_MAX_TOKENS
             RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_MAX_TOKENS
             RequestKind.QUERY_COUNT_FOLLOW_UP -> QUERY_COUNT_FOLLOW_UP_MAX_TOKENS
@@ -380,6 +402,8 @@ $snapshotJson
         }
         val responseFormat = when (kind) {
             RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
+            RequestKind.NO_CONTEXT_MUTATION_REPAIR ->
+                AgentResponseSchemas.noContextMutationRepairResponseFormat()
             RequestKind.CONTEXT_READ_REPAIR -> AgentResponseSchemas.contextReadRepairResponseFormat()
             RequestKind.CONTEXT_ACTION_REPAIR -> AgentResponseSchemas.contextActionRepairResponseFormat()
             RequestKind.QUERY_COUNT_FOLLOW_UP -> AgentResponseSchemas.queryCountFollowUpResponseFormat()
@@ -398,6 +422,8 @@ $snapshotJson
         }
         val systemPrompt = when (kind) {
             RequestKind.ROUTING -> ROUTING_SYSTEM_PROMPT
+            RequestKind.NO_CONTEXT_MUTATION_REPAIR ->
+                NO_CONTEXT_MUTATION_REPAIR_SYSTEM_PROMPT
             RequestKind.CONTEXT_READ_REPAIR -> CONTEXT_READ_REPAIR_SYSTEM_PROMPT
             RequestKind.CONTEXT_ACTION_REPAIR -> CONTEXT_ACTION_REPAIR_SYSTEM_PROMPT
             RequestKind.QUERY_COUNT_FOLLOW_UP -> QUERY_COUNT_FOLLOW_UP_SYSTEM_PROMPT
@@ -450,6 +476,11 @@ $snapshotJson
             Log.d(
                 "CONTEXT_SUGGESTION_AGENT",
                 "Strict bounded context-suggestion schema enabled"
+            )
+        } else if (kind == RequestKind.NO_CONTEXT_MUTATION_REPAIR) {
+            Log.d(
+                "NO_CONTEXT_MUTATION_REPAIR",
+                "state=REQUESTED allowedRoutes=TASK_COMMAND,ASK_CLARIFICATION"
             )
         } else if (kind == RequestKind.CONTEXT_READ_REPAIR || kind == RequestKind.CONTEXT_ACTION_REPAIR) {
             Log.d("CONVO_CONTEXT_REPAIR_SCHEMA", "Strict bounded context repair schema enabled")
@@ -586,6 +617,7 @@ $snapshotJson
 
     private enum class RequestKind {
         ROUTING,
+        NO_CONTEXT_MUTATION_REPAIR,
         CONTEXT_READ_REPAIR,
         CONTEXT_ACTION_REPAIR,
         QUERY_COUNT_FOLLOW_UP,
@@ -604,6 +636,7 @@ $snapshotJson
         const val RESPONSE_TEMPERATURE = 0.35
         const val RESPONSE_MAX_TOKENS = 128
         const val RESPONSE_VERBALIZATION_TIMEOUT_SECONDS = 5L
+        const val NO_CONTEXT_MUTATION_REPAIR_MAX_TOKENS = 128
         const val CONTEXT_READ_REPAIR_MAX_TOKENS = 160
         const val CONTEXT_ACTION_REPAIR_MAX_TOKENS = 180
         const val QUERY_COUNT_FOLLOW_UP_MAX_TOKENS = 48
@@ -957,6 +990,41 @@ User: delete my routine
 
 Do not output Room IDs, task fields, database claims, speech, explanations, markdown, or fields
 other than the required four-field JSON object.
+""".trimIndent()
+        internal val NO_CONTEXT_MUTATION_REPAIR_SYSTEM_PROMPT = """
+You perform one bounded routing repair after Android rejected CONTEXT_ACTION.
+
+Android has already proven that no supplied temporary task refs and no validated task focus exist.
+Therefore CONTEXT_ACTION is impossible.
+
+Return only the required twelve-field ConversationDecision JSON.
+Allowed routes are TASK_COMMAND and ASK_CLARIFICATION only.
+
+Use TASK_COMMAND when the current utterance clearly names or otherwise explicitly identifies the
+task operation for normal Task Agent processing. Examples:
+- "Reschedule evaluation to 29th August at 4 PM" -> TASK_COMMAND
+- "Change the take medicine task to tomorrow" -> TASK_COMMAND
+- "Delete buy groceries" -> TASK_COMMAND
+- "Mark take medicine complete" -> TASK_COMMAND
+- "Reopen take medicine" -> TASK_COMMAND
+
+Use ASK_CLARIFICATION when the request depends on unavailable context. Examples:
+- "delete this"
+- "move it"
+- "update that one"
+- "mark this done"
+With no supplied task context and no validated focus, each requires ASK_CLARIFICATION.
+
+For both allowed routes, context_ref must be empty and context_detail, context_action,
+setting_action, setting_target, query_reading_move, and query_presentation_hint must be NONE.
+For TASK_COMMAND, Android will replace task_text with the complete original normalized utterance;
+model-generated task_text is not trusted. For ASK_CLARIFICATION, keep task_text empty and put only
+a concise clarification question in reply.
+
+Never invent T1, T2, Room IDs, task titles, or task facts.
+Do not answer the operation and do not execute anything.
+Never claim that a task was changed, rescheduled, deleted, completed, or reopened.
+Do not output markdown, explanations, task-agent fields, or any route other than the two allowed routes.
 """.trimIndent()
         internal val CONTEXT_READ_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded semantic repair after the primary routing interpretation abstained.

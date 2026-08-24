@@ -12,6 +12,11 @@ class ConversationNoContextNamedCommandRoutingTest {
     @Test
     fun blankNoContextNamedMutationsRepairToTaskCommandsWithOriginalText() = runBlocking {
         listOf(
+            Triple(
+                "reschedule the evaluation task to 29th August at 4 p.m.",
+                "RESCHEDULE",
+                "evaluation task"
+            ),
             Triple("Change the take medicine task to tomorrow", "RESCHEDULE", "take medicine"),
             Triple("Update take medicine", "UPDATE", "take medicine"),
             Triple("Delete take medicine", "DELETE", "take medicine"),
@@ -23,7 +28,10 @@ class ConversationNoContextNamedCommandRoutingTest {
                     route = "CONTEXT_ACTION",
                     contextAction = action
                 ),
-                repaired = decision(route = "TASK_COMMAND")
+                repaired = decision(
+                    route = "TASK_COMMAND",
+                    taskText = "model-generated text must not be trusted"
+                )
             )
 
             val result = ConversationOrchestrator(client, ConversationDecisionParser())
@@ -38,6 +46,11 @@ class ConversationNoContextNamedCommandRoutingTest {
             assertTrue(client.repairContext.contains("INVALID_CONTEXT_REF"))
             assertTrue(client.repairContext.contains("Supplied temporary refs: NONE"))
             assertTrue(client.repairContext.contains("Current validated focus ref: NONE"))
+            assertTrue(
+                client.repairContext.contains(
+                    "Conversation repair request mode: NO_CONTEXT_MUTATION_REPAIR"
+                )
+            )
             assertTrue(client.repairContext.contains("$action"))
         }
     }
@@ -62,6 +75,11 @@ class ConversationNoContextNamedCommandRoutingTest {
         assertEquals("", result.contextRef)
         assertEquals("", result.taskText)
         assertEquals(1, client.repairCalls)
+        assertTrue(
+            client.repairContext.contains(
+                "Conversation repair request mode: NO_CONTEXT_MUTATION_REPAIR"
+            )
+        )
         assertTrue(client.repairContext.contains("For an unresolved deictic request"))
         assertTrue(client.repairContext.contains("Never invent T1 or T2"))
     }
@@ -197,25 +215,55 @@ class ConversationNoContextNamedCommandRoutingTest {
         val client = NoContextClient(
             primary = decision(
                 route = "CONTEXT_ACTION",
-                contextRef = "T2",
-                contextAction = "UPDATE"
+                contextRef = "T3",
+                contextAction = "DELETE"
             ),
             repaired = decision(
                 route = "CONTEXT_ACTION",
-                contextAction = "UPDATE"
+                contextAction = "DELETE"
             )
         )
 
         val result = ConversationOrchestrator(client, ConversationDecisionParser()).process(
-            normalizedText = "change the title to leaving home",
+            normalizedText = "delete the second one",
             appContextSummary = "Interaction: QUERY_PAGE",
-            readOnlyTaskContextSnapshot = context("T1")
+            readOnlyTaskContextSnapshot = context("T1", "T2")
         )
 
         assertEquals(ConversationRoute.CONTEXT_ACTION, result.route)
         assertEquals("", result.contextRef)
-        assertEquals(ConversationContextAction.UPDATE, result.contextAction)
+        assertEquals(ConversationContextAction.DELETE, result.contextAction)
         assertEquals("conversation_agent_schema_repair", result.source)
+        assertEquals(1, client.repairCalls)
+        assertFalse(
+            client.repairContext.contains(
+                "Conversation repair request mode: NO_CONTEXT_MUTATION_REPAIR"
+            )
+        )
+    }
+
+    @Test
+    fun restrictedRepairFailsClosedIfClientViolatesAllowedRoutes() {
+        val client = NoContextClient(
+            primary = decision(
+                route = "CONTEXT_ACTION",
+                contextAction = "DELETE"
+            ),
+            repaired = decision(
+                route = "CONTEXT_ACTION",
+                contextAction = "DELETE"
+            )
+        )
+
+        val failure = runCatching {
+            runBlocking {
+                ConversationOrchestrator(client, ConversationDecisionParser())
+                    .process("delete this", "Interaction: NONE")
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is ConversationOrchestratorException)
+        assertTrue(failure?.cause is ConversationSchemaException)
         assertEquals(1, client.repairCalls)
     }
 
@@ -343,12 +391,13 @@ class ConversationNoContextNamedCommandRoutingTest {
 
         fun decision(
             route: String,
+            taskText: String = "",
             reply: String = "",
             contextRef: String = "",
             contextAction: String = "NONE"
         ): String = JSONObject()
             .put("route", route)
-            .put("task_text", "")
+            .put("task_text", taskText)
             .put("reply", reply)
             .put("context_ref", contextRef)
             .put("context_detail", "NONE")
