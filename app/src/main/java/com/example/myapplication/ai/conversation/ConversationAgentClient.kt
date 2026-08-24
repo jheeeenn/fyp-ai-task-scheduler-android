@@ -168,6 +168,34 @@ broad task-detail requests.
                     }
                 }
             }
+            if (
+                failureCode ==
+                ConversationDecisionFailureCode.OPERATIONAL_BREAKDOWN_MISROUTED.name &&
+                failedRoute == ConversationRoute.DIRECT_REPLY
+            ) {
+                appendLine()
+                appendLine()
+                appendLine("OPERATIONAL_BREAKDOWN_MISROUTED DIRECT_REPLY repair rule:")
+                appendLine(
+                    "Focus on the CURRENT original normalized User text. Do not continue or " +
+                        "repeat an earlier informational breakdown-help reply."
+                )
+                appendLine(
+                    "A clear request to perform breakdown on a named target, such as break down " +
+                        "evaluation parent task, can you break down evaluation parent task, or " +
+                        "split final year project into steps, is TASK_COMMAND. Copy the complete " +
+                        "current request into task_text."
+                )
+                appendLine(
+                    "An informational request, such as how does breakdown work or explain task " +
+                        "breakdown, remains DIRECT_REPLY."
+                )
+                append(
+                    "An unresolved deictic request such as break this down or break it down, with " +
+                        "no named target and no authoritative contextual breakdown support, is " +
+                        "ASK_CLARIFICATION. Never invent T1, a task name, or a Room ID."
+                )
+            }
         }
     )
 
@@ -1192,6 +1220,21 @@ END_SESSION
 UNKNOWN
 
 Route rules:
+- Current-turn routing precedence: The current normalized User text is the routing decision target
+  and takes precedence over prior informational/help memory. Recent conversation memory provides
+  context only.
+- A previous informational or help discussion must not prevent a later fresh operational task
+  command from being routed as TASK_COMMAND. Do not continue or repeat the previous Assistant
+  response when the current turn changes from asking HOW breakdown works to asking Android to
+  PERFORM breakdown. A previous help turn does not make a later command informational.
+- An informational breakdown question such as "How to break down a task?", "How does task
+  breakdown work?", "What is task breakdown?", or "Can you explain task breakdown?" is
+  DIRECT_REPLY. A fresh operational breakdown command such as "Break down evaluation parent
+  task." or "Can you break down evaluation parent task?" is TASK_COMMAND.
+- Previous turn: User: "How do I break down a task?" Assistant: <breakdown guidance>.
+  Current turn: User: "Break down evaluation parent task." Expected route: TASK_COMMAND.
+- Previous turn: User: "How does breakdown work?" Assistant: <guidance>.
+  Current turn: User: "Can you break down my final year project?" Expected route: TASK_COMMAND.
 - Use DIRECT_REPLY for greetings, small talk, thanks, app capability questions, questions about how an existing feature works, general help, or help with the current interaction.
 - Guidance questions such as "What can you do?", "How do I create a task?", "How do I delete a task?", "Can you reschedule tasks?", "What should I say?", "Where am I?", "Can I type instead of speaking?", and "How do I stop the assistant?" are DIRECT_REPLY.
 - Broad help questions and natural follow-ups about a capability mentioned in a recent turn are DIRECT_REPLY. Use recent conversational context to interpret the topic, then use only the supplied App context for factual claims.

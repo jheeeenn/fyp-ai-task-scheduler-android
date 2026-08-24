@@ -217,6 +217,7 @@ class ConversationOrchestrator(
                 appContextSummary = appContextSummary
             )
             parseCanonicalDecision(rawContent).also {
+                validateOperationalBreakdownRouting(normalizedText, it)
                 validateContextReadAuthority(
                     decision = it,
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
@@ -297,6 +298,7 @@ class ConversationOrchestrator(
                 rawContent = repairContent,
                 source = SOURCE_SCHEMA_REPAIR
             )
+            validateOperationalBreakdownRouting(normalizedText, repairedDecision)
             validateContextReadAuthority(
                 decision = repairedDecision,
                 readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
@@ -306,6 +308,12 @@ class ConversationOrchestrator(
                 readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
                 contextFocus = contextFocus
             )
+            if (failureCode == ConversationDecisionFailureCode.OPERATIONAL_BREAKDOWN_MISROUTED.name) {
+                Log.d(
+                    "BREAKDOWN_ROUTING_GUARD",
+                    "result=REPAIRED route=${repairedDecision.route.name}"
+                )
+            }
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
             repairedDecision
         } catch (repairFailure: Exception) {
@@ -468,6 +476,23 @@ class ConversationOrchestrator(
             )
         }
         return result.decision.copy(source = source)
+    }
+
+    private fun validateOperationalBreakdownRouting(
+        normalizedText: String,
+        decision: ConversationDecision
+    ) {
+        if (!OperationalBreakdownRoutingGuard.requiresRepair(normalizedText, decision)) return
+        Log.d(
+            "BREAKDOWN_ROUTING_GUARD",
+            "primaryRoute=${ConversationRoute.DIRECT_REPLY.name} result=REPAIR_REQUIRED"
+        )
+        throw ConversationSchemaException(
+            message = "Explicit operational breakdown request was routed as DIRECT_REPLY",
+            decisionFailureCode =
+                ConversationDecisionFailureCode.OPERATIONAL_BREAKDOWN_MISROUTED,
+            failedRoute = ConversationRoute.DIRECT_REPLY
+        )
     }
 
     private fun repairFailureCode(failure: Exception): String = when (failure) {
