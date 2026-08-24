@@ -10,6 +10,63 @@ import java.io.File
 
 class ConversationNoContextNamedCommandRoutingTest {
     @Test
+    fun blankNoContextNamedMutationsRepairToTaskCommandsWithOriginalText() = runBlocking {
+        listOf(
+            Triple("Change the take medicine task to tomorrow", "RESCHEDULE", "take medicine"),
+            Triple("Update take medicine", "UPDATE", "take medicine"),
+            Triple("Delete take medicine", "DELETE", "take medicine"),
+            Triple("Mark take medicine complete", "MARK_DONE", "take medicine"),
+            Triple("Reopen take medicine", "MARK_UNDONE", "take medicine")
+        ).forEach { (utterance, action, expectedNamedTarget) ->
+            val client = NoContextClient(
+                primary = decision(
+                    route = "CONTEXT_ACTION",
+                    contextAction = action
+                ),
+                repaired = decision(route = "TASK_COMMAND")
+            )
+
+            val result = ConversationOrchestrator(client, ConversationDecisionParser())
+                .process(utterance, "Interaction: NONE")
+
+            assertEquals(ConversationRoute.TASK_COMMAND, result.route)
+            assertEquals(utterance, result.taskText)
+            assertTrue(result.taskText.contains(expectedNamedTarget))
+            assertEquals("", result.contextRef)
+            assertEquals(ConversationContextAction.NONE, result.contextAction)
+            assertEquals(1, client.repairCalls)
+            assertTrue(client.repairContext.contains("INVALID_CONTEXT_REF"))
+            assertTrue(client.repairContext.contains("Supplied temporary refs: NONE"))
+            assertTrue(client.repairContext.contains("Current validated focus ref: NONE"))
+            assertTrue(client.repairContext.contains("$action"))
+        }
+    }
+
+    @Test
+    fun blankNoContextDeicticMutationRepairsToClarification() = runBlocking {
+        val client = NoContextClient(
+            primary = decision(
+                route = "CONTEXT_ACTION",
+                contextAction = "DELETE"
+            ),
+            repaired = decision(
+                route = "ASK_CLARIFICATION",
+                reply = "Which task do you want to delete?"
+            )
+        )
+
+        val result = ConversationOrchestrator(client, ConversationDecisionParser())
+            .process("delete this", "Interaction: NONE")
+
+        assertEquals(ConversationRoute.ASK_CLARIFICATION, result.route)
+        assertEquals("", result.contextRef)
+        assertEquals("", result.taskText)
+        assertEquals(1, client.repairCalls)
+        assertTrue(client.repairContext.contains("For an unresolved deictic request"))
+        assertTrue(client.repairContext.contains("Never invent T1 or T2"))
+    }
+
+    @Test
     fun nonblankUncorroboratedNoContextActionsRepairToTaskCommands() = runBlocking {
         listOf(
             Triple("Delete buy groceries", "DELETE", "T1"),
@@ -42,22 +99,7 @@ class ConversationNoContextNamedCommandRoutingTest {
     }
 
     @Test
-    fun blankContextActionRefDefersToAndroidWithOrWithoutFocus() = runBlocking {
-        val noFocusClient = NoContextClient(
-            primary = decision(
-                route = "CONTEXT_ACTION",
-                contextAction = "DELETE"
-            )
-        )
-
-        val noFocus = ConversationOrchestrator(noFocusClient, ConversationDecisionParser())
-            .process("delete this", "Interaction: NONE")
-
-        assertEquals(ConversationRoute.CONTEXT_ACTION, noFocus.route)
-        assertEquals("", noFocus.contextRef)
-        assertEquals(ConversationContextAction.DELETE, noFocus.contextAction)
-        assertEquals(0, noFocusClient.repairCalls)
-
+    fun blankContextActionRefRemainsAllowedWithContextualAuthority() = runBlocking {
         val focus = ConversationContextFocus(
             available = true,
             ref = "T1",
@@ -65,24 +107,59 @@ class ConversationNoContextNamedCommandRoutingTest {
             detail = ConversationContextDetail.SUMMARY,
             title = "private title"
         )
-        val focusedClient = NoContextClient(
+        val recentFocusClient = NoContextClient(
             primary = decision(
                 route = "CONTEXT_ACTION",
                 contextAction = "RESCHEDULE"
             )
         )
-        val focused = ConversationOrchestrator(focusedClient, ConversationDecisionParser())
+        val recentFocused = ConversationOrchestrator(
+            recentFocusClient,
+            ConversationDecisionParser()
+        ).process(
+            normalizedText = "reschedule it to today 4 p.m.",
+            appContextSummary = "Interaction: AFTER_TASK_DETAILS",
+            readOnlyTaskContextSnapshot = context("T1"),
+            contextFocus = focus
+        )
+        assertEquals(ConversationRoute.CONTEXT_ACTION, recentFocused.route)
+        assertEquals("", recentFocused.contextRef)
+        assertEquals(0, recentFocusClient.repairCalls)
+
+        val taskDetailClient = NoContextClient(
+            primary = decision(
+                route = "CONTEXT_ACTION",
+                contextAction = "UPDATE"
+            )
+        )
+        val taskDetail = ConversationOrchestrator(taskDetailClient, ConversationDecisionParser())
             .process(
-                normalizedText = "reschedule it to today 4 p.m.",
+                normalizedText = "change it to tomorrow",
                 appContextSummary = "Interaction: AFTER_TASK_DETAILS",
-                readOnlyTaskContextSnapshot = context("T1"),
+                readOnlyTaskContextSnapshot = contextWithScope("TASK_DETAIL", "T1"),
                 contextFocus = focus
             )
+        assertEquals(ConversationRoute.CONTEXT_ACTION, taskDetail.route)
+        assertEquals("", taskDetail.contextRef)
+        assertEquals(0, taskDetailClient.repairCalls)
 
-        assertEquals(ConversationRoute.CONTEXT_ACTION, focused.route)
-        assertEquals("", focused.contextRef)
-        assertEquals(ConversationContextAction.RESCHEDULE, focused.contextAction)
-        assertEquals(0, focusedClient.repairCalls)
+        val suppliedItemsClient = NoContextClient(
+            primary = decision(
+                route = "CONTEXT_ACTION",
+                contextAction = "DELETE"
+            )
+        )
+        val suppliedItems = ConversationOrchestrator(
+            suppliedItemsClient,
+            ConversationDecisionParser()
+        ).process(
+            normalizedText = "delete the second task",
+            appContextSummary = "Interaction: QUERY_PAGE",
+            readOnlyTaskContextSnapshot = context("T1", "T2")
+        )
+        assertEquals(ConversationRoute.CONTEXT_ACTION, suppliedItems.route)
+        assertEquals("", suppliedItems.contextRef)
+        assertEquals(0, suppliedItemsClient.repairCalls)
     }
 
     @Test
@@ -131,7 +208,8 @@ class ConversationNoContextNamedCommandRoutingTest {
 
         val result = ConversationOrchestrator(client, ConversationDecisionParser()).process(
             normalizedText = "change the title to leaving home",
-            appContextSummary = "Interaction: NONE"
+            appContextSummary = "Interaction: QUERY_PAGE",
+            readOnlyTaskContextSnapshot = context("T1")
         )
 
         assertEquals(ConversationRoute.CONTEXT_ACTION, result.route)
@@ -211,10 +289,20 @@ class ConversationNoContextNamedCommandRoutingTest {
         assertTrue(authorityCheck.contains("suppliedContextRefs"))
         assertTrue(authorityCheck.contains("contextFocus"))
         assertTrue(authorityCheck.contains("DEFERRED_TO_ANDROID_GROUNDING"))
+        assertTrue(authorityCheck.contains("suppliedRefs.isEmpty() && focusRef == null"))
+        listOf("UPDATE", "RESCHEDULE", "DELETE", "MARK_DONE", "MARK_UNDONE").forEach {
+            assertTrue(clientRepairRule().contains(it))
+        }
         assertFalse(authorityCheck.contains("TaskMatcher"))
         assertFalse(authorityCheck.contains("taskTitle"))
         assertFalse(authorityCheck.contains("normalizedText"))
     }
+
+    private fun clientRepairRule(): String = File(
+        "src/main/java/com/example/myapplication/ai/conversation/ConversationAgentClient.kt"
+    ).readText()
+        .substringAfter("INVALID_CONTEXT_REF CONTEXT_ACTION repair rule:")
+        .substringBefore("For an unresolved deictic request")
 
     private class NoContextClient(
         private val primary: String,
@@ -243,8 +331,11 @@ class ConversationNoContextNamedCommandRoutingTest {
     }
 
     private companion object {
-        fun context(vararg refs: String): String = buildString {
-            appendLine("Scope: RECENT_QUERY_RESULTS")
+        fun context(vararg refs: String): String =
+            contextWithScope("RECENT_QUERY_RESULTS", *refs)
+
+        fun contextWithScope(scope: String, vararg refs: String): String = buildString {
+            appendLine("Scope: $scope")
             appendLine("Generation: 4")
             appendLine("Items:")
             refs.forEach { appendLine("{\"ref\":\"$it\"}") }

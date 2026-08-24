@@ -3526,11 +3526,26 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         require(originalNormalizedRequest.isNotBlank()) {
             "Pending context action requires the original normalized request"
         }
+        val suppliedRefs = capture.snapshot.items
+            .map { it.ref.uppercase(Locale.ROOT) }
+            .toSet()
+        if (suppliedRefs.isEmpty()) {
+            clearPendingContextActionClarification(restoreContext = true)
+            if (homeFollowUpContext == HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION) {
+                homeFollowUpContext = HomeFollowUpContext.NONE
+            }
+            Log.d(
+                "CONTEXT_ACTION_CLARIFICATION",
+                "action=${action.name} generation=${capture.snapshot.generation} " +
+                    "state=REJECTED_EMPTY_CANDIDATES"
+            )
+            return
+        }
         pendingContextActionClarification = PendingContextActionClarification(
             action = action,
             originalNormalizedRequest = originalNormalizedRequest,
             capturedGeneration = capture.snapshot.generation,
-            suppliedRefs = capture.snapshot.items.map { it.ref.uppercase(Locale.ROOT) }.toSet(),
+            suppliedRefs = suppliedRefs,
             returnContext = homeFollowUpContext
         )
         homeFollowUpContext = HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION

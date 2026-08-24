@@ -51,6 +51,26 @@ class PendingContextActionRequestContinuationTest {
     }
 
     @Test
+    fun emptyCandidateSetCannotEstablishPendingTargetClarification() {
+        val begin = homeSource
+            .substringAfter("private fun beginContextActionTargetClarification(")
+            .substringBefore("private fun clearPendingContextActionClarification(")
+        val emptyGuard = begin.indexOf("if (suppliedRefs.isEmpty())")
+        val pendingAssignment = begin.indexOf(
+            "pendingContextActionClarification = PendingContextActionClarification("
+        )
+
+        assertTrue(begin.contains("capture.snapshot.items"))
+        assertTrue(emptyGuard >= 0)
+        assertTrue(begin.contains("clearPendingContextActionClarification(restoreContext = true)"))
+        assertTrue(begin.contains("homeFollowUpContext = HomeFollowUpContext.NONE"))
+        assertTrue(begin.contains("state=REJECTED_EMPTY_CANDIDATES"))
+        assertTrue(begin.indexOf("return", emptyGuard) < pendingAssignment)
+        assertTrue(pendingAssignment > emptyGuard)
+        assertTrue(begin.contains("suppliedRefs = suppliedRefs"))
+    }
+
+    @Test
     fun deleteStillConfirmsBeforeAnyChangeExtraction() {
         val actionBranch = contextActionBranch()
         val delete = actionBranch.indexOf("askDeleteConfirmation(requireNotNull(initiallyFetchedTask))")

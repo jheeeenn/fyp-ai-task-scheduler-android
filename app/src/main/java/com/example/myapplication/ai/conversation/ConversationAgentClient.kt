@@ -149,9 +149,9 @@ broad task-detail requests.
                                 "structurally impossible because Android supplied no temporary target."
                         )
                         appendLine(
-                            "For a clear named update, reschedule, or delete request, return " +
-                                "TASK_COMMAND and copy the original normalized User text exactly into " +
-                                "task_text."
+                            "For a clear named UPDATE, RESCHEDULE, DELETE, MARK_DONE, or MARK_UNDONE " +
+                                "request, return TASK_COMMAND and copy the original normalized User " +
+                                "text exactly into task_text."
                         )
                         append(
                             "For an unresolved deictic request such as delete this, return " +
