@@ -21,6 +21,32 @@ class BreakdownTargetResolverTest {
     }
 
     @Test
+    fun weakBroadTargetCannotGainExistingRootAuthority() {
+        val root = task(10, "Evaluation Core Task")
+
+        val result = BreakdownTargetResolver.resolve(
+            BreakdownTargetPreference.AUTO,
+            "evaluation",
+            listOf(root)
+        )
+
+        assertEquals(BreakdownTargetResolution.NewRoot, result)
+    }
+
+    @Test
+    fun strongCorroboratedNonExactMatchStillSelectsExistingRoot() {
+        val root = task(10, "Medical checkup appointment")
+
+        val result = BreakdownTargetResolver.resolve(
+            BreakdownTargetPreference.AUTO,
+            "medical checkup",
+            listOf(root)
+        )
+
+        assertEquals(root, (result as BreakdownTargetResolution.ExistingRoot).task)
+    }
+
+    @Test
     fun childAndCompletedTasksCannotBecomeBreakdownParents() {
         val child = task(2, "Final year project", parentId = 1)
         val completedRoot = task(3, "Final year project", done = true)

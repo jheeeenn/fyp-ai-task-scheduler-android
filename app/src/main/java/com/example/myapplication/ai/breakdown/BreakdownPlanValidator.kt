@@ -8,6 +8,7 @@ enum class BreakdownPlanValidationReason {
     ACCEPTED,
     INVALID_COUNT,
     EMPTY_TITLE,
+    PLACEHOLDER_TITLE,
     DUPLICATE_TITLE,
     TITLE_TOO_LONG,
     PARENT_EQUIVALENT
@@ -57,6 +58,9 @@ object BreakdownPlanValidator {
         if (trimmed.any { it.length > MAX_TITLE_LENGTH }) {
             return rejected(BreakdownPlanValidationReason.TITLE_TOO_LONG, trimmed.size)
         }
+        if (trimmed.any(::isPlaceholderTitle)) {
+            return rejected(BreakdownPlanValidationReason.PLACEHOLDER_TITLE, trimmed.size)
+        }
 
         val unique = trimmed.map(::normalizeCaseInsensitive)
         if (unique.distinct().size != unique.size) {
@@ -82,6 +86,25 @@ object BreakdownPlanValidator {
         TaskMatcher.normalizeForTaskMatch(value)
             .ifBlank { normalizeCaseInsensitive(value) }
 
+    private fun isPlaceholderTitle(value: String): Boolean {
+        val rawTokens = PLACEHOLDER_TOKEN.findAll(value.lowercase(Locale.ROOT))
+            .map { it.value }
+            .toList()
+        val tokens = if (
+            rawTokens.size == 3 && rawTokens[1] in OPTIONAL_NUMBER_LABELS
+        ) {
+            listOf(rawTokens.first(), rawTokens.last())
+        } else {
+            rawTokens
+        }
+        if (tokens.size != 2) return false
+        return (tokens.first() in GENERIC_PLACEHOLDER_NOUNS && tokens.last().isOrdinalLabel()) ||
+            (tokens.first().isOrdinalLabel() && tokens.last() in GENERIC_PLACEHOLDER_NOUNS)
+    }
+
+    private fun String.isOrdinalLabel(): Boolean =
+        matches(NUMERIC_ORDINAL) || this in WORD_ORDINALS
+
     private fun rejected(
         reason: BreakdownPlanValidationReason,
         count: Int
@@ -97,4 +120,13 @@ object BreakdownPlanValidator {
             "accepted=$accepted\nreason=${reason.name}\ncount=$count"
         )
     }
+
+    private val PLACEHOLDER_TOKEN = Regex("[\\p{L}\\p{N}]+")
+    private val NUMERIC_ORDINAL = Regex("\\d+(?:st|nd|rd|th)?")
+    private val GENERIC_PLACEHOLDER_NOUNS = setOf("step", "task", "subtask")
+    private val OPTIONAL_NUMBER_LABELS = setOf("number", "no")
+    private val WORD_ORDINALS = setOf(
+        "one", "two", "three", "four", "five",
+        "first", "second", "third", "fourth", "fifth"
+    )
 }

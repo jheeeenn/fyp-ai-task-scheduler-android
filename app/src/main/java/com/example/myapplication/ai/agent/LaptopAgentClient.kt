@@ -573,6 +573,13 @@ For every non-BREAKDOWN_TASK action, breakdown_target_preference must be AUTO.
 Use empty string for unknown text fields.
 Do not invent dates, times, recurrence, or priority.
 For BREAKDOWN_TASK, put the large task name in task_title and keep target_task_title empty.
+Preserve the complete user-supplied parent-task name in task_title. Remove only surrounding
+operational or polite breakdown wording. Do not shorten a multi-word named target to one broad
+token merely because the remaining words look descriptive.
+BREAKDOWN_TASK title extraction examples:
+User: "Break down final year project report" -> task_title="final year project report"
+User: "Can you break down evaluation parent task" -> task_title="evaluation parent task"
+User: "Please split prepare presentation into smaller steps" -> task_title="prepare presentation"
 For BREAKDOWN_TASK, use breakdown_target_preference=NEW_ROOT only when the user
 explicitly asks to create, add, start, or make a separate new parent task.
 Otherwise use breakdown_target_preference=AUTO so Android may resolve an existing task.
@@ -657,10 +664,19 @@ For RESCHEDULE_TASK, do not put "date" in missing_fields when the user only chan
 
 Plan rules:
 For CREATE_TASK, QUERY_TASK, UPDATE_TASK, RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, plan must be an empty array.
-For BREAKDOWN_TASK, plan must contain 2 to 5 short actionable subtask-title strings in order.
+For BREAKDOWN_TASK, plan must contain 2 to 5 meaningful, task-specific, actionable subtask-title
+strings in order. Each item must describe actual work that helps complete the parent task. Base
+the plan on the semantic meaning of the complete task_title.
+Never use placeholder titles such as "Step 1", "Step 2", "Step 3", "Task 1", or "Subtask 1".
+Do not merely enumerate generic steps and do not repeat the parent title as a plan item.
 Each plan item is only a title. Never put IDs, dates, times, completion fields, instructions,
 metadata, or nested objects in plan.
 For BREAKDOWN_TASK, date, time, recurrence, and priority should usually be empty unless the user clearly provides them.
+
+BREAKDOWN_TASK plan quality example:
+User: "Break down final year project report"
+Good plan: ["Review project requirements", "Organise implementation evidence", "Draft the evaluation section", "Review and revise the report"]
+Bad plan: ["Step 1", "Step 2", "Step 3"]
 """.trimIndent()
     }
 }

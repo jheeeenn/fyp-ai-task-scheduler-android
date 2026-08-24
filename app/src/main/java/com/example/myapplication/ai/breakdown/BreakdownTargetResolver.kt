@@ -30,13 +30,43 @@ object BreakdownTargetResolver {
         val eligibleRoots = storedTasks.filter {
             it.parentTaskId == null && !it.isDone
         }
+        val normalizedTarget = TaskMatcher.normalizeForTaskMatch(proposedParentTitle)
+        val exactMatches = eligibleRoots.filter {
+            TaskMatcher.normalizeForTaskMatch(it.title) == normalizedTarget &&
+                normalizedTarget.isNotBlank()
+        }
+        if (exactMatches.size == 1) {
+            return BreakdownTargetResolution.ExistingRoot(exactMatches.single())
+        }
+        if (exactMatches.size > 1) {
+            return BreakdownTargetResolution.Ambiguous(exactMatches.take(MAX_AMBIGUOUS_CHOICES))
+        }
+
         val match = TaskMatcher.findBestTaskMatch(proposedParentTitle, eligibleRoots)
         return when {
-            match.isAmbiguous && match.bestTask != null && match.secondTask != null ->
+            match.isAmbiguous &&
+                match.bestTask != null &&
+                match.secondTask != null &&
+                isStrongBreakdownMatch(
+                    normalizedTarget,
+                    match.bestTask.title,
+                    match.bestScore
+                ) &&
+                isStrongBreakdownMatch(
+                    normalizedTarget,
+                    match.secondTask.title,
+                    match.secondScore
+                ) ->
                 BreakdownTargetResolution.Ambiguous(
                     listOf(match.bestTask, match.secondTask)
                 )
-            match.bestTask != null -> BreakdownTargetResolution.ExistingRoot(match.bestTask)
+            !match.isAmbiguous &&
+                match.bestTask != null &&
+                isStrongBreakdownMatch(
+                    normalizedTarget,
+                    match.bestTask.title,
+                    match.bestScore
+                ) -> BreakdownTargetResolution.ExistingRoot(match.bestTask)
             else -> BreakdownTargetResolution.NewRoot
         }
     }
@@ -66,4 +96,23 @@ object BreakdownTargetResolver {
         "second", "the second", "second one", "the second one", "2", "2nd" -> 1
         else -> null
     }
+
+    private fun isStrongBreakdownMatch(
+        normalizedTarget: String,
+        candidateTitle: String,
+        score: Double
+    ): Boolean {
+        if (score < MIN_STRONG_BREAKDOWN_MATCH_SCORE) return false
+        val targetTokens = normalizedTarget.tokens()
+        if (targetTokens.size < MIN_CORROBORATING_TOKENS) return false
+        val candidateTokens = TaskMatcher.normalizeForTaskMatch(candidateTitle).tokens()
+        return targetTokens.intersect(candidateTokens).size >= MIN_CORROBORATING_TOKENS
+    }
+
+    private fun String.tokens(): Set<String> =
+        split(" ").filter(String::isNotBlank).toSet()
+
+    private const val MIN_STRONG_BREAKDOWN_MATCH_SCORE = 0.70
+    private const val MIN_CORROBORATING_TOKENS = 2
+    private const val MAX_AMBIGUOUS_CHOICES = 2
 }

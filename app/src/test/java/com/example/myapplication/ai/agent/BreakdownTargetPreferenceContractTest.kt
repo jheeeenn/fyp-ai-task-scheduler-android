@@ -126,6 +126,48 @@ class BreakdownTargetPreferenceContractTest {
         )
     }
 
+    @Test
+    fun promptRequiresMeaningfulTaskSpecificBreakdownPlans() {
+        val prompt = LaptopAgentClient.SYSTEM_PROMPT
+
+        assertTrue(prompt.contains("2 to 5 meaningful, task-specific, actionable subtask-title"))
+        assertTrue(prompt.contains("Each item must describe actual work"))
+        assertTrue(prompt.contains("Never use placeholder titles"))
+        assertTrue(prompt.contains("\"Step 1\", \"Step 2\", \"Step 3\""))
+        assertTrue(prompt.contains("Do not merely enumerate generic steps"))
+        assertTrue(prompt.contains("do not repeat the parent title"))
+        assertTrue(prompt.contains("Base\n" +
+            "the plan on the semantic meaning of the complete task_title"))
+        assertTrue(prompt.contains("Organise implementation evidence"))
+    }
+
+    @Test
+    fun promptPreservesCompleteBreakdownTargetPhrase() {
+        val prompt = LaptopAgentClient.SYSTEM_PROMPT
+
+        assertTrue(prompt.contains("Preserve the complete user-supplied parent-task name"))
+        assertTrue(prompt.contains("Remove only surrounding\noperational or polite breakdown wording"))
+        assertTrue(prompt.contains("Do not shorten a multi-word named target to one broad"))
+        assertTrue(
+            prompt.contains(
+                "\"Break down final year project report\" -> " +
+                    "task_title=\"final year project report\""
+            )
+        )
+        assertTrue(
+            prompt.contains(
+                "\"Can you break down evaluation parent task\" -> " +
+                    "task_title=\"evaluation parent task\""
+            )
+        )
+        assertTrue(
+            prompt.contains(
+                "\"Please split prepare presentation into smaller steps\" -> " +
+                    "task_title=\"prepare presentation\""
+            )
+        )
+    }
+
     private fun completeResponseJson() = JSONObject().apply {
         put("natural_response", "")
         put("action", "BREAKDOWN_TASK")
