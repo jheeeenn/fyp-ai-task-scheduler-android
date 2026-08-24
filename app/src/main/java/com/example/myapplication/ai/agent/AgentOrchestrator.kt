@@ -7,6 +7,7 @@ import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
 import com.example.myapplication.ai.temporal.RelativeTemporalBase
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionContext
+import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionMove
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionParser
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelation
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelationMapper
@@ -394,6 +395,7 @@ class AgentOrchestrator(
     ) {
         logParsedRelativeTemporalShape(
             stage = stage,
+            move = "NOT_APPLICABLE",
             dateOperation = response.dateOperation,
             timeOperation = response.timeOperation,
             correctionRelation = "NOT_APPLICABLE",
@@ -413,6 +415,7 @@ class AgentOrchestrator(
     ) {
         logParsedRelativeTemporalShape(
             stage = stage,
+            move = response.move,
             dateOperation = response.dateOperation,
             timeOperation = response.timeOperation,
             correctionRelation = response.correctionRelation,
@@ -430,6 +433,7 @@ class AgentOrchestrator(
 
     private fun logParsedRelativeTemporalShape(
         stage: RelativeTemporalExtractionStage,
+        move: String,
         dateOperation: String,
         timeOperation: String,
         correctionRelation: String,
@@ -444,6 +448,7 @@ class AgentOrchestrator(
         Log.d(
             "RELATIVE_TEMPORAL_PARSED",
             "stage=${stage.name} " +
+                "move=${sanitizedCorrectionMove(move)} " +
                 "dateOperation=${sanitizedOperation(dateOperation)} " +
                 "timeOperation=${sanitizedOperation(timeOperation)} " +
                 "correctionRelation=${sanitizedCorrectionRelation(correctionRelation)} " +
@@ -472,6 +477,11 @@ class AgentOrchestrator(
         value.takeIf { candidate ->
             RelativeTemporalOperation.entries.any { operation -> operation.name == candidate }
         } ?: "UNKNOWN"
+
+    private fun sanitizedCorrectionMove(value: String): String =
+        value.takeIf { candidate ->
+            RelativeTemporalCorrectionMove.entries.any { it.name == candidate }
+        } ?: if (value == "NOT_APPLICABLE") "NOT_APPLICABLE" else "UNKNOWN"
 
     private fun sanitizedRelativeBase(value: String): String =
         value.takeIf { candidate ->

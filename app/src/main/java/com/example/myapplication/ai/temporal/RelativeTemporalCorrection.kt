@@ -185,11 +185,9 @@ class RelativeTemporalCorrectionValidator(
     fun validateWithReport(
         response: RelativeTemporalCorrectionResponse
     ): RelativeTemporalCorrectionValidation {
-        val move = try {
+        val parsedMove = runCatching {
             RelativeTemporalCorrectionMove.valueOf(response.move)
-        } catch (_: IllegalArgumentException) {
-            RelativeTemporalCorrectionMove.UNKNOWN
-        }
+        }.getOrNull()
         if (!response.confidence.isFinite()) {
             throw RelativeTemporalProposalValidationException(
                 RelativeTemporalValidationFailure.NON_FINITE_CONFIDENCE,
@@ -202,20 +200,35 @@ class RelativeTemporalCorrectionValidator(
                 "Correction confidence is too low"
             )
         }
-        if (response.needClarification || move == RelativeTemporalCorrectionMove.UNKNOWN) {
+        val relation = runCatching {
+            RelativeTemporalCorrectionRelation.valueOf(response.correctionRelation)
+        }.getOrNull()
+        if (response.needClarification) {
             throw RelativeTemporalProposalValidationException(
                 RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
                 "Correction requires clarification"
             )
         }
-        val relation = runCatching {
-            RelativeTemporalCorrectionRelation.valueOf(response.correctionRelation)
-        }.getOrNull()
         if (relation == null || relation == RelativeTemporalCorrectionRelation.UNCLEAR) {
             throw RelativeTemporalProposalValidationException(
                 RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
                 "Correction relationship requires clarification"
             )
+        }
+        val moveWasCanonicalized = shouldCanonicalizeUnknownMove(
+            response = response,
+            parsedMove = parsedMove,
+            relation = relation
+        )
+        val move = when {
+            moveWasCanonicalized -> RelativeTemporalCorrectionMove.APPLY_CHANGE
+            parsedMove == null || parsedMove == RelativeTemporalCorrectionMove.UNKNOWN -> {
+                throw RelativeTemporalProposalValidationException(
+                    RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
+                    "Correction requires clarification"
+                )
+            }
+            else -> parsedMove
         }
         if (move == RelativeTemporalCorrectionMove.RESTORE_ORIGINAL) {
             validateNeutralRestore(response)
@@ -248,8 +261,47 @@ class RelativeTemporalCorrectionValidator(
             correction = ValidatedRelativeTemporalCorrection.Apply(
                 proposalValidator.validate(canonicalized.proposal)
             ),
-            canonicalizationReport = canonicalized.report
+            canonicalizationReport = RelativeTemporalCanonicalizationReport(
+                buildList {
+                    if (moveWasCanonicalized) add(MOVE_FIELD)
+                    addAll(canonicalized.report.changedFields)
+                }
+            )
         )
+    }
+
+    private fun shouldCanonicalizeUnknownMove(
+        response: RelativeTemporalCorrectionResponse,
+        parsedMove: RelativeTemporalCorrectionMove?,
+        relation: RelativeTemporalCorrectionRelation
+    ): Boolean {
+        if (
+            parsedMove != RelativeTemporalCorrectionMove.UNKNOWN ||
+            response.needClarification ||
+            response.confidence < RelativeTemporalProposal.MIN_CONFIDENCE ||
+            relation == RelativeTemporalCorrectionRelation.UNCLEAR
+        ) {
+            return false
+        }
+        val dateOperation = runCatching {
+            RelativeTemporalOperation.valueOf(response.dateOperation)
+        }.getOrNull()
+        val timeOperation = runCatching {
+            RelativeTemporalOperation.valueOf(response.timeOperation)
+        }.getOrNull()
+        val hasConcreteDateChange = when (dateOperation) {
+            RelativeTemporalOperation.SET -> response.replacementDateText.isNotBlank()
+            RelativeTemporalOperation.OFFSET -> response.dateOffsetDays != 0
+            RelativeTemporalOperation.KEEP,
+            null -> false
+        }
+        val hasConcreteTimeChange = when (timeOperation) {
+            RelativeTemporalOperation.SET -> response.replacementTimeText.isNotBlank()
+            RelativeTemporalOperation.OFFSET -> response.timeOffsetMinutes != 0
+            RelativeTemporalOperation.KEEP,
+            null -> false
+        }
+        return hasConcreteDateChange || hasConcreteTimeChange
     }
 
     private fun validateNeutralRestore(response: RelativeTemporalCorrectionResponse) {
@@ -281,4 +333,8 @@ class RelativeTemporalCorrectionValidator(
         failure: RelativeTemporalValidationFailure,
         message: String
     ) = RelativeTemporalProposalValidationException(failure, message)
+
+    private companion object {
+        const val MOVE_FIELD = "move"
+    }
 }

@@ -50,6 +50,38 @@ class RelativeTemporalCorrectionRepairTest {
     }
 
     @Test
+    fun unknownConcreteMalformedDateCanonicalizesBeforeExistingRepair() = runBlocking {
+        val client = FakeCorrectionClient(
+            normalResponse = response(
+                move = "UNKNOWN",
+                dateOperation = "SET",
+                timeOperation = "KEEP",
+                relation = "BUILD_ON_CURRENT",
+                replacementDate = "tomorrow",
+                dateOffset = 1,
+                timeOffset = 0,
+                confidence = 1.0
+            ),
+            repairResponse = choiceResponse("R1", confidence = 1.0)
+        )
+
+        val correction = orchestrator(client).processRelativeTemporalCorrection(
+            "move it to tomorrow",
+            context()
+        ) as ValidatedRelativeTemporalCorrection.Apply
+
+        assertEquals(1, client.normalCalls)
+        assertEquals(1, client.repairCalls)
+        assertEquals(2, client.candidates?.size)
+        assertEquals(RelativeTemporalRepairField.DATE, client.candidates?.first()?.field)
+        assertEquals(RelativeTemporalRepairRepresentation.LITERAL, client.candidates?.first()?.representation)
+        assertEquals(RelativeTemporalOperation.SET, correction.proposal.dateOperation)
+        assertEquals("tomorrow", correction.proposal.replacementDateText)
+        assertEquals(0, correction.proposal.dateOffsetDays)
+        assertEquals(RelativeTemporalBase.CURRENT_PROPOSAL, correction.proposal.relativeBase)
+    }
+
+    @Test
     fun exactDeviceShapeProducesLiteralAndOffsetCandidatesFromStructuredValuesOnly() {
         val rejected = responseObject(malformedDeviceResponse())
 

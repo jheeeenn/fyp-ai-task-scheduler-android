@@ -89,6 +89,125 @@ class RelativeTemporalCorrectionContractTest {
     }
 
     @Test
+    fun unknownMoveWithConcreteDateSetIsCanonicalizedAndAccepted() {
+        val validation = validator.validateWithReport(
+            parser.parse(
+                response(
+                    move = "UNKNOWN",
+                    dateOperation = "SET",
+                    timeOperation = "KEEP",
+                    relation = "BUILD_ON_CURRENT",
+                    replacementDate = "tomorrow",
+                    confidence = 1.0
+                )
+            )
+        )
+        val proposal = (validation.correction as ValidatedRelativeTemporalCorrection.Apply).proposal
+
+        assertEquals(RelativeTemporalOperation.SET, proposal.dateOperation)
+        assertEquals("tomorrow", proposal.replacementDateText)
+        assertEquals(RelativeTemporalBase.CURRENT_PROPOSAL, proposal.relativeBase)
+        assertEquals(listOf("move"), validation.canonicalizationReport.changedFields)
+    }
+
+    @Test
+    fun unknownMoveCanonicalizationStillExposesMalformedDateCombination() {
+        val exception = assertThrows(RelativeTemporalProposalValidationException::class.java) {
+            validator.validate(
+                parser.parse(
+                    response(
+                        move = "UNKNOWN",
+                        dateOperation = "SET",
+                        timeOperation = "KEEP",
+                        relation = "BUILD_ON_CURRENT",
+                        replacementDate = "tomorrow",
+                        dateOffset = 1,
+                        confidence = 1.0
+                    )
+                )
+            )
+        }
+
+        assertEquals(RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION, exception.failure)
+    }
+
+    @Test
+    fun unknownMoveWithConcreteTimeSetIsCanonicalizedAndAccepted() {
+        val validation = validator.validateWithReport(
+            parser.parse(
+                response(
+                    move = "UNKNOWN",
+                    dateOperation = "KEEP",
+                    timeOperation = "SET",
+                    relation = "BUILD_ON_CURRENT",
+                    replacementTime = "6 PM",
+                    confidence = 1.0
+                )
+            )
+        )
+        val proposal = (validation.correction as ValidatedRelativeTemporalCorrection.Apply).proposal
+
+        assertEquals(RelativeTemporalOperation.SET, proposal.timeOperation)
+        assertEquals("6 PM", proposal.replacementTimeText)
+        assertEquals(RelativeTemporalBase.CURRENT_PROPOSAL, proposal.relativeBase)
+        assertEquals(listOf("move"), validation.canonicalizationReport.changedFields)
+    }
+
+    @Test
+    fun unknownMoveStillFailsClosedWithoutBoundedCanonicalizationAuthority() {
+        val responses = listOf(
+            response(
+                move = "UNKNOWN",
+                dateOperation = "SET",
+                timeOperation = "KEEP",
+                relation = "BUILD_ON_CURRENT",
+                replacementDate = "tomorrow",
+                clarification = true
+            ),
+            response(
+                move = "UNKNOWN",
+                dateOperation = "SET",
+                timeOperation = "KEEP",
+                relation = "UNCLEAR",
+                replacementDate = "tomorrow"
+            ),
+            response(
+                move = "UNKNOWN",
+                dateOperation = "KEEP",
+                timeOperation = "KEEP",
+                relation = "BUILD_ON_CURRENT"
+            )
+        )
+
+        responses.forEach { raw ->
+            val exception = assertThrows(RelativeTemporalProposalValidationException::class.java) {
+                validator.validate(parser.parse(raw))
+            }
+            assertEquals(RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED, exception.failure)
+        }
+    }
+
+    @Test
+    fun unknownMoveBelowConfidenceThresholdIsNotCanonicalized() {
+        val exception = assertThrows(RelativeTemporalProposalValidationException::class.java) {
+            validator.validate(
+                parser.parse(
+                    response(
+                        move = "UNKNOWN",
+                        dateOperation = "KEEP",
+                        timeOperation = "SET",
+                        relation = "BUILD_ON_CURRENT",
+                        replacementTime = "6 PM",
+                        confidence = 0.79
+                    )
+                )
+            )
+        }
+
+        assertEquals(RelativeTemporalValidationFailure.LOW_CONFIDENCE, exception.failure)
+    }
+
+    @Test
     fun correctionConfidenceBelowPointEightFailsClosed() {
         assertThrows(RelativeTemporalProposalValidationException::class.java) {
             validator.validate(parser.parse(applyResponse().replace("0.98", "0.79")))

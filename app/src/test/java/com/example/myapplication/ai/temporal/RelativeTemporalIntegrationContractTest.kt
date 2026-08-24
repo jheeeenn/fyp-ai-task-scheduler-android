@@ -287,6 +287,8 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CANONICALIZED"))
         assertTrue(orchestrator.contains("replacementDatePresent="))
         assertTrue(orchestrator.contains("replacementTimePresent="))
+        assertTrue(orchestrator.contains("move=${'$'}{sanitizedCorrectionMove(move)}"))
+        assertTrue(orchestrator.contains("move = response.move"))
         assertTrue(orchestrator.contains("correctionRelation="))
         assertTrue(orchestrator.contains("mappedRelativeBase="))
         assertTrue(orchestrator.contains("RELATIVE_TEMPORAL_CORRECTION_CONTEXT"))
@@ -315,5 +317,6 @@ class RelativeTemporalIntegrationContractTest {
         assertFalse(parsedLog.contains("replacementTimeText="))
         assertFalse(parsedLog.contains("rawContent"))
         assertFalse(parsedLog.contains("normalizedText"))
+        assertTrue(parsedLog.contains("sanitizedCorrectionMove(move)"))
     }
 }
