@@ -10,6 +10,7 @@ import android.widget.Toast
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.myapplication.accessibility.AccessibilityActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
@@ -100,6 +101,11 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var isCreateTaskExitPending = false
 
     private var hasConsumedPrefill = false
+    private val incomingPrefillRunnable = Runnable {
+        if (canRunCreateAssistantCallback()) {
+            applyIncomingPrefill()
+        }
+    }
 
 
 
@@ -186,10 +192,6 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         promptHelper = AssistantPromptHelper(assistantSession, responseManager)
 
         resetTaskDraftState()
-
-        window.decorView.postDelayed({
-            applyIncomingPrefill()
-        }, 1500)
 
         VoiceFirstGestureBinder.bindAction(
             view = dateInfoGroup,
@@ -1064,33 +1066,44 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             pendingTaskState.timeText.isNullOrBlank() || selectedTime.isNullOrBlank() -> {
                 Log.d("CREATE_STATE", "next=WAITING_FOR_TIME")
                 dialogState = CreateTaskDialogState.WAITING_FOR_TIME
+                val requestGeneration = createDraftResolutionGeneration
+                val requestDraftRevision = createDraftRevision
+                val requestDialogState = dialogState
+                val semanticPhrase = pendingSemanticTimePhrase
 
                 lifecycleScope.launch {
-                    val semanticPhrase = pendingSemanticTimePhrase
-
                     if (!semanticPhrase.isNullOrBlank()) {
                         val learned = withContext(Dispatchers.IO) {
                             timePreferenceLearner.getLearnedTimeForPhrase(semanticPhrase)
                         }
+                        if (!isCurrentLearnedTimeRequest(
+                                requestGeneration,
+                                requestDraftRevision,
+                                requestDialogState,
+                                semanticPhrase
+                            )
+                        ) return@launch
 
                         if (learned != null && learned.usageCount >= 2 && isTimeAllowedByPendingConstraint(learned.resolvedTime.resolvedTimeMinute())) {
                             suggestedLearnedTime = learned.resolvedTime
-                            runOnUiThread {
-                                speakAndContinueListening(
-                                    //"You usually mean ${learned.resolvedTime} when you say ${semanticPhrase}. Please say yes to use it, or say a different time."
-                                    responseManager.learnedTimeSuggestion(semanticPhrase, learned.resolvedTime)
-                                )
-                            }
+                            speakAndContinueListening(
+                                //"You usually mean ${learned.resolvedTime} when you say ${semanticPhrase}. Please say yes to use it, or say a different time."
+                                responseManager.learnedTimeSuggestion(semanticPhrase, learned.resolvedTime)
+                            )
                         } else {
-                            runOnUiThread {
-                                speakAndContinueListening(
-                                    //"I understood the time as ${semanticPhrase}. Please tell me an exact clock time, for example 8 PM."
-                                    responseManager.semanticTimeNeedsExact(semanticPhrase)
-                                )
-                            }
+                            speakAndContinueListening(
+                                //"I understood the time as ${semanticPhrase}. Please tell me an exact clock time, for example 8 PM."
+                                responseManager.semanticTimeNeedsExact(semanticPhrase)
+                            )
                         }
                     } else {
-                        runOnUiThread {
+                        if (isCurrentLearnedTimeRequest(
+                                requestGeneration,
+                                requestDraftRevision,
+                                requestDialogState,
+                                null
+                            )
+                        ) {
                             promptHelper.askTime()
                         }
                     }
@@ -1105,6 +1118,24 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
         }
     }
+
+    private fun isCurrentLearnedTimeRequest(
+        requestGeneration: Long,
+        requestDraftRevision: Long,
+        requestDialogState: CreateTaskDialogState,
+        semanticPhrase: String?
+    ): Boolean = canRunCreateAssistantCallback() &&
+        requestGeneration == createDraftResolutionGeneration &&
+        requestDraftRevision == createDraftRevision &&
+        requestDialogState == dialogState &&
+        semanticPhrase == pendingSemanticTimePhrase
+
+    private fun canRunCreateAssistantCallback(): Boolean =
+        lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            !isFinishing &&
+            !isDestroyed &&
+            !isSavingTask &&
+            !isCreateTaskExitPending
 
     private fun String.resolvedTimeMinute(): Int? {
         val r = temporalResolver.resolve(null, this, this)
@@ -1226,7 +1257,13 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingSemanticTimePhrase = null
     }
 
+    override fun onStart() {
+        super.onStart()
+        scheduleIncomingPrefill()
+    }
+
     override fun onStop() {
+        window.decorView.removeCallbacks(incomingPrefillRunnable)
         if (!isChangingConfigurations) {
             invalidateCreateDraftResolution()
             assistantSession.stopForLifecycle()
@@ -1237,6 +1274,12 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             )
         }
         super.onStop()
+    }
+
+    private fun scheduleIncomingPrefill() {
+        if (hasConsumedPrefill || isFinishing || isDestroyed) return
+        window.decorView.removeCallbacks(incomingPrefillRunnable)
+        window.decorView.postDelayed(incomingPrefillRunnable, 1500L)
     }
 
     private fun clearTransientCreateAssistantState() {
@@ -1299,6 +1342,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     override fun onDestroy() {
+        window.decorView.removeCallbacks(incomingPrefillRunnable)
         invalidateCreateDraftResolution()
         assistantSession.destroy()
         voiceHelper.shutdown()

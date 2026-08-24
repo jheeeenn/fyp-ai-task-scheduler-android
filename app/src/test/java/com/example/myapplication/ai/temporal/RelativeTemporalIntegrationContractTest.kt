@@ -347,4 +347,45 @@ class RelativeTemporalIntegrationContractTest {
                 .count() >= 2
         )
     }
+
+    @Test
+    fun delayedEditAssistantEntryIsCancelledWhileStoppedAndDeferredUntilRestart() {
+        val runnable = edit
+            .substringAfter("private val initialAssistantEntryRunnable")
+            .substringBefore("private var authoritativeOriginalTitle")
+        val setup = edit
+            .substringAfter("val deferredTemporalConstraint = pendingTemporalConstraint")
+            .substringBefore("private fun canRunEditAssistantCallback")
+        val guardAndSchedule = edit
+            .substringAfter("private fun canRunEditAssistantCallback")
+            .substringBefore("private fun openDatePicker")
+        val onStart = edit
+            .substringAfter("override fun onStart()")
+            .substringBefore("override fun onStop()")
+        val onStop = edit
+            .substringAfter("override fun onStop()")
+            .substringBefore("override fun onDestroy()")
+
+        assertTrue(runnable.contains("canRunEditAssistantCallback()"))
+        assertTrue(runnable.contains("pendingInitialAssistantEntry ?: return@Runnable"))
+        assertTrue(runnable.contains("pendingInitialAssistantEntry = null"))
+        assertTrue(setup.contains("pendingInitialAssistantEntry ="))
+        assertTrue(setup.contains("deferredTemporalClarification"))
+        assertTrue(setup.contains("advanceTemporalClarification()"))
+        assertTrue(setup.contains("askToSaveChanges()"))
+        assertTrue(setup.contains("enterTemporalCollection("))
+        assertTrue(setup.contains("assistantSession.speak("))
+        assertTrue(guardAndSchedule.contains("Lifecycle.State.STARTED"))
+        assertTrue(guardAndSchedule.contains("!isFinishing"))
+        assertTrue(guardAndSchedule.contains("!isDestroyed"))
+        assertTrue(guardAndSchedule.contains("postDelayed(initialAssistantEntryRunnable, 350L)"))
+        assertTrue(onStart.contains("scheduleInitialAssistantEntry()"))
+        assertTrue(onStop.contains("removeCallbacks(initialAssistantEntryRunnable)"))
+        assertFalse(onStop.contains("pendingInitialAssistantEntry = null"))
+        assertFalse(onStop.contains("etTaskTitle.setText"))
+        assertFalse(onStop.contains("selectedDate ="))
+        assertFalse(onStop.contains("selectedTime ="))
+        assertFalse(onStop.contains("isEditSaveInFlight = false"))
+        assertFalse(onStop.contains("isEditDeleteInFlight = false"))
+    }
 }

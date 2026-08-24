@@ -484,4 +484,58 @@ class CreateTaskActivitySourceTest {
         assertFalse(onStop.contains("isSavingTask = false"))
         assertFalse(onStop.contains("isCreateTaskExitPending = false"))
     }
+
+    @Test
+    fun delayedPrefillIsCancelledOnStopAndRescheduledWhileUnconsumed() {
+        val runnable = source
+            .substringAfter("private val incomingPrefillRunnable")
+            .substringBefore("private var dialogState")
+        val onStart = source
+            .substringAfter("override fun onStart()")
+            .substringBefore("override fun onStop()")
+        val onStop = source
+            .substringAfter("override fun onStop()")
+            .substringBefore("private fun scheduleIncomingPrefill")
+        val schedule = source
+            .substringAfter("private fun scheduleIncomingPrefill")
+            .substringBefore("private fun clearTransientCreateAssistantState")
+
+        assertTrue(runnable.contains("canRunCreateAssistantCallback()"))
+        assertTrue(runnable.contains("applyIncomingPrefill()"))
+        assertTrue(onStop.contains("removeCallbacks(incomingPrefillRunnable)"))
+        assertTrue(onStart.contains("scheduleIncomingPrefill()"))
+        assertTrue(schedule.contains("if (hasConsumedPrefill || isFinishing || isDestroyed) return"))
+        assertTrue(schedule.contains("postDelayed(incomingPrefillRunnable, 1500L)"))
+        assertFalse(onStop.contains("hasConsumedPrefill = true"))
+        assertFalse(onStop.contains("clearPrefillExtras()"))
+    }
+
+    @Test
+    fun learnedTimeLookupMustRemainForegroundAndCurrentBeforeSpeaking() {
+        val lookup = source
+            .substringAfter("private fun moveToNextMissingStep()")
+            .substringBefore("private fun String.resolvedTimeMinute")
+        val guard = source
+            .substringAfter("private fun isCurrentLearnedTimeRequest")
+            .substringBefore("private fun String.resolvedTimeMinute")
+        val learnedResult = lookup.indexOf("timePreferenceLearner.getLearnedTimeForPhrase")
+        val staleGuard = lookup.indexOf("if (!isCurrentLearnedTimeRequest(", learnedResult)
+        val suggestion = lookup.indexOf("suggestedLearnedTime =", staleGuard)
+        val speech = lookup.indexOf("speakAndContinueListening(", staleGuard)
+
+        assertTrue(lookup.contains("val requestGeneration = createDraftResolutionGeneration"))
+        assertTrue(lookup.contains("val requestDraftRevision = createDraftRevision"))
+        assertTrue(lookup.contains("val requestDialogState = dialogState"))
+        assertTrue(learnedResult >= 0)
+        assertTrue(staleGuard > learnedResult)
+        assertTrue(suggestion > staleGuard)
+        assertTrue(speech > staleGuard)
+        assertTrue(guard.contains("Lifecycle.State.STARTED"))
+        assertTrue(guard.contains("!isFinishing"))
+        assertTrue(guard.contains("!isDestroyed"))
+        assertTrue(guard.contains("requestGeneration == createDraftResolutionGeneration"))
+        assertTrue(guard.contains("requestDraftRevision == createDraftRevision"))
+        assertTrue(guard.contains("requestDialogState == dialogState"))
+        assertTrue(guard.contains("semanticPhrase == pendingSemanticTimePhrase"))
+    }
 }

@@ -18,6 +18,7 @@ import com.example.myapplication.accessibility.AccessibilityActivity
 import com.example.myapplication.voice.BoundedConfirmationPolicy
 import com.example.myapplication.voice.BoundedConfirmationResult
 
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
@@ -104,6 +105,13 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var isEditSaveInFlight = false
     private var waitingForDeleteConfirmation = false
     private var isEditDeleteInFlight = false
+    private var pendingInitialAssistantEntry: (() -> Unit)? = null
+    private val initialAssistantEntryRunnable = Runnable {
+        if (!canRunEditAssistantCallback()) return@Runnable
+        val entry = pendingInitialAssistantEntry ?: return@Runnable
+        pendingInitialAssistantEntry = null
+        entry()
+    }
 
     private var authoritativeOriginalTitle: String = ""
     private var authoritativeOriginalDate: String? = null
@@ -367,9 +375,15 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 "titleChanged=$titlePrefillChanged temporalChanged=$temporalChanged " +
                     "next=$prefillNextState"
             )
-            window.decorView.postDelayed({
+            val deferredTemporalConstraint = pendingTemporalConstraint
+            val deferredTemporalClarification = pendingTemporalClarification
+            pendingInitialAssistantEntry = {
                 when {
-                    pendingTemporalClarification != null -> advanceTemporalClarification()
+                    deferredTemporalClarification != null -> {
+                        pendingTemporalConstraint = deferredTemporalConstraint
+                        pendingTemporalClarification = deferredTemporalClarification
+                        advanceTemporalClarification()
+                    }
                     hasPendingPrefillChange -> askToSaveChanges()
                     assistantMode == "reschedule" || rescheduleCollectionRequired -> {
                         waitingForSaveConfirmation = false
@@ -380,8 +394,19 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                         listenAgain = true
                     )
                 }
-            }, 350)
+            }
         }
+    }
+
+    private fun canRunEditAssistantCallback(): Boolean =
+        lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            !isFinishing &&
+            !isDestroyed
+
+    private fun scheduleInitialAssistantEntry() {
+        if (pendingInitialAssistantEntry == null || isFinishing || isDestroyed) return
+        window.decorView.removeCallbacks(initialAssistantEntryRunnable)
+        window.decorView.postDelayed(initialAssistantEntryRunnable, 350L)
     }
 
     private fun openDatePicker() {
@@ -1820,7 +1845,13 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         isForceStoppingAssistant = false
     }
 
+    override fun onStart() {
+        super.onStart()
+        scheduleInitialAssistantEntry()
+    }
+
     override fun onStop() {
+        window.decorView.removeCallbacks(initialAssistantEntryRunnable)
         if (!isChangingConfigurations) {
             relativeTemporalSession?.invalidatePendingCorrection()
             relativeTemporalCorrectionGeneration += 1L
@@ -1841,6 +1872,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     override fun onDestroy() {
+        window.decorView.removeCallbacks(initialAssistantEntryRunnable)
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()
