@@ -100,8 +100,6 @@ class TaskDetailEditSemanticOrchestrator(
                 TaskDetailEditProposal.Schedule(candidate.dueDate, candidate.dueTime)
             is TaskDetailEditLocalCandidate.Clarification ->
                 TaskDetailEditProposal.Clarification(candidate.question)
-            is TaskDetailEditLocalCandidate.PastSameDayTime ->
-                TaskDetailEditProposal.PastSameDayTime(candidate.proposedTime, candidate.tomorrowDate)
             TaskDetailEditLocalCandidate.Invalid -> TaskDetailEditProposal.Unknown
         }
         val source = if (proposal == TaskDetailEditProposal.Unknown) {
@@ -148,7 +146,6 @@ class TaskDetailEditSemanticOrchestrator(
         is TaskDetailEditProposal.Title -> TaskDetailEditAgentMove.SET_TITLE
         is TaskDetailEditProposal.Schedule -> TaskDetailEditAgentMove.SET_SCHEDULE
         is TaskDetailEditProposal.Clarification -> TaskDetailEditAgentMove.ASK_CLARIFICATION
-        is TaskDetailEditProposal.PastSameDayTime -> TaskDetailEditAgentMove.ASK_CLARIFICATION
         TaskDetailEditProposal.Cancel -> TaskDetailEditAgentMove.CANCEL
         TaskDetailEditProposal.Unknown -> TaskDetailEditAgentMove.UNKNOWN
     }

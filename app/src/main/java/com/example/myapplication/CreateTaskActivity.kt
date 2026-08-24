@@ -441,7 +441,6 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                         "CREATE_MOVE_PRIMARY",
                         "state=$capturedState category=STALE_DRAFT_RESULT_DISCARDED"
                     )
-                    setCreateDraftControlsEnabled(true)
                     return@launch
                 }
                 isResolvingCreateDraftMove = false
@@ -1223,6 +1222,31 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     override fun onAssistantSessionStopped() {
         invalidateCreateDraftResolution()
+        suggestedLearnedTime = null
+        pendingSemanticTimePhrase = null
+    }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) {
+            invalidateCreateDraftResolution()
+            assistantSession.stopForLifecycle()
+            clearTransientCreateAssistantState()
+            Log.d(
+                "CREATE_LIFECYCLE",
+                "state=STOPPED assistantSessionStopped=true semanticResolutionInvalidated=true"
+            )
+        }
+        super.onStop()
+    }
+
+    private fun clearTransientCreateAssistantState() {
+        if (dialogState != CreateTaskDialogState.IDLE) {
+            markCreateDraftChanged()
+        }
+        dialogState = CreateTaskDialogState.IDLE
+        pendingTemporalConstraint = null
+        pendingTemporalClarification = null
+        pendingReplacementField = null
         suggestedLearnedTime = null
         pendingSemanticTimePhrase = null
     }

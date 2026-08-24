@@ -72,16 +72,13 @@ class TaskDetailSemanticIntegrationSourceTest {
     }
 
     @Test
-    fun guardedPastTimeYesNoCancelPathsAreExplicit() {
-        val clarification = activity.substringAfter("private fun handlePastTimeConfirmationResponse")
-            .substringBefore("private fun applyPendingTomorrowTime")
-        val apply = activity.substringAfter("private fun applyPendingTomorrowTime")
-            .substringBefore("private fun requestedField")
-        assertTrue(clarification.contains("TaskDetailPastTimeConfirmationMove.APPLY_TOMORROW -> applyPendingTomorrowTime()"))
-        assertTrue(clarification.contains("TaskDetailEditSpeechRenderer.askDateAndTime()"))
-        assertTrue(clarification.contains("TaskDetailPastTimeConfirmationMove.CANCEL -> endLocalInteraction"))
-        assertTrue(apply.contains("pending.isCurrent(controller.draft.revision, editInteractionGeneration)"))
-        assertTrue(apply.contains("fieldResolver.resolveScheduleProposal("))
+    fun pastSameDayEditsHaveNoTomorrowClarificationPath() {
+        val editing = main.resolve("TaskDetailEditing.kt").readText()
+        assertFalse(editing.contains("PastSameDayTime"))
+        assertFalse(activity.contains("WAITING_FOR_PAST_TIME_CONFIRMATION"))
+        assertFalse(activity.contains("beginPastTimeClarification"))
+        assertFalse(orchestrator.contains("PastSameDayTime"))
+        assertTrue(editing.contains("TemporalUseCase.UPDATE"))
     }
 
     @Test

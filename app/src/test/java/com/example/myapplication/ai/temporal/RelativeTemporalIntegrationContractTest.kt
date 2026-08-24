@@ -319,4 +319,32 @@ class RelativeTemporalIntegrationContractTest {
         assertFalse(parsedLog.contains("normalizedText"))
         assertTrue(parsedLog.contains("sanitizedCorrectionMove(move)"))
     }
+
+    @Test
+    fun editLifecycleStopInvalidatesCorrectionsAndPreservesNativeEditsAndTerminalClaims() {
+        val onStop = edit
+            .substringAfter("override fun onStop()")
+            .substringBefore("override fun onDestroy()")
+        val correction = edit
+            .substringAfter("private fun processRelativeTemporalCorrection(")
+            .substringBefore("private suspend fun authoritativeTaskStillMatches")
+
+        assertTrue(onStop.contains("if (!isChangingConfigurations)"))
+        assertTrue(onStop.contains("relativeTemporalSession?.invalidatePendingCorrection()"))
+        assertTrue(onStop.contains("relativeTemporalCorrectionGeneration += 1L"))
+        assertTrue(onStop.contains("assistantSession.stopForLifecycle()"))
+        assertTrue(onStop.contains("relativeTemporalCorrectionInFlight = false"))
+        assertFalse(onStop.contains("relativeTemporalSession?.cancel()"))
+        assertFalse(onStop.contains("etTaskTitle.setText"))
+        assertFalse(onStop.contains("selectedDate ="))
+        assertFalse(onStop.contains("selectedTime ="))
+        assertFalse(onStop.contains("isEditSaveInFlight = false"))
+        assertFalse(onStop.contains("isEditDeleteInFlight = false"))
+        assertTrue(correction.contains("correctionGeneration == relativeTemporalCorrectionGeneration"))
+        assertTrue(
+            Regex("authoritativeTaskStillMatches\\(\\)[\\s\\S]*?if \\(!session\\.isCurrent\\(token\\)\\)")
+                .findAll(correction)
+                .count() >= 2
+        )
+    }
 }

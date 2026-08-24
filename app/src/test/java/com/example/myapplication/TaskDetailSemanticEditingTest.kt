@@ -76,51 +76,14 @@ class TaskDetailSemanticEditingTest {
     }
 
     @Test
-    fun passedSameDayExactTimeCreatesGuardedTomorrowProposal() {
+    fun earlierSameDayExactTimeRemainsOnTodayAndBecomesOverdue() {
         assertEquals(
-            TaskFieldEditResult.PastSameDayTime("11:45 AM", "04/08/2026"),
+            TaskFieldEditResult.Schedule("08/08/2026", "09:00 AM"),
             resolver.resolveTime(
-                "11:45 AM",
-                draft("03/08/2026", "09:00 PM"),
-                calendar("03/08/2026 11:26 PM")
+                "9:00 AM",
+                draft("08/08/2026", "05:00 PM"),
+                calendar("08/08/2026 03:00 PM")
             )
-        )
-    }
-
-    @Test
-    fun tomorrowProposalValidatesAndGuardRejectsRevisionOrGenerationChanges() {
-        val pending = TaskDetailPastTimeProposal("11:45 AM", "04/08/2026", 5, 8)
-        assertTrue(pending.isCurrent(5, 8))
-        assertFalse(pending.isCurrent(6, 8))
-        assertFalse(pending.isCurrent(5, 9))
-        assertEquals(
-            TaskFieldEditResult.Schedule("04/08/2026", "11:45 AM"),
-            resolver.resolveScheduleProposal(
-                pending.tomorrowDate,
-                pending.proposedTime,
-                draft("03/08/2026", "09:00 PM", revision = 5),
-                calendar("03/08/2026 11:26 PM")
-            )
-        )
-    }
-
-    @Test
-    fun tomorrowClarificationYesNoCancelAndUnclearStayDeterministic() {
-        assertEquals(
-            TaskDetailPastTimeConfirmationMove.APPLY_TOMORROW,
-            TaskDetailPastTimeConfirmationResolver.resolve("yes")
-        )
-        assertEquals(
-            TaskDetailPastTimeConfirmationMove.ASK_DATE_AND_TIME,
-            TaskDetailPastTimeConfirmationResolver.resolve("no")
-        )
-        assertEquals(
-            TaskDetailPastTimeConfirmationMove.CANCEL,
-            TaskDetailPastTimeConfirmationResolver.resolve("cancel")
-        )
-        assertEquals(
-            TaskDetailPastTimeConfirmationMove.REPEAT_QUESTION,
-            TaskDetailPastTimeConfirmationResolver.resolve("perhaps")
         )
     }
 
@@ -154,18 +117,13 @@ class TaskDetailSemanticEditingTest {
     }
 
     @Test
-    fun resultSpeechNamesEveryChangedFieldAndPastQuestionRepeatsExactTime() {
+    fun resultSpeechNamesEveryChangedField() {
         assertEquals(
             "Date changed to 4 August 2026 and time changed to 11:45 AM. Not saved.",
             TaskDetailEditSpeechRenderer.scheduleChanged(
                 "03/08/2026", "09:00 PM", "04/08/2026", "11:45 AM"
             )
         )
-        assertEquals(
-            "11:45 AM today has already passed. Did you mean tomorrow at 11:45 AM?",
-            TaskDetailEditSpeechRenderer.pastSameDayQuestion("11:45 AM")
-        )
-        assertEquals("What date and time would you like to use?", TaskDetailEditSpeechRenderer.askDateAndTime())
     }
 
     @Test

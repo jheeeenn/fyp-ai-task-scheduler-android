@@ -87,10 +87,6 @@ object TaskDetailEditSpeechRenderer {
         oldDate != newDate -> dateChanged(newDate)
         else -> timeChanged(newTime)
     }
-    fun pastSameDayQuestion(time: String): String =
-        "${com.example.myapplication.accessibility.TaskCardAccessibilitySemantics.spokenTime(time)} today has already passed. " +
-            "Did you mean tomorrow at ${com.example.myapplication.accessibility.TaskCardAccessibilitySemantics.spokenTime(time)}?"
-    fun askDateAndTime(): String = "What date and time would you like to use?"
     fun confirmSave(title: String): String = "Save changes to ${title.ifBlank { "this task" }}?"
     fun confirmHomeExit(): String =
         "You have unsaved changes. Would you like to save them before returning home?"
@@ -108,8 +104,6 @@ object TaskDetailEditSpeechRenderer {
             "I couldn't understand that date. What date would you like to use?"
         TaskDetailEditInteraction.WAITING_FOR_TIME ->
             "I couldn't understand that time. What time would you like to use?"
-        TaskDetailEditInteraction.WAITING_FOR_PAST_TIME_CONFIRMATION ->
-            error("Past-time confirmation repeats its guarded pending question")
         TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION ->
             "I didn't catch that. Would you like to save the changes?\n" +
                 "Please say yes, no, or cancel."

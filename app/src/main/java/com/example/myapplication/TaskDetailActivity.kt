@@ -87,7 +87,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var interactionRevision = -1L
     private var editInteractionGeneration = 0L
     private var pendingFieldClarification: String? = null
-    private var pendingPastTimeProposal: TaskDetailPastTimeProposal? = null
     private var pendingSaveClaim: TaskDetailSaveClaim? = null
     private var pendingExitAfterSave: (() -> Unit)? = null
     private var taskMutationInProgress = false
@@ -619,7 +618,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         editInteraction = interaction
         interactionRevision = draft.revision
         pendingFieldClarification = null
-        pendingPastTimeProposal = null
         pendingSaveClaim = null
         pendingExitAfterSave = null
         assistantSession.prepareForContextEntry()
@@ -730,7 +728,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingSaveClaim = claim
         pendingExitAfterSave = afterSave
         pendingFieldClarification = null
-        pendingPastTimeProposal = null
         assistantSession.prepareForContextEntry()
         assistantSession.startPassiveSession()
         assistantSession.expectConfirmation()
@@ -742,8 +739,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
             TaskDetailEditInteraction.WAITING_FOR_TITLE,
             TaskDetailEditInteraction.WAITING_FOR_DATE,
             TaskDetailEditInteraction.WAITING_FOR_TIME -> handleFieldResponse(text)
-            TaskDetailEditInteraction.WAITING_FOR_PAST_TIME_CONFIRMATION ->
-                handlePastTimeConfirmationResponse(text)
             TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION,
@@ -841,8 +836,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
                 pendingFieldClarification = proposal.question
                 assistantSession.speakThenListenAgain(proposal.question)
             }
-            is TaskDetailEditProposal.PastSameDayTime ->
-                beginPastTimeClarification(proposal.proposedTime, proposal.tomorrowDate)
             TaskDetailEditProposal.Cancel -> endLocalInteraction("Edit cancelled.")
             TaskDetailEditProposal.Unknown -> {
                 val question = pendingFieldClarification
@@ -884,8 +877,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
                 pendingFieldClarification = result.prompt
                 assistantSession.speakThenListenAgain(result.prompt)
             }
-            is TaskFieldEditResult.PastSameDayTime ->
-                beginPastTimeClarification(result.proposedTime, result.tomorrowDate)
             TaskFieldEditResult.PastSchedule -> {
                 val question = TaskDetailEditSpeechRenderer.pastScheduleRetry(editInteraction)
                 pendingFieldClarification = question
@@ -904,59 +895,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
     }
 
-    private fun beginPastTimeClarification(proposedTime: String, tomorrowDate: String) {
-        val draft = draftController?.draft ?: return
-        pendingPastTimeProposal = TaskDetailPastTimeProposal(
-            proposedTime = proposedTime,
-            tomorrowDate = tomorrowDate,
-            sourceDraftRevision = draft.revision,
-            interactionGeneration = editInteractionGeneration
-        )
-        editInteraction = TaskDetailEditInteraction.WAITING_FOR_PAST_TIME_CONFIRMATION
-        val question = TaskDetailEditSpeechRenderer.pastSameDayQuestion(proposedTime)
-        pendingFieldClarification = question
-        assistantSession.expectConfirmation()
-        assistantSession.speakThenListenAgain(question)
-    }
-
-    private fun handlePastTimeConfirmationResponse(text: String) {
-        when (TaskDetailPastTimeConfirmationResolver.resolve(text)) {
-            TaskDetailPastTimeConfirmationMove.APPLY_TOMORROW -> applyPendingTomorrowTime()
-            TaskDetailPastTimeConfirmationMove.ASK_DATE_AND_TIME -> {
-                val draft = draftController?.draft ?: return
-                pendingPastTimeProposal = null
-                editInteraction = TaskDetailEditInteraction.WAITING_FOR_TIME
-                interactionRevision = draft.revision
-                val question = TaskDetailEditSpeechRenderer.askDateAndTime()
-                pendingFieldClarification = question
-                assistantSession.speakThenListenAgain(question)
-            }
-            TaskDetailPastTimeConfirmationMove.CANCEL -> endLocalInteraction("Time edit cancelled.")
-            TaskDetailPastTimeConfirmationMove.REPEAT_QUESTION -> {
-                val question = pendingFieldClarification
-                    ?: return endLocalInteraction("That clarification is no longer current.")
-                assistantSession.expectConfirmation()
-                assistantSession.speakThenListenAgain(question)
-            }
-        }
-    }
-
-    private fun applyPendingTomorrowTime() {
-        val controller = draftController ?: return
-        val pending = pendingPastTimeProposal
-        if (pending == null || !pending.isCurrent(controller.draft.revision, editInteractionGeneration)) {
-            endLocalInteraction("That clarification is no longer current. Please try the edit again.")
-            return
-        }
-        applyValidatedFieldResult(
-            fieldResolver.resolveScheduleProposal(
-                dateText = pending.tomorrowDate,
-                timeText = pending.proposedTime,
-                draft = controller.draft
-            )
-        )
-    }
-
     private fun requestedField(interaction: TaskDetailEditInteraction): TaskDetailEditField? =
         when (interaction) {
             TaskDetailEditInteraction.WAITING_FOR_TITLE -> TaskDetailEditField.TITLE
@@ -972,8 +910,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
                 TaskDetailEditLocalCandidate.Schedule(result.dueDate, result.dueTime)
             is TaskFieldEditResult.NeedsClarification ->
                 TaskDetailEditLocalCandidate.Clarification(result.prompt)
-            is TaskFieldEditResult.PastSameDayTime ->
-                TaskDetailEditLocalCandidate.PastSameDayTime(result.proposedTime, result.tomorrowDate)
             TaskFieldEditResult.Invalid,
             TaskFieldEditResult.PastSchedule -> TaskDetailEditLocalCandidate.Invalid
         }
@@ -1200,7 +1136,6 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingSaveClaim = null
         pendingExitAfterSave = null
         pendingFieldClarification = null
-        pendingPastTimeProposal = null
     }
 
     override fun onAssistantCancelled() {

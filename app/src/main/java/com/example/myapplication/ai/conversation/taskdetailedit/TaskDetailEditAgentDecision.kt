@@ -28,10 +28,6 @@ sealed interface TaskDetailEditProposal {
         val timeText: String?
     ) : TaskDetailEditProposal
     data class Clarification(val question: String) : TaskDetailEditProposal
-    data class PastSameDayTime(
-        val proposedTime: String,
-        val tomorrowDate: String
-    ) : TaskDetailEditProposal
     data object Cancel : TaskDetailEditProposal
     data object Unknown : TaskDetailEditProposal
 }
@@ -43,10 +39,6 @@ sealed interface TaskDetailEditLocalCandidate {
         val dueTime: String?
     ) : TaskDetailEditLocalCandidate
     data class Clarification(val question: String) : TaskDetailEditLocalCandidate
-    data class PastSameDayTime(
-        val proposedTime: String,
-        val tomorrowDate: String
-    ) : TaskDetailEditLocalCandidate
     data object Invalid : TaskDetailEditLocalCandidate
 }
 

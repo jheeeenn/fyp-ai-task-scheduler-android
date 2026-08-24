@@ -99,6 +99,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var relativeTemporalAgent: AgentOrchestrator
     private var relativeTemporalSession: RelativeTemporalProposalSession? = null
     private var relativeTemporalCorrectionInFlight = false
+    private var relativeTemporalCorrectionGeneration = 0L
     private var initialProposalCrossedDateBoundary = false
     private var isEditSaveInFlight = false
     private var waitingForDeleteConfirmation = false
@@ -1033,11 +1034,15 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             return
         }
         val token = session.beginCorrection()
+        relativeTemporalCorrectionGeneration += 1L
+        val correctionGeneration = relativeTemporalCorrectionGeneration
         relativeTemporalCorrectionInFlight = true
         waitingForSaveConfirmation = false
         lifecycleScope.launch {
             try {
-                if (!authoritativeTaskStillMatches()) {
+                val authoritativeMatchesBeforeCorrection = authoritativeTaskStillMatches()
+                if (!session.isCurrent(token)) return@launch
+                if (!authoritativeMatchesBeforeCorrection) {
                     session.cancel()
                     speak("That task changed since this proposal was created. I did not save anything.")
                     return@launch
@@ -1047,7 +1052,9 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     correctionContext
                 )
                 if (!session.isCurrent(token)) return@launch
-                if (!authoritativeTaskStillMatches()) {
+                val authoritativeMatchesAfterCorrection = authoritativeTaskStillMatches()
+                if (!session.isCurrent(token)) return@launch
+                if (!authoritativeMatchesAfterCorrection) {
                     session.cancel()
                     speak("That task changed while I was checking the correction. I did not save anything.")
                     return@launch
@@ -1122,7 +1129,9 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     speak(RelativeTemporalSpeechRenderer.semanticClarification())
                 }
             } finally {
-                relativeTemporalCorrectionInFlight = false
+                if (correctionGeneration == relativeTemporalCorrectionGeneration) {
+                    relativeTemporalCorrectionInFlight = false
+                }
             }
         }
     }
@@ -1809,6 +1818,26 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingFieldTarget = EditFieldTarget.NONE
         relativeTemporalSession?.invalidatePendingCorrection()
         isForceStoppingAssistant = false
+    }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) {
+            relativeTemporalSession?.invalidatePendingCorrection()
+            relativeTemporalCorrectionGeneration += 1L
+            relativeTemporalCorrectionInFlight = false
+            assistantSession.stopForLifecycle()
+            waitingForSaveConfirmation = false
+            waitingForDeleteConfirmation = false
+            pendingFieldTarget = EditFieldTarget.NONE
+            pendingTemporalConstraint = null
+            pendingTemporalClarification = null
+            isForceStoppingAssistant = false
+            Log.d(
+                "EDIT_LIFECYCLE",
+                "state=STOPPED assistantSessionStopped=true temporalCorrectionInvalidated=true"
+            )
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {

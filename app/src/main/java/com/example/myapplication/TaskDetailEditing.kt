@@ -36,16 +36,6 @@ data class TaskDetailSaveClaim(
     val draft: EditableTaskDraft
 )
 
-data class TaskDetailPastTimeProposal(
-    val proposedTime: String,
-    val tomorrowDate: String,
-    val sourceDraftRevision: Long,
-    val interactionGeneration: Long
-) {
-    fun isCurrent(draftRevision: Long, generation: Long): Boolean =
-        sourceDraftRevision == draftRevision && interactionGeneration == generation
-}
-
 data class TaskDetailEditRequestGuard(
     val interaction: TaskDetailEditInteraction,
     val interactionGeneration: Long,
@@ -138,7 +128,6 @@ enum class TaskDetailEditInteraction {
     WAITING_FOR_TITLE,
     WAITING_FOR_DATE,
     WAITING_FOR_TIME,
-    WAITING_FOR_PAST_TIME_CONFIRMATION,
     WAITING_FOR_SAVE_CONFIRMATION,
     WAITING_FOR_HOME_CONFIRMATION,
     WAITING_FOR_BACK_CONFIRMATION,
@@ -165,31 +154,10 @@ object TaskDetailConfirmationInterpreter {
     }
 }
 
-enum class TaskDetailPastTimeConfirmationMove {
-    APPLY_TOMORROW,
-    ASK_DATE_AND_TIME,
-    CANCEL,
-    REPEAT_QUESTION
-}
-
-object TaskDetailPastTimeConfirmationResolver {
-    fun resolve(value: String): TaskDetailPastTimeConfirmationMove =
-        when (TaskDetailConfirmationInterpreter.interpret(value)) {
-            TaskDetailConfirmation.YES -> TaskDetailPastTimeConfirmationMove.APPLY_TOMORROW
-            TaskDetailConfirmation.NO -> TaskDetailPastTimeConfirmationMove.ASK_DATE_AND_TIME
-            TaskDetailConfirmation.CANCEL -> TaskDetailPastTimeConfirmationMove.CANCEL
-            TaskDetailConfirmation.UNCLEAR -> TaskDetailPastTimeConfirmationMove.REPEAT_QUESTION
-        }
-}
-
 sealed class TaskFieldEditResult {
     data class Title(val value: String) : TaskFieldEditResult()
     data class Schedule(val dueDate: String?, val dueTime: String?) : TaskFieldEditResult()
     data class NeedsClarification(val prompt: String) : TaskFieldEditResult()
-    data class PastSameDayTime(
-        val proposedTime: String,
-        val tomorrowDate: String
-    ) : TaskFieldEditResult()
     data object Invalid : TaskFieldEditResult()
     data object PastSchedule : TaskFieldEditResult()
 }
@@ -310,14 +278,6 @@ class TaskFieldEditResolver(
             }
         }
 
-        if (dateText.isNullOrBlank() && !timeText.isNullOrBlank() &&
-            isToday(candidateDate, now) && isAtOrBeforeNow(candidateDate, candidateTime, now)
-        ) {
-            return TaskFieldEditResult.PastSameDayTime(
-                proposedTime = requireNotNull(candidateTime),
-                tomorrowDate = formatDate(clone(now).apply { add(Calendar.DAY_OF_MONTH, 1) })
-            )
-        }
         return checkedSchedule(candidateDate, candidateTime, now)
     }
 
@@ -355,14 +315,6 @@ class TaskFieldEditResolver(
             is TemporalPolicyResult.InvalidPastSchedule -> TaskFieldEditResult.PastSchedule
             else -> TaskFieldEditResult.Schedule(dueDate.clean(), dueTime.clean())
         }
-    }
-
-    private fun isToday(date: String?, now: Calendar): Boolean =
-        date == formatDate(now)
-
-    private fun isAtOrBeforeNow(date: String?, time: String?, now: Calendar): Boolean {
-        val proposed = parseSchedule(date, time, now) ?: return false
-        return proposed.timeInMillis <= now.timeInMillis
     }
 
     private fun relativeOffset(text: String, pattern: Regex): Int? {

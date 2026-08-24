@@ -458,4 +458,30 @@ class CreateTaskActivitySourceTest {
             "private fun isNo"
         ).forEach { removed -> assertFalse(source.contains(removed)) }
     }
+
+    @Test
+    fun lifecycleStopInvalidatesAssistantWorkWithoutClearingNativeDraft() {
+        val onStop = source
+            .substringAfter("override fun onStop()")
+            .substringBefore("private fun clearTransientCreateAssistantState")
+        val transientClear = source
+            .substringAfter("private fun clearTransientCreateAssistantState")
+            .substringBefore("override fun onAssistantTypedInputRequested")
+
+        assertTrue(onStop.contains("if (!isChangingConfigurations)"))
+        assertTrue(onStop.contains("invalidateCreateDraftResolution()"))
+        assertTrue(onStop.contains("assistantSession.stopForLifecycle()"))
+        assertTrue(onStop.contains("clearTransientCreateAssistantState()"))
+        assertTrue(
+            onStop.indexOf("invalidateCreateDraftResolution()") <
+                onStop.indexOf("assistantSession.stopForLifecycle()")
+        )
+        assertTrue(transientClear.contains("dialogState = CreateTaskDialogState.IDLE"))
+        assertFalse(transientClear.contains("etTaskTitle.setText"))
+        assertFalse(transientClear.contains("selectedDate ="))
+        assertFalse(transientClear.contains("selectedTime ="))
+        assertFalse(transientClear.contains("pendingTaskState.clear()"))
+        assertFalse(onStop.contains("isSavingTask = false"))
+        assertFalse(onStop.contains("isCreateTaskExitPending = false"))
+    }
 }
