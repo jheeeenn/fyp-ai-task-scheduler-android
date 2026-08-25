@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation
 
 import android.util.Log
+import com.example.myapplication.ai.TaskQueryPresentation
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetDecision
@@ -22,7 +23,9 @@ class ConversationOrchestrator(
     private val responseParser: ConversationResponseParser = ConversationResponseParser(),
     private val memory: ConversationSessionMemory = ConversationSessionMemory(),
     private val responseVerbalizationParser: ResponseVerbalizationParser =
-        ResponseVerbalizationParser()
+        ResponseVerbalizationParser(),
+    private val noContextMutationRepairParser: NoContextMutationRepairParser =
+        NoContextMutationRepairParser()
 ) {
     suspend fun styleTaskQuerySpeech(
         plan: TaskQuerySpeechPlan,
@@ -311,11 +314,17 @@ class ConversationOrchestrator(
                 failureCode = failureCode,
                 failedRoute = failedRoute
             )
-            val repairedDecision = parseCanonicalDecision(
-                rawContent = repairContent,
-                source = SOURCE_SCHEMA_REPAIR
-            )
-            validateRepairProfileResult(repairProfile, repairedDecision)
+            val repairedDecision = when (repairProfile) {
+                ConversationRepairProfile.GENERAL -> parseCanonicalDecision(
+                    rawContent = repairContent,
+                    source = SOURCE_SCHEMA_REPAIR
+                )
+                ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR ->
+                    parseNoContextMutationRepair(
+                        rawContent = repairContent,
+                        normalizedText = normalizedText
+                    )
+            }
             validateOperationalBreakdownRouting(normalizedText, repairedDecision)
             validateContextReadAuthority(
                 decision = repairedDecision,
@@ -526,20 +535,34 @@ class ConversationOrchestrator(
         else -> FAILURE_CODE_UNEXPECTED
     }
 
-    private fun validateRepairProfileResult(
-        repairProfile: ConversationRepairProfile,
-        decision: ConversationDecision
-    ) {
-        if (repairProfile != ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR) return
-        if (
-            decision.route == ConversationRoute.TASK_COMMAND ||
-            decision.route == ConversationRoute.ASK_CLARIFICATION
-        ) {
-            return
+    private fun parseNoContextMutationRepair(
+        rawContent: String,
+        normalizedText: String
+    ): ConversationDecision {
+        val compactDecision = noContextMutationRepairParser.parse(rawContent)
+        val route = when (compactDecision.move) {
+            NoContextMutationRepairMove.TASK_COMMAND -> ConversationRoute.TASK_COMMAND
+            NoContextMutationRepairMove.ASK_CLARIFICATION ->
+                ConversationRoute.ASK_CLARIFICATION
         }
-        throw ConversationSchemaException(
-            message = "No-context mutation repair returned a forbidden route",
-            failedRoute = decision.route
+        return ConversationDecision(
+            route = route,
+            taskText = if (route == ConversationRoute.TASK_COMMAND) normalizedText else "",
+            reply = if (route == ConversationRoute.ASK_CLARIFICATION) {
+                compactDecision.reply
+            } else {
+                ""
+            },
+            contextRef = "",
+            contextDetail = ConversationContextDetail.NONE,
+            contextAction = ConversationContextAction.NONE,
+            settingAction = ConversationSettingAction.NONE,
+            settingTarget = ConversationSettingTarget.NONE,
+            queryReadingMove = ConversationQueryReadingMove.NONE,
+            queryPresentationHint = TaskQueryPresentation.NONE,
+            confidence = compactDecision.confidence,
+            listenAgain = true,
+            source = SOURCE_SCHEMA_REPAIR
         )
     }
 

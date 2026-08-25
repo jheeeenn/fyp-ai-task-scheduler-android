@@ -272,32 +272,14 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "no_context_mutation_repair",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "ASK_CLARIFICATION"))
-                put("task_text", stringType())
+                put("move", stringEnum("TASK_COMMAND", "ASK_CLARIFICATION"))
                 put("reply", stringType())
-                put("context_ref", stringEnum(""))
-                put("context_detail", stringEnum("NONE"))
-                put("context_action", stringEnum("NONE"))
-                put("setting_action", stringEnum("NONE"))
-                put("setting_target", stringEnum("NONE"))
-                put("query_reading_move", stringEnum("NONE"))
-                put("query_presentation_hint", stringEnum("NONE"))
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
-                put("listen_again", booleanType())
             },
             required = JSONArray().apply {
-                put("route")
-                put("task_text")
+                put("move")
                 put("reply")
-                put("context_ref")
-                put("context_detail")
-                put("context_action")
-                put("setting_action")
-                put("setting_target")
-                put("query_reading_move")
-                put("query_presentation_hint")
                 put("confidence")
-                put("listen_again")
             }
         )
     }

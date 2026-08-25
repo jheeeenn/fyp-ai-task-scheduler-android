@@ -480,7 +480,7 @@ $snapshotJson
         } else if (kind == RequestKind.NO_CONTEXT_MUTATION_REPAIR) {
             Log.d(
                 "NO_CONTEXT_MUTATION_REPAIR",
-                "state=REQUESTED allowedRoutes=TASK_COMMAND,ASK_CLARIFICATION"
+                "state=REQUESTED"
             )
         } else if (kind == RequestKind.CONTEXT_READ_REPAIR || kind == RequestKind.CONTEXT_ACTION_REPAIR) {
             Log.d("CONVO_CONTEXT_REPAIR_SCHEMA", "Strict bounded context repair schema enabled")
@@ -565,6 +565,14 @@ $snapshotJson
                 val finishReason =
                     choice.optString("finish_reason", "")
 
+                if (kind == RequestKind.NO_CONTEXT_MUTATION_REPAIR) {
+                    Log.d(
+                        "NO_CONTEXT_MUTATION_REPAIR",
+                        "finishReason=$finishReason responseChars=${body.length} " +
+                            "contentChars=${content.length}"
+                    )
+                }
+
                 if (kind == RequestKind.ROUTINE_FOLLOW_UP_MOVE) {
                     DebugDiagnosticLog.longEvent(
                         "ROUTINE_MOVE_AGENT_RAW",
@@ -636,7 +644,7 @@ $snapshotJson
         const val RESPONSE_TEMPERATURE = 0.35
         const val RESPONSE_MAX_TOKENS = 128
         const val RESPONSE_VERBALIZATION_TIMEOUT_SECONDS = 5L
-        const val NO_CONTEXT_MUTATION_REPAIR_MAX_TOKENS = 128
+        const val NO_CONTEXT_MUTATION_REPAIR_MAX_TOKENS = 96
         const val CONTEXT_READ_REPAIR_MAX_TOKENS = 160
         const val CONTEXT_ACTION_REPAIR_MAX_TOKENS = 180
         const val QUERY_COUNT_FOLLOW_UP_MAX_TOKENS = 48
@@ -994,37 +1002,33 @@ other than the required four-field JSON object.
         internal val NO_CONTEXT_MUTATION_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded routing repair after Android rejected CONTEXT_ACTION.
 
-Android has already proven that no supplied temporary task refs and no validated task focus exist.
-Therefore CONTEXT_ACTION is impossible.
+Android has already proven CONTEXT_ACTION is impossible because there are no supplied task refs
+and no validated task focus.
 
-Return only the required twelve-field ConversationDecision JSON.
-Allowed routes are TASK_COMMAND and ASK_CLARIFICATION only.
+Decide only one semantic move:
 
 Use TASK_COMMAND when the current utterance clearly names or otherwise explicitly identifies the
 task operation for normal Task Agent processing. Examples:
-- "Reschedule evaluation to 29th August at 4 PM" -> TASK_COMMAND
-- "Change the take medicine task to tomorrow" -> TASK_COMMAND
+- "Reschedule evaluation to tomorrow" -> TASK_COMMAND
 - "Delete buy groceries" -> TASK_COMMAND
-- "Mark take medicine complete" -> TASK_COMMAND
-- "Reopen take medicine" -> TASK_COMMAND
+- "Update take medicine" -> TASK_COMMAND
+- "Mark assignment complete" -> TASK_COMMAND
+- "Reopen dentist appointment" -> TASK_COMMAND
 
 Use ASK_CLARIFICATION when the request depends on unavailable context. Examples:
-- "delete this"
 - "move it"
+- "delete this"
 - "update that one"
 - "mark this done"
-With no supplied task context and no validated focus, each requires ASK_CLARIFICATION.
 
-For both allowed routes, context_ref must be empty and context_detail, context_action,
-setting_action, setting_target, query_reading_move, and query_presentation_hint must be NONE.
-For TASK_COMMAND, Android will replace task_text with the complete original normalized utterance;
-model-generated task_text is not trusted. For ASK_CLARIFICATION, keep task_text empty and put only
-a concise clarification question in reply.
-
-Never invent T1, T2, Room IDs, task titles, or task facts.
+For TASK_COMMAND, reply must be empty.
+For ASK_CLARIFICATION, reply must be one concise clarification question.
+Never invent a task title, temporary ref, Room ID, task fact, date, time, or result.
 Do not answer the operation and do not execute anything.
 Never claim that a task was changed, rescheduled, deleted, completed, or reopened.
-Do not output markdown, explanations, task-agent fields, or any route other than the two allowed routes.
+Return only the compact JSON fields move, reply, and confidence.
+Do not output task_text, context fields, setting fields, query fields, listen_again, task-agent
+fields, markdown, explanations, or any move other than TASK_COMMAND or ASK_CLARIFICATION.
 """.trimIndent()
         internal val CONTEXT_READ_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded semantic repair after the primary routing interpretation abstained.
