@@ -68,6 +68,20 @@ open class LaptopAgentClient(
             )
         }
 
+    open suspend fun processTitleRenameRepair(normalizedText: String): String =
+        withContext(Dispatchers.IO) {
+            execute(
+                normalizedText = normalizedText,
+                systemPrompt = TITLE_RENAME_REPAIR_SYSTEM_PROMPT,
+                responseFormat = AgentResponseSchemas.titleRenameRepairResponseFormat(),
+                boundedContextAction = false,
+                boundedRoutineExtraction = false,
+                boundedTitleRenameRepair = true,
+                maxOutputTokens = 160,
+                requestClient = boundedTemporalClient
+            )
+        }
+
     open suspend fun processRoutine(normalizedText: String): String =
         withContext(Dispatchers.IO) {
             execute(
@@ -182,6 +196,7 @@ open class LaptopAgentClient(
         boundedRoutineExtraction: Boolean,
         boundedBreakdownFollowUp: Boolean = false,
         boundedRescheduleRepair: Boolean = false,
+        boundedTitleRenameRepair: Boolean = false,
         maxOutputTokens: Int = 512,
         requestClient: OkHttpClient = client
     ): String {
@@ -203,7 +218,9 @@ open class LaptopAgentClient(
             })
         }
 
-        if (boundedRescheduleRepair) {
+        if (boundedTitleRenameRepair) {
+            Log.d("TASK_ACTION_REPAIR", "expectedAction=UPDATE_TASK repairType=TITLE_RENAME result=REQUESTED")
+        } else if (boundedRescheduleRepair) {
             Log.d("TASK_ACTION_REPAIR", "expectedAction=RESCHEDULE_TASK result=REQUESTED")
         } else if (boundedBreakdownFollowUp) {
             Log.d("BREAKDOWN_FOLLOW_UP_SCHEMA", "Strict bounded follow-up schema enabled")
@@ -226,7 +243,9 @@ open class LaptopAgentClient(
         return try {
             requestClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                if (boundedRescheduleRepair) {
+                if (boundedTitleRenameRepair) {
+                    Log.d("TASK_ACTION_REPAIR", "repairType=TITLE_RENAME http=${response.code} responseChars=${body.length}")
+                } else if (boundedRescheduleRepair) {
                     Log.d("TASK_ACTION_REPAIR", "http=${response.code} responseChars=${body.length}")
                 } else if (boundedBreakdownFollowUp) {
                     Log.d(
@@ -554,6 +573,16 @@ Return ONLY target_task_title, new_date, new_time, confidence, need_clarificatio
 There is no action choice: Android constructs RESCHEDULE_TASK only after validating this extraction.
 Never create a task, choose a database task, invent task facts/IDs/refs, or claim execution.
 """.trimIndent()
+        internal val TITLE_RENAME_REPAIR_SYSTEM_PROMPT = """
+Perform one bounded explicit task-title rename extraction from the COMPLETE normalized request.
+Extract target_task_title as the EXISTING named task and replacement_title as ONLY the requested
+new title. Example: "I want the rent payment to be called Pay Rent instead" ->
+target_task_title="rent payment", replacement_title="Pay Rent", confidence=0.95,
+need_clarification=false. "Rename Read Book to Evening Reading" -> target_task_title="Read Book",
+replacement_title="Evening Reading". If either title is unclear, require clarification; never guess.
+Return only target_task_title, replacement_title, confidence, need_clarification.
+Never choose a Room task, output IDs/refs, introduce schedule changes, or claim execution.
+""".trimIndent()
         internal val SYSTEM_PROMPT = """
 Current command semantics take precedence over prior conversation.
 Explicit contrasts:
@@ -563,6 +592,13 @@ Explicit contrasts:
 - "I haven't finished Buy Milk after all." -> action=MARK_UNDONE, target_task_title="Buy Milk".
 - "Buy Milk is not complete yet" -> action=MARK_UNDONE, target_task_title="Buy Milk".
 - "I've finished Buy Milk." -> action=MARK_DONE, target_task_title="Buy Milk".
+- "I want the rent payment to be called Pay Rent instead." -> action=UPDATE_TASK,
+  target_task_title="rent payment", task_title="Pay Rent", new_date="", new_time="".
+- "Rename Read Book to Evening Reading." -> action=UPDATE_TASK,
+  target_task_title="Read Book", task_title="Evening Reading".
+- "Create a task called Pay Rent." -> action=CREATE_TASK.
+- "Remind me to Pay Rent tomorrow." -> action=CREATE_TASK.
+- "Move Pay Rent to tomorrow." -> action=RESCHEDULE_TASK.
 
 You are a strict JSON task-command parser for an Android task scheduling app.
 
@@ -604,7 +640,13 @@ exclude scheduling phrases from the title. In "remind me to ...", the meaningful
 "to" is normally the task title. In "remind me about ...", the meaningful subject after "about"
 is normally the task title. Do not drop clear content merely because the request is phrased as a
 reminder, and do not invent content when none was supplied.
-For RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, put the existing task name in target_task_title and keep task_title empty.
+For UPDATE_TASK, put the existing task name in target_task_title. Only for an explicit title/name
+change, put ONLY the new replacement title in task_title. For UPDATE_TASK without a title change,
+task_title may remain empty.
+For a pure title rename, leave date, time, target_date, target_time, new_date, new_time, recurrence,
+and priority empty. Do not introduce an unrelated schedule mutation.
+For RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, put the existing task name in
+target_task_title and keep task_title empty.
 For QUERY_TASK, keep task_title and target_task_title empty unless the user asks about one specific task.
 For QUERY_TASK, query_presentation must describe how Android should present the matching tasks:
 - COUNT_ONLY only for an explicit existence or count-only question.

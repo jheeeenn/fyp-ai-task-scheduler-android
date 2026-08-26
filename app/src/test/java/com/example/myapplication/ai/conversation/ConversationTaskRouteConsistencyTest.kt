@@ -11,6 +11,67 @@ import org.junit.Test
 
 class ConversationTaskRouteConsistencyTest {
     @Test
+    fun namedRenamesRepairContradictoryRoutesWithCompleteOriginalText() = runBlocking {
+        listOf(
+            "I want the rent payment to be called Pay Rent instead.",
+            "Rename Rent Payment to Pay Rent.",
+            "Change the name of Rent Payment to Pay Rent.",
+            "Change Rent Payment's name to Pay Rent."
+        ).forEach { text ->
+            listOf(ConversationRoute.DIRECT_REPLY, ConversationRoute.ASK_CLARIFICATION,
+                ConversationRoute.CONTEXT_AWARE_SUGGESTION, ConversationRoute.DAILY_BRIEFING
+            ).forEach { route ->
+                val client = Client(route)
+                assertTaskCommand(text, orchestrator(client).process(text, ""))
+                assertEquals("NAMED_RENAME_MUTATION_MISROUTED", client.failure)
+                assertEquals(route, client.failedRoute)
+                assertEquals(text, client.repairText)
+                assertEquals(1, client.compactCalls)
+                assertEquals(0, client.generalCalls)
+            }
+        }
+    }
+
+    @Test
+    fun renameQuestionsCreationAndDeicticRequestsNeverInventNamedTargets() = runBlocking {
+        listOf("Can I rename tasks?", "How do I rename a task?", "What does rename do?",
+            "I want to create a task called Pay Rent.", "Create a task named Pay Rent.",
+            "Call Doctor", "Rename it to Pay Rent.", "Rename Rent Payment to",
+            "Rename the task to Pay Rent", "Rename Rent Payment to it",
+            "I want to create a task to be called Pay Rent instead",
+            "I want Rent Payment to be called instead",
+            "Rename Rent Payment to Pay Rent and move it to tomorrow"
+        ).forEach { text ->
+            assertFalse(text, TaskCommandContradictionDetector.isNamedTaskRename(text))
+            val route = if (text.contains("create", true)) ConversationRoute.TASK_COMMAND
+                else ConversationRoute.DIRECT_REPLY
+            val client = Client(route)
+            val decision = orchestrator(client).process(text, "")
+            assertEquals(route, decision.route)
+            assertEquals(0, client.compactCalls)
+            assertEquals("", decision.contextRef)
+        }
+        val text = "Rename Rent Payment to Pay Rent."
+        val correct = Client(ConversationRoute.TASK_COMMAND)
+        assertEquals(text, orchestrator(correct).process(text, "").taskText)
+        assertEquals(0, correct.compactCalls)
+    }
+
+    @Test
+    fun renamePromptContrastsAndBoundedContractAreExplicit() {
+        val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
+        assertTrue(prompt.contains("\"I want the rent payment to be called Pay Rent instead.\" -> TASK_COMMAND"))
+        assertTrue(prompt.contains("\"Can I rename tasks?\" -> DIRECT_REPLY"))
+        assertTrue(prompt.contains("\"How do I rename a task?\" -> DIRECT_REPLY"))
+        assertTrue(prompt.contains("TASK_COMMAND for creation, not rename"))
+        assertTrue(prompt.contains("Current user command semantics take precedence over prior conversational memory"))
+        val repair = ConversationAgentClient.TASK_COMMAND_ROUTE_REPAIR_SYSTEM_PROMPT
+        assertTrue(repair.contains("existing target and replacement title"))
+        assertTrue(repair.contains("\"Rename Rent Payment to Pay Rent\" -> TASK_COMMAND"))
+        assertTrue(repair.contains("Return only move, reply, confidence"))
+    }
+
+    @Test
     fun differentDateTaskQueriesUseOneCompactRepair() = runBlocking {
         listOf(
             "Do I have anything planned for 28 August?",

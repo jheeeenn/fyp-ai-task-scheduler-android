@@ -509,6 +509,19 @@ object AgentResponseSchemas {
         ))
     )
 
+    fun titleRenameRepairResponseFormat(): JSONObject = responseFormat(
+        name = "title_rename_repair",
+        properties = JSONObject().apply {
+            put("target_task_title", stringType())
+            put("replacement_title", stringType())
+            put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            put("need_clarification", booleanType())
+        },
+        required = JSONArray(listOf(
+            "target_task_title", "replacement_title", "confidence", "need_clarification"
+        ))
+    )
+
     fun taskAgentResponseFormat(): JSONObject {
         return responseFormat(
             name = "task_agent_response",

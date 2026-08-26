@@ -24,6 +24,15 @@ internal object TaskCommandContradictionDetector {
     private val scheduleChange = Regex(
         """^${REQUEST}(?:move|reschedule|postpone) (.+?) (?:over )?(?:to|for|until) (.+)$"""
     )
+    private val namedRenames = listOf(
+        Regex("""^i want (?:the )?(.+?) to be called (.+?)(?: instead)?$"""),
+        Regex("""^${REQUEST}rename (.+?) to (.+)$"""),
+        Regex("""^${REQUEST}change the name of (.+?) to (.+)$"""),
+        Regex("""^${REQUEST}change (.+?)(?:'s|s') name to (.+)$""")
+    )
+    private val additionalRenameOperation = Regex(
+        """\b(?:and|then) (?:move|reschedule|postpone|change|delete|add|create|mark)\b"""
+    )
     private val contextualOrGenericTarget = Regex(
         """^(?:it|this|that|these|those|them|something|anything|everything|nothing|myself|my day|my work|a new|new|what|how|why|when|whether|if)\b|^(?:(?:the|a|my|any|all(?: my)?|some) )?tasks?$|^(?:yet|after all|again|please)$"""
     )
@@ -51,8 +60,21 @@ internal object TaskCommandContradictionDetector {
         ).takeIf { it.hasDestinationDate || it.hasDestinationTime }
     }
 
+    fun isNamedTaskRename(text: String): Boolean = namedRenames.any { pattern ->
+        val match = pattern.matchEntire(normalize(text)) ?: return@any false
+        hasNamedEvidence(match.groupValues[1]) && hasReplacementEvidence(match.groupValues[2]) &&
+            !match.groupValues[1].startsWith("to ") &&
+            !additionalRenameOperation.containsMatchIn(match.value)
+    }
+
     private fun hasNamedEvidence(candidate: String): Boolean =
         candidate.any(Char::isLetter) && !contextualOrGenericTarget.containsMatchIn(candidate)
+
+    private fun hasReplacementEvidence(candidate: String): Boolean =
+        candidate.any(Char::isLetter) && candidate !in setOf(
+            "it", "this", "that", "something", "anything", "something else", "instead",
+            "please", "a task", "the task", "task"
+        )
 
     private fun normalize(text: String): String = text.lowercase(Locale.ROOT)
         .replace('’', '\'')

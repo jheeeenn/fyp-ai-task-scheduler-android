@@ -80,6 +80,19 @@ class AgentOrchestrator(
             val rawContent = laptopAgentClient.process(normalizedText)
             val agentResponse = taskAgentResponseParser.parse(rawContent)
             val normalizedCommand = taskActionNormalizer.normalize(agentResponse)
+            val namedRename = TaskCommandContradictionDetector.isNamedTaskRename(normalizedText)
+            if (namedRename && !isCompletePureTitleRename(normalizedCommand)) {
+                val reason = if (
+                    normalizedCommand.intent == AiIntent.UPDATE_TASK.name &&
+                    normalizedCommand.taskTitle.isNullOrBlank()
+                ) "MISSING_REPLACEMENT_TITLE" else "CONTRADICTORY_PRIMARY_RESULT"
+                Log.d(
+                    "TASK_ACTION_GUARD",
+                    "inputCategory=EXISTING_TASK_TITLE_CHANGE " +
+                        "primaryAction=${normalizedCommand.intent} result=REPAIR_REQUIRED reason=$reason"
+                )
+                return repairTitleRename(normalizedText)
+            }
             val scheduleChange = if (normalizedCommand.intent == AiIntent.CREATE_TASK.name) {
                 TaskCommandContradictionDetector.scheduleChangeEvidence(normalizedText)
             } else null
@@ -120,6 +133,35 @@ class AgentOrchestrator(
     } catch (e: Exception) {
         Log.d("TASK_ACTION_REPAIR", "expectedAction=RESCHEDULE_TASK result=REJECTED")
         throw e // process() supplies the existing safe TaskAgentProcessingException; no CREATE fallback.
+    }
+
+    private fun isCompletePureTitleRename(command: AiParsedCommand): Boolean =
+        command.intent == AiIntent.UPDATE_TASK.name &&
+            !command.needsClarification && command.missingFields.isEmpty() &&
+            !command.targetTaskTitle.isNullOrBlank() &&
+            !command.taskTitle.isNullOrBlank() &&
+            command.dateText.isNullOrBlank() && command.timeText.isNullOrBlank() &&
+            command.targetDateText.isNullOrBlank() && command.targetTimeText.isNullOrBlank() &&
+            command.newDateText.isNullOrBlank() && command.newTimeText.isNullOrBlank() &&
+            command.recurrence.isNullOrBlank() && command.priority.isNullOrBlank()
+
+    private suspend fun repairTitleRename(normalizedText: String): AiParsedCommand = try {
+        val raw = laptopAgentClient.processTitleRenameRepair(normalizedText)
+        val response = taskAgentResponseParser.parse(TitleRenameRepairParser.toTaskAgentJson(raw))
+        val command = actionValidator.validate(taskActionNormalizer.normalize(response))
+        Log.d(
+            "TASK_ACTION_REPAIR",
+            "expectedAction=UPDATE_TASK repairType=TITLE_RENAME result=ACCEPTED"
+        )
+        command
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.d(
+            "TASK_ACTION_REPAIR",
+            "expectedAction=UPDATE_TASK repairType=TITLE_RENAME result=REJECTED"
+        )
+        throw e
     }
 
     suspend fun processContextAction(

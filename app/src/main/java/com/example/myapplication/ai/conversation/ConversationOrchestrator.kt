@@ -551,6 +551,13 @@ class ConversationOrchestrator(
                 ConversationRoute.DIRECT_REPLY
             ) && TaskCommandContradictionDetector.isNamedCompletionReversal(text) ->
                 ConversationDecisionFailureCode.NAMED_COMPLETION_MUTATION_MISROUTED
+            decision.route in setOf(
+                ConversationRoute.DIRECT_REPLY,
+                ConversationRoute.CONTEXT_AWARE_SUGGESTION,
+                ConversationRoute.DAILY_BRIEFING,
+                ConversationRoute.ASK_CLARIFICATION
+            ) && TaskCommandContradictionDetector.isNamedTaskRename(text) ->
+                ConversationDecisionFailureCode.NAMED_RENAME_MUTATION_MISROUTED
             else -> return
         }
         Log.d(
@@ -763,7 +770,8 @@ class ConversationOrchestrator(
     private companion object {
         val TASK_ROUTE_CONTRADICTIONS = setOf(
             ConversationDecisionFailureCode.TEMPORAL_TASK_QUERY_MISROUTED.name,
-            ConversationDecisionFailureCode.NAMED_COMPLETION_MUTATION_MISROUTED.name
+            ConversationDecisionFailureCode.NAMED_COMPLETION_MUTATION_MISROUTED.name,
+            ConversationDecisionFailureCode.NAMED_RENAME_MUTATION_MISROUTED.name
         )
         const val SOURCE_CONVERSATION_AGENT = "conversation_agent"
         const val SOURCE_SCHEMA_REPAIR = "conversation_agent_schema_repair"

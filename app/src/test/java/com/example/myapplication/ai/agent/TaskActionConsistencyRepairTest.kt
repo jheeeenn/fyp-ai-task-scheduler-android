@@ -1,8 +1,10 @@
 package com.example.myapplication.ai.agent
 
 import com.example.myapplication.ai.AiIntent
+import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskCommandContradictionDetector
 import com.example.myapplication.ai.schema.AgentResponseSchemas
+import com.example.myapplication.isTitlePrefillChanged
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -13,6 +15,130 @@ import java.io.File
 import java.io.IOException
 
 class TaskActionConsistencyRepairTest {
+    @Test
+    fun correctNamedRenameKeepsBothTitlesWithoutRepair() = runBlocking {
+        val client = Client(primary("UPDATE_TASK", "rent payment").put("task_title", "Pay Rent").toString())
+        assertRename(orchestrator(client).process(CU04))
+        assertEquals(0, client.renameRepairCalls)
+        assertEquals(0, client.repairCalls)
+    }
+
+    @Test
+    fun namedRenameContradictionsReextractOnceWithoutAcceptingPrimaryFields() = runBlocking {
+        val invalidPrimaries = mutableListOf(
+            primary("CREATE_TASK", "Pay Rent"),
+            primary("UPDATE_TASK", "rent payment"),
+            primary("UPDATE_TASK", "").put("task_title", "Pay Rent"),
+            primary("DELETE_TASK", "rent payment"),
+            primary("UNKNOWN", "rent payment")
+        )
+        listOf("date", "time", "target_date", "target_time", "new_date", "new_time",
+            "recurrence", "priority").forEach { field ->
+            invalidPrimaries += primary("UPDATE_TASK", "rent payment").put("task_title", "Pay Rent")
+                .put(field, when (field) { "recurrence" -> "DAILY"; "priority" -> "HIGH"; else -> "tomorrow" })
+        }
+        invalidPrimaries.forEach { primary ->
+            val client = Client(primary.toString())
+            assertRename(orchestrator(client).process(CU04))
+            assertEquals(CU04, client.renameRepairText)
+            assertEquals(1, client.primaryCalls)
+            assertEquals(1, client.renameRepairCalls)
+            assertEquals(0, client.repairCalls)
+        }
+    }
+
+    @Test
+    fun failedRenameRepairNeverFallsBackToCreateOrIncompleteUpdate() = runBlocking {
+        val invalidRepairs = listOf("", "{", renameRepair().toString() + " trailing",
+            renameRepair().put("confidence", 0.79).toString(),
+            renameRepair().put("confidence", 1.1).toString(),
+            renameRepair().put("confidence", "0.95").toString(),
+            renameRepair().put("target_task_title", "").toString(),
+            renameRepair().put("replacement_title", " ").toString(),
+            renameRepair().put("replacement_title", 7).toString(),
+            renameRepair().put("need_clarification", true).toString(),
+            renameRepair().put("need_clarification", "false").toString(),
+            renameRepair().put("task_id", 12).toString(),
+            renameRepair().put("new_date", "tomorrow").toString(),
+            renameRepair().put("action", "CREATE_TASK").toString())
+        listOf(primary("CREATE_TASK", "Pay Rent"), primary("UPDATE_TASK", "rent payment"))
+            .forEach { primary -> invalidRepairs.forEach { raw ->
+                val client = Client(primary.toString(), renameRepaired = raw)
+                assertTrue(runCatching { orchestrator(client).process(CU04) }.exceptionOrNull()
+                    is TaskAgentProcessingException)
+                assertEquals(1, client.renameRepairCalls)
+                assertEquals(0, client.repairCalls)
+            } }
+        val timeout = Client(primary("CREATE_TASK", "Pay Rent").toString(), failure = IOException("timeout"))
+        assertTrue(runCatching { orchestrator(timeout).process(CU04) }.exceptionOrNull() is TaskAgentProcessingException)
+        assertEquals(1, timeout.renameRepairCalls)
+        val cancelled = Client(primary("CREATE_TASK", "Pay Rent").toString(), failure = CancellationException())
+        assertTrue(runCatching { orchestrator(cancelled).process(CU04) }.exceptionOrNull() is CancellationException)
+    }
+
+    @Test
+    fun repairedRenameUsesExistingHomeMatcherAndEditTitleConfirmation() = runBlocking {
+        val command = orchestrator(Client(primary("CREATE_TASK", "Pay Rent").toString())).process(CU04)
+        assertRename(command)
+        assertTrue(isTitlePrefillChanged(command.taskTitle, "rent payment"))
+        val home = File("src/main/java/com/example/myapplication/HomeActivity.kt").readText()
+        val branch = home.substringAfter("AiIntent.UPDATE_TASK.name -> {")
+            .substringBefore("// reschedule task")
+        listOf("findTaskMatchResult(spokenPhrase, tasks)", "matchResult.isAmbiguous",
+            "askTaskMatchClarification(", "proposedTitle = aiResult.taskTitle",
+            "ExecutionOutcome.NOT_FOUND", "TaskCompletionFilter.ACTIVE_ONLY",
+            "putExtra(\"task_id\", matchedTask.id)", "putExtra(\"task_title\", matchedTask.title)",
+            "putExtra(\"prefill_title\", aiResult.taskTitle)", "putExtra(\"opened_by_assistant\", true)"
+        ).forEach { assertTrue(it, branch.contains(it)) }
+        val phrase = home.substringAfter("private fun extractSpokenTaskPhrase(")
+        assertTrue(phrase.contains("return aiResult.targetTaskTitle"))
+        assertTrue(phrase.indexOf("aiResult.targetTaskTitle") < phrase.indexOf("aiResult.taskTitle"))
+        assertTrue(home.contains("TaskMatcher.findBestTaskMatch(spokenTitle, tasks)"))
+        val edit = File("src/main/java/com/example/myapplication/EditTaskActivity.kt").readText()
+        assertTrue(edit.contains("etTaskTitle.setText(prefillTitle)"))
+        assertTrue(edit.contains("val hasPendingPrefillChange = titlePrefillChanged || temporalChanged"))
+        assertTrue(edit.contains("hasPendingPrefillChange -> askToSaveChanges()"))
+        assertTrue(edit.contains("if (dateText.isNullOrBlank() && timeText.isNullOrBlank()) return false"))
+        assertTrue(edit.contains("waitingForSaveConfirmation = true"))
+        listOf("ai/agent/TitleRenameRepairParser.kt", "ai/agent/AgentOrchestrator.kt").forEach { path ->
+            val source = File("src/main/java/com/example/myapplication/$path").readText()
+            listOf("TaskMatcher", "taskDao", "AppDatabase", "startActivity", "EditTaskActivity")
+                .forEach { assertFalse(source.contains(it)) }
+        }
+    }
+
+    @Test
+    fun renameSchemaAndPromptSeparateExistingAndReplacementTitles() {
+        val schema = AgentResponseSchemas.titleRenameRepairResponseFormat()
+            .getJSONObject("json_schema").getJSONObject("schema")
+        assertEquals(setOf("target_task_title", "replacement_title", "confidence", "need_clarification"),
+            schema.getJSONObject("properties").keys().asSequence().toSet())
+        assertEquals(4, schema.getJSONArray("required").length())
+        assertFalse(schema.getBoolean("additionalProperties"))
+        val prompt = LaptopAgentClient.SYSTEM_PROMPT.replace(Regex("\\s+"), " ")
+        assertTrue(prompt.contains("For UPDATE_TASK, put the existing task name in target_task_title"))
+        assertTrue(prompt.contains("put ONLY the new replacement title in task_title"))
+        assertTrue(prompt.contains("For RESCHEDULE_TASK, DELETE_TASK, MARK_DONE, and MARK_UNDONE, put the existing task name in target_task_title and keep task_title empty"))
+        assertFalse(prompt.contains("For RESCHEDULE_TASK, UPDATE_TASK, DELETE_TASK"))
+        assertTrue(prompt.contains("target_task_title=\"rent payment\", task_title=\"Pay Rent\", new_date=\"\", new_time=\"\""))
+        assertTrue(prompt.contains("For a pure title rename, leave date, time, target_date, target_time, new_date, new_time, recurrence, and priority empty"))
+    }
+
+    private fun assertRename(command: AiParsedCommand) {
+        assertEquals("UPDATE_TASK", command.intent)
+        assertEquals("rent payment", command.targetTaskTitle)
+        assertEquals("Pay Rent", command.taskTitle)
+        assertNull(command.newDateText)
+        assertNull(command.newTimeText)
+        assertNull(command.dateText)
+        assertNull(command.timeText)
+        assertNull(command.targetDateText)
+        assertNull(command.targetTimeText)
+        assertNull(command.recurrence)
+        assertNull(command.priority)
+        assertFalse(command.needsClarification)
+    }
+
     @Test
     fun cu05DiscardsCreateAndReextractsCompleteOriginalRequestExactlyOnce() = runBlocking {
         val text = "Move Read Book to 31 August at 8 PM."
@@ -30,6 +156,7 @@ class TaskActionConsistencyRepairTest {
         assertFalse(command.needsClarification)
         assertEquals(1, client.primaryCalls)
         assertEquals(1, client.repairCalls)
+        assertEquals(0, client.renameRepairCalls)
         assertEquals(text, client.repairText)
     }
 
@@ -54,6 +181,8 @@ class TaskActionConsistencyRepairTest {
     @Test
     fun correctPrimaryActionsPreserveAllEvaluationBaselinesWithoutRepair() = runBlocking {
         listOf(
+            Triple("Create a task called Pay Rent.", "CREATE_TASK", "Pay Rent"),
+            Triple("Update rent payment.", "UPDATE_TASK", "rent payment"),
             Triple("Can you move Pay Rent over to 1 September at 9 in the morning?", "RESCHEDULE_TASK", "pay rent"),
             Triple("Remind me to buy milk on 27 August at 6 PM.", "CREATE_TASK", "buy milk"),
             Triple("Could you add Call Doctor for 28 August at 10 AM?", "CREATE_TASK", "call doctor"),
@@ -69,6 +198,7 @@ class TaskActionConsistencyRepairTest {
             val result = orchestrator(client).process(text)
             assertEquals(action, result.intent)
             assertEquals(0, client.repairCalls)
+            assertEquals(0, client.renameRepairCalls)
             if (action == "CREATE_TASK") assertEquals(title, result.taskTitle)
             else if (action != "QUERY_TASK") assertEquals(title, result.targetTaskTitle)
         }
@@ -172,10 +302,13 @@ class TaskActionConsistencyRepairTest {
         client, TaskAgentResponseParser(), TaskActionNormalizer(), ActionValidator()
     )
 
-    private class Client(val primary: String, val repaired: String = repair().toString(), val failure: Exception? = null) : LaptopAgentClient(null) {
+    private class Client(val primary: String, val repaired: String = repair().toString(), val failure: Exception? = null,
+        val renameRepaired: String = renameRepair().toString()) : LaptopAgentClient(null) {
         var primaryCalls = 0
         var repairCalls = 0
         var repairText = ""
+        var renameRepairCalls = 0
+        var renameRepairText = ""
         override suspend fun process(normalizedText: String): String {
             primaryCalls++
             return primary
@@ -186,9 +319,18 @@ class TaskActionConsistencyRepairTest {
             failure?.let { throw it }
             return repaired
         }
+        override suspend fun processTitleRenameRepair(normalizedText: String): String {
+            renameRepairCalls++
+            renameRepairText = normalizedText
+            failure?.let { throw it }
+            return renameRepaired
+        }
     }
 
     companion object {
+        private const val CU04 = "I want the rent payment to be called Pay Rent instead."
+        private fun renameRepair() = JSONObject().put("target_task_title", "rent payment")
+            .put("replacement_title", "Pay Rent").put("confidence", 0.95).put("need_clarification", false)
         private fun repair(date: String = "31 August", time: String = "20:00") = JSONObject()
             .put("target_task_title", "read book").put("new_date", date).put("new_time", time)
             .put("confidence", 0.95).put("need_clarification", false)

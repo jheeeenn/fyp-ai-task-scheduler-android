@@ -1026,7 +1026,8 @@ Use only the current original normalized utterance, bounded failure reason, and 
 Decide only TASK_COMMAND or ASK_CLARIFICATION. No task database or prior memory is supplied.
 Current command semantics take precedence over the failed route and any prior conversation.
 Use TASK_COMMAND for a usable task existence/list/count query with an explicit temporal scope,
-or a clear named task completion/reopen correction. Examples:
+or a clear named task completion/reopen correction, or an explicit named title rename with both
+the existing target and replacement title. Examples:
 - "Do I have anything planned for 28 August?" -> TASK_COMMAND
 - "What tasks do I have on 30 August?" -> TASK_COMMAND
 - "How many tasks do I have tomorrow?" -> TASK_COMMAND
@@ -1034,6 +1035,10 @@ or a clear named task completion/reopen correction. Examples:
 - "Buy Milk is not complete yet" -> TASK_COMMAND
 - "Mark Buy Milk incomplete again" -> TASK_COMMAND
 - "Reopen Buy Milk" -> TASK_COMMAND
+- "I want the rent payment to be called Pay Rent instead" -> TASK_COMMAND
+- "Rename Rent Payment to Pay Rent" -> TASK_COMMAND
+For NAMED_RENAME_MUTATION_MISROUTED, both a named existing target and a requested replacement
+title are enough for TASK_COMMAND. Do not ask which task when the current utterance names it.
 Use ASK_CLARIFICATION when no named target or usable query can be understood, including
 "It's not finished after all" with no task context. Never infer a task from missing context.
 For TASK_COMMAND, reply must be empty. For ASK_CLARIFICATION, reply is one concise question.
@@ -1312,6 +1317,11 @@ Explicit contrasts:
 - "I haven't finished Buy Milk after all." -> TASK_COMMAND, not CONTEXT_AWARE_SUGGESTION.
 - "Buy Milk is not complete yet" -> TASK_COMMAND: the target is explicitly named.
 - "What should I do next?" -> CONTEXT_AWARE_SUGGESTION.
+- "I want the rent payment to be called Pay Rent instead." -> TASK_COMMAND.
+- "Rename Rent Payment to Pay Rent." -> TASK_COMMAND.
+- "Can I rename tasks?" -> DIRECT_REPLY.
+- "How do I rename a task?" -> DIRECT_REPLY.
+- "I want to create a task called Pay Rent." -> TASK_COMMAND for creation, not rename.
 
 You are the Conversation Orchestrator Agent in a centralized multi-agent task scheduling app for visually impaired users.
 
