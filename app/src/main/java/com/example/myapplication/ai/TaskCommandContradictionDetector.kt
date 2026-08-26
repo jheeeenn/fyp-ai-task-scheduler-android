@@ -38,6 +38,12 @@ internal object TaskCommandContradictionDetector {
     private val additionalRenameOperation = Regex(
         """\b(?:and|then) (?:move|reschedule|postpone|change|delete|add|create|mark)\b"""
     )
+    private val namedScheduleRead = Regex(
+        """^${REQUEST}(when|what time|what date|what date and time) is (.+)$"""
+    )
+    private val nonNamedScheduleTarget = Regex(
+        """^(?:(?:the|my|a|an) )?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|last|next|previous|former|latter|one|ones|t\d+|\d+|tasks?|reminders?|schedule|date|time|day|week|month|year|today|tomorrow|tonight|he|she|they|you|we|his|her|their|our)\b|\b(?:and|then)\b"""
+    )
     private val contextualOrGenericTarget = Regex(
         """^(?:it|this|that|these|those|them|something|anything|everything|nothing|myself|my day|my work|a new|new|what|how|why|when|whether|if)\b|^(?:(?:the|a|my|any|all(?: my)?|some) )?tasks?$|^(?:yet|after all|again|please)$"""
     )
@@ -46,6 +52,20 @@ internal object TaskCommandContradictionDetector {
         val normalized = normalize(text)
         return taskQuery.containsMatchIn(normalized) &&
             temporal.hasExplicitDateExpressionBeyondToday(normalized)
+    }
+
+    /** Evidence for a bounded routing repair, not extraction or authoritative task selection. */
+    fun namedScheduleReadEvidence(text: String): TaskQueryDetail? {
+        val match = namedScheduleRead.matchEntire(normalize(text)) ?: return null
+        val candidate = match.groupValues[2]
+        if (!hasNamedEvidence(candidate) || nonNamedScheduleTarget.containsMatchIn(candidate)) {
+            return null
+        }
+        return when (match.groupValues[1]) {
+            "what time" -> TaskQueryDetail.TIME
+            "what date" -> TaskQueryDetail.DATE
+            else -> TaskQueryDetail.DATE_TIME
+        }
     }
 
     fun isNamedCompletionReversal(text: String): Boolean {

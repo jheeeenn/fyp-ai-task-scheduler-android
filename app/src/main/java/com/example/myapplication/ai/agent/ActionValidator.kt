@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.TaskQueryDetail
 import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 
 class TaskAgentValidationException(message: String) : Exception(message)
@@ -34,6 +35,16 @@ class ActionValidator {
                 if (command.queryPresentation == TaskQueryPresentation.NONE) {
                     fail("QUERY_TASK requires a query presentation")
                 }
+                if (command.targetTaskTitle.isNullOrBlank()) {
+                    if (command.queryDetail != TaskQueryDetail.NONE) {
+                        fail("List/count QUERY_TASK requires queryDetail=NONE")
+                    }
+                } else if (command.queryDetail == TaskQueryDetail.NONE) {
+                    fail("Named QUERY_TASK requires DATE, TIME, or DATE_TIME")
+                }
+                if (!command.taskTitle.isNullOrBlank()) {
+                    fail("QUERY_TASK requires taskTitle empty; use targetTaskTitle for a named read")
+                }
             }
 
             // CREATE_TASK opens an Android-owned draft. Its title and temporal prefills are
@@ -62,6 +73,12 @@ class ActionValidator {
             command.queryPresentation != TaskQueryPresentation.NONE
         ) {
             fail("${command.intent} requires queryPresentation=NONE")
+        }
+        if (
+            command.intent != AiIntent.QUERY_TASK.name &&
+            command.queryDetail != TaskQueryDetail.NONE
+        ) {
+            fail("${command.intent} requires queryDetail=NONE")
         }
         if (
             command.intent != AiIntent.BREAKDOWN_TASK.name &&

@@ -5,6 +5,7 @@ import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.TaskQueryDetail
 import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 
 class TaskActionNormalizer {
@@ -14,6 +15,10 @@ class TaskActionNormalizer {
         var targetTaskTitle = response.target_task_title.clean()
         val recurrence = normalizeRecurrence(response.recurrence)
         val priority = normalizePriority(response.priority)
+        val queryDetail = TaskQueryDetail.fromWireValue(response.query_detail)
+            ?: throw TaskAgentValidationException(
+                "Unsupported query_detail '${response.query_detail}'"
+            )
         val parsedQueryPresentation = TaskQueryPresentation.fromWireValue(response.query_presentation)
             ?: throw TaskAgentValidationException(
                 "Unsupported query_presentation '${response.query_presentation}'"
@@ -87,6 +92,7 @@ class TaskActionNormalizer {
             recurrence = recurrence.takeIf { it.isNotBlank() },
             priority = priority.takeIf { it.isNotBlank() },
             queryPresentation = queryPresentation,
+            queryDetail = queryDetail,
             breakdownTargetPreference = breakdownTargetPreference,
             confidence = response.confidence.coerceIn(0f, 1f),
             source = "laptop_agent",
@@ -103,6 +109,7 @@ class TaskActionNormalizer {
             "intent=${command.intent}, title=${command.taskTitle}, target=${command.targetTaskTitle}, " +
                 "recurrence=${command.recurrence}, priority=${command.priority}, " +
                 "queryPresentation=${command.queryPresentation}, " +
+                "queryDetail=${command.queryDetail}, " +
                 "breakdownTargetPreference=${command.breakdownTargetPreference}, " +
                 "needsClarification=${command.needsClarification}, missingFields=${command.missingFields}, " +
                 "requiresConfirmation=$requiresConfirmation"

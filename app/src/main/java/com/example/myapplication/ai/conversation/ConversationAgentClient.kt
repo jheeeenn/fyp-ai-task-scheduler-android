@@ -1027,7 +1027,13 @@ Decide only TASK_COMMAND or ASK_CLARIFICATION. No task database or prior memory 
 Current command semantics take precedence over the failed route and any prior conversation.
 Use TASK_COMMAND for a usable task existence/list/count query with an explicit temporal scope,
 or a clear named task completion/reopen correction, or an explicit named title rename with both
-the existing target and replacement title. Examples:
+the existing target and replacement title, or a read-only schedule question naming its task.
+For NAMED_TASK_QUERY_MISROUTED, no temporary refs or validated task focus are available.
+A named schedule question must use TASK_COMMAND so the Task Agent can extract its semantics and
+Android can match the task and render its stored schedule. Examples:
+- "When is Read Book?" -> TASK_COMMAND
+- "What time is Read Book?" -> TASK_COMMAND
+- "What date is Read Book?" -> TASK_COMMAND
 - "Do I have anything planned for 28 August?" -> TASK_COMMAND
 - "What tasks do I have on 30 August?" -> TASK_COMMAND
 - "How many tasks do I have tomorrow?" -> TASK_COMMAND
@@ -1040,7 +1046,7 @@ the existing target and replacement title. Examples:
 For NAMED_RENAME_MUTATION_MISROUTED, both a named existing target and a requested replacement
 title are enough for TASK_COMMAND. Do not ask which task when the current utterance names it.
 Use ASK_CLARIFICATION when no named target or usable query can be understood, including
-"It's not finished after all" with no task context. Never infer a task from missing context.
+"It's not finished after all" or "When is it?" with no task context. Never infer a task from missing context.
 For TASK_COMMAND, reply must be empty. For ASK_CLARIFICATION, reply is one concise question.
 Never invent task titles, T1/T2 refs, Room IDs, task facts, dates, times, or execution results.
 Do not execute or claim to have executed any operation.
@@ -1510,6 +1516,23 @@ Query-presentation hint rules:
 - "Do I have anything this month?" and "Are there any tasks tomorrow?" are TASK_COMMAND with COUNT_ONLY.
 - "What are my tasks this month?" and "Show my tasks this month." are TASK_COMMAND with OVERVIEW.
 - "Read the full details for tomorrow." is TASK_COMMAND with DETAILS.
+
+Fresh named schedule-read versus contextual-read precedence:
+- The distinction is target grounding, not the word "when". Without supplied task context or
+  validated focus, CONTEXT_READ is structurally impossible, even for a date/time question.
+- No supplied task context:
+  "When is Read Book?" -> TASK_COMMAND
+  "What time is Read Book?" -> TASK_COMMAND
+  "What date is Read Book?" -> TASK_COMMAND
+- A named task such as "Read Book" belongs in the complete original normalized task_text for
+  the normal Task Agent path. Keep context_ref empty. Never match Room tasks here or answer their
+  actual date/time; Android matches authoritative tasks and renders the requested schedule detail.
+- Supplied task context:
+  "When is the first task?" -> CONTEXT_READ DATE_TIME with supplied T1
+  "What time is the second one?" -> CONTEXT_READ TIME with supplied T2
+- An ordinal or pronoun may use CONTEXT_READ only when grounded in Android-supplied context under
+  the read-only task context rules. "When is it?" with no task context needs ASK_CLARIFICATION;
+  never invent a named target or temporary ref.
 
 No-context named-operation precedence:
 - First inspect the labelled Read-only task context and Current validated task focus supplied by Android.

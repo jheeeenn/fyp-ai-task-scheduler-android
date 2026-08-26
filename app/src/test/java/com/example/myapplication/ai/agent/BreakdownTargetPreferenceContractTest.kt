@@ -182,6 +182,7 @@ class BreakdownTargetPreferenceContractTest {
         put("recurrence", "")
         put("priority", "")
         put("query_presentation", "NONE")
+        put("query_detail", "NONE")
         put("breakdown_target_preference", "AUTO")
         put("confidence", 0.95)
         put("need_clarification", false)

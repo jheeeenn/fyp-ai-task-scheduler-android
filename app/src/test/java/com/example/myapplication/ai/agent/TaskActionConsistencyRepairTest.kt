@@ -463,6 +463,7 @@ class TaskActionConsistencyRepairTest {
             put("task_title", if (action == "CREATE_TASK") title else "")
             put("target_task_title", if (action == "CREATE_TASK") "" else title)
             put("query_presentation", "NONE")
+            put("query_detail", "NONE")
             put("breakdown_target_preference", "AUTO")
             put("confidence", 0.9)
             put("need_clarification", false)

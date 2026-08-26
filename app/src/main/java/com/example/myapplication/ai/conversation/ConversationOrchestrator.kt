@@ -283,6 +283,27 @@ class ConversationOrchestrator(
     ): ConversationDecision {
         val failureCode = repairFailureCode(firstFailure)
         val failedRoute = (firstFailure as? ConversationSchemaException)?.failedRoute
+        // A decoded CONTEXT_READ cannot have authority here, including when the strict parser
+        // rejects its ref or detail before the authority check. Never relax either validator.
+        if (
+            failedRoute == ConversationRoute.CONTEXT_READ &&
+            suppliedContextRefs(readOnlyTaskContextSnapshot).isEmpty() &&
+            contextFocus?.takeIf { it.available }?.ref.isNullOrBlank()
+        ) {
+            val evidence = TaskCommandContradictionDetector.namedScheduleReadEvidence(normalizedText)
+            if (evidence != null) {
+                Log.d(
+                    "CONVERSATION_NAMED_QUERY_GUARD",
+                    "detail=$evidence primaryRoute=$failedRoute contextAuthority=false " +
+                        "result=REPAIR_REQUIRED"
+                )
+                return repairTaskCommandRoute(
+                    normalizedText,
+                    ConversationDecisionFailureCode.NAMED_TASK_QUERY_MISROUTED.name,
+                    failedRoute
+                )
+            }
+        }
         if (failureCode in TASK_ROUTE_CONTRADICTIONS) {
             return repairTaskCommandRoute(normalizedText, failureCode, requireNotNull(failedRoute))
         }

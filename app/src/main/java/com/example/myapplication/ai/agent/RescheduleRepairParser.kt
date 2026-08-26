@@ -45,6 +45,7 @@ internal object RescheduleRepairParser {
             put("confidence", confidence)
             put("need_clarification", false)
             put("query_presentation", "NONE")
+            put("query_detail", "NONE")
             put("breakdown_target_preference", "AUTO")
             put("missing_fields", JSONArray())
             put("requires_confirmation", false)

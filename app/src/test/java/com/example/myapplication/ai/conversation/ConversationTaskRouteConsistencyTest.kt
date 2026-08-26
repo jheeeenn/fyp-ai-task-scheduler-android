@@ -2,6 +2,7 @@ package com.example.myapplication.ai.conversation
 
 import com.example.myapplication.ai.TaskCommandContradictionDetector
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.TaskQueryDetail
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -10,6 +11,128 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ConversationTaskRouteConsistencyTest {
+    @Test
+    fun freshNamedScheduleReadsUseOneCompactRepairWithOnlyTheCompleteOriginalText() = runBlocking {
+        listOf("When is Read Book?", "What time is Read Book?", "What date is Read Book?").forEach { text ->
+            listOf("" to "TIME", "T1" to "TIME", "Read Book" to "TIME", "T1" to "NONE").forEach { (invalidRef, detail) ->
+                val client = Client(ConversationRoute.CONTEXT_READ,
+                    contextRef = invalidRef, contextDetail = detail)
+                val result = orchestrator(client).process(text, "private app fact 987654",
+                    "Scope: NONE\nItems: []",
+                    ConversationContextFocus(available = false, ref = "", generation = 4,
+                        detail = ConversationContextDetail.NONE, title = "private old title"))
+                assertTaskCommand(text, result)
+                assertEquals(1, client.primaryCalls)
+                assertEquals(1, client.compactCalls)
+                assertEquals(0, client.generalCalls)
+                assertEquals(text, client.repairText)
+                assertEquals("NAMED_TASK_QUERY_MISROUTED", client.failure)
+                assertEquals(ConversationRoute.CONTEXT_READ, client.failedRoute)
+                val repairInputs = listOf(client.repairText, client.failure, client.failedRoute?.name).joinToString()
+                listOf("987654", "private", "T1", "T2", "Scope", "Items").forEach {
+                    assertFalse(repairInputs.contains(it))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun scheduleReadEvidenceAbstainsOnPronounsOrdinalsGenericAndCompoundRequests() {
+        assertEquals(TaskQueryDetail.DATE_TIME, TaskCommandContradictionDetector.namedScheduleReadEvidence("when is read book"))
+        assertEquals(TaskQueryDetail.TIME, TaskCommandContradictionDetector.namedScheduleReadEvidence("What time is Read Book?"))
+        assertEquals(TaskQueryDetail.DATE, TaskCommandContradictionDetector.namedScheduleReadEvidence("What date is Read Book?"))
+        listOf("When is it?", "What time is that?", "What date is the task?",
+            "What time is the second one?", "When is the first task?", "When is T2?",
+            "When is the next one?", "When is my day?", "When is anything?",
+            "When is the task tomorrow?", "When is she?", "What time is today?",
+            "When is Read Book and delete it", "Move Read Book to tomorrow",
+            "Can I ask when Read Book is scheduled?"
+        ).forEach { assertNull(it, TaskCommandContradictionDetector.namedScheduleReadEvidence(it)) }
+    }
+
+    @Test
+    fun contextlessPronounNeverInventsANamedTargetOrUsesNamedRepair() = runBlocking {
+        val client = Client(ConversationRoute.CONTEXT_READ, contextDetail = "DATE_TIME",
+            generalRepair = clarification())
+        val result = orchestrator(client).process("When is it?", "")
+        assertEquals(ConversationRoute.ASK_CLARIFICATION, result.route)
+        assertEquals("", result.taskText)
+        assertEquals("", result.contextRef)
+        assertEquals(0, client.compactCalls)
+        assertEquals(1, client.generalCalls)
+    }
+
+    @Test
+    fun suppliedOrdinalContextReadsAndCorrectNamedTaskCommandsDoNotRepair() = runBlocking {
+        listOf(Triple("What time is the second one?", "T2", "TIME"),
+            Triple("When is the first one?", "T1", "DATE_TIME")).forEach { (text, ref, detail) ->
+            val client = Client(ConversationRoute.CONTEXT_READ, contextRef = ref, contextDetail = detail)
+            val items = if (ref == "T1") "{\"ref\":\"T1\"}" else "{\"ref\":\"T1\"}\n{\"ref\":\"T2\"}"
+            val result = orchestrator(client).process(text, "Interaction: QUERY_PAGE",
+                "Scope: RECENT_QUERY_RESULTS\nGeneration: 4\nItems:\n$items")
+            assertEquals(ConversationRoute.CONTEXT_READ, result.route)
+            assertEquals(ref, result.contextRef)
+            assertEquals(ConversationContextDetail.valueOf(detail), result.contextDetail)
+            assertEquals(0, client.compactCalls)
+            assertEquals(0, client.generalCalls)
+        }
+        val client = Client(ConversationRoute.TASK_COMMAND)
+        val result = orchestrator(client).process("When is Read Book?", "")
+        assertEquals(ConversationRoute.TASK_COMMAND, result.route)
+        assertEquals("When is Read Book?", result.taskText)
+        assertEquals(0, client.compactCalls)
+        assertEquals(0, client.generalCalls)
+    }
+
+    @Test
+    fun namedGuardDoesNotOverrideSuppliedRefsOrAvailableValidatedFocus() = runBlocking {
+        val withRefs = Client(ConversationRoute.CONTEXT_READ, contextRef = "T9", contextDetail = "TIME",
+            generalRepair = clarification())
+        orchestrator(withRefs).process("What time is Read Book?", "", "Items: [{\"ref\":\"T1\"}]")
+        assertEquals(0, withRefs.compactCalls)
+        assertEquals(1, withRefs.generalCalls)
+        val withFocus = Client(ConversationRoute.CONTEXT_READ, contextDetail = "TIME",
+            generalRepair = clarification())
+        orchestrator(withFocus).process("What time is Read Book?", "",
+            contextFocus = ConversationContextFocus(available = true, ref = "T1", generation = 4,
+                detail = ConversationContextDetail.SUMMARY, title = "Read Book"))
+        assertEquals(0, withFocus.compactCalls)
+        assertEquals(1, withFocus.generalCalls)
+    }
+
+    @Test
+    fun namedReadRepairMayClarifyButNeverRetriesASecondTimeOrAcceptsContextAuthority() = runBlocking {
+        val clarify = Client(ConversationRoute.CONTEXT_READ, compact("ASK_CLARIFICATION", "Which task?"),
+            contextDetail = "TIME")
+        val result = orchestrator(clarify).process("What time is Read Book?", "")
+        assertEquals(ConversationRoute.ASK_CLARIFICATION, result.route)
+        assertEquals("", result.taskText)
+        assertEquals("", result.contextRef)
+        assertEquals(1, clarify.compactCalls)
+        listOf(compact("CONTEXT_READ"), JSONObject(compact()).put("context_ref", "T1").toString(),
+            compact("TASK_COMMAND", "Read Book is at 7 PM"), "{"
+        ).forEach { repair ->
+            val client = Client(ConversationRoute.CONTEXT_READ, repair, contextDetail = "TIME")
+            assertTrue(runCatching { orchestrator(client).process("What time is Read Book?", "") }
+                .exceptionOrNull() is ConversationOrchestratorException)
+            assertEquals(1, client.compactCalls)
+            assertEquals(0, client.generalCalls)
+        }
+    }
+
+    @Test
+    fun promptsContrastNamedScheduleReadsWithSuppliedContextGrounding() {
+        val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
+        listOf("When is Read Book?", "What time is Read Book?", "What date is Read Book?").forEach {
+            assertTrue(prompt.contains("\"$it\" -> TASK_COMMAND"))
+            assertTrue(ConversationAgentClient.TASK_COMMAND_ROUTE_REPAIR_SYSTEM_PROMPT.contains("\"$it\" -> TASK_COMMAND"))
+        }
+        assertTrue(prompt.contains("The distinction is target grounding, not the word \"when\""))
+        assertTrue(prompt.contains("\"When is the first task?\" -> CONTEXT_READ DATE_TIME"))
+        assertTrue(prompt.contains("\"What time is the second one?\" -> CONTEXT_READ TIME"))
+        assertTrue(prompt.contains("\"When is it?\" with no task context needs ASK_CLARIFICATION"))
+    }
+
     @Test
     fun namedRenamesRepairContradictoryRoutesWithCompleteOriginalText() = runBlocking {
         listOf(
@@ -221,7 +344,10 @@ class ConversationTaskRouteConsistencyTest {
     private class Client(
         val route: ConversationRoute,
         val repair: String = compact(),
-        val error: Exception? = null
+        val error: Exception? = null,
+        val contextRef: String = "",
+        val contextDetail: String = "NONE",
+        val generalRepair: String? = null
     ) : ConversationAgentClient(null) {
         var primaryCalls = 0
         var compactCalls = 0
@@ -233,8 +359,8 @@ class ConversationTaskRouteConsistencyTest {
         override suspend fun process(userText: String, memorySnapshot: String, appContextSummary: String): String {
             primaryCalls++
             return JSONObject().put("route", route.name).put("task_text", "discarded")
-                .put("reply", "Which task?").put("context_ref", "")
-                .put("context_detail", "NONE").put("context_action", "NONE")
+                .put("reply", "Which task?").put("context_ref", contextRef)
+                .put("context_detail", contextDetail).put("context_action", "NONE")
                 .put("setting_action", "NONE").put("setting_target", "NONE")
                 .put("query_reading_move", "NONE").put("query_presentation_hint", "NONE")
                 .put("confidence", 0.97).put("listen_again", true).toString()
@@ -253,11 +379,18 @@ class ConversationTaskRouteConsistencyTest {
 
         override suspend fun processRepair(userText: String, appContextSummary: String): String {
             generalCalls++
-            error("Unrestricted repair must not run")
+            return generalRepair ?: error("Unrestricted repair must not run")
         }
     }
 
     companion object {
+        private fun clarification() = JSONObject()
+            .put("route", "ASK_CLARIFICATION").put("task_text", "").put("reply", "Which task do you mean?")
+            .put("context_ref", "").put("context_detail", "NONE").put("context_action", "NONE")
+            .put("setting_action", "NONE").put("setting_target", "NONE")
+            .put("query_reading_move", "NONE").put("query_presentation_hint", "NONE")
+            .put("confidence", 0.97).put("listen_again", true).toString()
+
         private fun compact(move: String = "TASK_COMMAND", reply: String = "") = JSONObject()
             .put("move", move).put("reply", reply).put("confidence", 0.97).toString()
     }

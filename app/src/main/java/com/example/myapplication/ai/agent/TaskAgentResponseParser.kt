@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.agent
 
 import android.util.Log
+import com.example.myapplication.ai.TaskQueryDetail
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
 import org.json.JSONArray
 import org.json.JSONException
@@ -27,9 +28,14 @@ class TaskAgentResponseParser {
         listOf(
             "natural_response", "action", "task_title", "target_task_title", "date", "time",
             "target_date", "target_time", "new_date", "new_time", "recurrence", "priority",
-            "query_presentation", "breakdown_target_preference", "confidence",
+            "query_presentation", "query_detail", "breakdown_target_preference", "confidence",
             "need_clarification", "missing_fields", "requires_confirmation", "plan"
         ).forEach { requireField(json, it) }
+
+        val queryDetail = json.get("query_detail")
+        if (queryDetail !is String || TaskQueryDetail.fromWireValue(queryDetail) == null) {
+            throw TaskAgentParseException("Task-agent query_detail must be NONE, DATE, TIME, or DATE_TIME")
+        }
 
         val response = TaskAgentResponse(
             natural_response = json.optString("natural_response", ""),
@@ -45,6 +51,7 @@ class TaskAgentResponseParser {
             recurrence = json.optString("recurrence", ""),
             priority = json.optString("priority", ""),
             query_presentation = json.optString("query_presentation", ""),
+            query_detail = queryDetail,
             breakdown_target_preference =
                 json.optString("breakdown_target_preference", ""),
             confidence = json.optDouble("confidence", 0.0).toFloat(),

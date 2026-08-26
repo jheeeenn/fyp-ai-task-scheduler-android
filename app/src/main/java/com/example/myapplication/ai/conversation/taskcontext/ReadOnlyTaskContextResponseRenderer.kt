@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.taskcontext
 
 import com.example.myapplication.ai.conversation.ConversationContextDetail
+import com.example.myapplication.ai.TaskQueryDetail
 
 object ReadOnlyTaskContextResponseRenderer {
     fun render(
@@ -12,17 +13,12 @@ object ReadOnlyTaskContextResponseRenderer {
             ConversationContextDetail.SUMMARY -> renderSummary(item, title)
             ConversationContextDetail.TITLE ->
                 "The ${ordinalLabel(item.ref)} task was $title."
-            ConversationContextDetail.DATE -> if (item.dueDate.isBlank()) {
-                "It does not have a date."
-            } else {
-                "$title is scheduled for ${spokenDate(item.dueDate)}."
-            }
-            ConversationContextDetail.TIME -> if (item.dueTime.isBlank()) {
-                "It does not have a time."
-            } else {
-                "$title is scheduled at ${item.dueTime}."
-            }
-            ConversationContextDetail.DATE_TIME -> renderDateTime(item, title)
+            ConversationContextDetail.DATE ->
+                renderSchedule(title, item.dueDate, item.dueTime, TaskQueryDetail.DATE)
+            ConversationContextDetail.TIME ->
+                renderSchedule(title, item.dueDate, item.dueTime, TaskQueryDetail.TIME)
+            ConversationContextDetail.DATE_TIME ->
+                renderSchedule(title, item.dueDate, item.dueTime, TaskQueryDetail.DATE_TIME)
             ConversationContextDetail.STATUS -> {
                 val status = if (item.isDone) "Completed" else item.relativeStatus
                 "$title is ${status.replaceFirstChar { it.lowercase() }}."
@@ -33,15 +29,31 @@ object ReadOnlyTaskContextResponseRenderer {
         }
     }
 
-    private fun renderDateTime(item: ReadOnlyTaskContextItem, title: String): String = when {
-        item.dueDate.isNotBlank() && item.dueTime.isNotBlank() ->
-            "$title is scheduled for ${spokenDate(item.dueDate)} at ${item.dueTime}."
-        item.dueDate.isBlank() && item.dueTime.isBlank() ->
-            "$title does not have a date or time set."
-        item.dueDate.isBlank() ->
-            "$title has no date set. Its time is ${item.dueTime}."
-        else ->
-            "$title is scheduled for ${spokenDate(item.dueDate)}, with no time set."
+    /** Shared factual speech from Android-owned values; requires no temporary ref. */
+    fun renderSchedule(
+        taskTitle: String,
+        dueDate: String?,
+        dueTime: String?,
+        detail: TaskQueryDetail
+    ): String {
+        val title = taskTitle.ifBlank { "This task" }
+        val date = dueDate.orEmpty()
+        val time = dueTime.orEmpty()
+        return when (detail) {
+            TaskQueryDetail.DATE -> if (date.isBlank()) "It does not have a date."
+                else "$title is scheduled for ${spokenDate(date)}."
+            TaskQueryDetail.TIME -> if (time.isBlank()) "It does not have a time."
+                else "$title is scheduled at $time."
+            TaskQueryDetail.DATE_TIME -> when {
+                date.isNotBlank() && time.isNotBlank() ->
+                    "$title is scheduled for ${spokenDate(date)} at $time."
+                date.isBlank() && time.isBlank() ->
+                    "$title does not have a date or time set."
+                date.isBlank() -> "$title has no date set. Its time is $time."
+                else -> "$title is scheduled for ${spokenDate(date)}, with no time set."
+            }
+            TaskQueryDetail.NONE -> throw IllegalArgumentException("A schedule detail is required")
+        }
     }
 
     private fun renderSummary(item: ReadOnlyTaskContextItem, title: String): String {

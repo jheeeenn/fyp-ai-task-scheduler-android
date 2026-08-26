@@ -5,7 +5,7 @@ import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 data class AiParsedCommand(
     val intent: String,
     val taskTitle: String? = null,          // for create / breakdown / new title if needed
-    val targetTaskTitle: String? = null,    // task user wants to edit/delete/reschedule
+    val targetTaskTitle: String? = null,    // existing task named for a read or mutation
     val dateText: String? = null,
     val timeText: String? = null,
     val targetDateText: String? = null,
@@ -15,6 +15,7 @@ data class AiParsedCommand(
     val recurrence: String? = null,
     val priority: String? = null,
     val queryPresentation: TaskQueryPresentation = TaskQueryPresentation.NONE,
+    val queryDetail: TaskQueryDetail = TaskQueryDetail.NONE,
     val breakdownTargetPreference: BreakdownTargetPreference = BreakdownTargetPreference.AUTO,
     val confidence: Float = 0f,
     val source: String = "local",

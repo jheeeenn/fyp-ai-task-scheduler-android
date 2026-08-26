@@ -14,6 +14,7 @@ data class TaskAgentResponse(
     val recurrence: String = "",
     val priority: String = "",
     val query_presentation: String = "NONE",
+    val query_detail: String = "NONE",
     val breakdown_target_preference: String = "AUTO",
     val confidence: Float = 0f,
     val need_clarification: Boolean = false,

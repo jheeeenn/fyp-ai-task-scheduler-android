@@ -29,6 +29,7 @@ internal object TitleRenameRepairParser {
             listOf("natural_response", "date", "time", "target_date", "target_time", "new_date",
                 "new_time", "recurrence", "priority").forEach { put(it, "") }
             put("query_presentation", "NONE")
+            put("query_detail", "NONE")
             put("breakdown_target_preference", "AUTO")
             put("confidence", confidence)
             put("need_clarification", false)

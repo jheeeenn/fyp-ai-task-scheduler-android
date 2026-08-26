@@ -217,6 +217,7 @@ class GenericCreateTaskDraftHandoffTest {
         .put("recurrence", "")
         .put("priority", "")
         .put("query_presentation", TaskQueryPresentation.NONE.name)
+        .put("query_detail", "NONE")
         .put("breakdown_target_preference", "AUTO")
         .put("confidence", 1.0)
         .put("need_clarification", false)

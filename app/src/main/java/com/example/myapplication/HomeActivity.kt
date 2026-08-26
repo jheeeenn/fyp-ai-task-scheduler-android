@@ -159,6 +159,9 @@ import com.example.myapplication.accessibility.AssistantAccessibilityState
 
 import com.example.myapplication.ai.ConversationIntent
 import com.example.myapplication.ai.TaskMatcher
+import com.example.myapplication.ai.NamedTaskQueryResolver
+import com.example.myapplication.ai.NamedTaskQueryStatus
+import com.example.myapplication.ai.TaskQueryDetail
 
 import com.example.myapplication.ai.TaskResolutionState
 import com.example.myapplication.ai.PendingTaskAction
@@ -325,6 +328,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var pendingContextActionChangeClarification:
         PendingContextActionChangeClarification? = null
     private val temporalQueryResolver = TemporalQueryResolver()
+    private val namedTaskQueryResolver = NamedTaskQueryResolver(temporalQueryResolver)
     private var accessibleTaskQuerySession: AccessibleTaskQuerySession? = null
     private var authoritativeRepeatState: AuthoritativeRepeatState? = null
     private var currentQueryPageRepeatState: AuthoritativeRepeatState? = null
@@ -2408,6 +2412,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     Log.d(
                         "TASK_PIPELINE",
                         "intent=${aiResult.intent}, title=${aiResult.taskTitle}, date=${aiResult.dateText}," +
+                                " target=${aiResult.targetTaskTitle}, queryDetail=${aiResult.queryDetail}," +
                                 " time=${aiResult.timeText}, targetDate=${aiResult.targetDateText}, targetTime=${aiResult.targetTimeText}," +
                                 " newDate=${aiResult.newDateText}, newTime=${aiResult.newTimeText}, source=${aiResult.source}, confidence=${aiResult.confidence}, " +
                                 "needsClarification=${aiResult.needsClarification}, missingFields=${aiResult.missingFields}"
@@ -2446,9 +2451,13 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     // query on task
                     AiIntent.QUERY_TASK.name -> {
                         // log
-                        Log.d("HOME_ACTION", "QUERY_TASK -> handleQueryTask")
+                        Log.d("HOME_ACTION", "QUERY_TASK detail=${aiResult.queryDetail}")
 
                         if (aiResult.needsClarification) {
+                            if (aiResult.queryDetail != TaskQueryDetail.NONE) {
+                                assistantSession.speak("Please say the task name and which schedule detail you need.", listenAgain = true)
+                                return@launch
+                            }
                             speakObservation(
                                 unresolvedTemporalObservation(
                                     ExecutionOperation.QUERY_TASK,
@@ -2460,14 +2469,24 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             return@launch
                         }
 
-                        handleQueryTask(
-                            normalized = normalized,
-                            agentDateText = aiResult.targetDateText ?: aiResult.dateText,
-                            agentTimeText = aiResult.targetTimeText ?: aiResult.timeText,
-                            presentation = presentationResolution.effective,
-                            requestToken = requestToken,
-                            authorization = routedStyleAuthorization
-                        )
+                        if (!aiResult.targetTaskTitle.isNullOrBlank() && aiResult.queryDetail != TaskQueryDetail.NONE) {
+                            handleNamedTaskQuery(
+                                targetTitle = aiResult.targetTaskTitle,
+                                detail = aiResult.queryDetail,
+                                targetDateText = aiResult.targetDateText,
+                                targetTimeText = aiResult.targetTimeText,
+                                requestToken = requestToken
+                            )
+                        } else {
+                            handleQueryTask(
+                                normalized = normalized,
+                                agentDateText = aiResult.targetDateText ?: aiResult.dateText,
+                                agentTimeText = aiResult.targetTimeText ?: aiResult.timeText,
+                                presentation = presentationResolution.effective,
+                                requestToken = requestToken,
+                                authorization = routedStyleAuthorization
+                            )
+                        }
                     }
                     // delete task
                     AiIntent.DELETE_TASK.name -> {
@@ -4028,6 +4047,69 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun resolveQueryDate(normalized: String): String? {
         return ScheduleTextParser.parseDateFromSentence(normalized)
+    }
+
+    private fun handleNamedTaskQuery(
+        targetTitle: String,
+        detail: TaskQueryDetail,
+        targetDateText: String?,
+        targetTimeText: String?,
+        requestToken: AssistantRequestToken
+    ) {
+        if (!isAssistantRequestCurrent(requestToken)) return
+        val queryGeneration = clearAccessibleTaskQuerySession(clearTaskContext = true)
+        homeFollowUpContext = HomeFollowUpContext.NONE
+        lifecycleScope.launch {
+            val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+            val roots = withContext(Dispatchers.IO) { dao.getRootTasks() }
+            if (queryGeneration != queryReadingStateGeneration || !isAssistantRequestCurrent(requestToken)) return@launch
+            val result = namedTaskQueryResolver.resolve(targetTitle, roots, targetDateText, targetTimeText)
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    "HOME_NAMED_QUERY",
+                    "target='$targetTitle' detail=$detail match='${result.task?.title.orEmpty()}' " +
+                        "score=${result.score} ambiguous=${result.status == NamedTaskQueryStatus.AMBIGUOUS} " +
+                        "result=${result.status}"
+                )
+            }
+            when (result.status) {
+                NamedTaskQueryStatus.NOT_FOUND -> {
+                    assistantSession.speak(responseManager.taskMatchNotFound(), listenAgain = true)
+                    return@launch
+                }
+                NamedTaskQueryStatus.AMBIGUOUS -> {
+                    assistantSession.speak("More than one task matches. Please say a more specific task name or its date or time.", listenAgain = true)
+                    return@launch
+                }
+                NamedTaskQueryStatus.UNRESOLVED_TEMPORAL -> {
+                    assistantSession.speak("I could not understand the date or time used to identify that task. Please say it another way.", listenAgain = true)
+                    return@launch
+                }
+                NamedTaskQueryStatus.RESOLVED -> Unit
+            }
+            val matched = requireNotNull(result.task)
+            val (currentTask, subtasks) = withContext(Dispatchers.IO) {
+                dao.getById(matched.id) to dao.getSubtasks(matched.id)
+            }
+            if (queryGeneration != queryReadingStateGeneration || !isAssistantRequestCurrent(requestToken)) return@launch
+            if (currentTask == null || currentTask != matched) {
+                assistantSession.speak("That task changed or is no longer available. Please ask again.", listenAgain = true)
+                return@launch
+            }
+            // No model verbalization: only re-fetched Room values enter factual speech.
+            val speech = ReadOnlyTaskContextResponseRenderer.renderSchedule(
+                currentTask.title, currentTask.dueDate, currentTask.dueTime, detail
+            )
+            val capture = publishTaskDetailAssistantContext(currentTask, subtasks)
+            Log.d("HOME_NAMED_QUERY", "result=PUBLISHED contextScope=${capture.snapshot.scope} focusEstablished=true")
+            homeFollowUpContext = HomeFollowUpContext.AFTER_TASK_DETAILS
+            authoritativeRepeatState = AuthoritativeRepeatState(
+                speech = speech,
+                kind = RepeatableSpeechKind.CONTEXT_READ,
+                contextGeneration = capture.snapshot.generation
+            )
+            assistantSession.speak(speech, listenAgain = true)
+        }
     }
 
     private fun handleQueryTask(
