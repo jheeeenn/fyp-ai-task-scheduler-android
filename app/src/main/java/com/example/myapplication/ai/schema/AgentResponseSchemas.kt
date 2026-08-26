@@ -269,8 +269,15 @@ object AgentResponseSchemas {
     }
 
     fun noContextMutationRepairResponseFormat(): JSONObject {
+        return compactTaskCommandRepairResponseFormat("no_context_mutation_repair")
+    }
+
+    fun taskCommandRouteRepairResponseFormat(): JSONObject =
+        compactTaskCommandRepairResponseFormat("task_command_route_repair")
+
+    private fun compactTaskCommandRepairResponseFormat(name: String): JSONObject {
         return responseFormat(
-            name = "no_context_mutation_repair",
+            name = name,
             properties = JSONObject().apply {
                 put("move", stringEnum("TASK_COMMAND", "ASK_CLARIFICATION"))
                 put("reply", stringType())
@@ -487,6 +494,20 @@ object AgentResponseSchemas {
             }
         )
     }
+
+    fun rescheduleRepairResponseFormat(): JSONObject = responseFormat(
+        name = "reschedule_repair",
+        properties = JSONObject().apply {
+            put("target_task_title", stringType())
+            put("new_date", stringType())
+            put("new_time", stringType())
+            put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+            put("need_clarification", booleanType())
+        },
+        required = JSONArray(listOf(
+            "target_task_title", "new_date", "new_time", "confidence", "need_clarification"
+        ))
+    )
 
     fun taskAgentResponseFormat(): JSONObject {
         return responseFormat(

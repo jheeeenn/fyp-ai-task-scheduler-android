@@ -2,6 +2,7 @@ package com.example.myapplication.ai.conversation
 
 import android.util.Log
 import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.TaskCommandContradictionDetector
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetDecision
@@ -220,6 +221,7 @@ class ConversationOrchestrator(
                 appContextSummary = appContextSummary
             )
             parseCanonicalDecision(rawContent).also {
+                validateTaskRouteConsistency(normalizedText, it)
                 validateOperationalBreakdownRouting(normalizedText, it)
                 validateContextReadAuthority(
                     decision = it,
@@ -281,6 +283,9 @@ class ConversationOrchestrator(
     ): ConversationDecision {
         val failureCode = repairFailureCode(firstFailure)
         val failedRoute = (firstFailure as? ConversationSchemaException)?.failedRoute
+        if (failureCode in TASK_ROUTE_CONTRADICTIONS) {
+            return repairTaskCommandRoute(normalizedText, failureCode, requireNotNull(failedRoute))
+        }
         val repairProfile = ConversationRepairProfileSelector.select(
             failureCode = failureCode,
             failedRoute = failedRoute,
@@ -320,7 +325,7 @@ class ConversationOrchestrator(
                     source = SOURCE_SCHEMA_REPAIR
                 )
                 ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR ->
-                    parseNoContextMutationRepair(
+                    parseCompactTaskCommandRepair(
                         rawContent = repairContent,
                         normalizedText = normalizedText
                     )
@@ -535,7 +540,51 @@ class ConversationOrchestrator(
         else -> FAILURE_CODE_UNEXPECTED
     }
 
-    private fun parseNoContextMutationRepair(
+    private fun validateTaskRouteConsistency(text: String, decision: ConversationDecision) {
+        val failure = when {
+            decision.route == ConversationRoute.DAILY_BRIEFING &&
+                TaskCommandContradictionDetector.isExplicitTemporalTaskQuery(text) ->
+                ConversationDecisionFailureCode.TEMPORAL_TASK_QUERY_MISROUTED
+            decision.route in setOf(
+                ConversationRoute.CONTEXT_AWARE_SUGGESTION,
+                ConversationRoute.DAILY_BRIEFING,
+                ConversationRoute.DIRECT_REPLY
+            ) && TaskCommandContradictionDetector.isNamedCompletionReversal(text) ->
+                ConversationDecisionFailureCode.NAMED_COMPLETION_MUTATION_MISROUTED
+            else -> return
+        }
+        Log.d(
+            "CONVERSATION_TASK_ROUTE_GUARD",
+            "failure=$failure primaryRoute=${decision.route} result=REPAIR_REQUIRED"
+        )
+        throw ConversationSchemaException(
+            "Task command contradicts special route",
+            decisionFailureCode = failure,
+            failedRoute = decision.route
+        )
+    }
+
+    private suspend fun repairTaskCommandRoute(
+        normalizedText: String,
+        failureCode: String,
+        failedRoute: ConversationRoute
+    ): ConversationDecision = try {
+        // Deliberately no app context, memory, refs, or task snapshot in this request.
+        val raw = conversationAgentClient.processTaskCommandRouteRepair(
+            normalizedText, failureCode, failedRoute
+        )
+        parseCompactTaskCommandRepair(raw, normalizedText).also {
+            Log.d("CONVERSATION_TASK_ROUTE_REPAIR", "result=${it.route}")
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.d("CONVERSATION_TASK_ROUTE_REPAIR", "result=REJECTED")
+        throw ConversationOrchestratorException("Task route repair failed closed", e)
+    }
+
+    // The two repairs share the same strict three-field wire contract and Android reconstruction.
+    private fun parseCompactTaskCommandRepair(
         rawContent: String,
         normalizedText: String
     ): ConversationDecision {
@@ -712,6 +761,10 @@ class ConversationOrchestrator(
     }
 
     private companion object {
+        val TASK_ROUTE_CONTRADICTIONS = setOf(
+            ConversationDecisionFailureCode.TEMPORAL_TASK_QUERY_MISROUTED.name,
+            ConversationDecisionFailureCode.NAMED_COMPLETION_MUTATION_MISROUTED.name
+        )
         const val SOURCE_CONVERSATION_AGENT = "conversation_agent"
         const val SOURCE_SCHEMA_REPAIR = "conversation_agent_schema_repair"
         const val SOURCE_CONTEXT_REPAIR = "conversation_agent_context_repair"

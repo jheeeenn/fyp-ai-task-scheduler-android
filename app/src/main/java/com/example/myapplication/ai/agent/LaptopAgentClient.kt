@@ -54,6 +54,20 @@ open class LaptopAgentClient(
         )
     }
 
+    open suspend fun processRescheduleRepair(normalizedText: String): String =
+        withContext(Dispatchers.IO) {
+            execute(
+                normalizedText = normalizedText,
+                systemPrompt = RESCHEDULE_REPAIR_SYSTEM_PROMPT,
+                responseFormat = AgentResponseSchemas.rescheduleRepairResponseFormat(),
+                boundedContextAction = false,
+                boundedRoutineExtraction = false,
+                boundedRescheduleRepair = true,
+                maxOutputTokens = 192,
+                requestClient = boundedTemporalClient
+            )
+        }
+
     open suspend fun processRoutine(normalizedText: String): String =
         withContext(Dispatchers.IO) {
             execute(
@@ -167,6 +181,7 @@ open class LaptopAgentClient(
         boundedContextAction: Boolean,
         boundedRoutineExtraction: Boolean,
         boundedBreakdownFollowUp: Boolean = false,
+        boundedRescheduleRepair: Boolean = false,
         maxOutputTokens: Int = 512,
         requestClient: OkHttpClient = client
     ): String {
@@ -188,7 +203,9 @@ open class LaptopAgentClient(
             })
         }
 
-        if (boundedBreakdownFollowUp) {
+        if (boundedRescheduleRepair) {
+            Log.d("TASK_ACTION_REPAIR", "expectedAction=RESCHEDULE_TASK result=REQUESTED")
+        } else if (boundedBreakdownFollowUp) {
             Log.d("BREAKDOWN_FOLLOW_UP_SCHEMA", "Strict bounded follow-up schema enabled")
         } else if (boundedRoutineExtraction) {
             Log.d("ROUTINE_EXTRACTION_SCHEMA", "Strict bounded routine schema enabled")
@@ -209,7 +226,9 @@ open class LaptopAgentClient(
         return try {
             requestClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                if (boundedBreakdownFollowUp) {
+                if (boundedRescheduleRepair) {
+                    Log.d("TASK_ACTION_REPAIR", "http=${response.code} responseChars=${body.length}")
+                } else if (boundedBreakdownFollowUp) {
                     Log.d(
                         "BREAKDOWN_FOLLOW_UP_HTTP",
                         "HTTP ${response.code}; responseChars=${body.length}"
@@ -521,7 +540,30 @@ calculation base. Choose only the intended representation. Android accepts confi
 Return only the exact JSON object, without markdown or explanation.
 """.trimIndent()
 
+        internal val RESCHEDULE_REPAIR_SYSTEM_PROMPT = """
+Perform one bounded RESCHEDULE_TASK extraction from the COMPLETE original normalized request.
+Android rejected CREATE_TASK because the request indicates moving an existing task's schedule.
+Extract target_task_title from the user's named existing task, new_date from the destination date,
+and new_time from the destination time. Preserve date expressions for Android temporal resolution;
+do not calculate calendar dates. Use 24-hour HH:mm for an explicit unambiguous clock time.
+Example: "Move Read Book to 31 August at 8 PM." -> target_task_title="Read Book",
+new_date="31 August", new_time="20:00", confidence=0.95, need_clarification=false.
+Empty new_date or new_time means that part was not supplied. Do not drop supplied date/time meaning.
+If the target or destination cannot be understood, set need_clarification=true; do not guess.
+Return ONLY target_task_title, new_date, new_time, confidence, need_clarification.
+There is no action choice: Android constructs RESCHEDULE_TASK only after validating this extraction.
+Never create a task, choose a database task, invent task facts/IDs/refs, or claim execution.
+""".trimIndent()
         internal val SYSTEM_PROMPT = """
+Current command semantics take precedence over prior conversation.
+Explicit contrasts:
+- "Move Read Book to 31 August at 8 PM." -> action=RESCHEDULE_TASK,
+  target_task_title="Read Book", task_title="", new_date="31 August", new_time="20:00".
+- "Remind me to read a book on 31 August at 8 PM." -> action=CREATE_TASK.
+- "I haven't finished Buy Milk after all." -> action=MARK_UNDONE, target_task_title="Buy Milk".
+- "Buy Milk is not complete yet" -> action=MARK_UNDONE, target_task_title="Buy Milk".
+- "I've finished Buy Milk." -> action=MARK_DONE, target_task_title="Buy Milk".
+
 You are a strict JSON task-command parser for an Android task scheduling app.
 
 Return only one valid compact JSON object. No markdown. No explanation.

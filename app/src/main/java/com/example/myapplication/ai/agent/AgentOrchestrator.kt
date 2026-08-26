@@ -2,6 +2,8 @@ package com.example.myapplication.ai.agent
 
 import android.util.Log
 import com.example.myapplication.ai.AiParsedCommand
+import com.example.myapplication.ai.AiIntent
+import com.example.myapplication.ai.TaskCommandContradictionDetector
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
@@ -78,6 +80,17 @@ class AgentOrchestrator(
             val rawContent = laptopAgentClient.process(normalizedText)
             val agentResponse = taskAgentResponseParser.parse(rawContent)
             val normalizedCommand = taskActionNormalizer.normalize(agentResponse)
+            val scheduleChange = if (normalizedCommand.intent == AiIntent.CREATE_TASK.name) {
+                TaskCommandContradictionDetector.scheduleChangeEvidence(normalizedText)
+            } else null
+            if (scheduleChange != null) {
+                Log.d(
+                    "TASK_ACTION_GUARD",
+                    "inputCategory=EXISTING_TASK_SCHEDULE_CHANGE primaryAction=CREATE_TASK " +
+                        "result=REPAIR_REQUIRED"
+                )
+                return repairReschedule(normalizedText, scheduleChange)
+            }
             val validatedCommand = actionValidator.validate(normalizedCommand)
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
@@ -90,6 +103,23 @@ class AgentOrchestrator(
             )
             throw TaskAgentProcessingException("Task agent failed to process command", e)
         }
+    }
+
+    private suspend fun repairReschedule(
+        normalizedText: String,
+        evidence: TaskCommandContradictionDetector.ScheduleChangeEvidence
+    ): AiParsedCommand = try {
+        // Extract afresh from the complete request; the rejected CREATE fields are discarded.
+        val raw = laptopAgentClient.processRescheduleRepair(normalizedText)
+        val response = taskAgentResponseParser.parse(RescheduleRepairParser.toTaskAgentJson(raw, evidence))
+        val command = actionValidator.validate(taskActionNormalizer.normalize(response))
+        Log.d("TASK_ACTION_REPAIR", "expectedAction=RESCHEDULE_TASK result=ACCEPTED")
+        command
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.d("TASK_ACTION_REPAIR", "expectedAction=RESCHEDULE_TASK result=REJECTED")
+        throw e // process() supplies the existing safe TaskAgentProcessingException; no CREATE fallback.
     }
 
     suspend fun processContextAction(

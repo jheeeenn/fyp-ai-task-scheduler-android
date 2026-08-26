@@ -21,7 +21,9 @@ class ConversationNoContextNamedCommandRoutingTest {
             Triple("Update take medicine", "UPDATE", "take medicine"),
             Triple("Delete take medicine", "DELETE", "take medicine"),
             Triple("Mark take medicine complete", "MARK_DONE", "take medicine"),
-            Triple("Reopen take medicine", "MARK_UNDONE", "take medicine")
+            Triple("Reopen take medicine", "MARK_UNDONE", "take medicine"),
+            Triple("Buy Milk is not complete yet", "MARK_UNDONE", "Buy Milk"),
+            Triple("I haven't finished Buy Milk after all", "MARK_UNDONE", "Buy Milk")
         ).forEach { (utterance, action, expectedNamedTarget) ->
             val client = NoContextClient(
                 primary = decision(
@@ -64,7 +66,8 @@ class ConversationNoContextNamedCommandRoutingTest {
     fun blankNoContextDeicticMutationsRepairToClarification() = runBlocking {
         listOf(
             "move it" to "RESCHEDULE",
-            "delete this" to "DELETE"
+            "delete this" to "DELETE",
+            "It's not finished after all" to "MARK_UNDONE"
         ).forEach { (utterance, action) ->
             val client = NoContextClient(
                 primary = decision(

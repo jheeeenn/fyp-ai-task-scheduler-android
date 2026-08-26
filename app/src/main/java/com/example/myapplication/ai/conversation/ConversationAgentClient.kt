@@ -75,6 +75,19 @@ $userText
             executeConversationRequest(userPrompt, RequestKind.ROUTING)
         }
 
+    open suspend fun processTaskCommandRouteRepair(
+        normalizedText: String,
+        failureCode: String,
+        failedRoute: ConversationRoute
+    ): String = withContext(Dispatchers.IO) {
+        val input = JSONObject().apply {
+            put("current_normalized_utterance", normalizedText)
+            put("failure_reason", failureCode)
+            put("failed_primary_route", failedRoute.name)
+        }
+        executeConversationRequest(input.toString(), RequestKind.TASK_COMMAND_ROUTE_REPAIR)
+    }
+
     open suspend fun processRepair(userText: String, appContextSummary: String): String =
         withContext(Dispatchers.IO) {
             val repairProfile =
@@ -371,6 +384,7 @@ $snapshotJson
     private fun executeConversationRequest(userPrompt: String, kind: RequestKind): String {
         val temperature = when (kind) {
             RequestKind.ROUTING -> ROUTING_TEMPERATURE
+            RequestKind.TASK_COMMAND_ROUTE_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.NO_CONTEXT_MUTATION_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.CONTEXT_READ_REPAIR -> ROUTING_TEMPERATURE
             RequestKind.CONTEXT_ACTION_REPAIR -> ROUTING_TEMPERATURE
@@ -386,6 +400,7 @@ $snapshotJson
         }
         val maxTokens = when (kind) {
             RequestKind.ROUTING -> 256
+            RequestKind.TASK_COMMAND_ROUTE_REPAIR -> NO_CONTEXT_MUTATION_REPAIR_MAX_TOKENS
             RequestKind.NO_CONTEXT_MUTATION_REPAIR ->
                 NO_CONTEXT_MUTATION_REPAIR_MAX_TOKENS
             RequestKind.CONTEXT_READ_REPAIR -> CONTEXT_READ_REPAIR_MAX_TOKENS
@@ -402,6 +417,8 @@ $snapshotJson
         }
         val responseFormat = when (kind) {
             RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
+            RequestKind.TASK_COMMAND_ROUTE_REPAIR ->
+                AgentResponseSchemas.taskCommandRouteRepairResponseFormat()
             RequestKind.NO_CONTEXT_MUTATION_REPAIR ->
                 AgentResponseSchemas.noContextMutationRepairResponseFormat()
             RequestKind.CONTEXT_READ_REPAIR -> AgentResponseSchemas.contextReadRepairResponseFormat()
@@ -422,6 +439,7 @@ $snapshotJson
         }
         val systemPrompt = when (kind) {
             RequestKind.ROUTING -> ROUTING_SYSTEM_PROMPT
+            RequestKind.TASK_COMMAND_ROUTE_REPAIR -> TASK_COMMAND_ROUTE_REPAIR_SYSTEM_PROMPT
             RequestKind.NO_CONTEXT_MUTATION_REPAIR ->
                 NO_CONTEXT_MUTATION_REPAIR_SYSTEM_PROMPT
             RequestKind.CONTEXT_READ_REPAIR -> CONTEXT_READ_REPAIR_SYSTEM_PROMPT
@@ -477,6 +495,8 @@ $snapshotJson
                 "CONTEXT_SUGGESTION_AGENT",
                 "Strict bounded context-suggestion schema enabled"
             )
+        } else if (kind == RequestKind.TASK_COMMAND_ROUTE_REPAIR) {
+            Log.d("CONVERSATION_TASK_ROUTE_REPAIR", "result=REQUESTED")
         } else if (kind == RequestKind.NO_CONTEXT_MUTATION_REPAIR) {
             Log.d(
                 "NO_CONTEXT_MUTATION_REPAIR",
@@ -624,6 +644,7 @@ $snapshotJson
     }
 
     private enum class RequestKind {
+        TASK_COMMAND_ROUTE_REPAIR,
         ROUTING,
         NO_CONTEXT_MUTATION_REPAIR,
         CONTEXT_READ_REPAIR,
@@ -999,6 +1020,27 @@ User: delete my routine
 Do not output Room IDs, task fields, database claims, speech, explanations, markdown, or fields
 other than the required four-field JSON object.
 """.trimIndent()
+        internal val TASK_COMMAND_ROUTE_REPAIR_SYSTEM_PROMPT = """
+You perform one bounded semantic routing repair after Android detected a contradiction.
+Use only the current original normalized utterance, bounded failure reason, and failed route.
+Decide only TASK_COMMAND or ASK_CLARIFICATION. No task database or prior memory is supplied.
+Current command semantics take precedence over the failed route and any prior conversation.
+Use TASK_COMMAND for a usable task existence/list/count query with an explicit temporal scope,
+or a clear named task completion/reopen correction. Examples:
+- "Do I have anything planned for 28 August?" -> TASK_COMMAND
+- "What tasks do I have on 30 August?" -> TASK_COMMAND
+- "How many tasks do I have tomorrow?" -> TASK_COMMAND
+- "I haven't finished Buy Milk after all" -> TASK_COMMAND
+- "Buy Milk is not complete yet" -> TASK_COMMAND
+- "Mark Buy Milk incomplete again" -> TASK_COMMAND
+- "Reopen Buy Milk" -> TASK_COMMAND
+Use ASK_CLARIFICATION when no named target or usable query can be understood, including
+"It's not finished after all" with no task context. Never infer a task from missing context.
+For TASK_COMMAND, reply must be empty. For ASK_CLARIFICATION, reply is one concise question.
+Never invent task titles, T1/T2 refs, Room IDs, task facts, dates, times, or execution results.
+Do not execute or claim to have executed any operation.
+Return only move, reply, confidence. No task_text, context, action, or other fields.
+""".trimIndent()
         internal val NO_CONTEXT_MUTATION_REPAIR_SYSTEM_PROMPT = """
 You perform one bounded routing repair after Android rejected CONTEXT_ACTION.
 
@@ -1014,6 +1056,10 @@ task operation for normal Task Agent processing. Examples:
 - "Update take medicine" -> TASK_COMMAND
 - "Mark assignment complete" -> TASK_COMMAND
 - "Reopen dentist appointment" -> TASK_COMMAND
+- "I haven't finished Buy Milk after all" -> TASK_COMMAND
+- "Buy Milk is not complete yet" -> TASK_COMMAND (Buy Milk is explicitly named)
+
+Current user command semantics take precedence over prior conversational memory.
 
 Use ASK_CLARIFICATION when the request depends on unavailable context. Examples:
 - "move it"
@@ -1259,6 +1305,14 @@ Do not output markdown, reasoning, speech, advice, plans, explanations, or extra
 """.trimIndent()
 
         internal val ROUTING_SYSTEM_PROMPT = """
+Current user command semantics take precedence over prior conversational memory.
+Explicit contrasts:
+- "Do I have anything planned for 28 August?" -> TASK_COMMAND, not DAILY_BRIEFING.
+- "Give me my daily briefing." -> DAILY_BRIEFING.
+- "I haven't finished Buy Milk after all." -> TASK_COMMAND, not CONTEXT_AWARE_SUGGESTION.
+- "Buy Milk is not complete yet" -> TASK_COMMAND: the target is explicitly named.
+- "What should I do next?" -> CONTEXT_AWARE_SUGGESTION.
+
 You are the Conversation Orchestrator Agent in a centralized multi-agent task scheduling app for visually impaired users.
 
 You receive user utterances that Android's bounded local interaction handlers did not already resolve.

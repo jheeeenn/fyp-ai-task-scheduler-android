@@ -5,6 +5,16 @@ import java.util.Calendar
 import java.util.Locale
 
 class TemporalExpressionResolver {
+    // Lexical evidence only: guards must not resolve dates or choose an execution schedule.
+    internal fun hasExplicitDateExpression(text: String): Boolean =
+        extractDatePhrase(clean(text)).isNotBlank()
+
+    internal fun hasExplicitTimeExpression(text: String): Boolean =
+        extractTimePhrase(clean(text)).isNotBlank()
+
+    internal fun hasExplicitDateExpressionBeyondToday(text: String): Boolean =
+        extractDatePhrase(clean(text)).let { it.isNotBlank() && it != "today" }
+
     private val monthNames = "jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december"
     private val weekdays = mapOf(
         "sunday" to Calendar.SUNDAY, "monday" to Calendar.MONDAY, "tuesday" to Calendar.TUESDAY,
