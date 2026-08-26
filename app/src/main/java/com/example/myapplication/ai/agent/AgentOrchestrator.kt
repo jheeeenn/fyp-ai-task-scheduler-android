@@ -93,14 +93,24 @@ class AgentOrchestrator(
                 )
                 return repairTitleRename(normalizedText)
             }
-            val scheduleChange = if (normalizedCommand.intent == AiIntent.CREATE_TASK.name) {
+            val scheduleChange = if (normalizedCommand.intent in setOf(
+                    AiIntent.CREATE_TASK.name, AiIntent.RESCHEDULE_TASK.name
+                )
+            ) {
                 TaskCommandContradictionDetector.scheduleChangeEvidence(normalizedText)
             } else null
-            if (scheduleChange != null) {
+            if (scheduleChange != null && (
+                    normalizedCommand.intent == AiIntent.CREATE_TASK.name ||
+                        hasRescheduleTemporalRoleContradiction(normalizedCommand, scheduleChange)
+                )
+            ) {
+                val reason = if (normalizedCommand.intent == AiIntent.RESCHEDULE_TASK.name) {
+                    "DESTINATION_TEMPORAL_ROLE_MISMATCH"
+                } else "CONTRADICTORY_PRIMARY_ACTION"
                 Log.d(
                     "TASK_ACTION_GUARD",
-                    "inputCategory=EXISTING_TASK_SCHEDULE_CHANGE primaryAction=CREATE_TASK " +
-                        "result=REPAIR_REQUIRED"
+                    "inputCategory=EXISTING_TASK_SCHEDULE_CHANGE " +
+                        "primaryAction=${normalizedCommand.intent} result=REPAIR_REQUIRED reason=$reason"
                 )
                 return repairReschedule(normalizedText, scheduleChange)
             }
@@ -118,11 +128,20 @@ class AgentOrchestrator(
         }
     }
 
+    private fun hasRescheduleTemporalRoleContradiction(
+        command: AiParsedCommand,
+        evidence: TaskCommandContradictionDetector.ScheduleChangeEvidence
+    ): Boolean =
+        (evidence.hasDestinationDate && command.newDateText.isNullOrBlank()) ||
+            (evidence.hasDestinationTime && command.newTimeText.isNullOrBlank()) ||
+            (!evidence.hasTargetDate && !command.targetDateText.isNullOrBlank()) ||
+            (!evidence.hasTargetTime && !command.targetTimeText.isNullOrBlank())
+
     private suspend fun repairReschedule(
         normalizedText: String,
         evidence: TaskCommandContradictionDetector.ScheduleChangeEvidence
     ): AiParsedCommand = try {
-        // Extract afresh from the complete request; the rejected CREATE fields are discarded.
+        // Extract afresh from the complete request; all rejected primary fields are discarded.
         val raw = laptopAgentClient.processRescheduleRepair(normalizedText)
         val response = taskAgentResponseParser.parse(RescheduleRepairParser.toTaskAgentJson(raw, evidence))
         val command = actionValidator.validate(taskActionNormalizer.normalize(response))

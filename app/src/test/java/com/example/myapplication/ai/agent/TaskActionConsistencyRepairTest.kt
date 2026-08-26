@@ -161,6 +161,118 @@ class TaskActionConsistencyRepairTest {
     }
 
     @Test
+    fun cu05PhysicalRescheduleRoleFailureReextractsCompleteRequestOnce() = runBlocking {
+        val text = "Move Read Book to 31 August at 8 PM."
+        val malformed = primary("RESCHEDULE_TASK", "Read Book")
+            .put("target_date", "31 August").put("target_time", "20:00")
+        val client = Client(malformed.toString(),
+            repair().put("target_task_title", "Read Book").toString())
+
+        val command = orchestrator(client).process(text)
+
+        assertEquals(1, client.primaryCalls)
+        assertEquals(1, client.repairCalls)
+        assertEquals(0, client.renameRepairCalls)
+        assertEquals(text, client.repairText)
+        assertEquals("RESCHEDULE_TASK", command.intent)
+        assertEquals("Read Book", command.targetTaskTitle)
+        assertNull(command.taskTitle)
+        assertNull(command.targetDateText)
+        assertNull(command.targetTimeText)
+        assertEquals("31 August", command.newDateText)
+        assertEquals("20:00", command.newTimeText)
+    }
+
+    @Test
+    fun missingDestinationsAndUnsupportedTargetConstraintsRequireRepair() = runBlocking {
+        val valid = primary("RESCHEDULE_TASK", "Read Book")
+            .put("new_date", "31 August").put("new_time", "20:00")
+        listOf(
+            JSONObject(valid.toString()).put("new_date", ""),
+            JSONObject(valid.toString()).put("new_time", ""),
+            JSONObject(valid.toString()).put("new_date", "").put("target_date", "31 August"),
+            JSONObject(valid.toString()).put("new_time", "").put("target_time", "20:00"),
+            JSONObject(valid.toString()).put("target_date", "31 August"),
+            JSONObject(valid.toString()).put("target_time", "20:00"),
+            JSONObject(valid.toString()).put("target_date", "31 August").put("target_time", "20:00"),
+            // Deliberately wrong primary values prove repair does not copy/swap them.
+            primary("RESCHEDULE_TASK", "Read Book").put("target_date", "1 September")
+                .put("target_time", "09:00")
+        ).forEach { malformed ->
+            val client = Client(malformed.toString())
+            val command = orchestrator(client).process("Move Read Book to 31 August at 8 PM.")
+            assertEquals(1, client.primaryCalls)
+            assertEquals(1, client.repairCalls)
+            assertEquals(0, client.renameRepairCalls)
+            assertEquals("RESCHEDULE_TASK", command.intent)
+            assertNull(command.targetDateText)
+            assertNull(command.targetTimeText)
+            assertEquals("31 August", command.newDateText)
+            assertEquals("20:00", command.newTimeText)
+        }
+    }
+
+    @Test
+    fun correctTemporalRolesAndOptionalCurrentConstraintsNeedNoRepair() = runBlocking {
+        listOf(
+            "Move Read Book to 31 August at 8 PM." to primary("RESCHEDULE_TASK", "Read Book")
+                .put("new_date", "31 August").put("new_time", "20:00"),
+            "Reschedule tomorrow's appointment to Friday at 10 AM" to primary("RESCHEDULE_TASK", "appointment")
+                .put("target_date", "tomorrow").put("new_date", "Friday").put("new_time", "10:00"),
+            "Move the 8 PM Read Book task to 9 PM" to primary("RESCHEDULE_TASK", "Read Book")
+                .put("target_time", "20:00").put("new_time", "21:00"),
+            // Current schedule constraints remain optional, even when present in the utterance.
+            "Reschedule tomorrow's appointment to Friday at 10 AM" to primary("RESCHEDULE_TASK", "appointment")
+                .put("new_date", "Friday").put("new_time", "10:00"),
+            "Move Read Book to tomorrow" to primary("RESCHEDULE_TASK", "Read Book").put("new_date", "tomorrow"),
+            "Move Read Book to 8 PM" to primary("RESCHEDULE_TASK", "Read Book").put("new_time", "20:00")
+        ).forEach { (text, response) ->
+            val client = Client(response.toString())
+            val command = orchestrator(client).process(text)
+            assertEquals("RESCHEDULE_TASK", command.intent)
+            assertEquals(response.getString("target_task_title"), command.targetTaskTitle)
+            assertEquals(response.getString("target_date").ifBlank { null }, command.targetDateText)
+            assertEquals(response.getString("target_time").ifBlank { null }, command.targetTimeText)
+            assertEquals(response.getString("new_date").ifBlank { null }, command.newDateText)
+            assertEquals(response.getString("new_time").ifBlank { null }, command.newTimeText)
+            assertEquals(1, client.primaryCalls)
+            assertEquals(0, client.repairCalls)
+            assertEquals(0, client.renameRepairCalls)
+        }
+    }
+
+    @Test
+    fun scheduleEvidenceSeparatesTargetAndDestinationSegments() {
+        val destinationOnly = requireNotNull(TaskCommandContradictionDetector.scheduleChangeEvidence(
+            "Move Read Book to 31 August at 8 PM."))
+        assertFalse(destinationOnly.hasTargetDate)
+        assertFalse(destinationOnly.hasTargetTime)
+        assertTrue(destinationOnly.hasDestinationDate)
+        assertTrue(destinationOnly.hasDestinationTime)
+        val targetDate = requireNotNull(TaskCommandContradictionDetector.scheduleChangeEvidence(
+            "Reschedule tomorrow's appointment to Friday at 10 AM"))
+        assertTrue(targetDate.hasTargetDate)
+        assertFalse(targetDate.hasTargetTime)
+        val targetTime = requireNotNull(TaskCommandContradictionDetector.scheduleChangeEvidence(
+            "Move the 8 PM Read Book task to 9 PM"))
+        assertFalse(targetTime.hasTargetDate)
+        assertTrue(targetTime.hasTargetTime)
+        assertFalse(targetTime.hasDestinationDate)
+        assertTrue(targetTime.hasDestinationTime)
+    }
+
+    @Test
+    fun reschedulePromptExplicitlySeparatesCurrentAndDestinationSchedules() {
+        val prompt = LaptopAgentClient.SYSTEM_PROMPT.replace(Regex("\\s+"), " ")
+        assertTrue(prompt.contains("target_date / target_time identify the CURRENT existing task"))
+        assertTrue(prompt.contains("new_date / new_time are the requested DESTINATION"))
+        assertTrue(prompt.contains("Never put the requested destination in target_date / target_time merely because it is the only temporal phrase"))
+        assertTrue(prompt.contains("target_task_title=\"Read Book\", target_date=\"\", target_time=\"\", new_date=\"31 August\", new_time=\"20:00\""))
+        assertTrue(prompt.contains("target_date=\"tomorrow\", target_time=\"\", new_date=\"Friday\", new_time=\"10:00\""))
+        assertTrue(prompt.contains("target_time=\"20:00\", new_date=\"\", new_time=\"21:00\""))
+    }
+
+    @Test
     fun movementVariantsUseFreshDateOrTimeExtraction() = runBlocking {
         listOf(
             Triple("Move Read Book to tomorrow", "tomorrow", ""),
@@ -225,8 +337,8 @@ class TaskActionConsistencyRepairTest {
     }
 
     @Test
-    fun anyFailedRescheduleRepairFailsClosedAndNeverReturnsCreate() = runBlocking {
-        listOf(
+    fun anyFailedRescheduleRepairFailsClosedAndNeverReturnsRejectedPrimary() = runBlocking {
+        val invalidRepairs = listOf(
             "", "{", repair().toString() + " trailing",
             primary("CREATE_TASK", "read book").toString(),
             repair().put("action", "CREATE_TASK").toString(),
@@ -239,21 +351,30 @@ class TaskActionConsistencyRepairTest {
             repair().put("need_clarification", true).toString(),
             repair().put("need_clarification", "false").toString(),
             repair(date = "").toString(), repair(time = "").toString()
-        ).forEach { raw ->
-            val client = Client(primary("CREATE_TASK", "read book").toString(), raw)
-            val error = runCatching { orchestrator(client).process("Move Read Book to 31 August at 8 PM.") }
-                .exceptionOrNull()
-            assertTrue(raw, error is TaskAgentProcessingException)
-            assertEquals(1, client.primaryCalls)
+        )
+        val rejectedPrimaries = listOf(
+            primary("CREATE_TASK", "read book").toString(),
+            primary("RESCHEDULE_TASK", "Read Book")
+                .put("target_date", "31 August").put("target_time", "20:00").toString()
+        )
+        rejectedPrimaries.forEach { rejected ->
+            invalidRepairs.forEach { raw ->
+                val client = Client(rejected, raw)
+                val error = runCatching {
+                    orchestrator(client).process("Move Read Book to 31 August at 8 PM.")
+                }.exceptionOrNull()
+                assertTrue(raw, error is TaskAgentProcessingException)
+                assertEquals(1, client.primaryCalls)
+                assertEquals(1, client.repairCalls)
+            }
+            val client = Client(rejected, failure = IOException("timeout"))
+            assertTrue(runCatching { orchestrator(client).process("Move Read Book to tomorrow") }
+                .exceptionOrNull() is TaskAgentProcessingException)
             assertEquals(1, client.repairCalls)
+            val cancelled = Client(rejected, failure = CancellationException())
+            assertTrue(runCatching { orchestrator(cancelled).process("Move Read Book to tomorrow") }
+                .exceptionOrNull() is CancellationException)
         }
-        val client = Client(primary("CREATE_TASK", "read book").toString(), failure = IOException("timeout"))
-        assertTrue(runCatching { orchestrator(client).process("Move Read Book to tomorrow") }
-            .exceptionOrNull() is TaskAgentProcessingException)
-        assertEquals(1, client.repairCalls)
-        val cancelled = Client(primary("CREATE_TASK", "read book").toString(), failure = CancellationException())
-        assertTrue(runCatching { orchestrator(cancelled).process("Move Read Book to tomorrow") }
-            .exceptionOrNull() is CancellationException)
     }
 
     @Test

@@ -8,7 +8,12 @@ import java.util.Locale
  * Anchored structures deliberately abstain on broad conversation and contextual references.
  */
 internal object TaskCommandContradictionDetector {
-    data class ScheduleChangeEvidence(val hasDestinationDate: Boolean, val hasDestinationTime: Boolean)
+    data class ScheduleChangeEvidence(
+        val hasTargetDate: Boolean,
+        val hasTargetTime: Boolean,
+        val hasDestinationDate: Boolean,
+        val hasDestinationTime: Boolean
+    )
 
     private val temporal = TemporalExpressionResolver()
     private const val REQUEST = "(?:(?:can|could|would) you )?(?:please )?"
@@ -52,11 +57,14 @@ internal object TaskCommandContradictionDetector {
 
     fun scheduleChangeEvidence(text: String): ScheduleChangeEvidence? {
         val match = scheduleChange.matchEntire(normalize(text)) ?: return null
-        if (!hasNamedEvidence(match.groupValues[1])) return null
+        val target = match.groupValues[1]
+        if (!hasNamedEvidence(target)) return null
         val destination = match.groupValues[2]
         return ScheduleChangeEvidence(
-            temporal.hasExplicitDateExpression(destination),
-            temporal.hasExplicitTimeExpression(destination)
+            hasTargetDate = temporal.hasExplicitDateExpression(target),
+            hasTargetTime = temporal.hasExplicitTimeExpression(target),
+            hasDestinationDate = temporal.hasExplicitDateExpression(destination),
+            hasDestinationTime = temporal.hasExplicitTimeExpression(destination)
         ).takeIf { it.hasDestinationDate || it.hasDestinationTime }
     }
 

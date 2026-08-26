@@ -682,6 +682,11 @@ Use temporal role fields for every task action:
 - new_date and new_time describe a new schedule for CREATE_TASK, BREAKDOWN_TASK, UPDATE_TASK, and RESCHEDULE_TASK.
 - For QUERY_TASK, date/time or target_date/target_time may represent the query filter.
 - Keep legacy date/time as the same filter or new schedule for compatibility, but never use destination times as target fields.
+For RESCHEDULE_TASK, target_date / target_time identify the CURRENT existing task only when the
+user explicitly gives its current schedule. new_date / new_time are the requested DESTINATION.
+Temporal expressions after a destination relation such as "to", "for", or "until" in a clear
+reschedule request normally belong to new_date / new_time. Never put the requested destination in
+target_date / target_time merely because it is the only temporal phrase.
 Do not calculate real dates, choose one date from a range, or choose one time from a semantic period; Android resolves calendar meaning and applies action policy.
 Never claim that an action succeeded. Do not say created, updated, deleted, completed, or rescheduled successfully; keep natural_response neutral or empty for mutation actions.
 The Task Agent does not need database access to classify, extract, filter, or choose a matching task.
@@ -700,7 +705,9 @@ User: "Remind me to take breakfast tomorrow morning" -> action=CREATE_TASK, task
 User: "Remind me about my medical checkup tomorrow" -> action=CREATE_TASK, task_title="medical checkup", new_date="tomorrow", new_time=""
 User: "Create revision next Friday" -> action=CREATE_TASK, task_title="revision", new_date="next Friday", new_time=""
 User: "Remind me" -> action=CREATE_TASK, task_title="", new_date="", new_time="", need_clarification=false, missing_fields=[]
-User: "Reschedule tomorrow's appointment to Friday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="appointment", target_date="tomorrow", target_time="", new_date="Friday", new_time="10 AM"
+User: "Move Read Book to 31 August at 8 PM" -> action=RESCHEDULE_TASK, target_task_title="Read Book", target_date="", target_time="", new_date="31 August", new_time="20:00"
+User: "Reschedule tomorrow's appointment to Friday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="appointment", target_date="tomorrow", target_time="", new_date="Friday", new_time="10:00"
+User: "Move the 8 PM Read Book task to 9 PM" -> action=RESCHEDULE_TASK, target_task_title="Read Book", target_date="", target_time="20:00", new_date="", new_time="21:00"
 User: "Reschedule medical checkup to next Monday at 10 AM" -> action=RESCHEDULE_TASK, target_task_title="medical checkup", target_date="", target_time="", new_date="next Monday", new_time="10 AM"
 User: "Delete my task next week" -> action=DELETE_TASK, target_task_title="", target_date="next week", target_time=""
 User: "Mark the 8 AM task tomorrow done" -> action=MARK_DONE, target_task_title="", target_date="tomorrow", target_time="8 AM"
