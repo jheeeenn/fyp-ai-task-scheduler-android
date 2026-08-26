@@ -14,6 +14,63 @@ import org.junit.Test
 
 class TaskQueryPresentationContractTest {
     @Test
+    fun physicalWhenQueryTitleRoleDriftIsCanonicalizedBeforeValidation() {
+        assertCanonicalNamedQuery("Read Book", TaskQueryDetail.DATE_TIME)
+    }
+
+    @Test
+    fun physicalTimeQueryTitleRoleDriftPreservesTheModelProposedName() {
+        listOf("Read Book", "Reebok").forEach { title ->
+            assertCanonicalNamedQuery(title, TaskQueryDetail.TIME)
+        }
+    }
+
+    @Test
+    fun dateQueryTitleRoleDriftIsCanonicalizedBeforeValidation() {
+        assertCanonicalNamedQuery("Read Book", TaskQueryDetail.DATE)
+    }
+
+    @Test
+    fun malformedListAndCountTitlesAreNotMovedOrReinterpreted() {
+        listOf("OVERVIEW", "COUNT_ONLY", "DETAILS").forEach { presentation ->
+            val command = parseAndNormalize(scheduleDetailResponseJson("Read Book", TaskQueryDetail.NONE)
+                .put("query_presentation", presentation))
+            assertEquals(AiIntent.QUERY_TASK.name, command.intent)
+            assertEquals("Read Book", command.taskTitle)
+            assertEquals(null, command.targetTaskTitle)
+            assertEquals(TaskQueryDetail.NONE, command.queryDetail)
+            assertEquals(TaskQueryPresentation.valueOf(presentation), command.queryPresentation)
+            val failure = runCatching { ActionValidator().validate(command) }.exceptionOrNull()
+            assertTrue(failure is TaskAgentValidationException)
+            assertEquals("QUERY_TASK requires taskTitle empty; use targetTaskTitle for a named read", failure?.message)
+        }
+    }
+
+    @Test
+    fun twoPopulatedQueryTitleFieldsArePreservedAndRejected() {
+        listOf("Wrong", "Read Book").forEach { taskTitle ->
+            val command = parseAndNormalize(scheduleDetailResponseJson(taskTitle, TaskQueryDetail.TIME)
+                .put("target_task_title", "Read Book"))
+            assertEquals(taskTitle, command.taskTitle)
+            assertEquals("Read Book", command.targetTaskTitle)
+            assertEquals(TaskQueryDetail.TIME, command.queryDetail)
+            val failure = runCatching { ActionValidator().validate(command) }.exceptionOrNull()
+            assertTrue(failure is TaskAgentValidationException)
+            assertEquals("QUERY_TASK requires taskTitle empty; use targetTaskTitle for a named read", failure?.message)
+        }
+    }
+
+    @Test
+    fun missingNamedQueryTitleIsNotInventedAndStillFailsValidation() {
+        val command = parseAndNormalize(scheduleDetailResponseJson("", TaskQueryDetail.TIME))
+        assertEquals(null, command.taskTitle)
+        assertEquals(null, command.targetTaskTitle)
+        assertEquals(TaskQueryDetail.TIME, command.queryDetail)
+        assertTrue(runCatching { ActionValidator().validate(command) }
+            .exceptionOrNull() is TaskAgentValidationException)
+    }
+
+    @Test
     fun strictSchemaRequiresExactlyTheScheduleDetailEnum() {
         val format = AgentResponseSchemas.taskAgentResponseFormat().getJSONObject("json_schema")
         val schema = format.getJSONObject("schema")
@@ -203,6 +260,34 @@ class TaskQueryPresentationContractTest {
         assertTrue(prompt.contains("\"Read all task details tomorrow.\" -> action=QUERY_TASK, query_presentation=DETAILS"))
         assertTrue(prompt.contains("For every non-QUERY_TASK action, query_presentation must be NONE."))
     }
+
+    private fun assertCanonicalNamedQuery(title: String, detail: TaskQueryDetail) {
+        val command = ActionValidator().validate(parseAndNormalize(scheduleDetailResponseJson(title, detail)))
+        assertEquals(AiIntent.QUERY_TASK.name, command.intent)
+        assertEquals(null, command.taskTitle)
+        assertEquals(title, command.targetTaskTitle)
+        assertEquals(detail, command.queryDetail)
+        assertEquals(TaskQueryPresentation.DETAILS, command.queryPresentation)
+        assertEquals(0.9f, command.confidence, 0f)
+        assertEquals(null, command.dateText)
+        assertEquals(null, command.timeText)
+        assertEquals(null, command.targetDateText)
+        assertEquals(null, command.targetTimeText)
+        assertEquals(null, command.newDateText)
+        assertEquals(null, command.newTimeText)
+    }
+
+    private fun parseAndNormalize(json: JSONObject): AiParsedCommand =
+        TaskActionNormalizer().normalize(TaskAgentResponseParser().parse(json.toString()))
+
+    private fun scheduleDetailResponseJson(title: String, detail: TaskQueryDetail) =
+        completeResponseJson()
+            .put("task_title", title)
+            .put("target_task_title", "")
+            .put("date", "")
+            .put("query_presentation", "DETAILS")
+            .put("query_detail", detail.name)
+            .put("confidence", 0.9)
 
     private fun completeResponseJson() = JSONObject().apply {
         put("natural_response", "")

@@ -62,6 +62,15 @@ class TaskActionNormalizer {
                 targetTaskTitle = ""
             }
 
+            AiIntent.QUERY_TASK.name -> {
+                // Canonicalize only an existing named schedule-detail query's title role.
+                // List/count queries and conflicting title fields remain for strict validation.
+                if (queryDetail != TaskQueryDetail.NONE && targetTaskTitle.isBlank() && taskTitle.isNotBlank()) {
+                    targetTaskTitle = taskTitle
+                    taskTitle = ""
+                }
+            }
+
             AiIntent.RESCHEDULE_TASK.name,
             AiIntent.DELETE_TASK.name,
             AiIntent.UPDATE_TASK.name,
