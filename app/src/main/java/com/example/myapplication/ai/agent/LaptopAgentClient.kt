@@ -82,6 +82,20 @@ open class LaptopAgentClient(
             )
         }
 
+    open suspend fun processNamedScheduleQueryRepair(normalizedText: String): String =
+        withContext(Dispatchers.IO) {
+            execute(
+                normalizedText = normalizedText,
+                systemPrompt = NAMED_SCHEDULE_QUERY_REPAIR_SYSTEM_PROMPT,
+                responseFormat = AgentResponseSchemas.namedScheduleQueryRepairResponseFormat(),
+                boundedContextAction = false,
+                boundedRoutineExtraction = false,
+                boundedNamedQueryRepair = true,
+                maxOutputTokens = 160,
+                requestClient = boundedTemporalClient
+            )
+        }
+
     open suspend fun processRoutine(normalizedText: String): String =
         withContext(Dispatchers.IO) {
             execute(
@@ -197,6 +211,7 @@ open class LaptopAgentClient(
         boundedBreakdownFollowUp: Boolean = false,
         boundedRescheduleRepair: Boolean = false,
         boundedTitleRenameRepair: Boolean = false,
+        boundedNamedQueryRepair: Boolean = false,
         maxOutputTokens: Int = 512,
         requestClient: OkHttpClient = client
     ): String {
@@ -218,7 +233,9 @@ open class LaptopAgentClient(
             })
         }
 
-        if (boundedTitleRenameRepair) {
+        if (boundedNamedQueryRepair) {
+            Log.d("TASK_NAMED_QUERY_REPAIR", "attempt=1 result=REQUESTED")
+        } else if (boundedTitleRenameRepair) {
             Log.d("TASK_ACTION_REPAIR", "expectedAction=UPDATE_TASK repairType=TITLE_RENAME result=REQUESTED")
         } else if (boundedRescheduleRepair) {
             Log.d("TASK_ACTION_REPAIR", "expectedAction=RESCHEDULE_TASK result=REQUESTED")
@@ -243,7 +260,9 @@ open class LaptopAgentClient(
         return try {
             requestClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                if (boundedTitleRenameRepair) {
+                if (boundedNamedQueryRepair) {
+                    Log.d("TASK_NAMED_QUERY_REPAIR", "http=${response.code} responseChars=${body.length}")
+                } else if (boundedTitleRenameRepair) {
                     Log.d("TASK_ACTION_REPAIR", "repairType=TITLE_RENAME http=${response.code} responseChars=${body.length}")
                 } else if (boundedRescheduleRepair) {
                     Log.d("TASK_ACTION_REPAIR", "http=${response.code} responseChars=${body.length}")
@@ -582,6 +601,22 @@ need_clarification=false. "Rename Read Book to Evening Reading" -> target_task_t
 replacement_title="Evening Reading". If either title is unclear, require clarification; never guess.
 Return only target_task_title, replacement_title, confidence, need_clarification.
 Never choose a Room task, output IDs/refs, introduce schedule changes, or claim execution.
+""".trimIndent()
+        internal val NAMED_SCHEDULE_QUERY_REPAIR_SYSTEM_PROMPT = """
+Perform one bounded named schedule-query extraction from the COMPLETE original normalized request.
+Extract only the specifically named EXISTING task into target_task_title and the requested
+schedule component into query_detail. Preserve the complete user-supplied task name.
+"When is Read Book?" -> target_task_title="Read Book", query_detail=DATE_TIME
+"What time is Read Book?" -> target_task_title="Read Book", query_detail=TIME
+"What date is Read Book?" -> target_task_title="Read Book", query_detail=DATE
+"When is Visit Bank?" -> target_task_title="Visit Bank", query_detail=DATE_TIME
+The requested component is not a temporal filter or a stored date/time. Do not invent the task's
+actual date or time. Do not answer the question, select a database task, or output facts, IDs, refs,
+an action, response text, or any schedule values. No task database or context is supplied.
+If the named target or requested component is unclear, set need_clarification=true; never guess.
+Return only target_task_title, query_detail, confidence, need_clarification as one compact JSON
+object without markdown or explanation. Android validates confidence from 0.80 through 1.0,
+checks the requested component against the original request, and constructs QUERY_TASK.
 """.trimIndent()
         internal val SYSTEM_PROMPT = """
 Current command semantics take precedence over prior conversation.

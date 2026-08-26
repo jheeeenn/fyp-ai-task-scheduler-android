@@ -4,6 +4,9 @@ import android.util.Log
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.TaskCommandContradictionDetector
+import com.example.myapplication.ai.TaskQueryDetail
+import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 import com.example.myapplication.ai.conversation.ConversationContextAction
 import com.example.myapplication.ai.routine.RoutineExtractionResponse
 import com.example.myapplication.ai.routine.RoutineExtractionResponseParser
@@ -114,7 +117,22 @@ class AgentOrchestrator(
                 )
                 return repairReschedule(normalizedText, scheduleChange)
             }
-            val validatedCommand = actionValidator.validate(normalizedCommand)
+            val namedQueryDetail = TaskCommandContradictionDetector.namedScheduleReadEvidence(normalizedText)
+            val consistentCommand = if (namedQueryDetail != null) {
+                if (!isCompleteNamedScheduleQuery(normalizedCommand, namedQueryDetail) ||
+                    agentResponse.requires_confirmation
+                ) {
+                    Log.d(
+                        "TASK_NAMED_QUERY_GUARD",
+                        "primaryAction=${normalizedCommand.intent} expectedDetail=$namedQueryDetail " +
+                            "primaryDetail=${normalizedCommand.queryDetail} result=REPAIR_REQUIRED"
+                    )
+                    return repairNamedScheduleQuery(normalizedText, namedQueryDetail)
+                }
+                // Presentation is Android-owned for this dedicated read path, not a task fact.
+                normalizedCommand.copy(queryPresentation = TaskQueryPresentation.DETAILS)
+            } else normalizedCommand
+            val validatedCommand = actionValidator.validate(consistentCommand)
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
         } catch (e: CancellationException) {
@@ -126,6 +144,36 @@ class AgentOrchestrator(
             )
             throw TaskAgentProcessingException("Task agent failed to process command", e)
         }
+    }
+
+    private fun isCompleteNamedScheduleQuery(command: AiParsedCommand, expectedDetail: TaskQueryDetail): Boolean =
+        command.intent == AiIntent.QUERY_TASK.name &&
+            command.taskTitle.isNullOrBlank() && !command.targetTaskTitle.isNullOrBlank() &&
+            command.queryDetail == expectedDetail && command.queryPresentation != TaskQueryPresentation.NONE &&
+            command.newDateText.isNullOrBlank() && command.newTimeText.isNullOrBlank() &&
+            // Named reads use deterministic speech. Re-extract rather than trust any model prose.
+            command.naturalResponse.isNullOrBlank() &&
+            !command.needsClarification && command.missingFields.isEmpty() &&
+            command.recurrence.isNullOrBlank() && command.priority.isNullOrBlank() &&
+            command.plan.isEmpty() && command.breakdownTargetPreference == BreakdownTargetPreference.AUTO
+
+    private suspend fun repairNamedScheduleQuery(
+        normalizedText: String,
+        expectedDetail: TaskQueryDetail
+    ): AiParsedCommand = try {
+        // The original utterance is the only request input; discard all rejected primary fields.
+        val raw = laptopAgentClient.processNamedScheduleQueryRepair(normalizedText)
+        val response = taskAgentResponseParser.parse(
+            NamedScheduleQueryRepairParser.toTaskAgentJson(raw, expectedDetail)
+        )
+        val command = actionValidator.validate(taskActionNormalizer.normalize(response))
+        Log.d("TASK_NAMED_QUERY_REPAIR", "attempt=1 detail=${command.queryDetail} result=ACCEPTED")
+        command
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.d("TASK_NAMED_QUERY_REPAIR", "attempt=1 result=REJECTED")
+        throw e // process() fails closed; no second repair or fallback to the primary result.
     }
 
     private fun hasRescheduleTemporalRoleContradiction(

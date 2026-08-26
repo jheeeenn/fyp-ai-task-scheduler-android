@@ -3,6 +3,9 @@ package com.example.myapplication.ai.agent
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.AiParsedCommand
 import com.example.myapplication.ai.TaskCommandContradictionDetector
+import com.example.myapplication.ai.TaskQueryDetail
+import com.example.myapplication.ai.TaskQueryPresentation
+import com.example.myapplication.ai.breakdown.BreakdownTargetPreference
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import com.example.myapplication.isTitlePrefillChanged
 import kotlinx.coroutines.CancellationException
@@ -15,6 +18,234 @@ import java.io.File
 import java.io.IOException
 
 class TaskActionConsistencyRepairTest {
+    @Test
+    fun physicalNamedQueryTitleRoleDriftRequiresOneOriginalTextRepair() = runBlocking {
+        listOf(
+            Triple("When is Read Book?", "Read Book", TaskQueryDetail.DATE_TIME),
+            Triple("What time is Read Book?", "Read Book", TaskQueryDetail.TIME),
+            Triple("What time is Reebok?", "Reebok", TaskQueryDetail.TIME),
+            Triple("What date is Read Book?", "Read Book", TaskQueryDetail.DATE)
+        ).forEach { (text, title, detail) ->
+            val raw = namedQuery("", detail).put("task_title", title).put("confidence", 0.9)
+            val client = Client(raw.toString(), namedQueryRepaired = queryRepair(title, detail).toString())
+            assertNamedQuery(orchestrator(client).process(text), title, detail)
+            assertNamedRepairCalls(client, text, 1)
+        }
+    }
+
+    @Test
+    fun physicalVisitBankMissingDetailAndOverviewRequiresOneRepair() = runBlocking {
+        val text = "When is Visit Bank?"
+        val raw = namedQuery("visit bank", TaskQueryDetail.NONE)
+            .put("query_presentation", "OVERVIEW").put("confidence", 0.8)
+        val client = Client(raw.toString(), namedQueryRepaired = queryRepair("visit bank", TaskQueryDetail.DATE_TIME).toString())
+        assertNamedQuery(orchestrator(client).process(text), "visit bank", TaskQueryDetail.DATE_TIME)
+        assertNamedRepairCalls(client, text, 1)
+    }
+
+    @Test
+    fun wrongNonNoneQueryDetailRequiresRepairRatherThanLocalInference() = runBlocking {
+        val text = "What time is Read Book?"
+        val client = Client(namedQuery("Read Book", TaskQueryDetail.DATE_TIME).toString(),
+            namedQueryRepaired = queryRepair("Read Book", TaskQueryDetail.TIME).toString())
+        assertNamedQuery(orchestrator(client).process(text), "Read Book", TaskQueryDetail.TIME)
+        assertNamedRepairCalls(client, text, 1)
+    }
+
+    @Test
+    fun completeTimeDateAndWhenQueriesAreAcceptedWithoutRepair() = runBlocking {
+        listOf("What time" to TaskQueryDetail.TIME, "What date" to TaskQueryDetail.DATE,
+            "When" to TaskQueryDetail.DATE_TIME).forEach { (prefix, detail) ->
+            val text = "$prefix is Read Book?"
+            val raw = namedQuery("Read Book", detail).toString()
+            val expected = ActionValidator().validate(TaskActionNormalizer().normalize(TaskAgentResponseParser().parse(raw)))
+            val client = Client(raw)
+            assertEquals(expected, orchestrator(client).process(text))
+            assertNamedRepairCalls(client, text, 0)
+        }
+    }
+
+    @Test
+    fun completeNamedQueryPresentationIsAndroidOwnedAndExplicitQualifiersArePreserved() = runBlocking {
+        listOf("DETAILS", "OVERVIEW", "COUNT_ONLY", "NONE").forEach { presentation ->
+            val raw = namedQuery("Read Book", TaskQueryDetail.TIME).put("query_presentation", presentation)
+                .put("target_date", "31 August")
+            val client = Client(raw.toString())
+            val text = "What time is Read Book on 31 August?"
+            val result = orchestrator(client).process(text)
+            assertEquals("Read Book", result.targetTaskTitle)
+            assertEquals(TaskQueryDetail.TIME, result.queryDetail)
+            assertEquals("31 August", result.targetDateText)
+            assertEquals(TaskQueryPresentation.DETAILS, result.queryPresentation)
+            assertNamedRepairCalls(client, text, 0)
+        }
+    }
+
+    @Test
+    fun missingNamedTargetIsReextractedExactlyOnce() = runBlocking {
+        val text = "When is Read Book?"
+        val client = Client(namedQuery("", TaskQueryDetail.DATE_TIME).toString())
+        assertNamedQuery(orchestrator(client).process(text), "Read Book", TaskQueryDetail.DATE_TIME)
+        assertNamedRepairCalls(client, text, 1)
+    }
+
+    @Test
+    fun namedQueryShapeContradictionsDiscardAllPrimaryFields() = runBlocking {
+        val primaries = mutableListOf(
+            namedQuery("Wrong", TaskQueryDetail.TIME).put("task_title", "Conflicting title"),
+            namedQuery("Wrong", TaskQueryDetail.TIME).put("need_clarification", true),
+            namedQuery("Wrong", TaskQueryDetail.TIME).put("missing_fields", JSONArray(listOf("time"))),
+            namedQuery("Wrong", TaskQueryDetail.TIME).put("requires_confirmation", true),
+            namedQuery("Wrong", TaskQueryDetail.TIME).put("plan", JSONArray(listOf("Invented work"))),
+            namedQuery("Wrong", TaskQueryDetail.TIME).put("breakdown_target_preference", "NEW_ROOT")
+        )
+        listOf("CREATE_TASK", "UPDATE_TASK", "UNKNOWN").forEach {
+            primaries += namedQuery("Wrong", TaskQueryDetail.TIME).put("action", it)
+        }
+        listOf("new_date" to "tomorrow", "new_time" to "21:00", "recurrence" to "DAILY",
+            "priority" to "HIGH", "natural_response" to "Read Book is scheduled at 9 PM."
+        ).forEach { (field, value) -> primaries += namedQuery("Wrong", TaskQueryDetail.TIME).put(field, value) }
+        primaries.forEach { raw ->
+            raw.put("date", "invented date").put("time", "invented time")
+                .put("target_date", "invented qualifier").put("target_time", "invented qualifier")
+            val text = "What time is Read Book?"
+            val client = Client(raw.toString(), namedQueryRepaired = queryRepair("Read Book", TaskQueryDetail.TIME).toString())
+            assertNamedQuery(orchestrator(client).process(text), "Read Book", TaskQueryDetail.TIME)
+            assertNamedRepairCalls(client, text, 1)
+            // Repair input is only the complete original text, never the rejected fields.
+            assertFalse(client.namedQueryRepairText.contains("Wrong"))
+            assertFalse(client.namedQueryRepairText.contains("invented"))
+        }
+    }
+
+    @Test
+    fun invalidNamedQueryRepairsFailClosedWithoutAnotherCall() = runBlocking {
+        val valid = queryRepair("Read Book", TaskQueryDetail.TIME)
+        val invalid = mutableListOf("", "{", valid.toString() + " trailing", valid.toString() + " {}")
+        listOf("DATE_TIME", "DATE", "NONE", "SUMMARY", "time", "").forEach {
+            invalid += JSONObject(valid.toString()).put("query_detail", it).toString()
+        }
+        listOf("target_task_title" to " ", "target_task_title" to 7,
+            "query_detail" to 7, "confidence" to 0.79, "confidence" to 1.1,
+            "confidence" to "0.95", "need_clarification" to true,
+            "need_clarification" to "false", "target_task_title" to JSONObject.NULL
+        ).forEach { (field, value) -> invalid += JSONObject(valid.toString()).put(field, value).toString() }
+        listOf("action", "task_id", "context_ref", "date", "target_date", "new_time", "natural_response").forEach {
+            invalid += JSONObject(valid.toString()).put(it, "forbidden").toString()
+        }
+        valid.keys().asSequence().toList().forEach {
+            invalid += JSONObject(valid.toString()).apply { remove(it) }.toString()
+        }
+        invalid.forEach { repair ->
+            val text = "What time is Read Book?"
+            val client = Client(namedQuery("", TaskQueryDetail.TIME).toString(), namedQueryRepaired = repair)
+            assertTrue(repair, runCatching { orchestrator(client).process(text) }.exceptionOrNull() is TaskAgentProcessingException)
+            assertNamedRepairCalls(client, text, 1)
+        }
+        val whenClient = Client(namedQuery("Read Book", TaskQueryDetail.NONE).toString(),
+            namedQueryRepaired = queryRepair("Read Book", TaskQueryDetail.NONE).toString())
+        assertTrue(runCatching { orchestrator(whenClient).process("When is Read Book?") }
+            .exceptionOrNull() is TaskAgentProcessingException)
+        assertNamedRepairCalls(whenClient, "When is Read Book?", 1)
+    }
+
+    @Test
+    fun failedOrCancelledNamedQueryRepairHasNoFallbackOrRetry() = runBlocking {
+        listOf(IOException("timeout"), CancellationException("cancelled")).forEach { failure ->
+            val client = Client(namedQuery("Read Book", TaskQueryDetail.NONE).toString(), failure = failure)
+            val caught = runCatching { orchestrator(client).process("When is Read Book?") }.exceptionOrNull()
+            if (failure is CancellationException) assertTrue(caught is CancellationException)
+            else assertTrue(caught is TaskAgentProcessingException)
+            assertNamedRepairCalls(client, "When is Read Book?", 1)
+        }
+    }
+
+    @Test
+    fun nonNamedQueriesContextualAndGeneralLanguageNeverTriggerNamedRepair() = runBlocking {
+        val ordinary = namedQuery("", TaskQueryDetail.NONE).put("query_presentation", "OVERVIEW").put("date", "tomorrow")
+        val ordinaryClient = Client(ordinary.toString())
+        val expected = ActionValidator().validate(TaskActionNormalizer().normalize(TaskAgentResponseParser().parse(ordinary.toString())))
+        assertEquals(expected, orchestrator(ordinaryClient).process("What tasks do I have tomorrow?"))
+        assertNamedRepairCalls(ordinaryClient, "What tasks do I have tomorrow?", 0)
+        listOf("When is the second one?", "When is it?", "How does scheduling work?", "Hello").forEach { text ->
+            assertNull(TaskCommandContradictionDetector.namedScheduleReadEvidence(text))
+            val client = Client(namedQuery("", TaskQueryDetail.TIME).toString())
+            assertTrue(runCatching { orchestrator(client).process(text) }.exceptionOrNull() is TaskAgentProcessingException)
+            assertNamedRepairCalls(client, text, 0)
+        }
+    }
+
+    @Test
+    fun namedQueryRepairUsesExactCompactSchemaAndBoundedClientWithoutAuthorityInputs() {
+        val format = AgentResponseSchemas.namedScheduleQueryRepairResponseFormat().getJSONObject("json_schema")
+        val schema = format.getJSONObject("schema")
+        val fields = setOf("target_task_title", "query_detail", "confidence", "need_clarification")
+        assertTrue(format.getBoolean("strict"))
+        assertFalse(schema.getBoolean("additionalProperties"))
+        assertEquals(fields, schema.getJSONObject("properties").keys().asSequence().toSet())
+        val required = schema.getJSONArray("required")
+        assertEquals(fields, (0 until required.length()).map(required::getString).toSet())
+        assertEquals("[\"DATE\",\"TIME\",\"DATE_TIME\"]",
+            schema.getJSONObject("properties").getJSONObject("query_detail").getJSONArray("enum").toString())
+        val prompt = LaptopAgentClient.NAMED_SCHEDULE_QUERY_REPAIR_SYSTEM_PROMPT
+        listOf("When is Read Book?", "What time is Read Book?", "What date is Read Book?", "When is Visit Bank?").forEach {
+            assertTrue(prompt.contains(it))
+        }
+        assertTrue(prompt.contains("Do not invent the task's"))
+        val client = File("src/main/java/com/example/myapplication/ai/agent/LaptopAgentClient.kt").readText()
+        val request = client.substringAfter("open suspend fun processNamedScheduleQueryRepair(")
+            .substringBefore("open suspend fun processRoutine(")
+        assertTrue(request.contains("requestClient = boundedTemporalClient"))
+        assertTrue(request.contains("maxOutputTokens = 160"))
+        assertTrue(client.substringAfter("private val boundedTemporalClient").substringBefore("open suspend fun process(")
+            .contains(".callTimeout(10, TimeUnit.SECONDS)"))
+        listOf("Room", "TaskMatcher", "contextRef", "snapshot", "candidate", "primary").forEach { assertFalse(it, request.contains(it)) }
+    }
+
+    @Test
+    fun namedQueryReconstructionPassesTheFullParserNormalizerAndStrictValidator() {
+        val raw = NamedScheduleQueryRepairParser.toTaskAgentJson(
+            queryRepair("Read Book", TaskQueryDetail.TIME).put("confidence", 0.80).toString(), TaskQueryDetail.TIME
+        )
+        val response = TaskAgentResponseParser().parse(raw)
+        assertFalse(response.requires_confirmation)
+        val expectedFields = AgentResponseSchemas.taskAgentResponseFormat().getJSONObject("json_schema")
+            .getJSONObject("schema").getJSONObject("properties").keys().asSequence().toSet()
+        assertEquals(expectedFields, JSONObject(raw).keys().asSequence().toSet())
+        assertNamedQuery(ActionValidator().validate(TaskActionNormalizer().normalize(response)), "Read Book", TaskQueryDetail.TIME)
+        assertTrue(runCatching { NamedScheduleQueryRepairParser.toTaskAgentJson(raw, TaskQueryDetail.NONE) }.isFailure)
+    }
+
+    private fun assertNamedQuery(command: AiParsedCommand, title: String, detail: TaskQueryDetail) {
+        assertEquals(AiIntent.QUERY_TASK.name, command.intent)
+        assertEquals(title, command.targetTaskTitle)
+        assertNull(command.taskTitle)
+        assertEquals(detail, command.queryDetail)
+        assertEquals(TaskQueryPresentation.DETAILS, command.queryPresentation)
+        assertNull(command.dateText)
+        assertNull(command.timeText)
+        assertNull(command.targetDateText)
+        assertNull(command.targetTimeText)
+        assertNull(command.newDateText)
+        assertNull(command.newTimeText)
+        assertNull(command.naturalResponse)
+        assertNull(command.recurrence)
+        assertNull(command.priority)
+        assertFalse(command.needsClarification)
+        assertTrue(command.missingFields.isEmpty())
+        assertTrue(command.plan.isEmpty())
+        assertEquals(BreakdownTargetPreference.AUTO, command.breakdownTargetPreference)
+        assertEquals(command, ActionValidator().validate(command))
+    }
+
+    private fun assertNamedRepairCalls(client: Client, text: String, count: Int) {
+        assertEquals(1, client.primaryCalls)
+        assertEquals(count, client.namedQueryRepairCalls)
+        assertEquals(if (count == 0) "" else text, client.namedQueryRepairText)
+        assertEquals(0, client.renameRepairCalls)
+        assertEquals(0, client.repairCalls)
+    }
+
     @Test
     fun correctNamedRenameKeepsBothTitlesWithoutRepair() = runBlocking {
         val client = Client(primary("UPDATE_TASK", "rent payment").put("task_title", "Pay Rent").toString())
@@ -424,12 +655,15 @@ class TaskActionConsistencyRepairTest {
     )
 
     private class Client(val primary: String, val repaired: String = repair().toString(), val failure: Exception? = null,
-        val renameRepaired: String = renameRepair().toString()) : LaptopAgentClient(null) {
+        val renameRepaired: String = renameRepair().toString(),
+        val namedQueryRepaired: String = queryRepair("Read Book", TaskQueryDetail.DATE_TIME).toString()) : LaptopAgentClient(null) {
         var primaryCalls = 0
         var repairCalls = 0
         var repairText = ""
         var renameRepairCalls = 0
         var renameRepairText = ""
+        var namedQueryRepairCalls = 0
+        var namedQueryRepairText = ""
         override suspend fun process(normalizedText: String): String {
             primaryCalls++
             return primary
@@ -446,9 +680,20 @@ class TaskActionConsistencyRepairTest {
             failure?.let { throw it }
             return renameRepaired
         }
+        override suspend fun processNamedScheduleQueryRepair(normalizedText: String): String {
+            namedQueryRepairCalls++
+            namedQueryRepairText = normalizedText
+            failure?.let { throw it }
+            return namedQueryRepaired
+        }
     }
 
     companion object {
+        private fun namedQuery(title: String, detail: TaskQueryDetail) = primary("QUERY_TASK", title)
+            .put("query_detail", detail.name).put("query_presentation", "DETAILS")
+        private fun queryRepair(title: String, detail: TaskQueryDetail) = JSONObject()
+            .put("target_task_title", title).put("query_detail", detail.name)
+            .put("confidence", 0.95).put("need_clarification", false)
         private const val CU04 = "I want the rent payment to be called Pay Rent instead."
         private fun renameRepair() = JSONObject().put("target_task_title", "rent payment")
             .put("replacement_title", "Pay Rent").put("confidence", 0.95).put("need_clarification", false)

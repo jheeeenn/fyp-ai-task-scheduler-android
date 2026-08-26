@@ -14,20 +14,18 @@ import org.junit.Test
 
 class TaskQueryPresentationContractTest {
     @Test
-    fun physicalWhenQueryTitleRoleDriftIsCanonicalizedBeforeValidation() {
-        assertCanonicalNamedQuery("Read Book", TaskQueryDetail.DATE_TIME)
-    }
-
-    @Test
-    fun physicalTimeQueryTitleRoleDriftPreservesTheModelProposedName() {
-        listOf("Read Book", "Reebok").forEach { title ->
-            assertCanonicalNamedQuery(title, TaskQueryDetail.TIME)
+    fun namedQueryTitleRoleDriftRemainsVisibleForOriginalTextSemanticRepair() {
+        listOf(TaskQueryDetail.DATE_TIME, TaskQueryDetail.TIME, TaskQueryDetail.DATE).forEach { detail ->
+            listOf("Read Book", "Reebok").forEach { title ->
+                val command = parseAndNormalize(scheduleDetailResponseJson(title, detail))
+                assertEquals(AiIntent.QUERY_TASK.name, command.intent)
+                assertEquals(title, command.taskTitle)
+                assertEquals(null, command.targetTaskTitle)
+                assertEquals(detail, command.queryDetail)
+                assertTrue(runCatching { ActionValidator().validate(command) }
+                    .exceptionOrNull() is TaskAgentValidationException)
+            }
         }
-    }
-
-    @Test
-    fun dateQueryTitleRoleDriftIsCanonicalizedBeforeValidation() {
-        assertCanonicalNamedQuery("Read Book", TaskQueryDetail.DATE)
     }
 
     @Test
@@ -259,22 +257,6 @@ class TaskQueryPresentationContractTest {
         assertTrue(prompt.contains("\"What do I have tomorrow?\" -> action=QUERY_TASK, query_presentation=OVERVIEW"))
         assertTrue(prompt.contains("\"Read all task details tomorrow.\" -> action=QUERY_TASK, query_presentation=DETAILS"))
         assertTrue(prompt.contains("For every non-QUERY_TASK action, query_presentation must be NONE."))
-    }
-
-    private fun assertCanonicalNamedQuery(title: String, detail: TaskQueryDetail) {
-        val command = ActionValidator().validate(parseAndNormalize(scheduleDetailResponseJson(title, detail)))
-        assertEquals(AiIntent.QUERY_TASK.name, command.intent)
-        assertEquals(null, command.taskTitle)
-        assertEquals(title, command.targetTaskTitle)
-        assertEquals(detail, command.queryDetail)
-        assertEquals(TaskQueryPresentation.DETAILS, command.queryPresentation)
-        assertEquals(0.9f, command.confidence, 0f)
-        assertEquals(null, command.dateText)
-        assertEquals(null, command.timeText)
-        assertEquals(null, command.targetDateText)
-        assertEquals(null, command.targetTimeText)
-        assertEquals(null, command.newDateText)
-        assertEquals(null, command.newTimeText)
     }
 
     private fun parseAndNormalize(json: JSONObject): AiParsedCommand =
