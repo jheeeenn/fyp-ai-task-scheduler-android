@@ -15,6 +15,12 @@ internal object TaskCommandContradictionDetector {
         val hasDestinationTime: Boolean
     )
 
+    data class NamedScheduleReadEvidence(
+        val expectedDetail: TaskQueryDetail,
+        val hasTargetDate: Boolean,
+        val hasTargetTime: Boolean
+    )
+
     private val temporal = TemporalExpressionResolver()
     private const val REQUEST = "(?:(?:can|could|would) you )?(?:please )?"
     private val taskQuery = Regex(
@@ -55,17 +61,22 @@ internal object TaskCommandContradictionDetector {
     }
 
     /** Evidence for a bounded routing repair, not extraction or authoritative task selection. */
-    fun namedScheduleReadEvidence(text: String): TaskQueryDetail? {
+    fun namedScheduleReadEvidence(text: String): NamedScheduleReadEvidence? {
         val match = namedScheduleRead.matchEntire(normalize(text)) ?: return null
         val candidate = match.groupValues[2]
         if (!hasNamedEvidence(candidate) || nonNamedScheduleTarget.containsMatchIn(candidate)) {
             return null
         }
-        return when (match.groupValues[1]) {
+        val detail = when (match.groupValues[1]) {
             "what time" -> TaskQueryDetail.TIME
             "what date" -> TaskQueryDetail.DATE
             else -> TaskQueryDetail.DATE_TIME
         }
+        return NamedScheduleReadEvidence(
+            expectedDetail = detail,
+            hasTargetDate = temporal.hasExplicitDateExpression(candidate),
+            hasTargetTime = temporal.hasExplicitTimeExpression(candidate)
+        )
     }
 
     fun isNamedCompletionReversal(text: String): Boolean {

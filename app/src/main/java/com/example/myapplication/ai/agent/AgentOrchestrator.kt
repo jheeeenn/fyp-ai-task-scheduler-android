@@ -117,17 +117,17 @@ class AgentOrchestrator(
                 )
                 return repairReschedule(normalizedText, scheduleChange)
             }
-            val namedQueryDetail = TaskCommandContradictionDetector.namedScheduleReadEvidence(normalizedText)
-            val consistentCommand = if (namedQueryDetail != null) {
-                if (!isCompleteNamedScheduleQuery(normalizedCommand, namedQueryDetail) ||
+            val namedQueryEvidence = TaskCommandContradictionDetector.namedScheduleReadEvidence(normalizedText)
+            val consistentCommand = if (namedQueryEvidence != null) {
+                if (!isCompleteNamedScheduleQuery(normalizedCommand, namedQueryEvidence) ||
                     agentResponse.requires_confirmation
                 ) {
                     Log.d(
                         "TASK_NAMED_QUERY_GUARD",
-                        "primaryAction=${normalizedCommand.intent} expectedDetail=$namedQueryDetail " +
+                        "primaryAction=${normalizedCommand.intent} expectedDetail=${namedQueryEvidence.expectedDetail} " +
                             "primaryDetail=${normalizedCommand.queryDetail} result=REPAIR_REQUIRED"
                     )
-                    return repairNamedScheduleQuery(normalizedText, namedQueryDetail)
+                    return repairNamedScheduleQuery(normalizedText, namedQueryEvidence.expectedDetail)
                 }
                 // Presentation is Android-owned for this dedicated read path, not a task fact.
                 normalizedCommand.copy(queryPresentation = TaskQueryPresentation.DETAILS)
@@ -146,10 +146,17 @@ class AgentOrchestrator(
         }
     }
 
-    private fun isCompleteNamedScheduleQuery(command: AiParsedCommand, expectedDetail: TaskQueryDetail): Boolean =
+    private fun isCompleteNamedScheduleQuery(
+        command: AiParsedCommand,
+        evidence: TaskCommandContradictionDetector.NamedScheduleReadEvidence
+    ): Boolean =
         command.intent == AiIntent.QUERY_TASK.name &&
             command.taskTitle.isNullOrBlank() && !command.targetTaskTitle.isNullOrBlank() &&
-            command.queryDetail == expectedDetail && command.queryPresentation != TaskQueryPresentation.NONE &&
+            command.queryDetail == evidence.expectedDetail && command.queryPresentation != TaskQueryPresentation.NONE &&
+            (evidence.hasTargetDate ||
+                (command.dateText.isNullOrBlank() && command.targetDateText.isNullOrBlank())) &&
+            (evidence.hasTargetTime ||
+                (command.timeText.isNullOrBlank() && command.targetTimeText.isNullOrBlank())) &&
             command.newDateText.isNullOrBlank() && command.newTimeText.isNullOrBlank() &&
             // Named reads use deterministic speech. Re-extract rather than trust any model prose.
             command.naturalResponse.isNullOrBlank() &&

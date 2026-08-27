@@ -294,7 +294,7 @@ class ConversationOrchestrator(
             if (evidence != null) {
                 Log.d(
                     "CONVERSATION_NAMED_QUERY_GUARD",
-                    "detail=$evidence primaryRoute=$failedRoute contextAuthority=false " +
+                    "detail=${evidence.expectedDetail} primaryRoute=$failedRoute contextAuthority=false " +
                         "result=REPAIR_REQUIRED"
                 )
                 return repairTaskCommandRoute(

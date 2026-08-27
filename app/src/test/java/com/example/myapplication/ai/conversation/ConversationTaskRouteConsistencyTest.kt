@@ -38,9 +38,18 @@ class ConversationTaskRouteConsistencyTest {
 
     @Test
     fun scheduleReadEvidenceAbstainsOnPronounsOrdinalsGenericAndCompoundRequests() {
-        assertEquals(TaskQueryDetail.DATE_TIME, TaskCommandContradictionDetector.namedScheduleReadEvidence("when is read book"))
-        assertEquals(TaskQueryDetail.TIME, TaskCommandContradictionDetector.namedScheduleReadEvidence("What time is Read Book?"))
-        assertEquals(TaskQueryDetail.DATE, TaskCommandContradictionDetector.namedScheduleReadEvidence("What date is Read Book?"))
+        assertEquals(TaskQueryDetail.DATE_TIME,
+            TaskCommandContradictionDetector.namedScheduleReadEvidence("when is read book")?.expectedDetail)
+        assertEquals(TaskQueryDetail.TIME,
+            TaskCommandContradictionDetector.namedScheduleReadEvidence("What time is Read Book?")?.expectedDetail)
+        assertEquals(TaskQueryDetail.DATE,
+            TaskCommandContradictionDetector.namedScheduleReadEvidence("What date is Read Book?")?.expectedDetail)
+        val qualified = requireNotNull(TaskCommandContradictionDetector.namedScheduleReadEvidence(
+            "What time is Read Book on 31 August at 9 PM?"
+        ))
+        assertEquals(TaskQueryDetail.TIME, qualified.expectedDetail)
+        assertTrue(qualified.hasTargetDate)
+        assertTrue(qualified.hasTargetTime)
         listOf("When is it?", "What time is that?", "What date is the task?",
             "What time is the second one?", "When is the first task?", "When is T2?",
             "When is the next one?", "When is my day?", "When is anything?",

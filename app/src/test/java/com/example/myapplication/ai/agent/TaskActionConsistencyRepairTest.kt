@@ -68,6 +68,23 @@ class TaskActionConsistencyRepairTest {
     }
 
     @Test
+    fun plainNamedQueriesRepairTemporalFiltersNotGroundedInOriginalText() = runBlocking {
+        listOf(
+            Triple("When is Take Medicine?", TaskQueryDetail.DATE_TIME,
+                namedQuery("Take Medicine", TaskQueryDetail.DATE_TIME).put("target_date", "tomorrow")),
+            Triple("What time is Read Book?", TaskQueryDetail.TIME,
+                namedQuery("Read Book", TaskQueryDetail.TIME).put("time", "9 PM")),
+            Triple("What date is Visit Bank?", TaskQueryDetail.DATE,
+                namedQuery("Visit Bank", TaskQueryDetail.DATE).put("date", "tomorrow"))
+        ).forEach { (text, detail, primary) ->
+            val title = primary.getString("target_task_title")
+            val client = Client(primary.toString(), namedQueryRepaired = queryRepair(title).toString())
+            assertNamedQuery(orchestrator(client).process(text), title, detail)
+            assertNamedRepairCalls(client, text, 1)
+        }
+    }
+
+    @Test
     fun completeNamedQueryPresentationIsAndroidOwnedAndExplicitQualifiersArePreserved() = runBlocking {
         listOf("DETAILS", "OVERVIEW", "COUNT_ONLY", "NONE").forEach { presentation ->
             val raw = namedQuery("Read Book", TaskQueryDetail.TIME).put("query_presentation", presentation)
