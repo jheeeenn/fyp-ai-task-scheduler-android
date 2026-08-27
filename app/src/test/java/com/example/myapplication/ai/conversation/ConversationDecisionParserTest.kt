@@ -11,6 +11,64 @@ class ConversationDecisionParserTest {
     private val parser = ConversationDecisionParser()
 
     @Test
+    fun appNavigationAcceptsEveryBoundedTargetAndRejectsInvalidAuthority() {
+        listOf("SETTINGS", "CREATE_TASK", "TODAY_TASKS", "SCHEDULED_TASKS").forEach { target ->
+            val decision = parser.parse(
+                decisionJson(
+                    route = "APP_NAVIGATION",
+                    navigationTarget = target,
+                    listenAgain = false
+                )
+            )
+            assertEquals(ConversationRoute.APP_NAVIGATION, decision.route)
+            assertEquals(ConversationNavigationTarget.valueOf(target), decision.navigationTarget)
+            assertInactiveFieldsAreCanonical(decision)
+        }
+
+        listOf(
+            decisionJson(
+                route = "APP_NAVIGATION",
+                navigationTarget = "NONE",
+                listenAgain = false
+            ),
+            decisionJson(
+                route = "APP_NAVIGATION",
+                navigationTarget = "SETTINGS",
+                confidence = 0.79,
+                listenAgain = false
+            ),
+            decisionJson(
+                route = "APP_NAVIGATION",
+                navigationTarget = "SETTINGS",
+                listenAgain = true
+            ),
+            decisionJson(route = "DIRECT_REPLY", navigationTarget = "UNSUPPORTED_SCREEN")
+        ).forEach { invalid ->
+            assertThrows(ConversationSchemaException::class.java) { parser.parse(invalid) }
+        }
+    }
+
+    @Test
+    fun nonNavigationRoutesCanonicalizeNavigationTargetAndMissingFieldIsRejected() {
+        val result = parser.parseWithReport(
+            decisionJson(
+                route = "DIRECT_REPLY",
+                navigationTarget = "SETTINGS",
+                reply = "Open Settings from Home."
+            )
+        )
+
+        assertEquals(ConversationNavigationTarget.NONE, result.decision.navigationTarget)
+        assertTrue(result.canonicalizationReport.fields.contains("navigation_target"))
+        assertThrows(ConversationSchemaException::class.java) {
+            parser.parse(
+                decisionJson(route = "DIRECT_REPLY")
+                    .replace("  \"navigation_target\":\"NONE\",", "")
+            )
+        }
+    }
+
+    @Test
     fun contextActionCanonicalizesInactiveTextAndPreservesAuthority() {
         val result = parser.parseWithReport(
             decisionJson(
@@ -315,6 +373,9 @@ class ConversationDecisionParserTest {
     }
 
     private fun assertInactiveFieldsAreCanonical(decision: ConversationDecision) {
+        if (decision.route != ConversationRoute.APP_NAVIGATION) {
+            assertEquals(ConversationNavigationTarget.NONE, decision.navigationTarget)
+        }
         assertEquals("", decision.taskText)
         assertEquals("", decision.reply)
         assertEquals("", decision.contextRef)
@@ -326,6 +387,7 @@ class ConversationDecisionParserTest {
 
     private fun decisionJson(
         route: String,
+        navigationTarget: String = "NONE",
         taskText: String = "",
         reply: String = "",
         contextRef: String = "",
@@ -338,6 +400,7 @@ class ConversationDecisionParserTest {
     ): String = """
         {
           "route":"$route",
+          "navigation_target":"$navigationTarget",
           "task_text":"$taskText",
           "reply":"$reply",
           "context_ref":"$contextRef",

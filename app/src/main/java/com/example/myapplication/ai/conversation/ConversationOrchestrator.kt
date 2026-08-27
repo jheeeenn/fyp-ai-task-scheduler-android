@@ -220,7 +220,10 @@ class ConversationOrchestrator(
                 memorySnapshot = routingMemory,
                 appContextSummary = appContextSummary
             )
-            parseCanonicalDecision(rawContent).also {
+            parseCanonicalDecision(
+                rawContent = rawContent,
+                normalizedTextForTopLevelValidation = normalizedText
+            ).also {
                 validateTaskRouteConsistency(normalizedText, it)
                 validateOperationalBreakdownRouting(normalizedText, it)
                 validateContextReadAuthority(
@@ -257,6 +260,7 @@ class ConversationOrchestrator(
         DebugDiagnosticLog.event(
             "CONVERSATION_DECISION_DEBUG",
             "route=${decision.route.name}\n" +
+                "navigation_target=${decision.navigationTarget.name}\n" +
                 "task_text=${decision.taskText}\n" +
                 "reply=${decision.reply}\n" +
                 "context_ref=${decision.contextRef}\n" +
@@ -343,7 +347,8 @@ class ConversationOrchestrator(
             val repairedDecision = when (repairProfile) {
                 ConversationRepairProfile.GENERAL -> parseCanonicalDecision(
                     rawContent = repairContent,
-                    source = SOURCE_SCHEMA_REPAIR
+                    source = SOURCE_SCHEMA_REPAIR,
+                    normalizedTextForTopLevelValidation = normalizedText
                 )
                 ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR ->
                     parseCompactTaskCommandRepair(
@@ -392,6 +397,7 @@ class ConversationOrchestrator(
         normalizedText: String
     ): ConversationDecision {
         return when (decision.route) {
+            ConversationRoute.APP_NAVIGATION -> decision
             ConversationRoute.TASK_COMMAND -> decision.copy(
                 taskText = normalizedText
             )
@@ -524,9 +530,14 @@ class ConversationOrchestrator(
 
     private fun parseCanonicalDecision(
         rawContent: String,
-        source: String = SOURCE_CONVERSATION_AGENT
+        source: String = SOURCE_CONVERSATION_AGENT,
+        normalizedTextForTopLevelValidation: String? = null
     ): ConversationDecision {
-        val result = parser.parseWithReport(rawContent)
+        val result = if (normalizedTextForTopLevelValidation == null) {
+            parser.parseWithReport(rawContent)
+        } else {
+            parser.parseCanonicalizedWithReport(rawContent)
+        }
         if (result.canonicalizationReport.wasCanonicalized) {
             Log.d(
                 "CONVO_DECISION_CANONICALIZED",
@@ -534,7 +545,12 @@ class ConversationOrchestrator(
                     "fields=${result.canonicalizationReport.fields.joinToString(",")}"
             )
         }
-        return result.decision.copy(source = source)
+        val decision = result.decision.copy(source = source)
+        if (normalizedTextForTopLevelValidation != null) {
+            validateTopLevelRouteConsistency(normalizedTextForTopLevelValidation, decision)
+            ConversationDecisionContractValidator.validate(decision)
+        }
+        return decision
     }
 
     private fun validateOperationalBreakdownRouting(
@@ -552,6 +568,22 @@ class ConversationOrchestrator(
                 ConversationDecisionFailureCode.OPERATIONAL_BREAKDOWN_MISROUTED,
             failedRoute = ConversationRoute.DIRECT_REPLY
         )
+    }
+
+    private fun validateTopLevelRouteConsistency(
+        normalizedText: String,
+        decision: ConversationDecision
+    ) {
+        try {
+            ConversationTopLevelRouteConsistencyGuard.validate(normalizedText, decision)
+        } catch (failure: ConversationSchemaException) {
+            Log.d(
+                "CONVERSATION_TOP_LEVEL_ROUTE_GUARD",
+                "failure=${failure.decisionFailureCode} primaryRoute=${decision.route} " +
+                    "result=REPAIR_REQUIRED"
+            )
+            throw failure
+        }
     }
 
     private fun repairFailureCode(failure: Exception): String = when (failure) {

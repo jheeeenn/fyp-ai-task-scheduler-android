@@ -65,6 +65,7 @@ class ConversationQueryReadingContractTest {
 
             assertEquals(setOf("NONE"), properties.getJSONObject("query_reading_move").enumValues())
             assertEquals(setOf("NONE"), properties.getJSONObject("query_presentation_hint").enumValues())
+            assertEquals(setOf("NONE"), properties.getJSONObject("navigation_target").enumValues())
         }
     }
 

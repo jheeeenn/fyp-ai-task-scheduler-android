@@ -412,7 +412,7 @@ class VoiceSettingsContractTest {
         .put("setting_action", settingAction)
         .put("setting_target", settingTarget)
         .put("query_reading_move", queryReadingMove)
-        .put("query_presentation_hint", queryPresentationHint)
+        .put("navigation_target", "NONE").put("query_presentation_hint", queryPresentationHint)
         .put("confidence", confidence)
         .put("listen_again", listenAgain)
         .toString()

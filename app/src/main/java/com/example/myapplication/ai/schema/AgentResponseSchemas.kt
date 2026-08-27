@@ -238,7 +238,8 @@ object AgentResponseSchemas {
         return responseFormat(
             name = "conversation_decision",
             properties = JSONObject().apply {
-                put("route", stringEnum("TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_AWARE_SUGGESTION", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "SETTINGS_ACTION", "SETTINGS_READ", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("route", stringEnum("APP_NAVIGATION", "TASK_COMMAND", "SMART_ROUTINE_BUILDER", "SAVED_ROUTINE_ACTION", "DAILY_BRIEFING", "CONTEXT_AWARE_SUGGESTION", "CONTEXT_READ", "CONTEXT_ACTION", "QUERY_READING_CONTROL", "SETTINGS_ACTION", "SETTINGS_READ", "DIRECT_REPLY", "ASK_CLARIFICATION", "END_SESSION", "UNKNOWN"))
+                put("navigation_target", stringEnum("NONE", "CREATE_TASK", "TODAY_TASKS", "SCHEDULED_TASKS", "SETTINGS"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())
@@ -253,6 +254,7 @@ object AgentResponseSchemas {
             },
             required = JSONArray().apply {
                 put("route")
+                put("navigation_target")
                 put("task_text")
                 put("reply")
                 put("context_ref")
@@ -296,6 +298,7 @@ object AgentResponseSchemas {
             name = "context_read_repair",
             properties = JSONObject().apply {
                 put("route", stringEnum("CONTEXT_READ", "ASK_CLARIFICATION"))
+                put("navigation_target", stringEnum("NONE"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())
@@ -310,6 +313,7 @@ object AgentResponseSchemas {
             },
             required = JSONArray().apply {
                 put("route")
+                put("navigation_target")
                 put("task_text")
                 put("reply")
                 put("context_ref")
@@ -330,6 +334,7 @@ object AgentResponseSchemas {
             name = "context_action_repair",
             properties = JSONObject().apply {
                 put("route", stringEnum("CONTEXT_ACTION", "ASK_CLARIFICATION"))
+                put("navigation_target", stringEnum("NONE"))
                 put("task_text", stringType())
                 put("reply", stringType())
                 put("context_ref", stringType())
@@ -344,6 +349,7 @@ object AgentResponseSchemas {
             },
             required = JSONArray().apply {
                 put("route")
+                put("navigation_target")
                 put("task_text")
                 put("reply")
                 put("context_ref")

@@ -51,7 +51,7 @@ class VoiceSettingRoutingIntegrationTest {
                 .put("setting_action", "HIGH_CONTRAST_OFF")
                 .put("setting_target", "NONE")
                 .put("query_reading_move", "NONE")
-                .put("query_presentation_hint", "NONE")
+                .put("navigation_target", "NONE").put("query_presentation_hint", "NONE")
                 .put("confidence", 0.97)
                 .put("listen_again", true)
                 .toString()

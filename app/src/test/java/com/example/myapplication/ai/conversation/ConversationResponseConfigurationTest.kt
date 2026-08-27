@@ -3,6 +3,7 @@ package com.example.myapplication.ai.conversation
 import com.example.myapplication.ai.schema.AgentResponseSchemas
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.File
 
 class ConversationResponseConfigurationTest {
     @Test fun temperaturesAreSeparate() {
@@ -13,6 +14,10 @@ class ConversationResponseConfigurationTest {
     @Test fun schemasRemainSeparate() {
         val decisionSchema = AgentResponseSchemas.conversationDecisionResponseFormat().toString()
         assertTrue(decisionSchema.contains("conversation_decision"))
+        assertTrue(decisionSchema.contains("APP_NAVIGATION"))
+        assertTrue(decisionSchema.contains("navigation_target"))
+        listOf("NONE", "CREATE_TASK", "TODAY_TASKS", "SCHEDULED_TASKS", "SETTINGS")
+            .forEach { assertTrue(decisionSchema.contains(it)) }
         assertTrue(decisionSchema.contains("CONTEXT_READ"))
         assertTrue(decisionSchema.contains("context_ref"))
         assertTrue(decisionSchema.contains("context_detail"))
@@ -28,6 +33,28 @@ class ConversationResponseConfigurationTest {
         assertTrue(verbalization.contains("speech_template"))
         assertFalse(verbalization.contains("response_type"))
         assertFalse(verbalization.contains("listen_again"))
+    }
+    @Test fun routingPromptDistinguishesNavigationFromOperationsAndGuidance() {
+        val prompt = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
+        assertTrue(prompt.contains("\"Open settings\" -> APP_NAVIGATION"))
+        assertTrue(prompt.contains("\"Turn on high contrast\" -> SETTINGS_ACTION"))
+        assertTrue(prompt.contains("\"Open create task\" -> APP_NAVIGATION"))
+        assertTrue(prompt.contains("\"Create a task\" -> TASK_COMMAND"))
+        assertTrue(prompt.contains("\"Open today's tasks\" -> APP_NAVIGATION"))
+        assertTrue(prompt.contains("\"What tasks do I have today?\" -> TASK_COMMAND"))
+        assertTrue(prompt.contains("\"How do I open settings?\" -> DIRECT_REPLY"))
+        assertTrue(prompt.contains("\"Where are the settings?\" are DIRECT_REPLY"))
+        assertTrue(prompt.contains("Advanced Settings is not supported voice navigation"))
+    }
+    @Test fun decisionDiagnosticsIncludeBoundedNavigationTarget() {
+        val orchestrator = File(
+            "src/main/java/com/example/myapplication/ai/conversation/ConversationOrchestrator.kt"
+        ).readText()
+        val diagnostic = orchestrator
+            .substringAfter("\"CONVERSATION_DECISION_DEBUG\"")
+            .substringBefore("return decision")
+
+        assertTrue(diagnostic.contains("navigation_target=${'$'}{decision.navigationTarget.name}"))
     }
     @Test fun responsePromptContainsAuthorityRules() {
         val prompt = ConversationAgentClient.RESPONSE_SYSTEM_PROMPT

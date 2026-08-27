@@ -19,13 +19,17 @@ enum class ConversationDecisionFailureCode {
     INVALID_SETTING_ACTION,
     INVALID_SETTING_TARGET,
     INVALID_QUERY_READING_MOVE,
+    INVALID_NAVIGATION_TARGET,
     OPERATIONAL_BREAKDOWN_MISROUTED,
+    APP_NAVIGATION_MISROUTED,
+    SAVED_ROUTINE_LIST_MISROUTED,
     TEMPORAL_TASK_QUERY_MISROUTED,
     NAMED_COMPLETION_MUTATION_MISROUTED,
     NAMED_RENAME_MUTATION_MISROUTED,
     NAMED_TASK_QUERY_MISROUTED,
     LOW_CONFIDENCE,
-    LISTEN_AGAIN_REQUIRED
+    LISTEN_AGAIN_REQUIRED,
+    LISTEN_AGAIN_FORBIDDEN
 }
 
 class ConversationSchemaException(
@@ -37,6 +41,7 @@ class ConversationSchemaException(
 
 data class RawConversationDecision(
     val route: ConversationRoute,
+    val navigationTarget: ConversationNavigationTarget,
     val taskText: String,
     val reply: String,
     val contextRef: String,
@@ -96,6 +101,13 @@ class ConversationDecisionStructuralDecoder {
             value = requireString(json, "context_detail"),
             values = ConversationContextDetail.entries.associateBy(ConversationContextDetail::name)
         )
+        val navigationTarget = enumValue(
+            field = "navigation_target",
+            value = requireString(json, "navigation_target"),
+            values = ConversationNavigationTarget.entries.associateBy(
+                ConversationNavigationTarget::name
+            )
+        )
         val contextAction = enumValue(
             field = "context_action",
             value = requireString(json, "context_action"),
@@ -132,6 +144,7 @@ class ConversationDecisionStructuralDecoder {
 
         return RawConversationDecision(
             route = route,
+            navigationTarget = navigationTarget,
             taskText = requireString(json, "task_text"),
             reply = requireString(json, "reply"),
             contextRef = requireString(json, "context_ref"),
@@ -260,6 +273,7 @@ class ConversationDecisionStructuralDecoder {
     private companion object {
         val REQUIRED_FIELDS = setOf(
             "route",
+            "navigation_target",
             "task_text",
             "reply",
             "context_ref",
@@ -293,6 +307,11 @@ object ConversationDecisionCanonicalizer {
     fun canonicalize(raw: RawConversationDecision): ConversationDecisionParseResult {
         val canonical = ConversationDecision(
             route = raw.route,
+            navigationTarget = if (raw.route == ConversationRoute.APP_NAVIGATION) {
+                raw.navigationTarget
+            } else {
+                ConversationNavigationTarget.NONE
+            },
             taskText = "",
             reply = if (raw.route in REPLY_ROUTES) raw.reply else "",
             contextRef = if (raw.route in CONTEXT_ROUTES) raw.contextRef else "",
@@ -341,6 +360,7 @@ object ConversationDecisionCanonicalizer {
         raw: RawConversationDecision,
         canonical: ConversationDecision
     ): List<String> = buildList {
+        if (raw.navigationTarget != canonical.navigationTarget) add("navigation_target")
         if (raw.taskText != canonical.taskText) add("task_text")
         if (raw.reply != canonical.reply) add("reply")
         if (raw.contextRef != canonical.contextRef) add("context_ref")
@@ -370,6 +390,39 @@ object ConversationDecisionCanonicalizer {
 object ConversationDecisionContractValidator {
     fun validate(decision: ConversationDecision) {
         when (decision.route) {
+            ConversationRoute.APP_NAVIGATION -> {
+                if (decision.navigationTarget == ConversationNavigationTarget.NONE ||
+                    decision.taskText.isNotBlank() ||
+                    decision.reply.isNotBlank() ||
+                    decision.contextRef.isNotBlank() ||
+                    decision.contextDetail != ConversationContextDetail.NONE ||
+                    decision.contextAction != ConversationContextAction.NONE ||
+                    decision.settingAction != ConversationSettingAction.NONE ||
+                    decision.settingTarget != ConversationSettingTarget.NONE ||
+                    decision.queryReadingMove != ConversationQueryReadingMove.NONE ||
+                    decision.queryPresentationHint != TaskQueryPresentation.NONE
+                ) {
+                    fail(
+                        ConversationDecisionFailureCode.INVALID_NAVIGATION_TARGET,
+                        "APP_NAVIGATION requires one bounded target and no other active authority fields",
+                        decision.route
+                    )
+                }
+                if (decision.confidence < ConversationDecisionParser.MIN_ACCEPTED_ROUTING_CONFIDENCE) {
+                    fail(
+                        ConversationDecisionFailureCode.LOW_CONFIDENCE,
+                        "APP_NAVIGATION confidence is below the accepted routing threshold",
+                        decision.route
+                    )
+                }
+                if (decision.listenAgain) {
+                    fail(
+                        ConversationDecisionFailureCode.LISTEN_AGAIN_FORBIDDEN,
+                        "APP_NAVIGATION requires listen_again false",
+                        decision.route
+                    )
+                }
+            }
             ConversationRoute.SMART_ROUTINE_BUILDER,
             ConversationRoute.SAVED_ROUTINE_ACTION,
             ConversationRoute.DAILY_BRIEFING,
@@ -512,10 +565,15 @@ class ConversationDecisionParser(
         parseWithReport(rawContent).decision
 
     fun parseWithReport(rawContent: String): ConversationDecisionParseResult {
-        val raw = structuralDecoder.decode(rawContent)
-        val canonicalized = ConversationDecisionCanonicalizer.canonicalize(raw)
+        val canonicalized = parseCanonicalizedWithReport(rawContent)
         ConversationDecisionContractValidator.validate(canonicalized.decision)
         return canonicalized
+    }
+
+    /** Allows Android utterance-consistency checks to run before route-specific authority checks. */
+    internal fun parseCanonicalizedWithReport(rawContent: String): ConversationDecisionParseResult {
+        val raw = structuralDecoder.decode(rawContent)
+        return ConversationDecisionCanonicalizer.canonicalize(raw)
     }
 
     companion object {

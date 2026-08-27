@@ -111,6 +111,7 @@ class ConversationAgentGuidancePromptTest {
             "\"context_action\":\"DELETE\",\"setting_target\":\"NONE\"," +
             "\"setting_action\":\"NONE\"," +
             "\"query_reading_move\":\"NONE\"," +
+            "\"navigation_target\":\"NONE\"," +
             "\"query_presentation_hint\":\"NONE\",\"confidence\":0.97," +
             "\"listen_again\":false}"
         assertTrue(prompt.contains(ordinalDeleteExample))

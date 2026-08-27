@@ -442,7 +442,7 @@ class ConversationTaskRouteConsistencyTest {
                 .put("reply", primaryReply).put("context_ref", contextRef)
                 .put("context_detail", contextDetail).put("context_action", "NONE")
                 .put("setting_action", "NONE").put("setting_target", "NONE")
-                .put("query_reading_move", "NONE").put("query_presentation_hint", "NONE")
+                .put("query_reading_move", "NONE").put("navigation_target", "NONE").put("query_presentation_hint", "NONE")
                 .put("confidence", 0.97).put("listen_again", true).toString()
         }
 
@@ -468,7 +468,7 @@ class ConversationTaskRouteConsistencyTest {
             .put("route", "ASK_CLARIFICATION").put("task_text", "").put("reply", "Which task do you mean?")
             .put("context_ref", "").put("context_detail", "NONE").put("context_action", "NONE")
             .put("setting_action", "NONE").put("setting_target", "NONE")
-            .put("query_reading_move", "NONE").put("query_presentation_hint", "NONE")
+            .put("query_reading_move", "NONE").put("navigation_target", "NONE").put("query_presentation_hint", "NONE")
             .put("confidence", 0.97).put("listen_again", true).toString()
 
         private fun compact(move: String = "TASK_COMMAND", reply: String = "") = JSONObject()

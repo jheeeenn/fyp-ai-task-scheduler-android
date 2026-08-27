@@ -303,7 +303,7 @@ class SmartRoutineIntegrationContractTest {
           "context_action":"NONE",
           "setting_target":"NONE","setting_action":"NONE",
           "query_reading_move":"NONE",
-          "query_presentation_hint":"NONE",
+          "navigation_target":"NONE","query_presentation_hint":"NONE",
           "confidence":$confidence,
           "listen_again":$listenAgain
         }

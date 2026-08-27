@@ -131,6 +131,9 @@ class ConversationSessionMemory {
 
     fun commitFinalDecision(decision: ConversationDecision) {
         when (decision.route) {
+            ConversationRoute.APP_NAVIGATION -> {
+                pendingAction = null
+            }
             ConversationRoute.TASK_COMMAND -> {
                 pendingAction = "TASK_COMMAND"
             }

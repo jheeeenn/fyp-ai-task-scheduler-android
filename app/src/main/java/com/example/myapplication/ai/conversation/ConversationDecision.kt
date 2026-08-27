@@ -11,8 +11,17 @@ enum class ConversationQueryReadingMove {
     STOP
 }
 
+enum class ConversationNavigationTarget {
+    NONE,
+    CREATE_TASK,
+    TODAY_TASKS,
+    SCHEDULED_TASKS,
+    SETTINGS
+}
+
 data class ConversationDecision(
     val route: ConversationRoute,
+    val navigationTarget: ConversationNavigationTarget = ConversationNavigationTarget.NONE,
     val taskText: String = "",
     val reply: String = "",
     val contextRef: String = "",

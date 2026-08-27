@@ -37,6 +37,7 @@ class PendingContextActionChangeClarificationSourceTest {
             .substringAfter("var conversationDecision = pendingTargetResolution.decision")
             .substringBefore("if (conversationDecision.route == ConversationRoute.CONTEXT_READ")
         val actionBranch = command
+            .substringAfter("val taskAgentInput: String")
             .substringAfter("ConversationRoute.CONTEXT_ACTION -> {")
             .substringBefore("ConversationRoute.QUERY_READING_CONTROL ->")
 

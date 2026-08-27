@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation
 
 enum class ConversationRoute {
+    APP_NAVIGATION,
     TASK_COMMAND,
     SMART_ROUTINE_BUILDER,
     SAVED_ROUTINE_ACTION,

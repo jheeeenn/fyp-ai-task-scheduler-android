@@ -152,7 +152,9 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(voiceFlow.contains("ContextReferenceMutationGuard.containsContextReference("))
         assertTrue(voiceFlow.contains("contextual reference deferred to Conversation Agent"))
         assertTrue(voiceFlow.contains("conversationOrchestrator.process("))
-        assertTrue(voiceFlow.contains("CreateTaskActivity").not())
+        val beforeRouteExecution = voiceFlow.substringBefore("when (conversationDecision.route)")
+        assertTrue(beforeRouteExecution.contains("CreateTaskActivity").not())
+        assertTrue(voiceFlow.contains("ConversationRoute.APP_NAVIGATION"))
         assertTrue(voiceFlow.contains("updateDoneStatus").not())
     }
 

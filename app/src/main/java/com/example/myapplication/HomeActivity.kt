@@ -54,6 +54,7 @@ import com.example.myapplication.ai.conversation.ConversationDecision
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
 import com.example.myapplication.ai.conversation.ConversationOrchestratorException
+import com.example.myapplication.ai.conversation.ConversationNavigationTarget
 import com.example.myapplication.ai.conversation.ConversationRoute
 import com.example.myapplication.ai.conversation.ConversationSettingAction
 import com.example.myapplication.ai.conversation.ConversationQueryReadingMove
@@ -1737,6 +1738,42 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     voiceSettingConversationContext.clear()
                 }
                 when (conversationDecision.route) {
+                    ConversationRoute.APP_NAVIGATION -> {
+                        if (!isAssistantRequestCurrent(requestToken)) return@launch
+                        val navigation = when (conversationDecision.navigationTarget) {
+                            ConversationNavigationTarget.CREATE_TASK ->
+                                "Opening task creation." to CreateTaskActivity::class.java
+                            ConversationNavigationTarget.TODAY_TASKS ->
+                                "Opening today's tasks." to TodayTasksActivity::class.java
+                            ConversationNavigationTarget.SCHEDULED_TASKS ->
+                                "Opening scheduled tasks." to MainActivity::class.java
+                            ConversationNavigationTarget.SETTINGS ->
+                                "Opening settings." to SettingsActivity::class.java
+                            ConversationNavigationTarget.NONE -> null
+                        }
+                        if (navigation == null) {
+                            val clarification = ConversationDecision(
+                                route = ConversationRoute.ASK_CLARIFICATION,
+                                reply = "Which app screen would you like me to open?",
+                                confidence = 1.0,
+                                listenAgain = true,
+                                source = "android_navigation_target_validation"
+                            )
+                            Log.d("HOME_NAVIGATION", "target=NONE result=REJECTED")
+                            conversationOrchestrator.commitFinalDecision(clarification)
+                            assistantSession.speak(clarification.reply, listenAgain = true)
+                            return@launch
+                        }
+                        conversationOrchestrator.commitFinalDecision(conversationDecision)
+                        Log.d(
+                            "HOME_NAVIGATION",
+                            "target=${conversationDecision.navigationTarget.name} result=OPENING"
+                        )
+                        speakThenOpen(navigation.first) {
+                            startActivity(Intent(this@HomeActivity, navigation.second))
+                        }
+                        return@launch
+                    }
                     ConversationRoute.SMART_ROUTINE_BUILDER -> {
                         if (!isAssistantRequestCurrent(requestToken)) return@launch
                         conversationOrchestrator.commitFinalDecision(conversationDecision)

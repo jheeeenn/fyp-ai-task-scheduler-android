@@ -93,7 +93,7 @@ class ConversationDecisionCanonicalizationTest {
         ).readText()
         val diagnostic = source
             .substringAfter("\"CONVO_DECISION_CANONICALIZED\"")
-            .substringBefore("return result.decision")
+            .substringBefore("val decision = result.decision")
 
         assertTrue(diagnostic.contains("result.decision.route.name"))
         assertTrue(diagnostic.contains("canonicalizationReport.fields"))
@@ -162,7 +162,7 @@ class ConversationDecisionCanonicalizationTest {
             .put("setting_action", "NONE")
             .put("setting_target", "NONE")
             .put("query_reading_move", "NONE")
-            .put("query_presentation_hint", "NONE")
+            .put("navigation_target", "NONE").put("query_presentation_hint", "NONE")
             .put("confidence", 0.97)
             .put("listen_again", true)
             .toString()
