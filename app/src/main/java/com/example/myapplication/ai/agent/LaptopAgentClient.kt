@@ -604,19 +604,20 @@ Never choose a Room task, output IDs/refs, introduce schedule changes, or claim 
 """.trimIndent()
         internal val NAMED_SCHEDULE_QUERY_REPAIR_SYSTEM_PROMPT = """
 Perform one bounded named schedule-query extraction from the COMPLETE original normalized request.
-Extract only the specifically named EXISTING task into target_task_title and the requested
-schedule component into query_detail. Preserve the complete user-supplied task name.
-"When is Read Book?" -> target_task_title="Read Book", query_detail=DATE_TIME
-"What time is Read Book?" -> target_task_title="Read Book", query_detail=TIME
-"What date is Read Book?" -> target_task_title="Read Book", query_detail=DATE
-"When is Visit Bank?" -> target_task_title="Visit Bank", query_detail=DATE_TIME
-The requested component is not a temporal filter or a stored date/time. Do not invent the task's
-actual date or time. Do not answer the question, select a database task, or output facts, IDs, refs,
-an action, response text, or any schedule values. No task database or context is supplied.
-If the named target or requested component is unclear, set need_clarification=true; never guess.
-Return only target_task_title, query_detail, confidence, need_clarification as one compact JSON
-object without markdown or explanation. Android validates confidence from 0.80 through 1.0,
-checks the requested component against the original request, and constructs QUERY_TASK.
+Extract only the specifically named EXISTING task into target_task_title. Preserve the complete
+user-supplied task name.
+"When is Read Book?" -> target_task_title="Read Book"
+"What time is Read Book?" -> target_task_title="Read Book"
+"What date is Read Book?" -> target_task_title="Read Book"
+"When is Visit Bank?" -> target_task_title="Visit Bank"
+"When is Take Medicine?" -> target_task_title="Take Medicine"
+Android already determines the requested schedule component from the original explicit question.
+Do not infer, confirm, or output that component. Do not invent the task's actual date or time. Do not
+answer the question, select a database task, or output facts, IDs, refs, an action, response text, or
+any schedule values. No task database or context is supplied.
+If the named target is unclear, set need_clarification=true; never guess.
+Return only target_task_title, confidence, need_clarification as one compact JSON object without
+markdown or explanation. Android validates confidence from 0.80 through 1.0 and constructs QUERY_TASK.
 """.trimIndent()
         internal val SYSTEM_PROMPT = """
 Current command semantics take precedence over prior conversation.

@@ -526,11 +526,10 @@ object AgentResponseSchemas {
         name = "named_schedule_query_repair",
         properties = JSONObject().apply {
             put("target_task_title", stringType())
-            put("query_detail", stringEnum("DATE", "TIME", "DATE_TIME"))
             put("confidence", numberType(minimum = 0.0, maximum = 1.0))
             put("need_clarification", booleanType())
         },
-        required = JSONArray(listOf("target_task_title", "query_detail", "confidence", "need_clarification"))
+        required = JSONArray(listOf("target_task_title", "confidence", "need_clarification"))
     )
 
     fun taskAgentResponseFormat(): JSONObject {
