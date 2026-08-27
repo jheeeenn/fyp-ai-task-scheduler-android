@@ -34,6 +34,13 @@ internal object TaskCommandContradictionDetector {
         Regex("""^${REQUEST}mark (.+?) (?:as )?(?:incomplete|not complete|not done)(?: again)?$"""),
         Regex("""^${REQUEST}reopen (.+)$""")
     )
+    private val positiveCompletions = listOf(
+        Regex("""^${REQUEST}mark (.+?) (?:as )?(?:done|complete|completed)$"""),
+        Regex("""^(.+?) is (?:(?:also|now) )?(?:done|finished|complete|completed)$"""),
+        Regex("""^(.+?) has (?:(?:also|now) )?been (?:finished|completed)$"""),
+        Regex("""^i(?:'ve| have)? (?:finished|completed) (.+)$"""),
+        Regex("""^(?:complete|finish) (.+)$""")
+    )
     private val scheduleChange = Regex(
         """^${REQUEST}(?:move|reschedule|postpone) (.+?) (?:over )?(?:to|for|until) (.+)$"""
     )
@@ -61,6 +68,9 @@ internal object TaskCommandContradictionDetector {
     )
     private val contextualOrGenericTarget = Regex(
         """^(?:it|this|that|these|those|them|something|anything|everything|nothing|myself|my day|my work|a new|new|what|how|why|when|whether|if)\b|^(?:(?:the|a|my|any|all(?: my)?|some) )?tasks?$|^(?:yet|after all|again|please)$"""
+    )
+    private val operationOrStatusOnlyTarget = Regex(
+        """^(?:delete|mark|reopen|complete|finish|move|reschedule|postpone|done|completed|finished|incomplete|not complete|not done|is completed|is finished)$"""
     )
 
     fun isExplicitTemporalTaskQuery(text: String): Boolean {
@@ -91,7 +101,17 @@ internal object TaskCommandContradictionDetector {
     fun isNamedCompletionReversal(text: String): Boolean {
         val normalized = normalize(text)
         return completionReversals.any { pattern ->
-            pattern.matchEntire(normalized)?.groupValues?.get(1)?.let(::hasNamedEvidence) == true
+            pattern.matchEntire(normalized)?.groupValues?.get(1)
+                ?.let(::completionTargetCandidate)?.let(::isSafeNamedTargetCandidate) == true
+        }
+    }
+
+    fun isNamedCompletionMutation(text: String): Boolean {
+        if (isNamedCompletionReversal(text)) return true
+        val normalized = normalize(text)
+        return positiveCompletions.any { pattern ->
+            pattern.matchEntire(normalized)?.groupValues?.get(1)
+                ?.let(::completionTargetCandidate)?.let(::isSafeNamedTargetCandidate) == true
         }
     }
 
@@ -119,9 +139,21 @@ internal object TaskCommandContradictionDetector {
             AiIntent.MARK_DONE.name to it.groupValues[1]
         } ?: scheduleChange.matchEntire(normalized)?.let {
             AiIntent.RESCHEDULE_TASK.name to it.groupValues[1]
+        } ?: completionReversals.firstNotNullOfOrNull { it.matchEntire(normalized) }?.let {
+            AiIntent.MARK_UNDONE.name to completionTargetCandidate(it.groupValues[1])
+        } ?: positiveCompletions.firstNotNullOfOrNull { it.matchEntire(normalized) }?.let {
+            AiIntent.MARK_DONE.name to completionTargetCandidate(it.groupValues[1])
         } ?: return null
-        if (!hasNamedEvidence(candidate) || nonNamedScheduleTarget.containsMatchIn(candidate)) return null
+        if (!isSafeNamedTargetCandidate(candidate)) return null
         return NamedExistingTaskTargetEvidence(action)
+    }
+
+    /** Literal utterance grounding only; this never consults tasks or canonicalizes a stored title. */
+    fun isGroundedNamedTarget(originalText: String, proposedTarget: String): Boolean {
+        if (!isSafeNamedTargetCandidate(proposedTarget)) return false
+        val original = normalizeGrounding(originalText)
+        val target = normalizeGrounding(proposedTarget)
+        return target.isNotBlank() && " $original ".contains(" $target ")
     }
 
     fun isNamedTaskRename(text: String): Boolean = namedRenames.any { pattern ->
@@ -134,6 +166,16 @@ internal object TaskCommandContradictionDetector {
     private fun hasNamedEvidence(candidate: String): Boolean =
         candidate.any(Char::isLetter) && !contextualOrGenericTarget.containsMatchIn(candidate)
 
+    private fun isSafeNamedTargetCandidate(candidate: String): Boolean {
+        val normalized = normalize(candidate)
+        return hasNamedEvidence(normalized) &&
+            !nonNamedScheduleTarget.containsMatchIn(normalized) &&
+            !operationOrStatusOnlyTarget.matches(normalized)
+    }
+
+    private fun completionTargetCandidate(candidate: String): String =
+        candidate.removePrefix("the task ").trim()
+
     private fun hasReplacementEvidence(candidate: String): Boolean =
         candidate.any(Char::isLetter) && candidate !in setOf(
             "it", "this", "that", "something", "anything", "something else", "instead",
@@ -145,4 +187,10 @@ internal object TaskCommandContradictionDetector {
         .replace(Regex("\\s+"), " ")
         .trim()
         .trimEnd('.', '?', '!')
+
+    private fun normalizeGrounding(text: String): String = text.lowercase(Locale.ROOT)
+        .replace('’', '\'')
+        .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 }

@@ -650,6 +650,15 @@ target_task_title.
 "Delete Buy Milk" -> target_task_title="Buy Milk"
 "Mark Buy Milk as done" -> target_task_title="Buy Milk"
 "Mark Buy Milk as incomplete" -> target_task_title="Buy Milk"
+"Submit Report is completed" -> target_task_title="Submit Report"
+"Call Supervisor is also completed" -> target_task_title="Call Supervisor"
+"I've finished Buy Milk" -> target_task_title="Buy Milk"
+"medicine as completed" -> target_task_title="medicine"
+Preserve the literal user-supplied target wording. Do not canonicalize it to a presumed stored title
+or paraphrase it. Remove only surrounding operation or status language.
+"Delete it" -> need_clarification=true
+"Mark that task done" -> need_clarification=true
+"Delete the second one" -> need_clarification=true
 Never determine whether the task exists and never select a database row. No Room tasks, candidate
 list, IDs, or context refs are supplied. Do not output dates, times, query fields, response text, or
 execution claims. If the named target is unclear, set need_clarification=true; never guess.

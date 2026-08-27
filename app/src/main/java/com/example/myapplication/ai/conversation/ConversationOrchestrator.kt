@@ -570,7 +570,7 @@ class ConversationOrchestrator(
                 ConversationRoute.CONTEXT_AWARE_SUGGESTION,
                 ConversationRoute.DAILY_BRIEFING,
                 ConversationRoute.DIRECT_REPLY
-            ) && TaskCommandContradictionDetector.isNamedCompletionReversal(text) ->
+            ) && TaskCommandContradictionDetector.isNamedCompletionMutation(text) ->
                 ConversationDecisionFailureCode.NAMED_COMPLETION_MUTATION_MISROUTED
             decision.route in setOf(
                 ConversationRoute.DIRECT_REPLY,

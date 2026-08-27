@@ -265,7 +265,11 @@ class TaskActionConsistencyRepairTest {
         listOf(
             Triple("Delete Dentist Appointment.", AiIntent.DELETE_TASK.name, "Dentist Appointment"),
             Triple("Mark Buy Milk as done", AiIntent.MARK_DONE.name, "Buy Milk"),
-            Triple("Mark Buy Milk as incomplete", AiIntent.MARK_UNDONE.name, "Buy Milk")
+            Triple("Mark Buy Milk as incomplete", AiIntent.MARK_UNDONE.name, "Buy Milk"),
+            Triple("Submit Report is completed", AiIntent.MARK_DONE.name, "Submit Report"),
+            Triple("Call Supervisor is also completed", AiIntent.MARK_DONE.name, "Call Supervisor"),
+            // Structural eligibility proves recovery does not depend on an Android grammar rule.
+            Triple("medicine as completed", AiIntent.MARK_DONE.name, "medicine")
         ).forEach { (text, action, target) ->
             val client = Client(
                 primary(action, "").toString(),
@@ -308,22 +312,26 @@ class TaskActionConsistencyRepairTest {
     }
 
     @Test
-    fun contextualAndTemporalOnlyOperationsNeverUseNamedTargetRepair() = runBlocking {
+    fun contextualRepairsFailGroundingAndTemporalOnlySelectorsNeedNoRepair() = runBlocking {
         listOf("Delete the second one", "Delete it").forEach { text ->
             assertNull(TaskCommandContradictionDetector.namedExistingTaskTargetEvidence(text))
             val client = Client(primary("DELETE_TASK", "").toString())
             assertTrue(runCatching { orchestrator(client).process(text) }.exceptionOrNull()
                 is TaskAgentProcessingException)
-            assertEquals(0, client.existingTargetRepairCalls)
+            assertEquals(1, client.existingTargetRepairCalls)
         }
         listOf(
             "Delete the 8 PM task" to primary("DELETE_TASK", "").put("target_time", "20:00"),
-            "Delete tomorrow's task" to primary("DELETE_TASK", "").put("target_date", "tomorrow")
+            "Delete tomorrow's task" to primary("DELETE_TASK", "").put("target_date", "tomorrow"),
+            "Mark the 8 AM task tomorrow done" to primary("MARK_DONE", "")
+                .put("target_date", "tomorrow").put("target_time", "08:00"),
+            "Move tomorrow's task to Friday" to primary("RESCHEDULE_TASK", "")
+                .put("target_date", "tomorrow").put("new_date", "Friday")
         ).forEach { (text, response) ->
             assertNull(TaskCommandContradictionDetector.namedExistingTaskTargetEvidence(text))
             val client = Client(response.toString())
             val command = orchestrator(client).process(text)
-            assertEquals(AiIntent.DELETE_TASK.name, command.intent)
+            assertEquals(response.getString("action"), command.intent)
             assertNull(command.targetTaskTitle)
             assertEquals(0, client.existingTargetRepairCalls)
         }
@@ -364,6 +372,55 @@ class TaskActionConsistencyRepairTest {
     }
 
     @Test
+    fun targetRepairAcceptsOnlySafeLiteralUtterancePhrases() = runBlocking {
+        listOf(
+            Triple("Submit Report is completed", "Submit Report", "Submit Report"),
+            Triple("the task buying groceries is also completed", "buying groceries", "buying groceries"),
+            Triple("I've finished Buy Milk", "Buy Milk", "Buy Milk")
+        ).forEach { (text, repairedTarget, expected) ->
+            val client = Client(primary("MARK_DONE", "").toString(),
+                existingTargetRepaired = targetRepair(repairedTarget).toString())
+            assertEquals(expected, orchestrator(client).process(text).targetTaskTitle)
+            assertEquals(1, client.existingTargetRepairCalls)
+        }
+        listOf(
+            "Delete it" to "Buy Milk",
+            "Mark that task done" to "Call Supervisor",
+            "Delete the second one" to "Dentist Appointment",
+            "Delete it" to "it",
+            "Mark that task done" to "that",
+            "Mark the task done" to "the task",
+            "Delete the second one" to "the second one",
+            "I finished my work" to "my work",
+            "I completed all my tasks" to "all my tasks",
+            "Submit Report is completed" to "completed"
+        ).forEach { (text, repairedTarget) ->
+            val action = if (text.startsWith("Delete")) "DELETE_TASK" else "MARK_DONE"
+            val client = Client(primary(action, "").toString(),
+                existingTargetRepaired = targetRepair(repairedTarget).toString())
+            assertTrue("$text -> $repairedTarget", runCatching { orchestrator(client).process(text) }
+                .exceptionOrNull() is TaskAgentProcessingException)
+            assertEquals(1, client.existingTargetRepairCalls)
+        }
+    }
+
+    @Test
+    fun targetRepairChangesOnlyTargetTitleAndPreservesRescheduleDestination() = runBlocking {
+        val text = "Move Read Book to Friday at 9 PM"
+        val primary = primary("RESCHEDULE_TASK", "")
+            .put("new_date", "Friday").put("new_time", "21:00")
+            .put("recurrence", "WEEKLY").put("priority", "HIGH")
+        val before = TaskActionNormalizer().normalize(TaskAgentResponseParser().parse(primary.toString()))
+        val client = Client(primary.toString(), existingTargetRepaired = targetRepair("Read Book").toString())
+        val result = orchestrator(client).process(text)
+        assertEquals(before.copy(targetTaskTitle = "Read Book"), result)
+        assertEquals("Friday", result.newDateText)
+        assertEquals("21:00", result.newTimeText)
+        assertEquals(1, client.existingTargetRepairCalls)
+        assertEquals(0, client.repairCalls)
+    }
+
+    @Test
     fun existingTargetRepairSchemaPromptAndClientHaveNoTaskAuthority() {
         val schema = AgentResponseSchemas.existingTaskTargetRepairResponseFormat()
             .getJSONObject("json_schema").getJSONObject("schema")
@@ -374,7 +431,11 @@ class TaskActionConsistencyRepairTest {
             .map(schema.getJSONArray("required")::getString).toSet())
         val prompt = LaptopAgentClient.EXISTING_TASK_TARGET_REPAIR_SYSTEM_PROMPT
         listOf("Delete Dentist Appointment", "Delete Buy Milk", "Mark Buy Milk as done",
-            "Mark Buy Milk as incomplete", "Never determine whether the task exists",
+            "Mark Buy Milk as incomplete", "Submit Report is completed",
+            "Call Supervisor is also completed", "I've finished Buy Milk",
+            "medicine as completed", "Delete it", "Mark that task done", "Delete the second one",
+            "Preserve the literal user-supplied target wording",
+            "Never determine whether the task exists",
             "Return only target_task_title, confidence, need_clarification").forEach {
             assertTrue(it, prompt.contains(it))
         }

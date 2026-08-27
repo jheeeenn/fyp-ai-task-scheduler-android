@@ -249,6 +249,39 @@ class ConversationTaskRouteConsistencyTest {
     }
 
     @Test
+    fun physicalPositiveCompletionDirectRepliesUseOneBoundedTaskRouteRepair() = runBlocking {
+        listOf(
+            "Call Supervisor is also completed",
+            "Submit Report is completed",
+            "I've finished Buy Milk"
+        ).forEach { text ->
+            val falseSuccess = "The task 'call supervisor' has been marked as completed."
+            val client = Client(ConversationRoute.DIRECT_REPLY, primaryReply = falseSuccess)
+            val result = orchestrator(client).process(text, "")
+            assertTaskCommand(text, result)
+            assertFalse(result.reply.contains(falseSuccess))
+            assertEquals(1, client.compactCalls)
+            assertEquals(0, client.generalCalls)
+            assertEquals("NAMED_COMPLETION_MUTATION_MISROUTED", client.failure)
+            assertEquals(ConversationRoute.DIRECT_REPLY, client.failedRoute)
+            assertEquals(text, client.repairText)
+        }
+    }
+
+    @Test
+    fun namedCompletionMutationEvidenceCoversNarrowPositiveAndReversalStructures() {
+        listOf(
+            "Mark Buy Milk as done", "Mark Buy Milk completed",
+            "Submit Report is completed", "Call Supervisor is also completed",
+            "Buy Milk is done", "Buy Milk is finished", "I finished Buy Milk",
+            "I've finished Buy Milk", "I have completed Buy Milk",
+            "Complete Buy Milk", "Finish Buy Milk",
+            "I haven't finished Buy Milk after all", "Buy Milk is not complete yet",
+            "Reopen Buy Milk"
+        ).forEach { assertTrue(it, TaskCommandContradictionDetector.isNamedCompletionMutation(it)) }
+    }
+
+    @Test
     fun legitimateRoutesAndAlreadyCorrectCommandsDoNotRepair() = runBlocking {
         listOf(
             "Give me my daily briefing" to ConversationRoute.DAILY_BRIEFING,
@@ -257,12 +290,29 @@ class ConversationTaskRouteConsistencyTest {
             "What's on my schedule tomorrow?" to ConversationRoute.TASK_COMMAND,
             "Do I have anything planned for 28 August?" to ConversationRoute.TASK_COMMAND,
             "I haven't finished Buy Milk after all" to ConversationRoute.TASK_COMMAND,
+            "Buy Milk is not complete yet" to ConversationRoute.TASK_COMMAND,
+            "Reopen Buy Milk" to ConversationRoute.TASK_COMMAND,
+            "Call Supervisor is also completed" to ConversationRoute.TASK_COMMAND,
+            "Submit Report is completed" to ConversationRoute.TASK_COMMAND,
+            "I've finished Buy Milk" to ConversationRoute.TASK_COMMAND,
+            "Mark Buy Milk as done" to ConversationRoute.TASK_COMMAND,
+            "Buy Milk is done" to ConversationRoute.TASK_COMMAND,
+            "I have completed Buy Milk" to ConversationRoute.TASK_COMMAND,
+            "Complete Buy Milk" to ConversationRoute.TASK_COMMAND,
+            "Finish Buy Milk" to ConversationRoute.TASK_COMMAND,
             "What should I do next?" to ConversationRoute.CONTEXT_AWARE_SUGGESTION,
             "What should I focus on?" to ConversationRoute.CONTEXT_AWARE_SUGGESTION,
             "How should I make progress today?" to ConversationRoute.CONTEXT_AWARE_SUGGESTION,
             "Are any tasks scheduled too close together?" to ConversationRoute.CONTEXT_AWARE_SUGGESTION,
             "I don't feel productive today" to ConversationRoute.DIRECT_REPLY,
-            "It's not finished after all" to ConversationRoute.ASK_CLARIFICATION
+            "It's not finished after all" to ConversationRoute.ASK_CLARIFICATION,
+            "How do I mark a task completed?" to ConversationRoute.DIRECT_REPLY,
+            "Can I mark tasks completed?" to ConversationRoute.DIRECT_REPLY,
+            "What if Buy Milk is completed?" to ConversationRoute.DIRECT_REPLY,
+            "It is completed" to ConversationRoute.ASK_CLARIFICATION,
+            "I finished my work" to ConversationRoute.DIRECT_REPLY,
+            "I completed all my tasks" to ConversationRoute.DIRECT_REPLY,
+            "Don't mark Buy Milk completed" to ConversationRoute.DIRECT_REPLY
         ).forEach { (text, route) ->
             val client = Client(route)
             val result = orchestrator(client).process(text, "")
@@ -283,6 +333,26 @@ class ConversationTaskRouteConsistencyTest {
             "I haven't finished all my tasks yet", "Reopen please",
             "What if Buy Milk is not complete yet", "Don't reopen Buy Milk"
         ).forEach { assertFalse(it, TaskCommandContradictionDetector.isNamedCompletionReversal(it)) }
+        listOf(
+            "How do I mark a task completed?", "Can I mark tasks completed?",
+            "What if Buy Milk is completed?", "It is completed", "That is completed",
+            "I finished my work", "I completed all my tasks", "Don't mark Buy Milk completed"
+        ).forEach { assertFalse(it, TaskCommandContradictionDetector.isNamedCompletionMutation(it)) }
+    }
+
+    @Test
+    fun completionPromptsContrastMutationsWithGuidance() {
+        val routing = ConversationAgentClient.ROUTING_SYSTEM_PROMPT
+        listOf("Submit Report is completed.", "Call Supervisor is also completed.",
+            "I've finished Buy Milk.").forEach {
+            assertTrue(it, routing.contains("\"$it\" -> TASK_COMMAND"))
+        }
+        assertTrue(routing.contains("\"How do I mark a task completed?\" -> DIRECT_REPLY"))
+        val repair = ConversationAgentClient.TASK_COMMAND_ROUTE_REPAIR_SYSTEM_PROMPT
+        listOf("Submit Report is completed", "Call Supervisor is also completed",
+            "I've finished Buy Milk").forEach {
+            assertTrue(it, repair.contains("\"$it\" -> TASK_COMMAND"))
+        }
     }
 
     @Test
@@ -356,7 +426,8 @@ class ConversationTaskRouteConsistencyTest {
         val error: Exception? = null,
         val contextRef: String = "",
         val contextDetail: String = "NONE",
-        val generalRepair: String? = null
+        val generalRepair: String? = null,
+        val primaryReply: String = "Which task?"
     ) : ConversationAgentClient(null) {
         var primaryCalls = 0
         var compactCalls = 0
@@ -368,7 +439,7 @@ class ConversationTaskRouteConsistencyTest {
         override suspend fun process(userText: String, memorySnapshot: String, appContextSummary: String): String {
             primaryCalls++
             return JSONObject().put("route", route.name).put("task_text", "discarded")
-                .put("reply", "Which task?").put("context_ref", contextRef)
+                .put("reply", primaryReply).put("context_ref", contextRef)
                 .put("context_detail", contextDetail).put("context_action", "NONE")
                 .put("setting_action", "NONE").put("setting_target", "NONE")
                 .put("query_reading_move", "NONE").put("query_presentation_hint", "NONE")

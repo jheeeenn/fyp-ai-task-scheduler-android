@@ -1026,7 +1026,7 @@ Use only the current original normalized utterance, bounded failure reason, and 
 Decide only TASK_COMMAND or ASK_CLARIFICATION. No task database or prior memory is supplied.
 Current command semantics take precedence over the failed route and any prior conversation.
 Use TASK_COMMAND for a usable task existence/list/count query with an explicit temporal scope,
-or a clear named task completion/reopen correction, or an explicit named title rename with both
+or a clear named task completion/reopen mutation, or an explicit named title rename with both
 the existing target and replacement title, or a read-only schedule question naming its task.
 For NAMED_TASK_QUERY_MISROUTED, no temporary refs or validated task focus are available.
 A named schedule question must use TASK_COMMAND so the Task Agent can extract its semantics and
@@ -1041,6 +1041,9 @@ Android can match the task and render its stored schedule. Examples:
 - "Buy Milk is not complete yet" -> TASK_COMMAND
 - "Mark Buy Milk incomplete again" -> TASK_COMMAND
 - "Reopen Buy Milk" -> TASK_COMMAND
+- "Submit Report is completed" -> TASK_COMMAND
+- "Call Supervisor is also completed" -> TASK_COMMAND
+- "I've finished Buy Milk" -> TASK_COMMAND
 - "I want the rent payment to be called Pay Rent instead" -> TASK_COMMAND
 - "Rename Rent Payment to Pay Rent" -> TASK_COMMAND
 For NAMED_RENAME_MUTATION_MISROUTED, both a named existing target and a requested replacement
@@ -1322,6 +1325,10 @@ Explicit contrasts:
 - "Give me my daily briefing." -> DAILY_BRIEFING.
 - "I haven't finished Buy Milk after all." -> TASK_COMMAND, not CONTEXT_AWARE_SUGGESTION.
 - "Buy Milk is not complete yet" -> TASK_COMMAND: the target is explicitly named.
+- "Submit Report is completed." -> TASK_COMMAND.
+- "Call Supervisor is also completed." -> TASK_COMMAND.
+- "I've finished Buy Milk." -> TASK_COMMAND.
+- "How do I mark a task completed?" -> DIRECT_REPLY.
 - "What should I do next?" -> CONTEXT_AWARE_SUGGESTION.
 - "I want the rent payment to be called Pay Rent instead." -> TASK_COMMAND.
 - "Rename Rent Payment to Pay Rent." -> TASK_COMMAND.

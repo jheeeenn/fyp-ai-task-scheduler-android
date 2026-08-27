@@ -134,28 +134,30 @@ class AgentOrchestrator(
             } else normalizedCommand
             val targetEvidence =
                 TaskCommandContradictionDetector.namedExistingTaskTargetEvidence(normalizedText)
-            val targetConsistentCommand = if (targetEvidence != null) {
-                if (consistentCommand.intent != targetEvidence.expectedAction) {
-                    throw TaskAgentValidationException(
-                        "Named existing-task operation contradicts primary action"
-                    )
-                }
-                if (consistentCommand.taskTitle.isNullOrBlank() &&
-                    consistentCommand.targetTaskTitle.isNullOrBlank()
-                ) {
-                    Log.d(
-                        "TASK_TARGET_GUARD",
-                        "expectedAction=${targetEvidence.expectedAction} primaryTarget=false " +
-                            "result=REPAIR_REQUIRED"
-                    )
-                    return repairExistingTaskTarget(
-                        normalizedText,
-                        targetEvidence.expectedAction,
-                        consistentCommand
-                    )
-                }
-                consistentCommand
-            } else consistentCommand
+            if (targetEvidence != null && consistentCommand.intent != targetEvidence.expectedAction) {
+                throw TaskAgentValidationException(
+                    "Named existing-task operation contradicts primary action"
+                )
+            }
+            val missingTitles = consistentCommand.taskTitle.isNullOrBlank() &&
+                consistentCommand.targetTaskTitle.isNullOrBlank()
+            val lacksTemporalTarget = consistentCommand.targetDateText.isNullOrBlank() &&
+                consistentCommand.targetTimeText.isNullOrBlank()
+            val structurallyEligible = consistentCommand.intent in TARGET_REPAIR_ACTIONS &&
+                lacksTemporalTarget
+            if (missingTitles && (targetEvidence != null || structurallyEligible)) {
+                Log.d(
+                    "TASK_TARGET_GUARD",
+                    "expectedAction=${consistentCommand.intent} namedEvidence=${targetEvidence != null} " +
+                        "temporalTarget=${!lacksTemporalTarget} result=REPAIR_REQUIRED"
+                )
+                return repairExistingTaskTarget(
+                    normalizedText,
+                    consistentCommand.intent,
+                    consistentCommand
+                )
+            }
+            val targetConsistentCommand = consistentCommand
             val validatedCommand = actionValidator.validate(targetConsistentCommand)
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
@@ -214,6 +216,10 @@ class AgentOrchestrator(
     ): AiParsedCommand = try {
         val raw = laptopAgentClient.processExistingTaskTargetRepair(normalizedText, expectedAction)
         val repair = ExistingTaskTargetRepairParser.parse(raw)
+        require(TaskCommandContradictionDetector.isGroundedNamedTarget(
+            normalizedText,
+            repair.targetTaskTitle
+        )) { "Existing-task repair target is not literally grounded in the original request" }
         // The action and every non-target field remain from the already-normalized primary command.
         val repaired = actionValidator.validate(
             command.copy(targetTaskTitle = repair.targetTaskTitle)
@@ -688,6 +694,12 @@ class AgentOrchestrator(
             ?: exception::class.java.simpleName
 
     private companion object {
+        val TARGET_REPAIR_ACTIONS = setOf(
+            AiIntent.DELETE_TASK.name,
+            AiIntent.RESCHEDULE_TASK.name,
+            AiIntent.MARK_DONE.name,
+            AiIntent.MARK_UNDONE.name
+        )
         val INITIAL_CONTEXT_RECOVERABLE_FAILURES = setOf(
             RelativeTemporalValidationFailure.CLARIFICATION_REQUIRED,
             RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION,
