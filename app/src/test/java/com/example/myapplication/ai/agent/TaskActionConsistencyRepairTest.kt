@@ -255,6 +255,171 @@ class TaskActionConsistencyRepairTest {
         assertEquals(1, client.primaryCalls)
         assertEquals(count, client.namedQueryRepairCalls)
         assertEquals(if (count == 0) "" else text, client.namedQueryRepairText)
+        assertEquals(0, client.existingTargetRepairCalls)
+        assertEquals(0, client.renameRepairCalls)
+        assertEquals(0, client.repairCalls)
+    }
+
+    @Test
+    fun missingNamedExistingTaskTargetsUseOneTargetOnlyRepair() = runBlocking {
+        listOf(
+            Triple("Delete Dentist Appointment.", AiIntent.DELETE_TASK.name, "Dentist Appointment"),
+            Triple("Mark Buy Milk as done", AiIntent.MARK_DONE.name, "Buy Milk"),
+            Triple("Mark Buy Milk as incomplete", AiIntent.MARK_UNDONE.name, "Buy Milk")
+        ).forEach { (text, action, target) ->
+            val client = Client(
+                primary(action, "").toString(),
+                existingTargetRepaired = targetRepair(target).toString()
+            )
+            val command = orchestrator(client).process(text)
+            assertEquals(action, command.intent)
+            assertEquals(target, command.targetTaskTitle)
+            assertNull(command.taskTitle)
+            assertEquals(command, ActionValidator().validate(command))
+            assertExistingTargetRepairCalls(client, text, action, 1)
+        }
+    }
+
+    @Test
+    fun survivingNamedTargetsAndWrongFieldCompatibilityNeedNoTargetRepair() = runBlocking {
+        listOf(
+            Triple("Delete Buy Milk", AiIntent.DELETE_TASK.name, primary("DELETE_TASK", "Buy Milk")),
+            Triple("Delete Buy Milk", AiIntent.DELETE_TASK.name,
+                primary("DELETE_TASK", "").put("task_title", "Buy Milk")),
+            Triple("Delete Buy", AiIntent.DELETE_TASK.name, primary("DELETE_TASK", "buy")),
+            Triple("Mark Buy Milk as done", AiIntent.MARK_DONE.name, primary("MARK_DONE", "Buy Milk")),
+            Triple("Mark Buy Milk as done", AiIntent.MARK_DONE.name,
+                primary("MARK_DONE", "").put("task_title", "Buy Milk")),
+            Triple("Mark Buy Milk as incomplete", AiIntent.MARK_UNDONE.name,
+                primary("MARK_UNDONE", "Buy Milk")),
+            Triple("Mark Buy Milk as incomplete", AiIntent.MARK_UNDONE.name,
+                primary("MARK_UNDONE", "").put("task_title", "Buy Milk")),
+            Triple("Move Buy Milk to tomorrow", AiIntent.RESCHEDULE_TASK.name,
+                primary("RESCHEDULE_TASK", "").put("task_title", "Buy Milk")
+                    .put("new_date", "tomorrow"))
+        ).forEach { (text, action, response) ->
+            val client = Client(response.toString())
+            val command = orchestrator(client).process(text)
+            assertEquals(action, command.intent)
+            assertEquals(response.optString("target_task_title").ifBlank { "Buy Milk" },
+                command.targetTaskTitle)
+            assertExistingTargetRepairCalls(client, text, action, 0)
+        }
+    }
+
+    @Test
+    fun contextualAndTemporalOnlyOperationsNeverUseNamedTargetRepair() = runBlocking {
+        listOf("Delete the second one", "Delete it").forEach { text ->
+            assertNull(TaskCommandContradictionDetector.namedExistingTaskTargetEvidence(text))
+            val client = Client(primary("DELETE_TASK", "").toString())
+            assertTrue(runCatching { orchestrator(client).process(text) }.exceptionOrNull()
+                is TaskAgentProcessingException)
+            assertEquals(0, client.existingTargetRepairCalls)
+        }
+        listOf(
+            "Delete the 8 PM task" to primary("DELETE_TASK", "").put("target_time", "20:00"),
+            "Delete tomorrow's task" to primary("DELETE_TASK", "").put("target_date", "tomorrow")
+        ).forEach { (text, response) ->
+            assertNull(TaskCommandContradictionDetector.namedExistingTaskTargetEvidence(text))
+            val client = Client(response.toString())
+            val command = orchestrator(client).process(text)
+            assertEquals(AiIntent.DELETE_TASK.name, command.intent)
+            assertNull(command.targetTaskTitle)
+            assertEquals(0, client.existingTargetRepairCalls)
+        }
+    }
+
+    @Test
+    fun existingTargetEvidenceNeverChangesAContradictoryPrimaryAction() = runBlocking {
+        val client = Client(primary("CREATE_TASK", "Dentist Appointment").toString())
+        assertTrue(runCatching { orchestrator(client).process("Delete Dentist Appointment") }
+            .exceptionOrNull() is TaskAgentProcessingException)
+        assertEquals(0, client.existingTargetRepairCalls)
+    }
+
+    @Test
+    fun existingTargetRepairIsStrictAndFailsClosedAfterOneCall() = runBlocking {
+        val valid = targetRepair("Dentist Appointment")
+        val invalid = mutableListOf("", "{", valid.toString() + " trailing", valid.toString() + " {}")
+        listOf("target_task_title" to " ", "target_task_title" to 7,
+            "confidence" to 0.79, "confidence" to 1.1, "confidence" to "0.95",
+            "need_clarification" to true, "need_clarification" to "false"
+        ).forEach { (field, value) ->
+            invalid += JSONObject(valid.toString()).put(field, value).toString()
+        }
+        listOf("action", "task_title", "date", "time", "target_date", "target_time", "new_date",
+            "new_time", "query_detail", "task_id", "room_id", "context_ref", "natural_response"
+        ).forEach { field ->
+            invalid += JSONObject(valid.toString()).put(field, "forbidden").toString()
+        }
+        valid.keys().asSequence().toList().forEach { field ->
+            invalid += JSONObject(valid.toString()).apply { remove(field) }.toString()
+        }
+        invalid.forEach { repair ->
+            val client = Client(primary("DELETE_TASK", "").toString(), existingTargetRepaired = repair)
+            assertTrue(repair, runCatching { orchestrator(client).process("Delete Dentist Appointment") }
+                .exceptionOrNull() is TaskAgentProcessingException)
+            assertEquals(1, client.existingTargetRepairCalls)
+        }
+    }
+
+    @Test
+    fun existingTargetRepairSchemaPromptAndClientHaveNoTaskAuthority() {
+        val schema = AgentResponseSchemas.existingTaskTargetRepairResponseFormat()
+            .getJSONObject("json_schema").getJSONObject("schema")
+        val fields = setOf("target_task_title", "confidence", "need_clarification")
+        assertFalse(schema.getBoolean("additionalProperties"))
+        assertEquals(fields, schema.getJSONObject("properties").keys().asSequence().toSet())
+        assertEquals(fields, (0 until schema.getJSONArray("required").length())
+            .map(schema.getJSONArray("required")::getString).toSet())
+        val prompt = LaptopAgentClient.EXISTING_TASK_TARGET_REPAIR_SYSTEM_PROMPT
+        listOf("Delete Dentist Appointment", "Delete Buy Milk", "Mark Buy Milk as done",
+            "Mark Buy Milk as incomplete", "Never determine whether the task exists",
+            "Return only target_task_title, confidence, need_clarification").forEach {
+            assertTrue(it, prompt.contains(it))
+        }
+        listOf("query_detail", "task_id", "context_ref").forEach { assertFalse(prompt.contains(it)) }
+        val source = File("src/main/java/com/example/myapplication/ai/agent/LaptopAgentClient.kt").readText()
+        val request = source.substringAfter("open suspend fun processExistingTaskTargetRepair(")
+            .substringBefore("open suspend fun processRoutine(")
+        assertTrue(request.contains("requestClient = boundedTemporalClient"))
+        assertTrue(request.contains("maxOutputTokens = 160"))
+        listOf("TaskMatcher", "AppDatabase", "taskDao", "candidate", "contextRef", "snapshot")
+            .forEach { assertFalse(it, request.contains(it)) }
+    }
+
+    @Test
+    fun specializedAndOrdinaryPathsNeverUseExistingTargetRepair() = runBlocking {
+        val rename = Client(primary("UPDATE_TASK", "rent payment").toString())
+        assertRename(orchestrator(rename).process(CU04))
+        assertEquals(1, rename.renameRepairCalls)
+        assertEquals(0, rename.existingTargetRepairCalls)
+
+        val reschedule = Client(primary("CREATE_TASK", "Read Book").toString())
+        assertEquals(AiIntent.RESCHEDULE_TASK.name,
+            orchestrator(reschedule).process("Move Read Book to 31 August at 8 PM.").intent)
+        assertEquals(1, reschedule.repairCalls)
+        assertEquals(0, reschedule.existingTargetRepairCalls)
+
+        val namedQueryClient = Client(namedQuery("", TaskQueryDetail.TIME).toString())
+        assertNamedQuery(orchestrator(namedQueryClient).process("What time is Read Book?"),
+            "Read Book", TaskQueryDetail.TIME)
+        assertEquals(0, namedQueryClient.existingTargetRepairCalls)
+
+        val ordinary = primary("QUERY_TASK", "").put("query_presentation", "OVERVIEW")
+            .put("target_date", "30 August")
+        val ordinaryClient = Client(ordinary.toString())
+        assertEquals(AiIntent.QUERY_TASK.name,
+            orchestrator(ordinaryClient).process("What tasks do I have on 30 August?").intent)
+        assertEquals(0, ordinaryClient.existingTargetRepairCalls)
+    }
+
+    private fun assertExistingTargetRepairCalls(client: Client, text: String, action: String, count: Int) {
+        assertEquals(1, client.primaryCalls)
+        assertEquals(count, client.existingTargetRepairCalls)
+        assertEquals(if (count == 0) "" else text, client.existingTargetRepairText)
+        assertEquals(if (count == 0) "" else action, client.existingTargetExpectedAction)
+        assertEquals(0, client.namedQueryRepairCalls)
         assertEquals(0, client.renameRepairCalls)
         assertEquals(0, client.repairCalls)
     }
@@ -669,7 +834,9 @@ class TaskActionConsistencyRepairTest {
 
     private class Client(val primary: String, val repaired: String = repair().toString(), val failure: Exception? = null,
         val renameRepaired: String = renameRepair().toString(),
-        val namedQueryRepaired: String = queryRepair("Read Book").toString()) : LaptopAgentClient(null) {
+        val namedQueryRepaired: String = queryRepair("Read Book").toString(),
+        val existingTargetRepaired: String = targetRepair("Dentist Appointment").toString()
+    ) : LaptopAgentClient(null) {
         var primaryCalls = 0
         var repairCalls = 0
         var repairText = ""
@@ -677,6 +844,9 @@ class TaskActionConsistencyRepairTest {
         var renameRepairText = ""
         var namedQueryRepairCalls = 0
         var namedQueryRepairText = ""
+        var existingTargetRepairCalls = 0
+        var existingTargetRepairText = ""
+        var existingTargetExpectedAction = ""
         override suspend fun process(normalizedText: String): String {
             primaryCalls++
             return primary
@@ -699,12 +869,25 @@ class TaskActionConsistencyRepairTest {
             failure?.let { throw it }
             return namedQueryRepaired
         }
+        override suspend fun processExistingTaskTargetRepair(
+            normalizedText: String,
+            expectedAction: String
+        ): String {
+            existingTargetRepairCalls++
+            existingTargetRepairText = normalizedText
+            existingTargetExpectedAction = expectedAction
+            failure?.let { throw it }
+            return existingTargetRepaired
+        }
     }
 
     companion object {
         private fun namedQuery(title: String, detail: TaskQueryDetail) = primary("QUERY_TASK", title)
             .put("query_detail", detail.name).put("query_presentation", "DETAILS")
         private fun queryRepair(title: String) = JSONObject()
+            .put("target_task_title", title)
+            .put("confidence", 0.95).put("need_clarification", false)
+        private fun targetRepair(title: String) = JSONObject()
             .put("target_task_title", title)
             .put("confidence", 0.95).put("need_clarification", false)
         private const val CU04 = "I want the rent payment to be called Pay Rent instead."

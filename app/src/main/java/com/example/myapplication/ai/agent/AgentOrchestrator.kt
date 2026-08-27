@@ -132,7 +132,31 @@ class AgentOrchestrator(
                 // Presentation is Android-owned for this dedicated read path, not a task fact.
                 normalizedCommand.copy(queryPresentation = TaskQueryPresentation.DETAILS)
             } else normalizedCommand
-            val validatedCommand = actionValidator.validate(consistentCommand)
+            val targetEvidence =
+                TaskCommandContradictionDetector.namedExistingTaskTargetEvidence(normalizedText)
+            val targetConsistentCommand = if (targetEvidence != null) {
+                if (consistentCommand.intent != targetEvidence.expectedAction) {
+                    throw TaskAgentValidationException(
+                        "Named existing-task operation contradicts primary action"
+                    )
+                }
+                if (consistentCommand.taskTitle.isNullOrBlank() &&
+                    consistentCommand.targetTaskTitle.isNullOrBlank()
+                ) {
+                    Log.d(
+                        "TASK_TARGET_GUARD",
+                        "expectedAction=${targetEvidence.expectedAction} primaryTarget=false " +
+                            "result=REPAIR_REQUIRED"
+                    )
+                    return repairExistingTaskTarget(
+                        normalizedText,
+                        targetEvidence.expectedAction,
+                        consistentCommand
+                    )
+                }
+                consistentCommand
+            } else consistentCommand
+            val validatedCommand = actionValidator.validate(targetConsistentCommand)
             Log.d("AGENT_ORCHESTRATOR", "LM Studio task agent accepted ${validatedCommand.intent}")
             validatedCommand
         } catch (e: CancellationException) {
@@ -181,6 +205,26 @@ class AgentOrchestrator(
     } catch (e: Exception) {
         Log.d("TASK_NAMED_QUERY_REPAIR", "attempt=1 result=REJECTED")
         throw e // process() fails closed; no second repair or fallback to the primary result.
+    }
+
+    private suspend fun repairExistingTaskTarget(
+        normalizedText: String,
+        expectedAction: String,
+        command: AiParsedCommand
+    ): AiParsedCommand = try {
+        val raw = laptopAgentClient.processExistingTaskTargetRepair(normalizedText, expectedAction)
+        val repair = ExistingTaskTargetRepairParser.parse(raw)
+        // The action and every non-target field remain from the already-normalized primary command.
+        val repaired = actionValidator.validate(
+            command.copy(targetTaskTitle = repair.targetTaskTitle)
+        )
+        Log.d("TASK_TARGET_REPAIR", "attempt=1 expectedAction=$expectedAction result=ACCEPTED")
+        repaired
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.d("TASK_TARGET_REPAIR", "attempt=1 expectedAction=$expectedAction result=REJECTED")
+        throw e
     }
 
     private fun hasRescheduleTemporalRoleContradiction(

@@ -21,6 +21,8 @@ internal object TaskCommandContradictionDetector {
         val hasTargetTime: Boolean
     )
 
+    data class NamedExistingTaskTargetEvidence(val expectedAction: String)
+
     private val temporal = TemporalExpressionResolver()
     private const val REQUEST = "(?:(?:can|could|would) you )?(?:please )?"
     private val taskQuery = Regex(
@@ -34,6 +36,13 @@ internal object TaskCommandContradictionDetector {
     )
     private val scheduleChange = Regex(
         """^${REQUEST}(?:move|reschedule|postpone) (.+?) (?:over )?(?:to|for|until) (.+)$"""
+    )
+    private val namedDelete = Regex("""^${REQUEST}delete (.+)$""")
+    private val namedMarkDone = Regex(
+        """^${REQUEST}mark (.+?) (?:as )?(?:done|complete|completed)$"""
+    )
+    private val namedMarkUndone = Regex(
+        """^${REQUEST}mark (.+?) (?:as )?(?:incomplete|not complete|not done)$"""
     )
     private val namedRenames = listOf(
         Regex("""^i want (?:the )?(.+?) to be called (.+?)(?: instead)?$"""),
@@ -97,6 +106,22 @@ internal object TaskCommandContradictionDetector {
             hasDestinationDate = temporal.hasExplicitDateExpression(destination),
             hasDestinationTime = temporal.hasExplicitTimeExpression(destination)
         ).takeIf { it.hasDestinationDate || it.hasDestinationTime }
+    }
+
+    /** Operation evidence only. The repair model proposes the title; Room still decides existence. */
+    fun namedExistingTaskTargetEvidence(text: String): NamedExistingTaskTargetEvidence? {
+        val normalized = normalize(text)
+        val (action, candidate) = namedDelete.matchEntire(normalized)?.let {
+            AiIntent.DELETE_TASK.name to it.groupValues[1]
+        } ?: namedMarkUndone.matchEntire(normalized)?.let {
+            AiIntent.MARK_UNDONE.name to it.groupValues[1]
+        } ?: namedMarkDone.matchEntire(normalized)?.let {
+            AiIntent.MARK_DONE.name to it.groupValues[1]
+        } ?: scheduleChange.matchEntire(normalized)?.let {
+            AiIntent.RESCHEDULE_TASK.name to it.groupValues[1]
+        } ?: return null
+        if (!hasNamedEvidence(candidate) || nonNamedScheduleTarget.containsMatchIn(candidate)) return null
+        return NamedExistingTaskTargetEvidence(action)
     }
 
     fun isNamedTaskRename(text: String): Boolean = namedRenames.any { pattern ->

@@ -96,6 +96,23 @@ open class LaptopAgentClient(
             )
         }
 
+    open suspend fun processExistingTaskTargetRepair(
+        normalizedText: String,
+        expectedAction: String
+    ): String = withContext(Dispatchers.IO) {
+        execute(
+            normalizedText = normalizedText,
+            systemPrompt = EXISTING_TASK_TARGET_REPAIR_SYSTEM_PROMPT
+                .replace("{EXPECTED_ACTION}", expectedAction),
+            responseFormat = AgentResponseSchemas.existingTaskTargetRepairResponseFormat(),
+            boundedContextAction = false,
+            boundedRoutineExtraction = false,
+            boundedExistingTaskTargetRepair = true,
+            maxOutputTokens = 160,
+            requestClient = boundedTemporalClient
+        )
+    }
+
     open suspend fun processRoutine(normalizedText: String): String =
         withContext(Dispatchers.IO) {
             execute(
@@ -212,6 +229,7 @@ open class LaptopAgentClient(
         boundedRescheduleRepair: Boolean = false,
         boundedTitleRenameRepair: Boolean = false,
         boundedNamedQueryRepair: Boolean = false,
+        boundedExistingTaskTargetRepair: Boolean = false,
         maxOutputTokens: Int = 512,
         requestClient: OkHttpClient = client
     ): String {
@@ -233,7 +251,9 @@ open class LaptopAgentClient(
             })
         }
 
-        if (boundedNamedQueryRepair) {
+        if (boundedExistingTaskTargetRepair) {
+            Log.d("TASK_TARGET_REPAIR", "attempt=1 result=REQUESTED")
+        } else if (boundedNamedQueryRepair) {
             Log.d("TASK_NAMED_QUERY_REPAIR", "attempt=1 result=REQUESTED")
         } else if (boundedTitleRenameRepair) {
             Log.d("TASK_ACTION_REPAIR", "expectedAction=UPDATE_TASK repairType=TITLE_RENAME result=REQUESTED")
@@ -260,7 +280,9 @@ open class LaptopAgentClient(
         return try {
             requestClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
-                if (boundedNamedQueryRepair) {
+                if (boundedExistingTaskTargetRepair) {
+                    Log.d("TASK_TARGET_REPAIR", "http=${response.code} responseChars=${body.length}")
+                } else if (boundedNamedQueryRepair) {
                     Log.d("TASK_NAMED_QUERY_REPAIR", "http=${response.code} responseChars=${body.length}")
                 } else if (boundedTitleRenameRepair) {
                     Log.d("TASK_ACTION_REPAIR", "repairType=TITLE_RENAME http=${response.code} responseChars=${body.length}")
@@ -618,6 +640,21 @@ any schedule values. No task database or context is supplied.
 If the named target is unclear, set need_clarification=true; never guess.
 Return only target_task_title, confidence, need_clarification as one compact JSON object without
 markdown or explanation. Android validates confidence from 0.80 through 1.0 and constructs QUERY_TASK.
+""".trimIndent()
+        internal val EXISTING_TASK_TARGET_REPAIR_SYSTEM_PROMPT = """
+Perform one bounded existing-task target extraction from the COMPLETE original normalized request.
+Android has already grounded the operation as {EXPECTED_ACTION}. Do not infer, change, or output an
+action. Extract only the complete named existing-task text supplied by the user into
+target_task_title.
+"Delete Dentist Appointment" -> target_task_title="Dentist Appointment"
+"Delete Buy Milk" -> target_task_title="Buy Milk"
+"Mark Buy Milk as done" -> target_task_title="Buy Milk"
+"Mark Buy Milk as incomplete" -> target_task_title="Buy Milk"
+Never determine whether the task exists and never select a database row. No Room tasks, candidate
+list, IDs, or context refs are supplied. Do not output dates, times, query fields, response text, or
+execution claims. If the named target is unclear, set need_clarification=true; never guess.
+Return only target_task_title, confidence, need_clarification as one compact JSON object without
+markdown or explanation. Android accepts confidence only from 0.80 through 1.0.
 """.trimIndent()
         internal val SYSTEM_PROMPT = """
 Current command semantics take precedence over prior conversation.
