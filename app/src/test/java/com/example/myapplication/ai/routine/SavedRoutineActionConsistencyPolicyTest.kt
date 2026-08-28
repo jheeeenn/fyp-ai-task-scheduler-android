@@ -30,6 +30,44 @@ class SavedRoutineActionConsistencyPolicyTest {
     }
 
     @Test
+    fun boundedNamedReadFormsReconcileListToReadDetails() {
+        mapOf(
+            "What is the evening routine" to "evening routine",
+            "What is my morning routine" to "morning routine",
+            "What's the evening routine?" to "evening routine",
+            "Tell me about my evening routine" to "evening routine",
+            "What does my evening routine contain?" to "evening routine"
+        ).forEach { (input, expectedTitle) ->
+            val result = SavedRoutineActionConsistencyPolicy.reconcile(
+                input,
+                decision(SavedRoutineAction.LIST)
+            )
+
+            assertEquals(input, SavedRoutineAction.READ_DETAILS, result.decision.action)
+            assertEquals(input, expectedTitle, result.decision.routineTitle)
+            assertEquals(input, "", result.decision.dateText)
+            assertTrue(input, result.titleRecoveredFromLiteralText)
+        }
+    }
+
+    @Test
+    fun genericIndefiniteRoutineQuestionsAreNotStrongReadCues() {
+        listOf(
+            "What is a morning routine?",
+            "What is an evening routine?",
+            "What should an evening routine include?",
+            "Explain a morning routine"
+        ).forEach { input ->
+            val model = decision(SavedRoutineAction.LIST)
+            val result = SavedRoutineActionConsistencyPolicy.reconcile(input, model)
+
+            assertEquals(input, model, result.decision)
+            assertEquals(input, "NO_STRONG_ACTION_CUE", result.reason)
+            assertFalse(input, result.titleRecoveredFromLiteralText)
+        }
+    }
+
+    @Test
     fun pluralListStaysListAndValidReadDetailsStaysUnchanged() {
         listOf(
             "what routines have i saved",

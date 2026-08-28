@@ -206,6 +206,10 @@ class ConversationOrchestrator(
         voiceSettingRoutingContext: VoiceSettingRoutingContext =
             VoiceSettingRoutingContext.UNAVAILABLE
     ): ConversationDecision {
+        val topLevelRouteContext = ConversationTopLevelRouteConsistencyContext(
+            recentSavedRoutineAction =
+                memory.pendingAction == ConversationRoute.SAVED_ROUTINE_ACTION.name
+        )
         memory.recordUser(normalizedText)
         val routingMemory = appendTaskContext(
             memorySnapshot = memory.snapshotForPrompt(),
@@ -222,7 +226,8 @@ class ConversationOrchestrator(
             )
             parseCanonicalDecision(
                 rawContent = rawContent,
-                normalizedTextForTopLevelValidation = normalizedText
+                normalizedTextForTopLevelValidation = normalizedText,
+                topLevelRouteContext = topLevelRouteContext
             ).also {
                 validateTaskRouteConsistency(normalizedText, it)
                 validateOperationalBreakdownRouting(normalizedText, it)
@@ -243,6 +248,7 @@ class ConversationOrchestrator(
                 readOnlyTaskContextSnapshot,
                 contextFocus,
                 voiceSettingRoutingContext,
+                topLevelRouteContext,
                 e
             )
         } catch (e: ConversationAgentResponseException) {
@@ -252,6 +258,7 @@ class ConversationOrchestrator(
                 readOnlyTaskContextSnapshot,
                 contextFocus,
                 voiceSettingRoutingContext,
+                topLevelRouteContext,
                 e
             )
         }
@@ -283,6 +290,7 @@ class ConversationOrchestrator(
         readOnlyTaskContextSnapshot: String,
         contextFocus: ConversationContextFocus?,
         voiceSettingRoutingContext: VoiceSettingRoutingContext,
+        topLevelRouteContext: ConversationTopLevelRouteConsistencyContext,
         firstFailure: Exception
     ): ConversationDecision {
         val failureCode = repairFailureCode(firstFailure)
@@ -339,7 +347,8 @@ class ConversationOrchestrator(
                     readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
                     contextFocus = contextFocus,
                     voiceSettingRoutingContext = voiceSettingRoutingContext,
-                    repairProfile = repairProfile
+                    repairProfile = repairProfile,
+                    topLevelRouteContext = topLevelRouteContext
                 ),
                 failureCode = failureCode,
                 failedRoute = failedRoute
@@ -348,7 +357,8 @@ class ConversationOrchestrator(
                 ConversationRepairProfile.GENERAL -> parseCanonicalDecision(
                     rawContent = repairContent,
                     source = SOURCE_SCHEMA_REPAIR,
-                    normalizedTextForTopLevelValidation = normalizedText
+                    normalizedTextForTopLevelValidation = normalizedText,
+                    topLevelRouteContext = topLevelRouteContext
                 )
                 ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR ->
                     parseCompactTaskCommandRepair(
@@ -531,7 +541,9 @@ class ConversationOrchestrator(
     private fun parseCanonicalDecision(
         rawContent: String,
         source: String = SOURCE_CONVERSATION_AGENT,
-        normalizedTextForTopLevelValidation: String? = null
+        normalizedTextForTopLevelValidation: String? = null,
+        topLevelRouteContext: ConversationTopLevelRouteConsistencyContext =
+            ConversationTopLevelRouteConsistencyContext()
     ): ConversationDecision {
         val result = if (normalizedTextForTopLevelValidation == null) {
             parser.parseWithReport(rawContent)
@@ -547,7 +559,11 @@ class ConversationOrchestrator(
         }
         val decision = result.decision.copy(source = source)
         if (normalizedTextForTopLevelValidation != null) {
-            validateTopLevelRouteConsistency(normalizedTextForTopLevelValidation, decision)
+            validateTopLevelRouteConsistency(
+                normalizedText = normalizedTextForTopLevelValidation,
+                decision = decision,
+                context = topLevelRouteContext
+            )
             ConversationDecisionContractValidator.validate(decision)
         }
         return decision
@@ -572,10 +588,15 @@ class ConversationOrchestrator(
 
     private fun validateTopLevelRouteConsistency(
         normalizedText: String,
-        decision: ConversationDecision
+        decision: ConversationDecision,
+        context: ConversationTopLevelRouteConsistencyContext
     ) {
         try {
-            ConversationTopLevelRouteConsistencyGuard.validate(normalizedText, decision)
+            ConversationTopLevelRouteConsistencyGuard.validate(
+                normalizedText = normalizedText,
+                decision = decision,
+                context = context
+            )
         } catch (failure: ConversationSchemaException) {
             Log.d(
                 "CONVERSATION_TOP_LEVEL_ROUTE_GUARD",
@@ -741,7 +762,8 @@ class ConversationOrchestrator(
         readOnlyTaskContextSnapshot: String,
         contextFocus: ConversationContextFocus?,
         voiceSettingRoutingContext: VoiceSettingRoutingContext,
-        repairProfile: ConversationRepairProfile
+        repairProfile: ConversationRepairProfile,
+        topLevelRouteContext: ConversationTopLevelRouteConsistencyContext
     ): String = buildString {
         append(appContextSummary.trim())
         appendLine()
@@ -768,6 +790,12 @@ class ConversationOrchestrator(
         appendLine(voiceSettingRoutingContext.toPromptText())
         appendLine()
         append(ConversationRepairProfileSelector.marker(repairProfile))
+        appendLine()
+        appendLine()
+        append(
+            "Recent saved-routine routing context available: " +
+                topLevelRouteContext.recentSavedRoutineAction
+        )
     }
 
     fun recordAuthoritativeContextRead(

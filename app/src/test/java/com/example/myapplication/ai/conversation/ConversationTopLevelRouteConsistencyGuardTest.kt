@@ -13,7 +13,8 @@ class ConversationTopLevelRouteConsistencyGuardTest {
     fun newContradictionsAlwaysSelectGeneralRepairAndPromptsRemainBounded() {
         listOf(
             ConversationDecisionFailureCode.APP_NAVIGATION_MISROUTED,
-            ConversationDecisionFailureCode.SAVED_ROUTINE_LIST_MISROUTED
+            ConversationDecisionFailureCode.SAVED_ROUTINE_LIST_MISROUTED,
+            ConversationDecisionFailureCode.SAVED_ROUTINE_READ_MISROUTED
         ).forEach { failure ->
             assertEquals(
                 ConversationRepairProfile.GENERAL,
@@ -32,6 +33,16 @@ class ConversationTopLevelRouteConsistencyGuardTest {
         assertTrue(prompt.contains("navigation_target is NONE for every route other than APP_NAVIGATION"))
         assertTrue(prompt.contains("Do I have any routines?"))
         assertTrue(prompt.contains("List my saved routines."))
+        assertTrue(prompt.contains("What is my evening routine?"))
+        assertTrue(prompt.contains("What is an evening routine?"))
+        assertTrue(prompt.contains("Morning, evening, or daily wording alone never implies DAILY_BRIEFING"))
+
+        val repairSource = java.io.File(
+            "src/main/java/com/example/myapplication/ai/conversation/ConversationAgentClient.kt"
+        ).readText()
+        assertTrue(repairSource.contains("SAVED_ROUTINE_READ_MISROUTED repair rule:"))
+        assertTrue(repairSource.contains("SavedRoutineSemanticOrchestrator decides READ_DETAILS"))
+        assertTrue(repairSource.contains("Use no Room IDs or invented routine records"))
     }
 
     @Test
@@ -256,6 +267,169 @@ class ConversationTopLevelRouteConsistencyGuardTest {
     }
 
     @Test
+    fun physicalSavedRoutineReadFailureUsesRecentBoundedContextAndOneGeneralRepair() =
+        runBlocking {
+            val client = RepairClient(
+                primary = decisionJson(route = "DAILY_BRIEFING"),
+                repair = decisionJson(route = "SAVED_ROUTINE_ACTION")
+            )
+            val orchestrator = orchestrator(client)
+            orchestrator.commitFinalDecision(
+                ConversationDecision(
+                    route = ConversationRoute.SAVED_ROUTINE_ACTION,
+                    confidence = 0.97,
+                    listenAgain = true
+                )
+            )
+
+            val decision = orchestrator.process(
+                "What is the evening routine",
+                "Home guidance"
+            )
+
+            assertEquals(ConversationRoute.SAVED_ROUTINE_ACTION, decision.route)
+            assertEquals("What is the evening routine", decision.taskText)
+            assertEquals(1, client.generalRepairCalls)
+            assertEquals(0, client.compactRepairCalls)
+            assertEquals(
+                ConversationDecisionFailureCode.SAVED_ROUTINE_READ_MISROUTED.name,
+                client.failureCode
+            )
+            assertEquals(ConversationRoute.DAILY_BRIEFING, client.failedRoute)
+            assertTrue(
+                client.repairContext.contains(
+                    "Recent saved-routine routing context available: true"
+                )
+            )
+        }
+
+    @Test
+    fun correctSavedRoutineReadPrimaryNeedsNoRepairWithRecentContext() = runBlocking {
+        val client = RepairClient(
+            primary = decisionJson(route = "SAVED_ROUTINE_ACTION"),
+            repair = ""
+        )
+        val orchestrator = orchestrator(client)
+        orchestrator.commitFinalDecision(
+            ConversationDecision(
+                route = ConversationRoute.SAVED_ROUTINE_ACTION,
+                confidence = 0.97,
+                listenAgain = true
+            )
+        )
+
+        val decision = orchestrator.process("What is the evening routine", "Home guidance")
+
+        assertEquals(ConversationRoute.SAVED_ROUTINE_ACTION, decision.route)
+        assertEquals(0, client.generalRepairCalls)
+        assertEquals(0, client.compactRepairCalls)
+    }
+
+    @Test
+    fun possessiveSavedRoutineReadsAreStrongWithoutPriorContext() = runBlocking {
+        listOf(
+            "What is my evening routine?" to "DIRECT_REPLY",
+            "Read my evening routine." to "DAILY_BRIEFING",
+            "What is in my evening routine?" to "DIRECT_REPLY",
+            "Tell me about my evening routine." to "DAILY_BRIEFING",
+            "Describe my evening routine." to "DIRECT_REPLY",
+            "Explain my evening routine." to "DIRECT_REPLY",
+            "What does my evening routine contain?" to "DAILY_BRIEFING",
+            "What does my evening routine include?" to "DIRECT_REPLY"
+        ).forEach { (utterance, primaryRoute) ->
+            assertTrue(
+                utterance,
+                ConversationTopLevelRouteConsistencyGuard.hasSavedRoutineReadEvidence(utterance)
+            )
+            val client = RepairClient(
+                primary = decisionJson(
+                    route = primaryRoute,
+                    reply = if (primaryRoute == "DIRECT_REPLY") "Generic routine advice." else ""
+                ),
+                repair = decisionJson(route = "SAVED_ROUTINE_ACTION")
+            )
+
+            val decision = orchestrator(client).process(utterance, "Home guidance")
+
+            assertEquals(ConversationRoute.SAVED_ROUTINE_ACTION, decision.route)
+            assertEquals(utterance, decision.taskText)
+            assertEquals(1, client.generalRepairCalls)
+            assertEquals(0, client.compactRepairCalls)
+            assertEquals(
+                ConversationDecisionFailureCode.SAVED_ROUTINE_READ_MISROUTED.name,
+                client.failureCode
+            )
+        }
+    }
+
+    @Test
+    fun genericRoutineGuidanceAndOtherRoutineRoutesDoNotTriggerReadGuard() = runBlocking {
+        val cases = listOf(
+            "What is a morning routine?" to "DIRECT_REPLY",
+            "What is an evening routine?" to "DIRECT_REPLY",
+            "What should an evening routine include?" to "DIRECT_REPLY",
+            "How does a morning routine work?" to "DIRECT_REPLY",
+            "Why is a morning routine useful?" to "DIRECT_REPLY",
+            "Can you explain what a routine is?" to "DIRECT_REPLY",
+            "Can you suggest a bedtime routine?" to "DIRECT_REPLY",
+            "How do routines work?" to "DIRECT_REPLY",
+            "Give me my daily briefing" to "DAILY_BRIEFING",
+            "Build me a morning routine" to "SMART_ROUTINE_BUILDER",
+            "Create a morning routine" to "SMART_ROUTINE_BUILDER",
+            "Run my morning routine" to "SAVED_ROUTINE_ACTION",
+            "Use my morning routine tomorrow" to "SAVED_ROUTINE_ACTION",
+            "Delete my morning routine" to "SAVED_ROUTINE_ACTION"
+        )
+
+        cases.forEach { (utterance, route) ->
+            assertFalse(
+                utterance,
+                ConversationTopLevelRouteConsistencyGuard.hasSavedRoutineReadEvidence(utterance)
+            )
+            val client = RepairClient(
+                primary = decisionJson(
+                    route = route,
+                    reply = if (route == "DIRECT_REPLY") "Routine guidance." else ""
+                ),
+                repair = ""
+            )
+
+            assertEquals(
+                ConversationRoute.valueOf(route),
+                orchestrator(client).process(utterance, "Home guidance").route
+            )
+            assertEquals(0, client.generalRepairCalls)
+            assertEquals(0, client.compactRepairCalls)
+        }
+
+        assertFalse(
+            ConversationTopLevelRouteConsistencyGuard.hasSavedRoutineReadEvidence(
+                "What is the evening routine?"
+            )
+        )
+        assertTrue(
+            ConversationTopLevelRouteConsistencyGuard.hasSavedRoutineReadEvidence(
+                "What is the evening routine?",
+                recentSavedRoutineContext = true
+            )
+        )
+    }
+
+    @Test
+    fun topLevelGuardContainsNoStorageOrExecutionAuthority() {
+        val source = java.io.File(
+            "src/main/java/com/example/myapplication/ai/conversation/" +
+                "ConversationTopLevelRouteConsistencyGuard.kt"
+        ).readText()
+
+        assertFalse(source.contains("Room"))
+        assertFalse(source.contains("RoutineDao"))
+        assertFalse(source.contains("routineId"))
+        assertFalse(source.contains("SavedRoutineSemanticOrchestrator"))
+        assertFalse(source.contains("READ_DETAILS"))
+    }
+
+    @Test
     fun repeatedTopLevelContradictionFailsClosedAfterOneRepair() {
         val client = RepairClient(
             primary = decisionJson(route = "TASK_COMMAND"),
@@ -264,6 +438,22 @@ class ConversationTopLevelRouteConsistencyGuardTest {
 
         assertThrows(ConversationOrchestratorException::class.java) {
             runBlocking { orchestrator(client).process("Open create task", "Home guidance") }
+        }
+        assertEquals(1, client.generalRepairCalls)
+        assertEquals(0, client.compactRepairCalls)
+    }
+
+    @Test
+    fun repeatedSavedRoutineReadContradictionFailsClosedAfterOneGeneralRepair() {
+        val client = RepairClient(
+            primary = decisionJson(route = "DIRECT_REPLY", reply = "Routine guidance."),
+            repair = decisionJson(route = "DAILY_BRIEFING")
+        )
+
+        assertThrows(ConversationOrchestratorException::class.java) {
+            runBlocking {
+                orchestrator(client).process("What is my evening routine?", "Home guidance")
+            }
         }
         assertEquals(1, client.generalRepairCalls)
         assertEquals(0, client.compactRepairCalls)

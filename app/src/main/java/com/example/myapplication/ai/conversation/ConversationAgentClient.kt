@@ -273,6 +273,39 @@ broad task-detail requests.
                         "data, return ASK_CLARIFICATION."
                 )
             }
+            if (
+                failureCode ==
+                ConversationDecisionFailureCode.SAVED_ROUTINE_READ_MISROUTED.name
+            ) {
+                appendLine()
+                appendLine()
+                appendLine("SAVED_ROUTINE_READ_MISROUTED repair rule:")
+                appendLine("Re-evaluate only the CURRENT normalized utterance.")
+                appendLine(
+                    "A clear request to read, describe, or get details of one saved routine " +
+                        "must return SAVED_ROUTINE_ACTION. Copy the original normalized utterance " +
+                        "into task_text and keep reply empty."
+                )
+                appendLine(
+                    "Do not return DAILY_BRIEFING merely because a routine is named Morning, " +
+                        "Evening, or Daily. Do not return TASK_COMMAND. Do not return " +
+                        "SMART_ROUTINE_BUILDER unless the user is actually asking to create or " +
+                        "build a new routine. Do not return DIRECT_REPLY when the user is clearly " +
+                        "requesting stored routine details."
+                )
+                appendLine(
+                    "Keep navigation, context, settings, and query authority fields inactive. " +
+                        "Use no Room IDs or invented routine records."
+                )
+                appendLine(
+                    "The downstream SavedRoutineSemanticOrchestrator decides READ_DETAILS and " +
+                        "extracts the proposed routine title. Android and storage remain " +
+                        "authoritative."
+                )
+                append(
+                    "If the meaning genuinely cannot be determined, return ASK_CLARIFICATION."
+                )
+            }
         }
     )
 
@@ -1055,6 +1088,14 @@ User: read my routine
 {"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.98}
 User: what is in my routine
 {"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.98}
+User: what is the evening routine
+{"action":"READ_DETAILS","routine_title":"evening routine","date_text":"","confidence":0.98}
+User: what is my evening routine
+{"action":"READ_DETAILS","routine_title":"evening routine","date_text":"","confidence":0.98}
+User: tell me about my evening routine
+{"action":"READ_DETAILS","routine_title":"evening routine","date_text":"","confidence":0.98}
+User: what does my evening routine contain
+{"action":"READ_DETAILS","routine_title":"evening routine","date_text":"","confidence":0.98}
 User: read the routine
 {"action":"READ_DETAILS","routine_title":"routine","date_text":"","confidence":0.97}
 User: delete my medicine routine
@@ -1380,6 +1421,15 @@ Explicit contrasts:
 - "How do I open settings?" -> DIRECT_REPLY, not APP_NAVIGATION.
 - "Do I have anything planned for 28 August?" -> TASK_COMMAND, not DAILY_BRIEFING.
 - "Give me my daily briefing." -> DAILY_BRIEFING.
+- "What is my evening routine?" -> SAVED_ROUTINE_ACTION, not DAILY_BRIEFING or DIRECT_REPLY.
+- "Read my evening routine." -> SAVED_ROUTINE_ACTION.
+- "What is in my morning routine?" -> SAVED_ROUTINE_ACTION.
+- With recent bounded SAVED_ROUTINE_ACTION routing state, "What is the evening routine?" ->
+  SAVED_ROUTINE_ACTION.
+- "What is an evening routine?" -> DIRECT_REPLY.
+- "What should an evening routine include?" -> DIRECT_REPLY.
+- "How do routines work?" -> DIRECT_REPLY.
+- "Build me an evening routine." -> SMART_ROUTINE_BUILDER.
 - "I haven't finished Buy Milk after all." -> TASK_COMMAND, not CONTEXT_AWARE_SUGGESTION.
 - "Buy Milk is not complete yet" -> TASK_COMMAND: the target is explicitly named.
 - "Submit Report is completed." -> TASK_COMMAND.
@@ -1508,7 +1558,16 @@ Route rules:
   run or use a previously saved routine, or delete a reusable routine.
 - Illustrative SAVED_ROUTINE_ACTION requests include "Use my morning routine tomorrow.",
   "Run my bedtime routine.", "Do I have any routines?", "What routines have I saved?",
-  "List my saved routines.", "Read my study routine.", and "Delete my medication routine."
+  "List my saved routines.", "Read my study routine.", "What is my evening routine?",
+  "What is in my morning routine?", and "Delete my medication routine."
+- A recent pendingAction of SAVED_ROUTINE_ACTION is bounded routing context only. It may
+  disambiguate a singular follow-up such as "What is the evening routine?" as
+  SAVED_ROUTINE_ACTION, but it does not prove that the routine exists, identify a stored record,
+  or authorize any data access. Never infer routine titles from prior Assistant speech.
+- Generic guidance remains DIRECT_REPLY: "What is an evening routine?", "What should an evening
+  routine include?", and "How do routines work?" do not ask for one stored routine.
+- Morning, evening, or daily wording alone never implies DAILY_BRIEFING. Use DAILY_BRIEFING only
+  when the user semantically requests the app's daily briefing.
 - Do not use SAVED_ROUTINE_ACTION when the user asks to create or build a new routine; use
   SMART_ROUTINE_BUILDER for that.
 - SAVED_ROUTINE_ACTION is routing only. Copy the original normalized request into task_text,

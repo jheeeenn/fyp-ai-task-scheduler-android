@@ -153,8 +153,11 @@ object SavedRoutineActionConsistencyPolicy {
         Regex("^how many (?:saved )?routines (?:do i have|have i saved|are saved)$")
     )
     private val READ_PATTERNS = listOf(
-        Regex("^(?:please )?(?:read|describe|explain) (?:my |the )?(.+)$"),
-        Regex("^(?:please )?what is in (?:my |the )?(.+)$")
+        Regex("^(?:what is|what s) (?:my|the) (.+ routine)$"),
+        Regex("^tell me about (?:my|the) (.+ routine)$"),
+        Regex("^what does (?:my|the) (.+ routine) (?:contain|include)$"),
+        Regex("^(?:please )?(?:read|describe|explain) (?:my |the )?((?!(?:a|an) ).+)$"),
+        Regex("^(?:please )?what is in (?:my |the )?((?!(?:a|an) ).+)$")
     )
     private val DELETE_PATTERN =
         Regex("^(?:please )?delete (?:my |the )?(.+)$")
