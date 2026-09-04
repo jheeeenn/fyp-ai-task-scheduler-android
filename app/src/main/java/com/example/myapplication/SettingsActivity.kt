@@ -55,6 +55,7 @@ class SettingsActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var voiceHelper: VoiceHelper
     private lateinit var voiceSettingsExecutor: VoiceSettingsExecutor
     private lateinit var assistantSession: AssistantVoiceSession
+    private var developerAssistantOverlay: DeveloperAssistantOverlay? = null
     private lateinit var selectionOrchestrator: SettingsCardSelectionOrchestrator
 
     private lateinit var toneValue: TextView
@@ -99,12 +100,22 @@ class SettingsActivity : AccessibilityActivity(), AssistantVoiceHost {
                     state,
                     announce = false
                 )
-            }
+                DeveloperTestSession.updateAssistantState(state)
+            },
+            interactionMode = DeveloperTestSession.interactionMode(),
+            shouldSpeakAudio = DeveloperTestSession::shouldSpeakAudio,
+            transcriptObserver = DeveloperTestSession::recordTranscript
         )
         assistantSession.bindAssistantControl(assistantButton)
         renderCurrentValues()
         bindInteractions()
         restoreVisualSettingFocusIfRequested()
+        developerAssistantOverlay = DeveloperAssistantOverlay.attach(
+            activity = this,
+            onSubmit = { text ->
+                assistantSession.submitTypedText(text, clearConversation = false)
+            }
+        )
     }
 
     private fun bindViews() {
@@ -479,6 +490,8 @@ class SettingsActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     override fun onDestroy() {
+        developerAssistantOverlay?.dismiss()
+        developerAssistantOverlay = null
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()

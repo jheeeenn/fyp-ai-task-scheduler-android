@@ -75,6 +75,7 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var unsavedChangesText: TextView
     private lateinit var navigationCoordinator: VoiceFirstNavigationCoordinator
     private lateinit var assistantSession: AssistantVoiceSession
+    private var developerAssistantOverlay: DeveloperAssistantOverlay? = null
     private lateinit var responseManager: AssistantResponseManager
     private lateinit var taskDetailEditSemanticOrchestrator: TaskDetailEditSemanticOrchestrator
 
@@ -128,7 +129,11 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
             normalizeFinalTextForHost = false,
             onAccessibilityStateChanged = { state ->
                 AccessibilityStateHelper.updateAssistantState(assistantButton, state, announce = false)
-            }
+                DeveloperTestSession.updateAssistantState(state)
+            },
+            interactionMode = DeveloperTestSession.interactionMode(),
+            shouldSpeakAudio = DeveloperTestSession::shouldSpeakAudio,
+            transcriptObserver = DeveloperTestSession::recordTranscript
         )
         assistantSession.bindAssistantControl(assistantButton)
         bindInteractions()
@@ -142,6 +147,12 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (!intent.hasExtra(EXTRA_TASK_ID) || taskId <= 0L) {
             showMissingTaskAndFinish()
         }
+        developerAssistantOverlay = DeveloperAssistantOverlay.attach(
+            activity = this,
+            onSubmit = { text ->
+                assistantSession.submitTypedText(text, clearConversation = false)
+            }
+        )
     }
 
     override fun onResume() {
@@ -156,6 +167,8 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     override fun onDestroy() {
         navigationCoordinator.cancelPending()
+        developerAssistantOverlay?.dismiss()
+        developerAssistantOverlay = null
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()

@@ -70,6 +70,7 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
             speechProvider = { getString(R.string.developer_testing_description) },
             speak = voiceHelper::speak,
             activate = {
+                DeveloperTestSession.activate()
                 startActivity(Intent(this, DeveloperTestActivity::class.java))
             }
         )

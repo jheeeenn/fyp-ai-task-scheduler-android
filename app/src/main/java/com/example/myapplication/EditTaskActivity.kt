@@ -89,6 +89,7 @@ internal fun isTitlePrefillChanged(
 class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
     private lateinit var assistantSession: AssistantVoiceSession
+    private var developerAssistantOverlay: DeveloperAssistantOverlay? = null
     private var isForceStoppingAssistant = false
     private var pendingFieldTarget = EditFieldTarget.NONE
     private var waitingForSaveConfirmation = false
@@ -188,7 +189,11 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             audioPermissionLauncher = audioPermissionLauncher,
             onAccessibilityStateChanged = { state ->
                 AccessibilityStateHelper.updateAssistantState(btnTalkAssistant, state, announce = false)
-            }
+                DeveloperTestSession.updateAssistantState(state)
+            },
+            interactionMode = DeveloperTestSession.interactionMode(),
+            shouldSpeakAudio = DeveloperTestSession::shouldSpeakAudio,
+            transcriptObserver = DeveloperTestSession::recordTranscript
         )
         assistantSession.bindAssistantControl(btnTalkAssistant)
         AccessibilityStateHelper.updateAssistantState(
@@ -396,6 +401,12 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
             }
         }
+        developerAssistantOverlay = DeveloperAssistantOverlay.attach(
+            activity = this,
+            onSubmit = { text ->
+                assistantSession.submitTypedText(text, clearConversation = false)
+            }
+        )
     }
 
     private fun canRunEditAssistantCallback(): Boolean =
@@ -1873,6 +1884,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     override fun onDestroy() {
         window.decorView.removeCallbacks(initialAssistantEntryRunnable)
+        developerAssistantOverlay?.dismiss()
+        developerAssistantOverlay = null
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()

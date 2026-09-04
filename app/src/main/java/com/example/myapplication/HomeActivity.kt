@@ -267,6 +267,7 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private lateinit var assistantSession: AssistantVoiceSession
     private lateinit var voiceHelper: VoiceHelper
+    private var developerAssistantOverlay: DeveloperAssistantOverlay? = null
 
     private enum class HomeFollowUpContext {
         NONE,
@@ -553,6 +554,10 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)
 
         acceptAssistantEntry(intent)
+        developerAssistantOverlay = DeveloperAssistantOverlay.attach(
+            activity = this,
+            onSubmit = ::submitPersistentTypedAssistantText
+        )
 
 
     } // end of onCreate
@@ -608,17 +613,23 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     protected open val assistantInteractionMode: AssistantInteractionMode
-        get() = AssistantInteractionMode.NORMAL_VOICE
+        get() = DeveloperTestSession.interactionMode()
 
-    protected open fun shouldSpeakAssistantAudio(): Boolean = true
+    protected open fun shouldSpeakAssistantAudio(): Boolean =
+        DeveloperTestSession.shouldSpeakAudio()
 
-    protected open fun onAssistantTranscript(event: AssistantTranscriptEvent) = Unit
+    protected open fun onAssistantTranscript(event: AssistantTranscriptEvent) {
+        DeveloperTestSession.recordTranscript(event)
+    }
 
     protected open fun onAssistantPresentationStateChanged(
         state: AssistantAccessibilityState
-    ) = Unit
+    ) {
+        DeveloperTestSession.updateAssistantState(state)
+    }
 
-    protected open fun preserveAssistantSessionWhileStopped(): Boolean = false
+    protected open fun preserveAssistantSessionWhileStopped(): Boolean =
+        DeveloperTestSession.isActive
 
     protected fun submitPersistentTypedAssistantText(text: String) {
         assistantSession.submitTypedText(text, clearConversation = false)
@@ -7455,6 +7466,8 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     override fun onDestroy() {
         invalidateAssistantRequest(AssistantRequestInvalidationReason.SESSION_STOPPED)
         savedRoutineInteractionController.clearForActivityDestruction()
+        developerAssistantOverlay?.dismiss()
+        developerAssistantOverlay = null
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()

@@ -82,6 +82,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
 
     private lateinit var assistantSession: AssistantVoiceSession
+    private var developerAssistantOverlay: DeveloperAssistantOverlay? = null
 
     private lateinit var responseManager: AssistantResponseManager
 
@@ -180,7 +181,11 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             audioPermissionLauncher = audioPermissionLauncher,
             onAccessibilityStateChanged = { state ->
                 AccessibilityStateHelper.updateAssistantState(btnTalkAssistant, state, announce = false)
-            }
+                DeveloperTestSession.updateAssistantState(state)
+            },
+            interactionMode = DeveloperTestSession.interactionMode(),
+            shouldSpeakAudio = DeveloperTestSession::shouldSpeakAudio,
+            transcriptObserver = DeveloperTestSession::recordTranscript
         )
         assistantSession.bindAssistantControl(btnTalkAssistant)
         AccessibilityStateHelper.updateAssistantState(
@@ -263,6 +268,12 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
         AccessibilityStateHelper.exposeTypedInputAction(btnTalkAssistant)
 
+        developerAssistantOverlay = DeveloperAssistantOverlay.attach(
+            activity = this,
+            onSubmit = { text ->
+                assistantSession.submitTypedText(text, clearConversation = false)
+            }
+        )
 
     } // end of onCreate()
 
@@ -1344,6 +1355,8 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     override fun onDestroy() {
         window.decorView.removeCallbacks(incomingPrefillRunnable)
         invalidateCreateDraftResolution()
+        developerAssistantOverlay?.dismiss()
+        developerAssistantOverlay = null
         assistantSession.destroy()
         voiceHelper.shutdown()
         super.onDestroy()
