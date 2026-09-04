@@ -5,6 +5,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.View
 
@@ -28,6 +30,12 @@ import com.example.myapplication.ai.agent.LaptopAgentClient
 import com.example.myapplication.ai.agent.TaskActionNormalizer
 import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
+import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.taskedit.EditTaskAgentContext
+import com.example.myapplication.ai.conversation.taskedit.EditTaskInteractionState
+import com.example.myapplication.ai.conversation.taskedit.EditTaskMoveResolution
+import com.example.myapplication.ai.conversation.taskedit.EditTaskSemanticMove
+import com.example.myapplication.ai.conversation.taskedit.EditTaskSemanticOrchestrator
 import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
 import com.example.myapplication.reminder.ReminderEligibilityPolicy
@@ -43,6 +51,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import com.example.myapplication.voice.AssistantVoiceHost
 import com.example.myapplication.voice.AssistantVoiceSession
 
@@ -79,6 +88,21 @@ private enum class EditFieldTarget {
     NONE, TITLE, DATE, TIME, DATE_OR_TIME
 }
 
+private data class EditSemanticAuthoritySnapshot(
+    val draftRevision: Long,
+    val waitingForSaveConfirmation: Boolean,
+    val waitingForDeleteConfirmation: Boolean,
+    val pendingFieldTarget: EditFieldTarget,
+    val temporalClarificationPending: Boolean,
+    val relativeProposalState: RelativeTemporalProposalState?,
+    val relativeProposalRevision: Int?,
+    val draftTitle: String,
+    val draftDate: String?,
+    val draftTime: String?,
+    val saveInFlight: Boolean,
+    val deleteInFlight: Boolean
+)
+
 internal fun isTitlePrefillChanged(
     prefillTitle: String?,
     authoritativeOriginalTitle: String
@@ -106,6 +130,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var isEditSaveInFlight = false
     private var waitingForDeleteConfirmation = false
     private var isEditDeleteInFlight = false
+    private lateinit var editTaskSemanticOrchestrator: EditTaskSemanticOrchestrator
+    private var editSemanticResolutionGeneration = 0L
+    private var editDraftRevision = 0L
+    private var isResolvingEditTaskMove = false
     private var pendingInitialAssistantEntry: (() -> Unit)? = null
     private val initialAssistantEntryRunnable = Runnable {
         if (!canRunEditAssistantCallback()) return@Runnable
@@ -173,6 +201,9 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager = AssistantResponseManager.fromPreferences(this)
+        editTaskSemanticOrchestrator = EditTaskSemanticOrchestrator(
+            semanticClient = ConversationAgentClient(this)
+        )
         relativeTemporalAgent = AgentOrchestrator(
             LaptopAgentClient(this),
             TaskAgentResponseParser(),
@@ -244,6 +275,25 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (!prefillTitle.isNullOrBlank()) {
             etTaskTitle.setText(prefillTitle)
         }
+        etTaskTitle.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(
+                value: CharSequence?,
+                start: Int,
+                count: Int,
+                after: Int
+            ) = Unit
+
+            override fun onTextChanged(
+                value: CharSequence?,
+                start: Int,
+                before: Int,
+                count: Int
+            ) = Unit
+
+            override fun afterTextChanged(value: Editable?) {
+                markEditDraftChanged()
+            }
+        })
 
 
         VoiceFirstGestureBinder.bindAction(
@@ -891,6 +941,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun handleVoiceInput(text: String) {
         if (ignoreInputWhileRelativeTemporalSaveIsInFlight()) return
+        if (isResolvingEditTaskMove) {
+            Log.d("EDIT_SEMANTIC_RESOLUTION", "ignored=true reason=REQUEST_IN_PROGRESS")
+            return
+        }
         val normalized = TextNormalizer.normalize(text)
         if (BuildConfig.DEBUG) {
             Log.d(
@@ -978,11 +1032,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
         }
 
-        // If we already asked what field value to set, handle it locally first
-        if (handlePendingFieldValue(normalized)) {
-            return
-        }
-
         // Local short edit commands
         when {
             isDateFieldCommand(normalized) -> {
@@ -1012,8 +1061,277 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
         }
 
+        requestEditTaskSemanticResolution(text)
+    }
 
-        speak("Please return to the main assistant for a new command, or choose title, date, time, or delete for this task.")
+    private fun requestEditTaskSemanticResolution(userText: String) {
+        val context = captureEditTaskAgentContext()
+        editTaskSemanticOrchestrator.resolveImmediate(userText, context)?.let { immediate ->
+            logEditSemanticResolution(context.interactionState, immediate)
+            handleEditTaskSemanticMove(immediate)
+            return
+        }
+        if (context.interactionState == EditTaskInteractionState.OPERATION_IN_FLIGHT) {
+            speak("Please wait for the current task operation to finish.")
+            return
+        }
+
+        editSemanticResolutionGeneration += 1L
+        val requestGeneration = editSemanticResolutionGeneration
+        val capturedAuthority = captureEditSemanticAuthority()
+        isResolvingEditTaskMove = true
+        assistantSession.pauseListeningForAssistantSpeech()
+        assistantSession.getBottomSheet()?.setProcessingState()
+
+        lifecycleScope.launch {
+            try {
+                val resolution = editTaskSemanticOrchestrator.resolve(userText, context)
+                if (!isEditSemanticRequestCurrent(requestGeneration, capturedAuthority)) {
+                    Log.d(
+                        "EDIT_SEMANTIC_RESOLUTION",
+                        "state=${context.interactionState} result=STALE_RESPONSE_DISCARDED"
+                    )
+                    return@launch
+                }
+                isResolvingEditTaskMove = false
+                logEditSemanticResolution(context.interactionState, resolution)
+                handleEditTaskSemanticMove(resolution)
+            } catch (exception: CancellationException) {
+                throw exception
+            } finally {
+                if (requestGeneration == editSemanticResolutionGeneration) {
+                    isResolvingEditTaskMove = false
+                }
+            }
+        }
+    }
+
+    private fun captureEditTaskAgentContext(): EditTaskAgentContext {
+        val state = currentEditTaskInteractionState()
+        val now = Calendar.getInstance()
+        val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.US)
+        val timeFormatter = SimpleDateFormat("hh:mm a", Locale.US)
+        dateFormatter.timeZone = TimeZone.getDefault()
+        timeFormatter.timeZone = TimeZone.getDefault()
+        return EditTaskAgentContext(
+            interactionState = state,
+            draftRevision = editDraftRevision,
+            pendingFieldTarget = pendingFieldTarget.name,
+            temporalClarificationPending = pendingTemporalClarification != null,
+            relativeTemporalProposalActive =
+                relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE,
+            saveInFlight = isEditSaveInFlight,
+            deleteInFlight = isEditDeleteInFlight,
+            currentDraftTitle = etTaskTitle.text.toString().trim(),
+            currentDraftDate = selectedDate.orEmpty(),
+            currentDraftTime = selectedTime.orEmpty(),
+            authoritativeOriginalTitle = authoritativeOriginalTitle,
+            authoritativeOriginalDate = authoritativeOriginalDate.orEmpty(),
+            authoritativeOriginalTime = authoritativeOriginalTime.orEmpty(),
+            currentLocalDate = dateFormatter.format(now.time),
+            currentLocalTime = timeFormatter.format(now.time),
+            timezone = TimeZone.getDefault().id,
+            allowedMoves = EditTaskAgentContext.allowedMoves(state)
+        )
+    }
+
+    private fun currentEditTaskInteractionState(): EditTaskInteractionState = when {
+        isEditSaveInFlight || isEditDeleteInFlight ||
+            relativeTemporalSession?.state == RelativeTemporalProposalState.SAVING ->
+            EditTaskInteractionState.OPERATION_IN_FLIGHT
+        waitingForDeleteConfirmation ->
+            EditTaskInteractionState.WAITING_FOR_DELETE_CONFIRMATION
+        relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE ->
+            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
+        waitingForSaveConfirmation ->
+            EditTaskInteractionState.WAITING_FOR_SAVE_CONFIRMATION
+        pendingTemporalClarification != null ->
+            EditTaskInteractionState.WAITING_FOR_TEMPORAL_CLARIFICATION
+        pendingFieldTarget == EditFieldTarget.TITLE ->
+            EditTaskInteractionState.WAITING_FOR_TITLE
+        pendingFieldTarget == EditFieldTarget.DATE ->
+            EditTaskInteractionState.WAITING_FOR_DATE
+        pendingFieldTarget == EditFieldTarget.TIME ->
+            EditTaskInteractionState.WAITING_FOR_TIME
+        pendingFieldTarget == EditFieldTarget.DATE_OR_TIME ->
+            EditTaskInteractionState.WAITING_FOR_DATE_OR_TIME
+        else -> EditTaskInteractionState.READY_FOR_EDIT
+    }
+
+    private fun captureEditSemanticAuthority() = EditSemanticAuthoritySnapshot(
+        draftRevision = editDraftRevision,
+        waitingForSaveConfirmation = waitingForSaveConfirmation,
+        waitingForDeleteConfirmation = waitingForDeleteConfirmation,
+        pendingFieldTarget = pendingFieldTarget,
+        temporalClarificationPending = pendingTemporalClarification != null,
+        relativeProposalState = relativeTemporalSession?.state,
+        relativeProposalRevision = relativeTemporalSession?.revision,
+        draftTitle = etTaskTitle.text.toString(),
+        draftDate = selectedDate,
+        draftTime = selectedTime,
+        saveInFlight = isEditSaveInFlight,
+        deleteInFlight = isEditDeleteInFlight
+    )
+
+    private fun isEditSemanticRequestCurrent(
+        requestGeneration: Long,
+        capturedAuthority: EditSemanticAuthoritySnapshot
+    ): Boolean = requestGeneration == editSemanticResolutionGeneration &&
+        capturedAuthority == captureEditSemanticAuthority() &&
+        canRunEditAssistantCallback() &&
+        !isEditSaveInFlight &&
+        !isEditDeleteInFlight
+
+    private fun logEditSemanticResolution(
+        state: EditTaskInteractionState,
+        resolution: EditTaskMoveResolution
+    ) {
+        Log.d(
+            "EDIT_SEMANTIC_RESOLUTION",
+            "state=$state move=${resolution.move} source=${resolution.source.logValue} " +
+                "confidence=${resolution.confidence} agentAttempted=${resolution.agentAttempted}"
+        )
+    }
+
+    private fun handleEditTaskSemanticMove(resolution: EditTaskMoveResolution) {
+        when (resolution.move) {
+            EditTaskSemanticMove.CONFIRM_SAVE -> {
+                if (pendingFieldTarget != EditFieldTarget.NONE ||
+                    pendingTemporalClarification != null
+                ) {
+                    repeatPendingTemporalPrompt()
+                    return
+                }
+                waitingForSaveConfirmation = false
+                val relativeSession = relativeTemporalSession
+                if (relativeSession?.state == RelativeTemporalProposalState.ACTIVE) {
+                    saveTask(relativeSession.revision)
+                } else {
+                    saveTask()
+                }
+            }
+
+            EditTaskSemanticMove.REJECT_SAVE -> {
+                if (relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE) {
+                    waitingForSaveConfirmation = true
+                    speak("Okay, I have not saved it. Tell me the schedule correction you want.")
+                } else {
+                    waitingForSaveConfirmation = false
+                    promptHelper.askWhatToChange()
+                }
+            }
+
+            EditTaskSemanticMove.CHANGE_TITLE -> applySemanticTitleChange(resolution.title)
+            EditTaskSemanticMove.CHANGE_DATE -> applySemanticTemporalChange(
+                move = EditTaskSemanticMove.CHANGE_DATE,
+                dateText = resolution.dateText,
+                timeText = null,
+                rejectedMessage = responseManager.invalidEditDate()
+            )
+            EditTaskSemanticMove.CHANGE_TIME -> applySemanticTemporalChange(
+                move = EditTaskSemanticMove.CHANGE_TIME,
+                dateText = null,
+                timeText = resolution.timeText,
+                rejectedMessage = responseManager.invalidEditTime()
+            )
+            EditTaskSemanticMove.CHANGE_SCHEDULE -> applySemanticTemporalChange(
+                move = EditTaskSemanticMove.CHANGE_SCHEDULE,
+                dateText = resolution.dateText,
+                timeText = resolution.timeText,
+                rejectedMessage = "I could not safely apply that date and time. Please try again."
+            )
+            EditTaskSemanticMove.REQUEST_TITLE_CHANGE ->
+                requestSemanticFieldChange(EditFieldTarget.TITLE)
+            EditTaskSemanticMove.REQUEST_DATE_CHANGE ->
+                requestSemanticFieldChange(EditFieldTarget.DATE)
+            EditTaskSemanticMove.REQUEST_TIME_CHANGE ->
+                requestSemanticFieldChange(EditFieldTarget.TIME)
+            EditTaskSemanticMove.DELETE -> requestVoiceDeleteConfirmation()
+            EditTaskSemanticMove.CANCEL -> cancelSemanticEditInteraction()
+            EditTaskSemanticMove.UNKNOWN -> recoverFromUnknownEditSemanticMove()
+        }
+    }
+
+    private fun applySemanticTitleChange(title: String) {
+        val candidate = title.trim()
+        if (candidate.isBlank()) {
+            Log.d("EDIT_SEMANTIC_REJECTED", "move=CHANGE_TITLE reason=BLANK_TITLE")
+            speak(responseManager.invalidEditTitle())
+            return
+        }
+        clearPendingEditCollection()
+        etTaskTitle.setText(candidate)
+        askToSaveChanges()
+    }
+
+    private fun applySemanticTemporalChange(
+        move: EditTaskSemanticMove,
+        dateText: String?,
+        timeText: String?,
+        rejectedMessage: String
+    ) {
+        val changed = applyProposedTemporalChange(
+            dateText = dateText,
+            timeText = timeText,
+            askForMissing = true,
+            replacePendingCollection = true
+        )
+        if (!changed) {
+            Log.d("EDIT_SEMANTIC_REJECTED", "move=$move reason=TEMPORAL_VALIDATION")
+            speak(rejectedMessage)
+            return
+        }
+        if (pendingFieldTarget == EditFieldTarget.NONE && pendingTemporalClarification == null) {
+            askToSaveChanges()
+        }
+    }
+
+    private fun requestSemanticFieldChange(target: EditFieldTarget) {
+        clearPendingEditCollection()
+        pendingFieldTarget = target
+        when (target) {
+            EditFieldTarget.TITLE -> promptHelper.speakInfo(responseManager.askChangeTitle(), true)
+            EditFieldTarget.DATE -> promptHelper.speakInfo(responseManager.askChangeDate(), true)
+            EditFieldTarget.TIME -> promptHelper.speakInfo(responseManager.askChangeTime(), true)
+            else -> speak("What date or time would you like to use?")
+        }
+    }
+
+    private fun clearPendingEditCollection() {
+        waitingForSaveConfirmation = false
+        pendingFieldTarget = EditFieldTarget.NONE
+        pendingTemporalConstraint = null
+        pendingTemporalClarification = null
+    }
+
+    private fun cancelSemanticEditInteraction() {
+        relativeTemporalSession?.cancel()
+        clearPendingEditCollection()
+        speak("Okay, I cancelled that change. Nothing was saved.")
+    }
+
+    private fun recoverFromUnknownEditSemanticMove() {
+        when (pendingFieldTarget) {
+            EditFieldTarget.TITLE -> speak(responseManager.askChangeTitle())
+            EditFieldTarget.DATE -> speak(responseManager.invalidEditDate())
+            EditFieldTarget.TIME -> speak(responseManager.invalidEditTime())
+            EditFieldTarget.DATE_OR_TIME ->
+                speak("Please provide an exact date, an exact time, or both.")
+            EditFieldTarget.NONE -> if (waitingForSaveConfirmation) {
+                speak("Would you like to save, or what would you like to change?")
+            } else {
+                speak(responseManager.editHelp())
+            }
+        }
+    }
+
+    private fun markEditDraftChanged() {
+        editDraftRevision += 1L
+    }
+
+    private fun invalidateEditSemanticResolution() {
+        editSemanticResolutionGeneration += 1L
+        isResolvingEditTaskMove = false
     }
 
     private fun handleRelativeTemporalProposalInput(normalized: String): Boolean {
@@ -1222,11 +1540,17 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
     }
 
-    private fun applyProposedTemporalChange(dateText: String?, timeText: String?, askForMissing: Boolean): Boolean {
+    private fun applyProposedTemporalChange(
+        dateText: String?,
+        timeText: String?,
+        askForMissing: Boolean,
+        replacePendingCollection: Boolean = false
+    ): Boolean {
         if (dateText.isNullOrBlank() && timeText.isNullOrBlank()) return false
         val resolution = temporalResolver.resolve(dateText, timeText, listOfNotNull(dateText, timeText).joinToString(" "))
         val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.RESCHEDULE)
         if (policy is TemporalPolicyResult.Unresolved || policy is TemporalPolicyResult.InvalidPastSchedule) return false
+        if (replacePendingCollection) clearPendingEditCollection()
         return applyTemporalResolution(resolution, policy, askForMissing)
     }
 
@@ -1487,6 +1811,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         renderSelectedDate()
         updateDateAccessibilityState()
         synchronizeRelativeProposalFromUi()
+        markEditDraftChanged()
     }
 
     private fun applySpokenTime(timeText: String, replacingConstraint: Boolean = false): Boolean {
@@ -1511,6 +1836,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         renderSelectedTime()
         updateTimeAccessibilityState()
         synchronizeRelativeProposalFromUi()
+        markEditDraftChanged()
     }
 
     private fun setSelectedSchedule(
@@ -1530,6 +1856,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         renderSelectedTime()
         updateScheduleAccessibilityState()
         if (synchronizeSession) synchronizeRelativeProposalFromUi()
+        markEditDraftChanged()
     }
 
     private fun synchronizeRelativeProposalFromUi() {
@@ -1606,68 +1933,6 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
         val formattedMinute = minute.toString().padStart(2, '0')
         return "$formattedHour:$formattedMinute $ampm"
-    }
-
-    private fun handlePendingFieldValue(normalized: String): Boolean {
-        return when (pendingFieldTarget) {
-            EditFieldTarget.TITLE -> {
-                if (normalized.isBlank()) {
-                    speak(responseManager.invalidEditTitle())
-                } else {
-                    etTaskTitle.setText(normalized)
-                    pendingFieldTarget = EditFieldTarget.NONE
-                    askToSaveChanges()
-                }
-                true
-            }
-
-            EditFieldTarget.DATE -> {
-                val wasTemporalClarification = pendingTemporalClarification != null
-                if (applySpokenDate(normalized)) {
-                    if (!wasTemporalClarification) {
-                        pendingFieldTarget = EditFieldTarget.NONE
-                        askToSaveChanges()
-                    }
-                } else {
-                    speak(responseManager.invalidEditDate())
-                }
-                true
-            }
-
-            EditFieldTarget.TIME -> {
-                val wasTemporalClarification = pendingTemporalClarification != null
-                val parsed = applySpokenTime(normalized)
-                if (BuildConfig.DEBUG) {
-                    Log.d("EDIT_TIME", "raw='$normalized' parsed=$parsed")
-                }
-                if (parsed) {
-                    if (!wasTemporalClarification) {
-                        pendingFieldTarget = EditFieldTarget.NONE
-                        askToSaveChanges()
-                    }
-                } else {
-                    speak(responseManager.invalidEditTime())
-                }
-                true
-            }
-
-            EditFieldTarget.DATE_OR_TIME -> {
-                val changed = applyProposedTemporalChange(
-                    dateText = normalized,
-                    timeText = null,
-                    askForMissing = true
-                )
-                if (changed && pendingTemporalClarification == null) {
-                    pendingFieldTarget = EditFieldTarget.NONE
-                    askToSaveChanges()
-                } else if (!changed) {
-                    speak("Please provide an exact date, an exact time, or both.")
-                }
-                true
-            }
-
-            EditFieldTarget.NONE -> false
-        }
     }
 
     private fun isDateFieldCommand(normalized: String): Boolean {
@@ -1841,6 +2106,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     override fun onAssistantCancelled() {
+        invalidateEditSemanticResolution()
         waitingForSaveConfirmation = false
         waitingForDeleteConfirmation = false
         pendingFieldTarget = EditFieldTarget.NONE
@@ -1849,6 +2115,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     override fun onAssistantSessionStopped() {
+        invalidateEditSemanticResolution()
         waitingForSaveConfirmation = false
         waitingForDeleteConfirmation = false
         pendingFieldTarget = EditFieldTarget.NONE
@@ -1864,6 +2131,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     override fun onStop() {
         window.decorView.removeCallbacks(initialAssistantEntryRunnable)
         if (!isChangingConfigurations) {
+            invalidateEditSemanticResolution()
             relativeTemporalSession?.invalidatePendingCorrection()
             relativeTemporalCorrectionGeneration += 1L
             relativeTemporalCorrectionInFlight = false

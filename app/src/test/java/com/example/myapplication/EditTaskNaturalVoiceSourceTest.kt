@@ -13,17 +13,17 @@ class EditTaskNaturalVoiceSourceTest {
         File("src/main/java/com/example/myapplication/CreateTaskActivity.kt").readText()
 
     @Test
-    fun oneSentenceTemporalCommandsRunBeforeGenericEditHelp() {
+    fun oneSentenceTemporalCommandsRunBeforeSemanticFallback() {
         val voice = source
             .substringAfter("private fun handleVoiceInput(text: String)")
             .substringBefore("private fun repeatPendingTemporalPrompt()")
         val bounded = voice.indexOf("handleOneSentenceTemporalCommand(normalized)")
-        val genericHelp = voice.indexOf(
-            "Please return to the main assistant for a new command"
-        )
+        val semanticFallback = voice.indexOf("requestEditTaskSemanticResolution(text)")
 
         assertTrue(bounded >= 0)
-        assertTrue(bounded < genericHelp)
+        assertTrue(semanticFallback >= 0)
+        assertTrue(bounded < semanticFallback)
+        assertFalse(voice.contains("Please return to the main assistant for a new command"))
     }
 
     @Test
