@@ -147,7 +147,7 @@
             android:text="@string/home"
             android:textAllCaps="false"
             android:textColor="?attr/appColorTaskListTextPrimary"
-            android:textSize="19sp"
+            android:textSize="15sp"
             android:textStyle="bold"
             app:backgroundTint="@null" />
 
