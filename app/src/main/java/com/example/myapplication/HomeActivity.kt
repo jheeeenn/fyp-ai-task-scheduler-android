@@ -1381,7 +1381,8 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         appContextSummary = buildConversationAppContextSummary(),
                         readOnlyTaskContextSnapshot = taskContextCapture.promptText,
                         contextFocus = contextFocus,
-                        voiceSettingRoutingContext = voiceSettingRoutingContext
+                        voiceSettingRoutingContext = voiceSettingRoutingContext,
+                        capturedTaskContextSnapshot = taskContextCapture.snapshot
                     )
                 } catch (e: ConversationOrchestratorException) {
                     Log.e("CONVO_ORCH", "Conversation Agent failed after schema retry", e)

@@ -3,10 +3,12 @@ package com.example.myapplication.ai.conversation
 import android.util.Log
 import com.example.myapplication.ai.TaskQueryPresentation
 import com.example.myapplication.ai.TaskCommandContradictionDetector
-import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
-import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionAuthorityBindingPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionAuthorityBindingResult
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetDecision
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetParser
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
+import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import com.example.myapplication.ai.conversation.query.QueryCountFollowUpDecision
 import com.example.myapplication.ai.conversation.query.QueryCountFollowUpParser
 import com.example.myapplication.diagnostics.DebugDiagnosticLog
@@ -204,7 +206,8 @@ class ConversationOrchestrator(
         readOnlyTaskContextSnapshot: String = NO_TASK_CONTEXT,
         contextFocus: ConversationContextFocus? = null,
         voiceSettingRoutingContext: VoiceSettingRoutingContext =
-            VoiceSettingRoutingContext.UNAVAILABLE
+            VoiceSettingRoutingContext.UNAVAILABLE,
+        capturedTaskContextSnapshot: ReadOnlyTaskContextSnapshot? = null
     ): ConversationDecision {
         val topLevelRouteContext = ConversationTopLevelRouteConsistencyContext(
             recentSavedRoutineAction =
@@ -224,23 +227,29 @@ class ConversationOrchestrator(
                 memorySnapshot = routingMemory,
                 appContextSummary = appContextSummary
             )
-            parseCanonicalDecision(
+            val canonicalDecision = parseCanonicalDecision(
                 rawContent = rawContent,
                 normalizedTextForTopLevelValidation = normalizedText,
                 topLevelRouteContext = topLevelRouteContext
-            ).also {
-                validateTaskRouteConsistency(normalizedText, it)
-                validateOperationalBreakdownRouting(normalizedText, it)
-                validateContextReadAuthority(
-                    decision = it,
-                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
-                )
-                validateContextActionAuthority(
-                    decision = it,
-                    readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
-                    contextFocus = contextFocus
-                )
-            }
+            )
+            validateTaskRouteConsistency(normalizedText, canonicalDecision)
+            validateOperationalBreakdownRouting(normalizedText, canonicalDecision)
+            validateContextReadAuthority(
+                decision = canonicalDecision,
+                readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
+            )
+            val authorityReconciledDecision = reconcileContextActionAuthority(
+                normalizedText = normalizedText,
+                decision = canonicalDecision,
+                capturedTaskContextSnapshot = capturedTaskContextSnapshot,
+                contextFocus = contextFocus
+            )
+            validateContextActionAuthority(
+                decision = authorityReconciledDecision,
+                readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
+                contextFocus = contextFocus
+            )
+            authorityReconciledDecision
         } catch (e: ConversationSchemaException) {
             retryWithRepair(
                 normalizedText,
@@ -249,6 +258,7 @@ class ConversationOrchestrator(
                 contextFocus,
                 voiceSettingRoutingContext,
                 topLevelRouteContext,
+                capturedTaskContextSnapshot,
                 e
             )
         } catch (e: ConversationAgentResponseException) {
@@ -259,6 +269,7 @@ class ConversationOrchestrator(
                 contextFocus,
                 voiceSettingRoutingContext,
                 topLevelRouteContext,
+                capturedTaskContextSnapshot,
                 e
             )
         }
@@ -291,6 +302,7 @@ class ConversationOrchestrator(
         contextFocus: ConversationContextFocus?,
         voiceSettingRoutingContext: VoiceSettingRoutingContext,
         topLevelRouteContext: ConversationTopLevelRouteConsistencyContext,
+        capturedTaskContextSnapshot: ReadOnlyTaskContextSnapshot?,
         firstFailure: Exception
     ): ConversationDecision {
         val failureCode = repairFailureCode(firstFailure)
@@ -371,8 +383,14 @@ class ConversationOrchestrator(
                 decision = repairedDecision,
                 readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot
             )
-            validateContextActionAuthority(
+            val authorityReconciledDecision = reconcileContextActionAuthority(
+                normalizedText = normalizedText,
                 decision = repairedDecision,
+                capturedTaskContextSnapshot = capturedTaskContextSnapshot,
+                contextFocus = contextFocus
+            )
+            validateContextActionAuthority(
+                decision = authorityReconciledDecision,
                 readOnlyTaskContextSnapshot = readOnlyTaskContextSnapshot,
                 contextFocus = contextFocus
             )
@@ -385,11 +403,11 @@ class ConversationOrchestrator(
             if (repairProfile == ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR) {
                 Log.d(
                     "NO_CONTEXT_MUTATION_REPAIR",
-                    "result=${repairedDecision.route.name}"
+                    "result=${authorityReconciledDecision.route.name}"
                 )
             }
             Log.d("CONVO_ORCH_SCHEMA", "repair response accepted")
-            repairedDecision
+            authorityReconciledDecision
         } catch (repairFailure: Exception) {
             Log.e(
                 "CONVO_ORCH_SCHEMA",
@@ -711,6 +729,29 @@ class ConversationOrchestrator(
                 failedRoute = ConversationRoute.CONTEXT_READ
             )
         }
+    }
+
+    private fun reconcileContextActionAuthority(
+        normalizedText: String,
+        decision: ConversationDecision,
+        capturedTaskContextSnapshot: ReadOnlyTaskContextSnapshot?,
+        contextFocus: ConversationContextFocus?
+    ): ConversationDecision {
+        val snapshot = capturedTaskContextSnapshot ?: return decision
+        val binding = ContextActionAuthorityBindingPolicy.reconcile(
+            normalizedText = normalizedText,
+            decision = decision,
+            capturedSnapshot = snapshot,
+            contextFocus = contextFocus
+        )
+        if (binding.result == ContextActionAuthorityBindingResult.BOUND_TO_CURRENT_FOCUS) {
+            Log.d(
+                "CONTEXT_ACTION_AUTHORITY_BINDING",
+                "modelRef=${binding.modelRef} authoritativeRef=${binding.authoritativeRef} " +
+                    "result=BOUND_TO_CURRENT_FOCUS reason=SINGLE_RESULT_DEICTIC_FOCUS"
+            )
+        }
+        return binding.decision
     }
 
     /** CONTEXT_ACTION requires either supplied task context or Android-validated focus authority. */
