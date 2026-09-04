@@ -22,6 +22,21 @@ import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.diagnostics.AssistantTranscriptDiagnosticLogger
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 
+enum class AssistantInteractionMode {
+    NORMAL_VOICE,
+    DEVELOPER_TEXT
+}
+
+enum class AssistantTranscriptRole {
+    USER,
+    ASSISTANT
+}
+
+data class AssistantTranscriptEvent(
+    val role: AssistantTranscriptRole,
+    val text: String
+)
+
 class AssistantVoiceSession(
     private val activity: AppCompatActivity,
     private val host: AssistantVoiceHost,
@@ -29,7 +44,11 @@ class AssistantVoiceSession(
     private val responseManager: AssistantResponseManager,
     private val audioPermissionLauncher: ActivityResultLauncher<String>,
     private val normalizeFinalTextForHost: Boolean = true,
-    private val onAccessibilityStateChanged: (AssistantAccessibilityState) -> Unit = {}
+    private val onAccessibilityStateChanged: (AssistantAccessibilityState) -> Unit = {},
+    private val interactionMode: AssistantInteractionMode =
+        AssistantInteractionMode.NORMAL_VOICE,
+    private val shouldSpeakAudio: () -> Boolean = { true },
+    private val transcriptObserver: (AssistantTranscriptEvent) -> Unit = {}
 ) {
     private var suppressNextRecognizerError = false
     private var speechRecognizer: SpeechRecognizer? = null
@@ -50,10 +69,12 @@ class AssistantVoiceSession(
     private var terminalDeliveryActive = false
     private var currentAssistantState = AssistantAccessibilityState.STOPPED
     private val typedInputCancellationRecovery = TypedInputCancellationRecoveryPolicy()
+    private val usesNormalVoiceInteraction: Boolean
+        get() = interactionMode == AssistantInteractionMode.NORMAL_VOICE
     private val processingHapticFeedback = ProcessingHapticFeedbackController(
         scheduler = MainLooperProcessingHapticScheduler(),
         isEnabled = {
-            AppPreferences(activity).processingHapticEnabled
+            usesNormalVoiceInteraction && AppPreferences(activity).processingHapticEnabled
         },
         performPulse = {
             !activity.isFinishing &&
@@ -66,7 +87,7 @@ class AssistantVoiceSession(
     private val sessionEndVibrationPerformer = AndroidSessionEndVibrationPerformer(activity)
     private val sessionEndHapticFeedback = AssistantSessionEndHapticFeedback(
         isEnabled = {
-            AppPreferences(activity).sessionEndHapticEnabled
+            usesNormalVoiceInteraction && AppPreferences(activity).sessionEndHapticEnabled
         },
         performVibration = { durationMs ->
             activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
@@ -93,10 +114,13 @@ class AssistantVoiceSession(
     }
 
     init {
+        voiceHelper.setShouldSpeakAudio(shouldSpeakAudio)
         activity.lifecycle.addObserver(lifecycleObserver)
     }
 
     fun ensureInitialized() {
+        if (!usesNormalVoiceInteraction) return
+
         if (assistantBottomSheet == null) {
             assistantBottomSheet = AssistantBottomSheet(
                 activity = activity,
@@ -294,9 +318,12 @@ class AssistantVoiceSession(
         if (clearConversation) {
             assistantBottomSheet?.clearConversation()
         }
-        showAssistantState(AssistantAccessibilityState.LISTENING)
-
-        startVoiceFlow()
+        if (usesNormalVoiceInteraction) {
+            showAssistantState(AssistantAccessibilityState.LISTENING)
+            startVoiceFlow()
+        } else {
+            showAssistantState(AssistantAccessibilityState.READY)
+        }
     }
 
     fun submitTypedText(text: String, clearConversation: Boolean = true) {
@@ -330,6 +357,7 @@ class AssistantVoiceSession(
     }
 
     fun onTypedInputCancelled() {
+        if (!usesNormalVoiceInteraction) return
         val shouldRecover = typedInputCancellationRecovery.claimRecovery(
             sessionActive = assistantSessionActive,
             forceStopping = isForceStopping,
@@ -341,6 +369,7 @@ class AssistantVoiceSession(
     }
 
     fun startVoiceFlow() {
+        if (!usesNormalVoiceInteraction) return
         val hasPermission = ContextCompat.checkSelfPermission(
             activity,
             Manifest.permission.RECORD_AUDIO
@@ -354,12 +383,14 @@ class AssistantVoiceSession(
     }
 
     fun onAudioPermissionGranted() {
+        if (!usesNormalVoiceInteraction) return
         if (assistantSessionActive && !isForceStopping) {
             startVoiceRecognition()
         }
     }
 
     fun onAudioPermissionDenied() {
+        if (!usesNormalVoiceInteraction) return
         showAssistantState(
             AssistantAccessibilityState.ERROR,
             errorText = "Microphone permission required"
@@ -368,6 +399,7 @@ class AssistantVoiceSession(
     }
 
     fun startVoiceRecognition() {
+        if (!usesNormalVoiceInteraction) return
         // log
         Log.d("VOICE_SESSION", "startVoiceRecognition active=$assistantSessionActive forceStop=$isForceStopping isListening=$isListening recognitionActive=$recognitionRequestActive")
         if (!assistantSessionActive || isForceStopping || isListening || recognitionRequestActive) return
@@ -419,7 +451,12 @@ class AssistantVoiceSession(
             activity.runOnUiThread {
                 if (callbackGeneration != sessionGeneration) return@runOnUiThread
                 Log.d("VOICE_SESSION", "tts finished, deciding whether to restart listening")
-                if (assistantSessionActive && !isForceStopping && listenAgain) {
+                if (
+                    usesNormalVoiceInteraction &&
+                    assistantSessionActive &&
+                    !isForceStopping &&
+                    listenAgain
+                ) {
                     // log
                     Log.d("VOICE_SESSION", "posting delayed restart")
                     postRecognitionRestart(350L)
@@ -661,11 +698,18 @@ class AssistantVoiceSession(
     }
 
     private fun logUserTranscript(text: String, source: String) {
-        AssistantTranscriptDiagnosticLogger.user(text, source)
+        val diagnosticSource = if (!usesNormalVoiceInteraction && source == "TYPED") {
+            "DEV_TYPED"
+        } else {
+            source
+        }
+        AssistantTranscriptDiagnosticLogger.user(text, diagnosticSource)
+        transcriptObserver(AssistantTranscriptEvent(AssistantTranscriptRole.USER, text))
     }
 
     private fun logAssistantTranscript(text: String, listenAgain: Boolean) {
         AssistantTranscriptDiagnosticLogger.assistant(text, listenAgain)
+        transcriptObserver(AssistantTranscriptEvent(AssistantTranscriptRole.ASSISTANT, text))
     }
 
     private fun updateListeningAccessibilityState() {
@@ -698,6 +742,9 @@ class AssistantVoiceSession(
             AssistantAccessibilityState.STOPPED -> assistantBottomSheet?.setStoppedState()
             AssistantAccessibilityState.ERROR -> assistantBottomSheet?.setErrorState(errorText)
         }
+        if (!usesNormalVoiceInteraction) {
+            onAccessibilityStateChanged(state)
+        }
     }
 
     private fun beginSessionGeneration() {
@@ -720,6 +767,7 @@ class AssistantVoiceSession(
         delayMs: Long,
         useVoiceFlow: Boolean = false
     ) {
+        if (!usesNormalVoiceInteraction) return
         pendingRecognitionRestart?.let(activity.window.decorView::removeCallbacks)
         val callbackGeneration = sessionGeneration
         lateinit var restart: Runnable

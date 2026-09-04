@@ -63,6 +63,27 @@
                     style="@style/SettingsTechnicalValueText"
                     tools:text="http://192.168.0.132:1234/v1/chat/completions" />
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvDeveloperHeading"
+                style="@style/SettingsSectionHeading"
+                android:layout_marginTop="22dp"
+                android:text="@string/developer_heading" />
+
+            <LinearLayout
+                android:id="@+id/cardDeveloperTesting"
+                style="@style/SettingsTechnicalCard"
+                android:clickable="true"
+                android:focusable="true">
+
+                <TextView
+                    style="@style/SettingsTechnicalTitleText"
+                    android:text="@string/developer_testing" />
+
+                <TextView
+                    style="@style/SettingsDescriptionText"
+                    android:text="@string/developer_testing_description" />
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 

@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
 import android.widget.Button
@@ -26,6 +27,7 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
         voiceHelper = VoiceHelper(this)
         AccessibilityStateHelper.markHeading(findViewById(R.id.tvAdvancedSettingsTitle))
         AccessibilityStateHelper.markHeading(findViewById(R.id.tvAiConnectionsHeading))
+        AccessibilityStateHelper.markHeading(findViewById(R.id.tvDeveloperHeading))
         conversationEndpointValue = findViewById(R.id.tvConversationAgentEndpointValue)
         taskEndpointValue = findViewById(R.id.tvTaskAgentEndpointValue)
         renderEndpoints()
@@ -61,6 +63,14 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
                     appPreferences.setTaskAgentEndpoint(endpoint)
                     renderEndpoints()
                 }
+            }
+        )
+        VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardDeveloperTesting),
+            speechProvider = { getString(R.string.developer_testing_description) },
+            speak = voiceHelper::speak,
+            activate = {
+                startActivity(Intent(this, DeveloperTestActivity::class.java))
             }
         )
         VoiceFirstGestureBinder.bindAction(

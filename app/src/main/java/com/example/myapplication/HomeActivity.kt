@@ -239,7 +239,10 @@ import com.example.myapplication.reminder.ReminderBootstrapTaskSource
 import com.example.myapplication.reminder.ReminderEscalationBootstrapper
 import com.example.myapplication.reminder.SharedPreferencesReminderBootstrapVersionStore
 import com.example.myapplication.preferences.AppPreferences
-class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
+import com.example.myapplication.voice.AssistantInteractionMode
+import com.example.myapplication.voice.AssistantTranscriptEvent
+
+open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var pendingAssistantEntry: HomeAssistantEntry? = null
     private var assistantEntryGeneration: Long = 0
     private var homePreviewTask: TaskEntity? = null
@@ -519,7 +522,11 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             audioPermissionLauncher = audioPermissionLauncher,
             onAccessibilityStateChanged = { state ->
                 AccessibilityStateHelper.updateAssistantState(btnTalkAssistant, state, announce = false)
-            }
+                onAssistantPresentationStateChanged(state)
+            },
+            interactionMode = assistantInteractionMode,
+            shouldSpeakAudio = ::shouldSpeakAssistantAudio,
+            transcriptObserver = ::onAssistantTranscript
         )
         assistantSession.bindAssistantControl(btnTalkAssistant)
         AccessibilityStateHelper.updateAssistantState(
@@ -598,6 +605,23 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     override fun onAssistantTypedInputRequested() {
         showTypedAssistantInputDialog()
+    }
+
+    protected open val assistantInteractionMode: AssistantInteractionMode
+        get() = AssistantInteractionMode.NORMAL_VOICE
+
+    protected open fun shouldSpeakAssistantAudio(): Boolean = true
+
+    protected open fun onAssistantTranscript(event: AssistantTranscriptEvent) = Unit
+
+    protected open fun onAssistantPresentationStateChanged(
+        state: AssistantAccessibilityState
+    ) = Unit
+
+    protected open fun preserveAssistantSessionWhileStopped(): Boolean = false
+
+    protected fun submitPersistentTypedAssistantText(text: String) {
+        assistantSession.submitTypedText(text, clearConversation = false)
     }
 
     override fun onResume(){
@@ -7420,7 +7444,7 @@ class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
 
     override fun onStop() {
-        if (!isChangingConfigurations) {
+        if (!isChangingConfigurations && !preserveAssistantSessionWhileStopped()) {
             invalidateAssistantRequest(AssistantRequestInvalidationReason.SESSION_STOPPED)
             clearConversationSessionContext()
             assistantSession.stopForLifecycle()

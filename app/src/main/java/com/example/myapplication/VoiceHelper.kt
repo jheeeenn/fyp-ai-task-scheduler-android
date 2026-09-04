@@ -19,6 +19,7 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
     private var pendingOnFinished: ((Boolean) -> Unit)? = null
     private var utteranceSequence = 0L
     private var currentUtteranceId: String? = null
+    private var shouldSpeakAudio: () -> Boolean = { true }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -37,7 +38,11 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
                 pendingOnFinished = null
 
                 if (!text.isNullOrBlank()) {
-                    speakInternal(text, callback)
+                    if (shouldSpeakAudio()) {
+                        speakInternal(text, callback)
+                    } else {
+                        callback?.invoke(true)
+                    }
                 }
             } else {
                 failPendingSpeech()
@@ -63,6 +68,10 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun speakWithResult(text: String, onFinished: (Boolean) -> Unit) {
+        if (!shouldSpeakAudio()) {
+            onFinished(true)
+            return
+        }
         refreshSpeechRateFromPreferences()
         if (!isReady) {
             pendingText = text
@@ -71,6 +80,10 @@ class VoiceHelper(context: Context) : TextToSpeech.OnInitListener {
         }
 
         speakInternal(text, onFinished)
+    }
+
+    fun setShouldSpeakAudio(provider: () -> Boolean) {
+        shouldSpeakAudio = provider
     }
 
     fun applySpeechRate(preset: SpeechRatePreset) {
