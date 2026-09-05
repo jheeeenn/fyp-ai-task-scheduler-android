@@ -13,16 +13,21 @@ class EditTaskNaturalVoiceSourceTest {
         File("src/main/java/com/example/myapplication/CreateTaskActivity.kt").readText()
 
     @Test
-    fun oneSentenceTemporalCommandsRunBeforeSemanticFallback() {
+    fun activeRelativeProposalReachesSemanticBeforeOrdinaryTemporalFastPath() {
         val voice = source
             .substringAfter("private fun handleVoiceInput(text: String)")
             .substringBefore("private fun repeatPendingTemporalPrompt()")
         val bounded = voice.indexOf("handleOneSentenceTemporalCommand(normalized)")
+        val activeProposal = voice.indexOf(
+            "relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE"
+        )
         val semanticFallback = voice.indexOf("requestEditTaskSemanticResolution(text)")
 
         assertTrue(bounded >= 0)
+        assertTrue(activeProposal >= 0)
         assertTrue(semanticFallback >= 0)
-        assertTrue(bounded < semanticFallback)
+        assertTrue(activeProposal < semanticFallback)
+        assertTrue(semanticFallback < bounded)
         assertFalse(voice.contains("Please return to the main assistant for a new command"))
     }
 

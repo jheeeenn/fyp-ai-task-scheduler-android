@@ -34,6 +34,10 @@ import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.taskedit.EditTaskAgentContext
 import com.example.myapplication.ai.conversation.taskedit.EditTaskInteractionState
 import com.example.myapplication.ai.conversation.taskedit.EditTaskMoveResolution
+import com.example.myapplication.ai.conversation.taskedit.EditTaskRelativeProposalControlSignals
+import com.example.myapplication.ai.conversation.taskedit.EditTaskRelativeProposalLocalAction
+import com.example.myapplication.ai.conversation.taskedit.EditTaskRelativeProposalRoutingPolicy
+import com.example.myapplication.ai.conversation.taskedit.EditTaskRelativeProposalSemanticRoute
 import com.example.myapplication.ai.conversation.taskedit.EditTaskSemanticMove
 import com.example.myapplication.ai.conversation.taskedit.EditTaskSemanticOrchestrator
 import com.example.myapplication.data.AppDatabase
@@ -959,6 +963,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (handlePendingDeleteConfirmation(normalized)) return
 
         if (handleRelativeTemporalProposalInput(normalized)) return
+        if (relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE) {
+            requestEditTaskSemanticResolution(text)
+            return
+        }
 
         if (isSaveCommand(normalized)) {
             if (pendingFieldTarget != EditFieldTarget.NONE || pendingTemporalClarification != null) {
@@ -1068,7 +1076,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         val context = captureEditTaskAgentContext()
         editTaskSemanticOrchestrator.resolveImmediate(userText, context)?.let { immediate ->
             logEditSemanticResolution(context.interactionState, immediate)
-            handleEditTaskSemanticMove(immediate)
+            routeEditTaskSemanticMove(userText, context, immediate)
             return
         }
         if (context.interactionState == EditTaskInteractionState.OPERATION_IN_FLIGHT) {
@@ -1095,7 +1103,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
                 isResolvingEditTaskMove = false
                 logEditSemanticResolution(context.interactionState, resolution)
-                handleEditTaskSemanticMove(resolution)
+                routeEditTaskSemanticMove(userText, context, resolution)
             } catch (exception: CancellationException) {
                 throw exception
             } finally {
@@ -1176,11 +1184,22 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun isEditSemanticRequestCurrent(
         requestGeneration: Long,
         capturedAuthority: EditSemanticAuthoritySnapshot
-    ): Boolean = requestGeneration == editSemanticResolutionGeneration &&
-        capturedAuthority == captureEditSemanticAuthority() &&
-        canRunEditAssistantCallback() &&
-        !isEditSaveInFlight &&
-        !isEditDeleteInFlight
+    ): Boolean {
+        val currentAuthority = captureEditSemanticAuthority()
+        val relativeProposalIsCurrent =
+            capturedAuthority.relativeProposalState != RelativeTemporalProposalState.ACTIVE ||
+                EditTaskRelativeProposalRoutingPolicy.isCurrentProposal(
+                    capturedRevision = capturedAuthority.relativeProposalRevision,
+                    currentRevision = currentAuthority.relativeProposalRevision,
+                    currentState = currentAuthority.relativeProposalState
+                )
+        return requestGeneration == editSemanticResolutionGeneration &&
+            capturedAuthority == currentAuthority &&
+            relativeProposalIsCurrent &&
+            canRunEditAssistantCallback() &&
+            !isEditSaveInFlight &&
+            !isEditDeleteInFlight
+    }
 
     private fun logEditSemanticResolution(
         state: EditTaskInteractionState,
@@ -1191,6 +1210,33 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             "state=$state move=${resolution.move} source=${resolution.source.logValue} " +
                 "confidence=${resolution.confidence} agentAttempted=${resolution.agentAttempted}"
         )
+    }
+
+    private fun routeEditTaskSemanticMove(
+        userText: String,
+        context: EditTaskAgentContext,
+        resolution: EditTaskMoveResolution
+    ) {
+        if (context.interactionState !=
+            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
+        ) {
+            handleEditTaskSemanticMove(resolution)
+            return
+        }
+
+        when (EditTaskRelativeProposalRoutingPolicy.semanticRoute(resolution)) {
+            EditTaskRelativeProposalSemanticRoute.EDIT_SEMANTIC -> {
+                Log.d(
+                    "EDIT_RELATIVE_INPUT",
+                    "route=EDIT_SEMANTIC move=${resolution.move}"
+                )
+                handleEditTaskSemanticMove(resolution)
+            }
+            EditTaskRelativeProposalSemanticRoute.RELATIVE_TEMPORAL_CORRECTION -> {
+                Log.d("EDIT_RELATIVE_INPUT", "route=RELATIVE_TEMPORAL_CORRECTION")
+                processRelativeTemporalCorrection(TextNormalizer.normalize(userText))
+            }
+        }
     }
 
     private fun handleEditTaskSemanticMove(resolution: EditTaskMoveResolution) {
@@ -1341,19 +1387,29 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             return true
         }
         if (session.state != RelativeTemporalProposalState.ACTIVE) return false
-        if (isConversationExitCommand(normalized)) {
-            session.cancel()
-            logRelativeTemporalProposal("CANCELLED")
-            waitingForSaveConfirmation = false
-            endAssistantConversation()
-            return true
-        }
         if (relativeTemporalCorrectionInFlight) {
             speak("I am still checking the latest correction. Please wait.")
             return true
         }
-        when {
-            isRelativeCancellationCommand(normalized) -> {
+
+        val action = EditTaskRelativeProposalRoutingPolicy.localAction(
+            normalizedText = normalized,
+            signals = EditTaskRelativeProposalControlSignals(
+                explicitSave = isSaveCommand(normalized),
+                explicitCancellation = isRelativeCancellationCommand(normalized),
+                explicitRepeat = isRelativeRepeatCommand(normalized),
+                explicitConversationExit = isConversationExitCommand(normalized)
+            )
+        ) ?: return false
+        Log.d("EDIT_RELATIVE_INPUT", "route=LOCAL_CONTROL action=$action")
+        when (action) {
+            EditTaskRelativeProposalLocalAction.END_SESSION -> {
+                session.cancel()
+                logRelativeTemporalProposal("CANCELLED")
+                waitingForSaveConfirmation = false
+                endAssistantConversation()
+            }
+            EditTaskRelativeProposalLocalAction.CANCEL -> {
                 session.cancel()
                 logRelativeTemporalProposal("CANCELLED")
                 waitingForSaveConfirmation = false
@@ -1363,18 +1419,17 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                     finish()
                 }
             }
-            isRelativeRepeatCommand(normalized) -> {
+            EditTaskRelativeProposalLocalAction.REPEAT -> {
                 speakCurrentRelativeTemporalProposal()
             }
-            isSaveCommand(normalized) || isYes(normalized) -> {
+            EditTaskRelativeProposalLocalAction.CONFIRM -> {
                 waitingForSaveConfirmation = false
                 saveTask(session.revision)
             }
-            isNo(normalized) -> {
+            EditTaskRelativeProposalLocalAction.REJECT -> {
                 waitingForSaveConfirmation = true
                 speak("Okay, I have not saved it. Tell me the schedule correction you want.")
             }
-            else -> processRelativeTemporalCorrection(normalized)
         }
         return true
     }
@@ -1986,7 +2041,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (session != null && session.state == RelativeTemporalProposalState.ACTIVE) {
             promptHelper.speakInfo(
                 RelativeTemporalSpeechRenderer.proposal(
-                    taskTitle = authoritativeOriginalTitle,
+                    taskTitle = etTaskTitle.text.toString().trim()
+                        .ifBlank { authoritativeOriginalTitle },
                     schedule = session.currentProposal,
                     crossedDateBoundary = initialProposalCrossedDateBoundary
                 ),

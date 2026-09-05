@@ -27,14 +27,20 @@ class RelativeTemporalIntegrationContractTest {
     }
 
     @Test
-    fun correctionUsesOneBoundedSemanticCallAndNeverGeneralConversation() {
+    fun semanticClassificationRoutesOnlyTemporalMovesToBoundedRelativeCorrection() {
         val handler = edit
             .substringAfter("private fun handleRelativeTemporalProposalInput(")
             .substringBefore("private fun processRelativeTemporalCorrection(")
+        val routing = edit
+            .substringAfter("private fun routeEditTaskSemanticMove(")
+            .substringBefore("private fun handleEditTaskSemanticMove(")
         val correction = edit
             .substringAfter("private fun processRelativeTemporalCorrection(")
             .substringBefore("private suspend fun authoritativeTaskStillMatches")
-        assertTrue(handler.contains("else -> processRelativeTemporalCorrection(normalized)"))
+        assertTrue(handler.contains(") ?: return false"))
+        assertFalse(handler.contains("processRelativeTemporalCorrection(normalized)"))
+        assertTrue(routing.contains("EditTaskRelativeProposalRoutingPolicy.semanticRoute"))
+        assertTrue(routing.contains("processRelativeTemporalCorrection(TextNormalizer.normalize(userText))"))
         assertTrue(
             correction.contains(
                 "relativeTemporalAgent.processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext"
@@ -197,8 +203,8 @@ class RelativeTemporalIntegrationContractTest {
             .substringAfter("private fun handleRelativeTemporalProposalInput(")
             .substringBefore("private fun processRelativeTemporalCorrection(")
         val cancellation = handler
-            .substringAfter("isRelativeCancellationCommand(normalized)")
-            .substringBefore("isRelativeRepeatCommand(normalized)")
+            .substringAfter("EditTaskRelativeProposalLocalAction.CANCEL ->")
+            .substringBefore("EditTaskRelativeProposalLocalAction.REPEAT ->")
         assertTrue(cancellation.contains("session.cancel()"))
         assertTrue(cancellation.contains("finish()"))
         assertFalse(cancellation.contains("updateTask"))
@@ -211,8 +217,8 @@ class RelativeTemporalIntegrationContractTest {
             .substringAfter("private fun handleRelativeTemporalProposalInput(")
             .substringBefore("private fun processRelativeTemporalCorrection(")
         val exitBranch = handler
-            .substringAfter("if (isConversationExitCommand(normalized)) {")
-            .substringBefore("if (relativeTemporalCorrectionInFlight)")
+            .substringAfter("EditTaskRelativeProposalLocalAction.END_SESSION ->")
+            .substringBefore("EditTaskRelativeProposalLocalAction.CANCEL ->")
         val exitPolicy = edit
             .substringAfter("private fun isConversationExitCommand(normalized: String)")
             .substringBefore("private fun applySpokenDate(")
@@ -223,14 +229,8 @@ class RelativeTemporalIntegrationContractTest {
         assertFalse(exitBranch.contains("processRelativeTemporalCorrection"))
         assertFalse(exitBranch.contains("updateTask"))
         assertFalse(exitBranch.contains("ReminderHelper"))
-        assertTrue(
-            handler.indexOf("isConversationExitCommand(normalized)") <
-                handler.indexOf("if (relativeTemporalCorrectionInFlight)")
-        )
-        assertTrue(
-            handler.indexOf("isConversationExitCommand(normalized)") <
-                handler.indexOf("else -> processRelativeTemporalCorrection(normalized)")
-        )
+        assertTrue(handler.contains("explicitConversationExit = isConversationExitCommand(normalized)"))
+        assertTrue(handler.contains(") ?: return false"))
     }
 
     @Test

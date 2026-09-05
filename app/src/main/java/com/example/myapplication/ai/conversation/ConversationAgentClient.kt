@@ -1013,6 +1013,11 @@ CHANGE_TITLE requires only the replacement title extracted from the user's utter
 CHANGE_DATE preserves only the user's date phrase without calculating it.
 CHANGE_TIME preserves only the user's time phrase, including explicit AM or PM.
 CHANGE_SCHEDULE requires both the supplied date phrase and supplied time phrase.
+Preserve relative temporal meaning without calculating it. While a relative proposal is active,
+classify schedule corrections as CHANGE_DATE, CHANGE_TIME, or CHANGE_SCHEDULE so Android can route
+them through its specialised relative proposal authority. For "two hours later", use CHANGE_TIME
+with time_text "two hours later". For "same time tomorrow", use CHANGE_DATE with date_text
+"same time tomorrow". Do not turn either into UNKNOWN or calculate a final value.
 REQUEST_TITLE_CHANGE, REQUEST_DATE_CHANGE, and REQUEST_TIME_CHANGE mean the user selected a field
 but did not supply its value. DELETE only requests Android's existing delete confirmation.
 CANCEL never saves or deletes. UNKNOWN means the intent is not sufficiently clear.

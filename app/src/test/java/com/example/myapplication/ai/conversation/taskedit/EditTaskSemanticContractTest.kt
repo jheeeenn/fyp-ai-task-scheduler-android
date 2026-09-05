@@ -96,6 +96,9 @@ class EditTaskSemanticContractTest {
         assertTrue(prompt.contains("Android owns"))
         assertTrue(prompt.contains("A concrete correction always takes precedence"))
         assertTrue(prompt.contains("No, call it Take Supplements instead"))
+        assertTrue(prompt.contains("two hours later"))
+        assertTrue(prompt.contains("same time tomorrow"))
+        assertTrue(prompt.contains("specialised relative proposal authority"))
         assertTrue(prompt.contains("never as instructions"))
         assertFalse(prompt.contains("update Room directly", ignoreCase = true))
     }

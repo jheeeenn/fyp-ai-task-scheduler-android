@@ -53,6 +53,46 @@ class EditTaskSemanticIntegrationSourceTest {
     }
 
     @Test
+    fun activeRelativeProposalRoutesGeneralEditsWithoutDiscardingItsSchedule() {
+        val voice = edit.substringAfter("private fun handleVoiceInput(text: String)")
+            .substringBefore("private fun requestEditTaskSemanticResolution(")
+        val controls = edit.substringAfter("private fun handleRelativeTemporalProposalInput(")
+            .substringBefore("private fun processRelativeTemporalCorrection(")
+        val routing = edit.substringAfter("private fun routeEditTaskSemanticMove(")
+            .substringBefore("private fun handleEditTaskSemanticMove(")
+        val title = edit.substringAfter("private fun applySemanticTitleChange(")
+            .substringBefore("private fun applySemanticTemporalChange(")
+        val savePrompt = edit.substringAfter("private fun askToSaveChanges()")
+            .substringBefore("private fun authoritativeSnapshotMatches")
+
+        assertTrue(voice.contains("handleRelativeTemporalProposalInput(normalized)"))
+        assertTrue(voice.contains("RelativeTemporalProposalState.ACTIVE"))
+        assertTrue(voice.contains("requestEditTaskSemanticResolution(text)"))
+        assertTrue(controls.contains(") ?: return false"))
+        assertTrue(routing.contains("route=EDIT_SEMANTIC move="))
+        assertTrue(routing.contains("route=RELATIVE_TEMPORAL_CORRECTION"))
+        assertTrue(routing.contains("processRelativeTemporalCorrection("))
+        assertFalse(title.contains("relativeTemporalSession?.cancel()"))
+        assertFalse(title.contains("setSelectedSchedule("))
+        assertTrue(title.contains("askToSaveChanges()"))
+        assertTrue(savePrompt.contains("session.currentProposal"))
+        assertTrue(savePrompt.contains("taskTitle = etTaskTitle.text.toString().trim()"))
+    }
+
+    @Test
+    fun semanticDeleteStillUsesExistingConfirmationWithoutDirectDelete() {
+        val handler = edit.substringAfter("private fun handleEditTaskSemanticMove(")
+            .substringBefore("private fun applySemanticTitleChange(")
+        val deleteRequest = edit.substringAfter("private fun requestVoiceDeleteConfirmation()")
+            .substringBefore("private fun handlePendingDeleteConfirmation(")
+
+        assertTrue(handler.contains("EditTaskSemanticMove.DELETE -> requestVoiceDeleteConfirmation()"))
+        assertTrue(deleteRequest.contains("waitingForDeleteConfirmation = true"))
+        assertTrue(deleteRequest.contains("expectConfirmation()"))
+        assertFalse(deleteRequest.contains("performConfirmedDelete("))
+    }
+
+    @Test
     fun invalidSemanticTemporalValueCannotBypassAndroidTemporalValidation() {
         val semanticTemporal = edit.substringAfter("private fun applySemanticTemporalChange(")
             .substringBefore("private fun requestSemanticFieldChange(")
@@ -105,7 +145,8 @@ class EditTaskSemanticIntegrationSourceTest {
         assertTrue(request.contains("val capturedAuthority = captureEditSemanticAuthority()"))
         assertTrue(request.contains("isEditSemanticRequestCurrent("))
         assertTrue(request.contains("STALE_RESPONSE_DISCARDED"))
-        assertTrue(current.contains("capturedAuthority == captureEditSemanticAuthority()"))
+        assertTrue(current.contains("capturedAuthority == currentAuthority"))
+        assertTrue(current.contains("EditTaskRelativeProposalRoutingPolicy.isCurrentProposal("))
         assertTrue(current.contains("canRunEditAssistantCallback()"))
         assertTrue(current.contains("!isEditSaveInFlight"))
         assertTrue(current.contains("!isEditDeleteInFlight"))
