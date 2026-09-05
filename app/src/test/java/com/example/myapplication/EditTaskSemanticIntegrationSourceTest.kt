@@ -185,6 +185,29 @@ class EditTaskSemanticIntegrationSourceTest {
     }
 
     @Test
+    fun foregroundCollectionGatesControlsButRetainsRelativeRoutingAndClearsOnlyAfterAppliedRevision() {
+        val foreground = edit.substringAfter("private fun currentEditTaskInteractionState()")
+            .substringBefore("private fun captureEditSemanticAuthority()")
+        val controls = edit.substringAfter("private fun handleRelativeTemporalProposalInput(")
+            .substringBefore("private fun processRelativeTemporalCorrection(")
+        val routing = edit.substringAfter("private fun routeEditTaskSemanticMove(")
+            .substringBefore("private fun handleEditTaskSemanticMove(")
+        val correction = edit.substringAfter("private fun processRelativeTemporalCorrection(")
+            .substringBefore("private suspend fun authoritativeTaskStillMatches()")
+        assertTrue(foreground.contains("EditTaskInteractionPolicy.foregroundState("))
+        assertTrue(controls.contains("foregroundState = currentEditTaskInteractionState()"))
+        assertTrue(routing.contains("relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE"))
+        assertFalse(routing.contains("context.interactionState"))
+        val applied = correction.indexOf("if (revisionResult != RelativeTemporalRevisionResult.APPLIED) return@launch")
+        val clear = correction.indexOf("clearPendingEditCollection()")
+        val prompt = correction.indexOf("askToSaveChanges()")
+        assertTrue(applied >= 0 && clear > applied && prompt > clear)
+        assertTrue(correction.contains("completesTemporalCollection(collectionState, revisionResult)"))
+        val staleGuard = correction.indexOf("isEditSemanticRequestCurrent(semanticGeneration, capturedAuthority)")
+        assertTrue(staleGuard >= 0 && staleGuard < correction.indexOf("session.applyCorrection("))
+    }
+
+    @Test
     fun developerTransportRemainsTheExistingAssistantVoiceSessionBoundary() {
         assertTrue(edit.contains("interactionMode = DeveloperTestSession.interactionMode()"))
         assertTrue(edit.contains("transcriptObserver = DeveloperTestSession::recordTranscript"))

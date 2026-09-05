@@ -32,6 +32,8 @@ import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.taskedit.EditTaskAgentContext
+import com.example.myapplication.ai.conversation.taskedit.EditFieldTarget
+import com.example.myapplication.ai.conversation.taskedit.EditTaskInteractionPolicy
 import com.example.myapplication.ai.conversation.taskedit.EditTaskInteractionState
 import com.example.myapplication.ai.conversation.taskedit.EditTaskMoveResolution
 import com.example.myapplication.ai.conversation.taskedit.EditTaskRelativeProposalControlSignals
@@ -87,10 +89,6 @@ import com.example.myapplication.accessibility.AccessibilityStateHelper
 import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
-
-private enum class EditFieldTarget {
-    NONE, TITLE, DATE, TIME, DATE_OR_TIME
-}
 
 private data class EditSemanticAuthoritySnapshot(
     val draftRevision: Long,
@@ -1076,7 +1074,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         val context = captureEditTaskAgentContext()
         editTaskSemanticOrchestrator.resolveImmediate(userText, context)?.let { immediate ->
             logEditSemanticResolution(context.interactionState, immediate)
-            routeEditTaskSemanticMove(userText, context, immediate)
+            routeEditTaskSemanticMove(userText, immediate)
             return
         }
         if (context.interactionState == EditTaskInteractionState.OPERATION_IN_FLIGHT) {
@@ -1103,7 +1101,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
                 isResolvingEditTaskMove = false
                 logEditSemanticResolution(context.interactionState, resolution)
-                routeEditTaskSemanticMove(userText, context, resolution)
+                routeEditTaskSemanticMove(userText, resolution)
             } catch (exception: CancellationException) {
                 throw exception
             } finally {
@@ -1143,28 +1141,17 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         )
     }
 
-    private fun currentEditTaskInteractionState(): EditTaskInteractionState = when {
-        isEditSaveInFlight || isEditDeleteInFlight ||
-            relativeTemporalSession?.state == RelativeTemporalProposalState.SAVING ->
-            EditTaskInteractionState.OPERATION_IN_FLIGHT
-        waitingForDeleteConfirmation ->
-            EditTaskInteractionState.WAITING_FOR_DELETE_CONFIRMATION
-        relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE ->
-            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
-        waitingForSaveConfirmation ->
-            EditTaskInteractionState.WAITING_FOR_SAVE_CONFIRMATION
-        pendingTemporalClarification != null ->
-            EditTaskInteractionState.WAITING_FOR_TEMPORAL_CLARIFICATION
-        pendingFieldTarget == EditFieldTarget.TITLE ->
-            EditTaskInteractionState.WAITING_FOR_TITLE
-        pendingFieldTarget == EditFieldTarget.DATE ->
-            EditTaskInteractionState.WAITING_FOR_DATE
-        pendingFieldTarget == EditFieldTarget.TIME ->
-            EditTaskInteractionState.WAITING_FOR_TIME
-        pendingFieldTarget == EditFieldTarget.DATE_OR_TIME ->
-            EditTaskInteractionState.WAITING_FOR_DATE_OR_TIME
-        else -> EditTaskInteractionState.READY_FOR_EDIT
-    }
+    private fun currentEditTaskInteractionState(): EditTaskInteractionState =
+        EditTaskInteractionPolicy.foregroundState(
+            operationInFlight = isEditSaveInFlight || isEditDeleteInFlight ||
+                relativeTemporalSession?.state == RelativeTemporalProposalState.SAVING,
+            deleteConfirmationPending = waitingForDeleteConfirmation,
+            temporalClarificationPending = pendingTemporalClarification != null,
+            pendingFieldTarget = pendingFieldTarget,
+            relativeProposalActive =
+                relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE,
+            saveConfirmationPending = waitingForSaveConfirmation
+        )
 
     private fun captureEditSemanticAuthority() = EditSemanticAuthoritySnapshot(
         draftRevision = editDraftRevision,
@@ -1214,17 +1201,16 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun routeEditTaskSemanticMove(
         userText: String,
-        context: EditTaskAgentContext,
         resolution: EditTaskMoveResolution
     ) {
-        if (context.interactionState !=
-            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
-        ) {
+        val relativeProposalActive =
+            relativeTemporalSession?.state == RelativeTemporalProposalState.ACTIVE
+        if (!relativeProposalActive) {
             handleEditTaskSemanticMove(resolution)
             return
         }
 
-        when (EditTaskRelativeProposalRoutingPolicy.semanticRoute(resolution)) {
+        when (EditTaskRelativeProposalRoutingPolicy.semanticRoute(resolution, relativeProposalActive)) {
             EditTaskRelativeProposalSemanticRoute.EDIT_SEMANTIC -> {
                 Log.d(
                     "EDIT_RELATIVE_INPUT",
@@ -1394,6 +1380,7 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
         val action = EditTaskRelativeProposalRoutingPolicy.localAction(
             normalizedText = normalized,
+            foregroundState = currentEditTaskInteractionState(),
             signals = EditTaskRelativeProposalControlSignals(
                 explicitSave = isSaveCommand(normalized),
                 explicitCancellation = isRelativeCancellationCommand(normalized),
@@ -1447,6 +1434,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         val correctionGeneration = relativeTemporalCorrectionGeneration
         relativeTemporalCorrectionInFlight = true
         waitingForSaveConfirmation = false
+        // Keep collection intact until a current, validated proposal revision is applied.
+        val collectionState = currentEditTaskInteractionState()
+        val capturedAuthority = captureEditSemanticAuthority()
+        val semanticGeneration = editSemanticResolutionGeneration
         lifecycleScope.launch {
             try {
                 val authoritativeMatchesBeforeCorrection = authoritativeTaskStillMatches()
@@ -1466,6 +1457,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 if (!authoritativeMatchesAfterCorrection) {
                     session.cancel()
                     speak("That task changed while I was checking the correction. I did not save anything.")
+                    return@launch
+                }
+                if (!isEditSemanticRequestCurrent(semanticGeneration, capturedAuthority)) {
+                    Log.d("EDIT_RELATIVE_INPUT", "result=STALE_COLLECTION_RESPONSE_DISCARDED")
                     return@launch
                 }
 
@@ -1526,6 +1521,9 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
                 if (revisionResult != RelativeTemporalRevisionResult.APPLIED) return@launch
                 setSelectedSchedule(session.currentProposal, synchronizeSession = false)
+                if (EditTaskInteractionPolicy.completesTemporalCollection(collectionState, revisionResult)) {
+                    clearPendingEditCollection()
+                }
                 initialProposalCrossedDateBoundary =
                     session.currentProposal.date != session.authoritativeOriginal.date
                 logRelativeTemporalProposal("WAITING_CONFIRMATION")
@@ -1533,7 +1531,9 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: TaskAgentProcessingException) {
-                if (session.isCurrent(token)) {
+                if (session.isCurrent(token) &&
+                    isEditSemanticRequestCurrent(semanticGeneration, capturedAuthority)
+                ) {
                     waitingForSaveConfirmation = true
                     speak(RelativeTemporalSpeechRenderer.semanticClarification())
                 }

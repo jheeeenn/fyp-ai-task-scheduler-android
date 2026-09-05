@@ -31,8 +31,13 @@ enum class EditTaskRelativeProposalSemanticRoute {
 object EditTaskRelativeProposalRoutingPolicy {
     fun localAction(
         normalizedText: String,
-        signals: EditTaskRelativeProposalControlSignals
+        signals: EditTaskRelativeProposalControlSignals,
+        foregroundState: EditTaskInteractionState =
+            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
     ): EditTaskRelativeProposalLocalAction? {
+        if (foregroundState !=
+            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
+        ) return null
         if (signals.explicitConversationExit) {
             return EditTaskRelativeProposalLocalAction.END_SESSION
         }
@@ -54,11 +59,15 @@ object EditTaskRelativeProposalRoutingPolicy {
     }
 
     fun semanticRoute(
-        resolution: EditTaskMoveResolution
-    ): EditTaskRelativeProposalSemanticRoute = when (resolution.move) {
-        EditTaskSemanticMove.CHANGE_DATE,
-        EditTaskSemanticMove.CHANGE_TIME,
-        EditTaskSemanticMove.CHANGE_SCHEDULE ->
+        resolution: EditTaskMoveResolution,
+        relativeProposalActive: Boolean = true
+    ): EditTaskRelativeProposalSemanticRoute = when {
+        !relativeProposalActive -> EditTaskRelativeProposalSemanticRoute.EDIT_SEMANTIC
+        resolution.move in setOf(
+            EditTaskSemanticMove.CHANGE_DATE,
+            EditTaskSemanticMove.CHANGE_TIME,
+            EditTaskSemanticMove.CHANGE_SCHEDULE
+        ) ->
             EditTaskRelativeProposalSemanticRoute.RELATIVE_TEMPORAL_CORRECTION
 
         else -> EditTaskRelativeProposalSemanticRoute.EDIT_SEMANTIC

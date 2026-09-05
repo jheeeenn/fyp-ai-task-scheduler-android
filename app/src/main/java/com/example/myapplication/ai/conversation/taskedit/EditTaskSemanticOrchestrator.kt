@@ -22,6 +22,11 @@ class EditTaskSemanticOrchestrator(
     ): EditTaskMoveResolution? {
         val normalized = TextNormalizer.normalize(userText)
         val confirmation = BoundedConfirmationPolicy.resolve(normalized).result
+        if (EditTaskInteractionPolicy.isCollecting(context.interactionState) &&
+            confirmation in setOf(BoundedConfirmationResult.AFFIRM, BoundedConfirmationResult.REJECT)
+        ) {
+            return unknown(agentAttempted = false, reason = "FIELD_VALUE_REQUIRED")
+        }
         if (context.interactionState in SAVE_CONFIRMATION_STATES) {
             when (confirmation) {
                 BoundedConfirmationResult.AFFIRM ->
