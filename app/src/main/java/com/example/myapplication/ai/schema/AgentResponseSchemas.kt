@@ -4,6 +4,25 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object AgentResponseSchemas {
+    fun queryPresentationSemanticResponseFormat(): JSONObject {
+        return responseFormat(
+            name = "query_presentation_semantic",
+            properties = JSONObject().apply {
+                put(
+                    "presentation",
+                    stringEnum("COUNT_ONLY", "OVERVIEW", "DETAILS", "UNKNOWN")
+                )
+                put("confidence", numberType(minimum = 0.0, maximum = 1.0))
+                put("need_clarification", booleanType())
+            },
+            required = JSONArray().apply {
+                put("presentation")
+                put("confidence")
+                put("need_clarification")
+            }
+        )
+    }
+
     fun routineExtractionResponseFormat(): JSONObject {
         val stepSchema = JSONObject().apply {
             put("type", "object")

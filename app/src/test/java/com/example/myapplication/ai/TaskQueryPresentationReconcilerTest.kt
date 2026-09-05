@@ -5,6 +5,19 @@ import org.junit.Test
 
 class TaskQueryPresentationReconcilerTest {
     @Test
+    fun boundedSemanticOverridesWrongAgreementFromExistingAgents() {
+        val result = TaskQueryPresentationReconciler.reconcile(
+            taskAgentIntent = AiIntent.QUERY_TASK.name,
+            conversationHint = TaskQueryPresentation.OVERVIEW,
+            taskAgentValue = TaskQueryPresentation.OVERVIEW,
+            boundedSemantic = TaskQueryPresentation.COUNT_ONLY
+        )
+
+        assertEquals(TaskQueryPresentation.COUNT_ONLY, result.effective)
+        assertEquals(TaskQueryPresentationSource.BOUNDED_QUERY_PRESENTATION, result.source)
+    }
+
+    @Test
     fun conversationHintOverridesTaskAgentPresentationForQueryTask() {
         val taskCount = TaskQueryPresentationReconciler.reconcile(
             taskAgentIntent = AiIntent.QUERY_TASK.name,
@@ -28,7 +41,8 @@ class TaskQueryPresentationReconcilerTest {
         val nonQuery = TaskQueryPresentationReconciler.reconcile(
             taskAgentIntent = AiIntent.UPDATE_TASK.name,
             conversationHint = TaskQueryPresentation.DETAILS,
-            taskAgentValue = TaskQueryPresentation.OVERVIEW
+            taskAgentValue = TaskQueryPresentation.OVERVIEW,
+            boundedSemantic = TaskQueryPresentation.COUNT_ONLY
         )
 
         assertEquals(TaskQueryPresentation.NONE, nonQuery.effective)

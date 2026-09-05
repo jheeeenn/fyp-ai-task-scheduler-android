@@ -129,6 +129,7 @@ import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSna
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSnapshotBuilder
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSpeechRenderer
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionType
+import com.example.myapplication.ai.conversation.querypresentation.QueryPresentationSemanticOrchestrator
 import com.example.myapplication.ai.conversation.query.AccessibleTaskQuerySession
 import com.example.myapplication.ai.conversation.query.AuthoritativeRepeatState
 import com.example.myapplication.ai.conversation.query.QueryReadingControlPolicy
@@ -260,6 +261,8 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         SavedRoutineSemanticOrchestrator
     private lateinit var contextSuggestionSemanticOrchestrator:
         ContextSuggestionSemanticOrchestrator
+    private lateinit var queryPresentationSemanticOrchestrator:
+        QueryPresentationSemanticOrchestrator
     private lateinit var breakdownFollowUpSemanticOrchestrator:
         BreakdownFollowUpSemanticOrchestrator
     private val readOnlyTaskContextStore = ReadOnlyTaskContextStore()
@@ -410,6 +413,9 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             conversationAgentClient
         )
         contextSuggestionSemanticOrchestrator = ContextSuggestionSemanticOrchestrator(
+            conversationAgentClient
+        )
+        queryPresentationSemanticOrchestrator = QueryPresentationSemanticOrchestrator(
             conversationAgentClient
         )
         conversationIntentClassifier = LocalConversationIntentClassifier(this)
@@ -2471,10 +2477,17 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
                 val aiResult = agentOrchestrator.process(taskAgentInput)
                 if (!isAssistantRequestCurrent(requestToken)) return@launch
+                val boundedPresentation =
+                    queryPresentationSemanticOrchestrator.resolveForValidatedIntent(
+                        normalizedUserText = normalized,
+                        validatedTaskAgentIntent = aiResult.intent
+                    )
+                if (!isAssistantRequestCurrent(requestToken)) return@launch
                 val presentationResolution = TaskQueryPresentationReconciler.reconcile(
                     taskAgentIntent = aiResult.intent,
                     conversationHint = conversationDecision.queryPresentationHint,
-                    taskAgentValue = aiResult.queryPresentation
+                    taskAgentValue = aiResult.queryPresentation,
+                    boundedSemantic = boundedPresentation.presentation
                 )
                 if (
                     aiResult.intent == AiIntent.QUERY_TASK.name ||
@@ -2482,7 +2495,8 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 ) {
                     Log.d(
                         "HOME_QUERY_PRESENTATION",
-                        "conversationHint=${conversationDecision.queryPresentationHint} " +
+                        "boundedSemantic=${boundedPresentation.presentation} " +
+                            "conversationHint=${conversationDecision.queryPresentationHint} " +
                             "taskAgentValue=${aiResult.queryPresentation} " +
                             "effective=${presentationResolution.effective} " +
                             "source=${presentationResolution.source}"

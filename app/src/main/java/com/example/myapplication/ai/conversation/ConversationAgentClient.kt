@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.myapplication.preferences.AppPreferences
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticClient
+import com.example.myapplication.ai.conversation.querypresentation.QueryPresentationSemanticClient
 import com.example.myapplication.ai.conversation.taskedit.EditTaskSemanticClient
 import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailEditSemanticClient
 import com.example.myapplication.ai.conversation.suggestion.ContextSuggestionSemanticClient
@@ -33,7 +34,7 @@ open class ConversationAgentClient(
     private val endpointUrl: String = AppPreferences.DEFAULT_CONVERSATION_AGENT_ENDPOINT,
     private val modelId: String = "google/gemma-4-e2b"
 ) : CreateDraftSemanticClient, TaskDetailEditSemanticClient, RoutineFollowUpSemanticClient, SavedRoutineSemanticClient,
-    ContextSuggestionSemanticClient, EditTaskSemanticClient {
+    ContextSuggestionSemanticClient, EditTaskSemanticClient, QueryPresentationSemanticClient {
     private val appContext = context?.applicationContext
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -58,6 +59,12 @@ open class ConversationAgentClient(
         .readTimeout(CONTEXT_SUGGESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .writeTimeout(CONTEXT_SUGGESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(CONTEXT_SUGGESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
+    private val queryPresentationClient = client.newBuilder()
+        .connectTimeout(QUERY_PRESENTATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(QUERY_PRESENTATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(QUERY_PRESENTATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .callTimeout(QUERY_PRESENTATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
     open suspend fun process(userText: String, memorySnapshot: String, appContextSummary: String): String =
@@ -474,6 +481,18 @@ $snapshotJson
         executeConversationRequest(userPrompt, RequestKind.CONTEXT_SUGGESTION)
     }
 
+    override suspend fun classifyQueryPresentation(normalizedUserText: String): String =
+        withContext(Dispatchers.IO) {
+            val boundedInput = JSONObject().apply {
+                put("validated_task_agent_intent", "QUERY_TASK")
+                put("normalized_user_utterance", normalizedUserText)
+            }
+            executeConversationRequest(
+                userPrompt = boundedInput.toString(),
+                kind = RequestKind.QUERY_PRESENTATION
+            )
+        }
+
     private fun executeConversationRequest(userPrompt: String, kind: RequestKind): String {
         val temperature = when (kind) {
             RequestKind.ROUTING -> ROUTING_TEMPERATURE
@@ -491,6 +510,7 @@ $snapshotJson
             RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_TEMPERATURE
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_TEMPERATURE
             RequestKind.CONTEXT_SUGGESTION -> CONTEXT_SUGGESTION_TEMPERATURE
+            RequestKind.QUERY_PRESENTATION -> QUERY_PRESENTATION_TEMPERATURE
         }
         val maxTokens = when (kind) {
             RequestKind.ROUTING -> 256
@@ -509,6 +529,7 @@ $snapshotJson
             RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_MAX_TOKENS
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_MAX_TOKENS
             RequestKind.CONTEXT_SUGGESTION -> CONTEXT_SUGGESTION_MAX_TOKENS
+            RequestKind.QUERY_PRESENTATION -> QUERY_PRESENTATION_MAX_TOKENS
         }
         val responseFormat = when (kind) {
             RequestKind.ROUTING -> AgentResponseSchemas.conversationDecisionResponseFormat()
@@ -532,6 +553,8 @@ $snapshotJson
             RequestKind.SAFE_OBSERVATION_STYLE -> AgentResponseSchemas.safeObservationStyleResponseFormat()
             RequestKind.CONTEXT_SUGGESTION ->
                 AgentResponseSchemas.contextSuggestionDecisionResponseFormat()
+            RequestKind.QUERY_PRESENTATION ->
+                AgentResponseSchemas.queryPresentationSemanticResponseFormat()
         }
         val systemPrompt = when (kind) {
             RequestKind.ROUTING -> ROUTING_SYSTEM_PROMPT
@@ -550,6 +573,7 @@ $snapshotJson
             RequestKind.SAVED_ROUTINE_ACTION -> SAVED_ROUTINE_ACTION_SYSTEM_PROMPT
             RequestKind.SAFE_OBSERVATION_STYLE -> SAFE_STYLE_SYSTEM_PROMPT
             RequestKind.CONTEXT_SUGGESTION -> CONTEXT_SUGGESTION_SYSTEM_PROMPT
+            RequestKind.QUERY_PRESENTATION -> QUERY_PRESENTATION_SYSTEM_PROMPT
         }
         val payload = JSONObject().apply {
             put("model", modelId)
@@ -594,6 +618,11 @@ $snapshotJson
                 "CONTEXT_SUGGESTION_AGENT",
                 "Strict bounded context-suggestion schema enabled"
             )
+        } else if (kind == RequestKind.QUERY_PRESENTATION) {
+            Log.d(
+                "QUERY_PRESENTATION_SEMANTIC",
+                "Strict presentation-only schema enabled"
+            )
         } else if (kind == RequestKind.TASK_COMMAND_ROUTE_REPAIR) {
             Log.d("CONVERSATION_TASK_ROUTE_REPAIR", "result=REQUESTED")
         } else if (kind == RequestKind.NO_CONTEXT_MUTATION_REPAIR) {
@@ -629,6 +658,7 @@ $snapshotJson
                 RequestKind.RESPONSE -> responseVerbalizationClient
                 RequestKind.SAFE_OBSERVATION_STYLE -> safeStyleClient
                 RequestKind.CONTEXT_SUGGESTION -> contextSuggestionClient
+                RequestKind.QUERY_PRESENTATION -> queryPresentationClient
                 else -> client
             }
             requestClient.newCall(request).execute().use { response ->
@@ -644,6 +674,11 @@ $snapshotJson
                 } else if (kind == RequestKind.ROUTINE_FOLLOW_UP_MOVE) {
                     Log.d(
                         "ROUTINE_MOVE_AGENT_HTTP",
+                        "HTTP ${response.code}; responseChars=${body.length}"
+                    )
+                } else if (kind == RequestKind.QUERY_PRESENTATION) {
+                    Log.d(
+                        "QUERY_PRESENTATION_SEMANTIC",
                         "HTTP ${response.code}; responseChars=${body.length}"
                     )
                 } else {
@@ -667,6 +702,8 @@ $snapshotJson
                             "LM Studio saved-routine action HTTP ${response.code}"
                         RequestKind.CONTEXT_SUGGESTION ->
                             "LM Studio context-suggestion HTTP ${response.code}"
+                        RequestKind.QUERY_PRESENTATION ->
+                            "LM Studio query-presentation HTTP ${response.code}"
                         RequestKind.SAFE_OBSERVATION_STYLE ->
                             safeStyleHttpErrorMessage(response.code)
                         else -> "LM Studio HTTP ${response.code}"
@@ -761,7 +798,8 @@ $snapshotJson
         ROUTINE_FOLLOW_UP_MOVE,
         SAVED_ROUTINE_ACTION,
         SAFE_OBSERVATION_STYLE,
-        CONTEXT_SUGGESTION
+        CONTEXT_SUGGESTION,
+        QUERY_PRESENTATION
     }
 
     companion object {
@@ -790,8 +828,38 @@ $snapshotJson
         const val CONTEXT_SUGGESTION_TEMPERATURE = 0.0
         const val CONTEXT_SUGGESTION_MAX_TOKENS = 96
         const val CONTEXT_SUGGESTION_TIMEOUT_SECONDS = 10L
+        const val QUERY_PRESENTATION_TEMPERATURE = 0.0
+        const val QUERY_PRESENTATION_MAX_TOKENS = 48
+        const val QUERY_PRESENTATION_TIMEOUT_SECONDS = 10L
         internal fun safeStyleHttpErrorMessage(code: Int): String =
             "LM Studio safe-style HTTP $code"
+
+        internal val QUERY_PRESENTATION_SYSTEM_PROMPT = """
+You are the same application assistant used throughout this task-management app.
+Android has already validated the Task Agent intent as QUERY_TASK.
+Classify only the shape of information the user requested.
+
+COUNT_ONLY means the user asks whether any matching tasks exist, whether anything is scheduled,
+or how many matching tasks exist. Singular, plural, casual, imperfect, and conversational grammar
+do not change that meaning. COUNT_ONLY does not claim that any task exists and does not calculate a count.
+OVERVIEW means the user asks what or which tasks exist, or asks to show, list, or normally read the items.
+DETAILS means the user explicitly asks for full or detailed information rather than a normal overview.
+UNKNOWN means the requested presentation shape genuinely cannot be determined.
+
+Interpret semantic meaning, not exact words. The examples are illustrative, not an exhaustive vocabulary:
+"Is there any task on next week" and "Anything scheduled tomorrow?" mean COUNT_ONLY.
+"Do I have something tomorrow?" and "How many things do I have tomorrow?" mean COUNT_ONLY.
+"What tasks do I have next week?" and "Read my schedule tomorrow" mean OVERVIEW.
+"Read the full details for tomorrow" means DETAILS.
+
+Do not interpret or return query dates, times, filters, task titles, task data, counts, facts, IDs,
+temporary refs, Room data, reminders, speech, or execution instructions.
+Do not answer the user's question and do not claim that matching tasks exist.
+Return exactly presentation, confidence, and need_clarification.
+Allowed presentation values: COUNT_ONLY, OVERVIEW, DETAILS, UNKNOWN.
+Use need_clarification=true only when the presentation shape itself is ambiguous.
+Do not output markdown, explanations, or additional fields.
+""".trimIndent()
 
         internal val SAFE_STYLE_SYSTEM_PROMPT = """
 You write optional conversational wrapper fragments only.
