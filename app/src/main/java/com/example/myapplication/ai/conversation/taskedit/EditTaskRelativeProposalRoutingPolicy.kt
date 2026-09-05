@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.taskedit
 
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalState
+import com.example.myapplication.ai.temporal.RelativeTemporalExpectedField
 import com.example.myapplication.voice.BoundedConfirmationPolicy
 import com.example.myapplication.voice.BoundedConfirmationResult
 
@@ -71,6 +72,15 @@ object EditTaskRelativeProposalRoutingPolicy {
             EditTaskRelativeProposalSemanticRoute.RELATIVE_TEMPORAL_CORRECTION
 
         else -> EditTaskRelativeProposalSemanticRoute.EDIT_SEMANTIC
+    }
+
+    fun expectedTemporalField(
+        resolution: EditTaskMoveResolution
+    ): RelativeTemporalExpectedField? = when (resolution.move) {
+        EditTaskSemanticMove.CHANGE_DATE -> RelativeTemporalExpectedField.DATE
+        EditTaskSemanticMove.CHANGE_TIME -> RelativeTemporalExpectedField.TIME
+        EditTaskSemanticMove.CHANGE_SCHEDULE -> RelativeTemporalExpectedField.SCHEDULE
+        else -> null
     }
 
     fun isCurrentProposal(

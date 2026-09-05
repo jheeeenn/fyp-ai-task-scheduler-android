@@ -2,6 +2,7 @@ package com.example.myapplication.ai.conversation
 
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepairPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
+import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingResult
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextSnapshot
 import com.example.myapplication.ai.conversation.taskcontext.TaskContextScope
@@ -15,6 +16,109 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationContextActionRepairTest {
+    @Test
+    fun schemaRepairedTaskCommandWithCurrentOrdinalRunsBoundedContextActionRepair() = runBlocking {
+        val client = SchemaRepairThenContextActionClient()
+        val orchestrator = ConversationOrchestrator(client, ConversationDecisionParser())
+        val normalized = "move the first one 5 days later"
+
+        val schemaRepaired = orchestrator.process(
+            normalizedText = normalized,
+            appContextSummary = "AFTER_TASK_SUMMARY",
+            readOnlyTaskContextSnapshot = prompt,
+            capturedTaskContextSnapshot = snapshot
+        )
+
+        assertEquals(ConversationRoute.TASK_COMMAND, schemaRepaired.route)
+        assertEquals("conversation_agent_schema_repair", schemaRepaired.source)
+        assertTrue(
+            ContextActionRepairPolicy.shouldAttempt(
+                normalizedText = normalized,
+                primaryDecision = schemaRepaired,
+                capturedSnapshot = snapshot,
+                isResultInteraction = true,
+                contextFocus = null,
+                currentGeneration = snapshot.generation
+            )
+        )
+
+        val repaired = orchestrator.processContextActionRepair(
+            normalizedText = normalized,
+            readOnlyTaskContextSnapshot = prompt,
+            primaryRoute = schemaRepaired.route,
+            currentInteraction = "AFTER_TASK_SUMMARY"
+        )
+        val grounding = ContextActionReferenceGroundingValidator.validate(
+            normalizedText = normalized,
+            decision = repaired,
+            capturedSnapshot = snapshot,
+            currentFocus = null
+        )
+
+        assertEquals(ConversationRoute.CONTEXT_ACTION, repaired.route)
+        assertEquals(ConversationContextAction.RESCHEDULE, repaired.contextAction)
+        assertEquals("T1", repaired.contextRef)
+        assertEquals(ContextActionReferenceGroundingResult.VALID_ORDINAL, grounding.result)
+        assertEquals("T1", grounding.ref)
+        assertEquals(3, client.calls)
+    }
+
+    @Test
+    fun schemaRepairedDecisionNeedsOneCurrentUntruncatedExplicitTarget() {
+        val schemaRepaired = ConversationDecision(
+            route = ConversationRoute.TASK_COMMAND,
+            taskText = "contextual mutation",
+            source = "conversation_agent_schema_repair"
+        )
+
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "move it five days later",
+                schemaRepaired,
+                snapshot,
+                true,
+                null
+            )
+        )
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "move the first task and second task five days later",
+                schemaRepaired,
+                snapshot,
+                true,
+                null
+            )
+        )
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                "move the first task five days later",
+                schemaRepaired,
+                snapshot.copy(truncated = true),
+                true,
+                null
+            )
+        )
+        assertFalse(
+            ContextActionRepairPolicy.shouldAttempt(
+                normalizedText = "move the first task five days later",
+                primaryDecision = schemaRepaired,
+                capturedSnapshot = snapshot,
+                isResultInteraction = true,
+                contextFocus = null,
+                currentGeneration = snapshot.generation + 1
+            )
+        )
+        assertTrue(
+            ContextActionRepairPolicy.shouldAttempt(
+                "change Software to Evening Review",
+                schemaRepaired,
+                snapshot,
+                true,
+                null
+            )
+        )
+    }
+
     @Test
     fun primaryTaskCommandCanBeRepairedToContextActionWithTwoCalls() = runBlocking {
         val client = RepairClient(
@@ -401,6 +505,63 @@ class ConversationContextActionRepairTest {
         ): String {
             calls += 1
             return repaired
+        }
+    }
+
+    private class SchemaRepairThenContextActionClient : ConversationAgentClient(null) {
+        var calls = 0
+
+        override suspend fun process(
+            userText: String,
+            memorySnapshot: String,
+            appContextSummary: String
+        ): String {
+            calls += 1
+            return decision(
+                route = "CONTEXT_ACTION",
+                contextRef = "T7",
+                contextAction = "RESCHEDULE"
+            )
+        }
+
+        override suspend fun processRepair(
+            userText: String,
+            appContextSummary: String
+        ): String {
+            calls += 1
+            return JSONObject()
+                .put("move", "TASK_COMMAND")
+                .put("reply", "")
+                .put("confidence", 0.97)
+                .toString()
+        }
+
+        override suspend fun processTaskCommandRouteRepair(
+            normalizedText: String,
+            failureCode: String,
+            failedRoute: ConversationRoute
+        ): String {
+            calls += 1
+            return JSONObject()
+                .put("move", "TASK_COMMAND")
+                .put("reply", "")
+                .put("confidence", 0.97)
+                .toString()
+        }
+
+        override suspend fun processContextActionRepair(
+            userText: String,
+            memorySnapshot: String,
+            taskContextSnapshot: String,
+            primaryRoute: ConversationRoute,
+            currentInteraction: String
+        ): String {
+            calls += 1
+            return decision(
+                route = "CONTEXT_ACTION",
+                contextRef = "T1",
+                contextAction = "RESCHEDULE"
+            )
         }
     }
 

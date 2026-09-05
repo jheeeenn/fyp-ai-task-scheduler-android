@@ -6,17 +6,21 @@ import com.example.myapplication.ai.conversation.ConversationRoute
 
 object ContextActionRepairPolicy {
     private const val PRIMARY_SOURCE = "conversation_agent"
+    private const val SCHEMA_REPAIR_SOURCE = "conversation_agent_schema_repair"
 
     fun shouldAttempt(
         normalizedText: String,
         primaryDecision: ConversationDecision,
         capturedSnapshot: ReadOnlyTaskContextSnapshot,
         isResultInteraction: Boolean,
-        contextFocus: ConversationContextFocus?
+        contextFocus: ConversationContextFocus?,
+        currentGeneration: Long = capturedSnapshot.generation
     ): Boolean {
         if (!isResultInteraction ||
             capturedSnapshot.items.isEmpty() ||
-            primaryDecision.source != PRIMARY_SOURCE ||
+            capturedSnapshot.truncated ||
+            capturedSnapshot.generation != currentGeneration ||
+            primaryDecision.source !in setOf(PRIMARY_SOURCE, SCHEMA_REPAIR_SOURCE) ||
             primaryDecision.route !in setOf(
                 ConversationRoute.TASK_COMMAND,
                 ConversationRoute.ASK_CLARIFICATION,
@@ -27,14 +31,27 @@ object ContextActionRepairPolicy {
             return false
         }
 
-        val explicit = ContextReferenceMutationGuard.explicitSuppliedRefs(
-            normalizedText,
-            capturedSnapshot
-        ).isNotEmpty()
-        val uniqueTitle = ContextReferenceMutationGuard.containsUniqueSuppliedTitle(
-            normalizedText,
-            capturedSnapshot
+        val explicitTargetGrounding = ContextActionReferenceGroundingValidator.validate(
+            normalizedText = normalizedText,
+            decision = primaryDecision.copy(
+                route = ConversationRoute.CONTEXT_ACTION,
+                contextRef = ""
+            ),
+            capturedSnapshot = capturedSnapshot,
+            currentFocus = contextFocus
         )
+        val hasStrongExplicitTarget = explicitTargetGrounding.result in setOf(
+            ContextActionReferenceGroundingResult.VALID_EXPLICIT_REF,
+            ContextActionReferenceGroundingResult.VALID_ORDINAL,
+            ContextActionReferenceGroundingResult.VALID_UNIQUE_TITLE
+        )
+        val hasMultipleExplicitSelectors =
+            ContextReferenceMutationGuard.explicitContextSelectorCount(normalizedText) > 1
+        if (primaryDecision.source == SCHEMA_REPAIR_SOURCE &&
+            (!hasStrongExplicitTarget || hasMultipleExplicitSelectors)
+        ) {
+            return false
+        }
         val validFocus = contextFocus?.available == true &&
             contextFocus.generation == capturedSnapshot.generation &&
             capturedSnapshot.items.count {
@@ -50,7 +67,7 @@ object ContextActionRepairPolicy {
             capturedSnapshot,
             contextFocus
         ) != null
-        return explicit || uniqueTitle || validFocus || validTaskDetailImplicitFocus ||
+        return hasStrongExplicitTarget || validFocus || validTaskDetailImplicitFocus ||
             validSingleResultImplicitFocus
     }
 }

@@ -8,6 +8,8 @@ import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionContext
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelation
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
+import com.example.myapplication.ai.temporal.RelativeTemporalExpectedField
+import com.example.myapplication.ai.temporal.RelativeTemporalFieldConstraintCanonicalizer
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalSession
 import com.example.myapplication.ai.temporal.RelativeTemporalProposal
@@ -34,6 +36,130 @@ import java.util.TimeZone
 class RelativeTemporalCorrectionRepairTest {
     private val candidateBuilder = RelativeTemporalRepairCandidateBuilder()
     private val strictValidator = RelativeTemporalCorrectionValidator()
+
+    @Test
+    fun timeFieldIntentMakesSoftenedOffsetsStructurallyEquivalent() = runBlocking {
+        val cases = listOf(
+            "Two hours later" to validOffsetResponse(120),
+            "About two hours later" to response(
+                dateOperation = "OFFSET",
+                timeOperation = "KEEP",
+                dateOffset = 0,
+                timeOffset = 120
+            ),
+            "Roughly ninety minutes later" to response(
+                dateOperation = "OFFSET",
+                timeOperation = "KEEP",
+                dateOffset = 0,
+                timeOffset = 90
+            )
+        )
+
+        cases.forEach { (input, rawResponse) ->
+            val client = FakeCorrectionClient(normalResponse = rawResponse)
+            val correction = orchestrator(client).processRelativeTemporalCorrection(
+                normalizedText = input,
+                context = context(),
+                expectedField = RelativeTemporalExpectedField.TIME
+            ) as ValidatedRelativeTemporalCorrection.Apply
+
+            assertEquals(input, RelativeTemporalOperation.KEEP, correction.proposal.dateOperation)
+            assertEquals(input, RelativeTemporalOperation.OFFSET, correction.proposal.timeOperation)
+            assertEquals(
+                input,
+                if (input.startsWith("Roughly")) 90 else 120,
+                correction.proposal.timeOffsetMinutes
+            )
+            assertEquals(input, 1, client.normalCalls)
+            assertEquals(input, 0, client.repairCalls)
+        }
+    }
+
+    @Test
+    fun fieldConstraintCanonicalizationUsesOnlyOneCompatiblePayload() {
+        val policy = RelativeTemporalFieldConstraintCanonicalizer()
+        val reportedShape = responseObject(
+            response(
+                dateOperation = "OFFSET",
+                timeOperation = "KEEP",
+                dateOffset = 0,
+                timeOffset = 120
+            )
+        )
+
+        val canonicalized = policy.canonicalize(
+            reportedShape,
+            RelativeTemporalValidationFailure.ZERO_DATE_OFFSET,
+            RelativeTemporalExpectedField.TIME
+        )
+
+        assertEquals(listOf("date_operation", "time_operation"), canonicalized?.changedFields)
+        assertEquals("KEEP", canonicalized?.response?.dateOperation)
+        assertEquals("OFFSET", canonicalized?.response?.timeOperation)
+        assertEquals(120, canonicalized?.response?.timeOffsetMinutes)
+        strictValidator.validate(checkNotNull(canonicalized).response)
+
+        val conflicting = reportedShape.copy(dateOffsetDays = 1)
+        assertTrue(
+            policy.hasConflictingFieldPayload(
+                conflicting,
+                RelativeTemporalExpectedField.TIME
+            )
+        )
+        assertEquals(
+            null,
+            policy.canonicalize(
+                conflicting,
+                RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION,
+                RelativeTemporalExpectedField.TIME
+            )
+        )
+        assertEquals(
+            null,
+            policy.canonicalize(
+                reportedShape.copy(confidence = 0.79),
+                RelativeTemporalValidationFailure.ZERO_DATE_OFFSET,
+                RelativeTemporalExpectedField.TIME
+            )
+        )
+    }
+
+    @Test
+    fun ambiguousOrCrossFieldPayloadStillFailsClosedWithoutRepair() {
+        val cases = listOf(
+            response(
+                dateOperation = "KEEP",
+                timeOperation = "KEEP",
+                dateOffset = 0,
+                timeOffset = 0,
+                clarification = true
+            ),
+            response(
+                dateOperation = "OFFSET",
+                timeOperation = "OFFSET",
+                dateOffset = 1,
+                timeOffset = 120
+            )
+        )
+
+        cases.forEach { rawResponse ->
+            val client = FakeCorrectionClient(
+                normalResponse = rawResponse,
+                repairResponse = choiceResponse("R1")
+            )
+            assertThrows(TaskAgentProcessingException::class.java) {
+                runBlocking {
+                    orchestrator(client).processRelativeTemporalCorrection(
+                        normalizedText = "ambiguous temporal correction",
+                        context = context(),
+                        expectedField = RelativeTemporalExpectedField.TIME
+                    )
+                }
+            }
+            assertEquals(1, client.normalCalls)
+            assertEquals(0, client.repairCalls)
+        }
+    }
 
     @Test
     fun validCorrectionUsesOnlyTheNormalSemanticCall() = runBlocking {

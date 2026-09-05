@@ -5,7 +5,7 @@ import org.junit.Test
 
 class TaskQueryPresentationReconcilerTest {
     @Test
-    fun taskAgentPresentationOverridesConversationHintForQueryTask() {
+    fun conversationHintOverridesTaskAgentPresentationForQueryTask() {
         val taskCount = TaskQueryPresentationReconciler.reconcile(
             taskAgentIntent = AiIntent.QUERY_TASK.name,
             conversationHint = TaskQueryPresentation.OVERVIEW,
@@ -17,10 +17,10 @@ class TaskQueryPresentationReconcilerTest {
             taskAgentValue = TaskQueryPresentation.OVERVIEW
         )
 
-        assertEquals(TaskQueryPresentation.COUNT_ONLY, taskCount.effective)
-        assertEquals(TaskQueryPresentationSource.TASK_AGENT, taskCount.source)
-        assertEquals(TaskQueryPresentation.OVERVIEW, taskOverview.effective)
-        assertEquals(TaskQueryPresentationSource.TASK_AGENT, taskOverview.source)
+        assertEquals(TaskQueryPresentation.OVERVIEW, taskCount.effective)
+        assertEquals(TaskQueryPresentationSource.CONVERSATION_AGENT_HINT, taskCount.source)
+        assertEquals(TaskQueryPresentation.COUNT_ONLY, taskOverview.effective)
+        assertEquals(TaskQueryPresentationSource.CONVERSATION_AGENT_HINT, taskOverview.source)
     }
 
     @Test
@@ -36,15 +36,15 @@ class TaskQueryPresentationReconcilerTest {
     }
 
     @Test
-    fun conversationHintIsUsedOnlyWhenTaskAgentValueIsNone() {
+    fun taskAgentPresentationIsFallbackWhenConversationHintIsNone() {
         val result = TaskQueryPresentationReconciler.reconcile(
             taskAgentIntent = AiIntent.QUERY_TASK.name,
-            conversationHint = TaskQueryPresentation.OVERVIEW,
-            taskAgentValue = TaskQueryPresentation.NONE
+            conversationHint = TaskQueryPresentation.NONE,
+            taskAgentValue = TaskQueryPresentation.DETAILS
         )
 
-        assertEquals(TaskQueryPresentation.OVERVIEW, result.effective)
-        assertEquals(TaskQueryPresentationSource.CONVERSATION_AGENT_HINT, result.source)
+        assertEquals(TaskQueryPresentation.DETAILS, result.effective)
+        assertEquals(TaskQueryPresentationSource.TASK_AGENT, result.source)
     }
 
     @Test

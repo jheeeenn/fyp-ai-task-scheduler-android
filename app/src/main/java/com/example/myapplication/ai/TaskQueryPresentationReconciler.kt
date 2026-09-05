@@ -24,16 +24,16 @@ object TaskQueryPresentationReconciler {
                 source = TaskQueryPresentationSource.NON_QUERY_IGNORED
             )
         }
-        if (taskAgentValue != TaskQueryPresentation.NONE) {
-            return TaskQueryPresentationResolution(
-                effective = taskAgentValue,
-                source = TaskQueryPresentationSource.TASK_AGENT
-            )
-        }
         if (conversationHint != TaskQueryPresentation.NONE) {
             return TaskQueryPresentationResolution(
                 effective = conversationHint,
                 source = TaskQueryPresentationSource.CONVERSATION_AGENT_HINT
+            )
+        }
+        if (taskAgentValue != TaskQueryPresentation.NONE) {
+            return TaskQueryPresentationResolution(
+                effective = taskAgentValue,
+                source = TaskQueryPresentationSource.TASK_AGENT
             )
         }
         return TaskQueryPresentationResolution(

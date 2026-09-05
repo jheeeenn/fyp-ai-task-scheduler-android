@@ -18,6 +18,8 @@ import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelation
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionRelationMapper
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionResponse
 import com.example.myapplication.ai.temporal.RelativeTemporalCorrectionValidator
+import com.example.myapplication.ai.temporal.RelativeTemporalExpectedField
+import com.example.myapplication.ai.temporal.RelativeTemporalFieldConstraintCanonicalizer
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidationException
 import com.example.myapplication.ai.temporal.RelativeTemporalRepairCandidate
@@ -65,6 +67,9 @@ class AgentOrchestrator(
         RelativeTemporalCorrectionParser(),
     private val relativeTemporalCorrectionValidator: RelativeTemporalCorrectionValidator =
         RelativeTemporalCorrectionValidator(),
+    private val relativeTemporalFieldConstraintCanonicalizer:
+        RelativeTemporalFieldConstraintCanonicalizer =
+            RelativeTemporalFieldConstraintCanonicalizer(),
     private val relativeTemporalRepairCandidateBuilder: RelativeTemporalRepairCandidateBuilder =
         RelativeTemporalRepairCandidateBuilder(relativeTemporalCorrectionValidator),
     private val relativeTemporalRepairChoiceParser: RelativeTemporalRepairChoiceParser =
@@ -363,7 +368,8 @@ class AgentOrchestrator(
 
     suspend fun processRelativeTemporalCorrection(
         normalizedText: String,
-        context: RelativeTemporalCorrectionContext
+        context: RelativeTemporalCorrectionContext,
+        expectedField: RelativeTemporalExpectedField? = null
     ): ValidatedRelativeTemporalCorrection {
         return try {
             logRelativeTemporalCorrectionContext(context)
@@ -373,7 +379,18 @@ class AgentOrchestrator(
             )
             val response = relativeTemporalCorrectionParser.parse(rawContent)
             logParsedRelativeTemporalShape(RelativeTemporalExtractionStage.CORRECTION, response)
+            val fieldConflictFailure =
+                relativeTemporalFieldConstraintCanonicalizer.conflictingFieldPayloadFailure(
+                    response,
+                    expectedField
+                )
             val correction = try {
+                if (fieldConflictFailure != null) {
+                    throw RelativeTemporalProposalValidationException(
+                        fieldConflictFailure,
+                        "Relative-temporal payload conflicts with the expected edit field"
+                    )
+                }
                 val validation = relativeTemporalCorrectionValidator.validateWithReport(response)
                 logCanonicalization(
                     RelativeTemporalExtractionStage.CORRECTION,
@@ -381,15 +398,49 @@ class AgentOrchestrator(
                 )
                 validation.correction
             } catch (exception: RelativeTemporalProposalValidationException) {
-                if (!isEligibleCorrectionRepair(exception.failure)) {
-                    logCorrectionRepair(exception.failure, RelativeTemporalRepairResult.NOT_ELIGIBLE)
+                if (fieldConflictFailure != null) {
+                    logCorrectionRepair(
+                        exception.failure,
+                        RelativeTemporalRepairResult.NOT_ELIGIBLE
+                    )
                     throw exception
                 }
-                processRelativeTemporalCorrectionRepair(
-                    normalizedText,
-                    response,
-                    exception.failure
-                )
+                val fieldCanonicalization =
+                    relativeTemporalFieldConstraintCanonicalizer.canonicalize(
+                        rejected = response,
+                        failure = exception.failure,
+                        expectedField = expectedField
+                    )
+                if (fieldCanonicalization != null) {
+                    val validation = relativeTemporalCorrectionValidator.validateWithReport(
+                        fieldCanonicalization.response
+                    )
+                    Log.d(
+                        "RELATIVE_TEMPORAL_FIELD_CONSTRAINT",
+                        "expectedField=$expectedField " +
+                            "canonicalizedFields=${fieldCanonicalization.changedFields.joinToString()} " +
+                            "result=REVALIDATED"
+                    )
+                    logCanonicalization(
+                        RelativeTemporalExtractionStage.CORRECTION,
+                        fieldCanonicalization.changedFields +
+                            validation.canonicalizationReport.changedFields
+                    )
+                    validation.correction
+                } else {
+                    if (!isEligibleCorrectionRepair(exception.failure)) {
+                        logCorrectionRepair(
+                            exception.failure,
+                            RelativeTemporalRepairResult.NOT_ELIGIBLE
+                        )
+                        throw exception
+                    }
+                    processRelativeTemporalCorrectionRepair(
+                        normalizedText,
+                        response,
+                        exception.failure
+                    )
+                }
             }
             val proposal = (correction as? ValidatedRelativeTemporalCorrection.Apply)?.proposal
             Log.d(

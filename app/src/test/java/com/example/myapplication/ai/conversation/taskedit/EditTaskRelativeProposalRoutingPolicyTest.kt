@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.taskedit
 
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalState
+import com.example.myapplication.ai.temporal.RelativeTemporalExpectedField
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -94,14 +95,24 @@ class EditTaskRelativeProposalRoutingPolicyTest {
     @Test
     fun temporalMovesUseSpecialisedRelativeCorrectionPath() = runBlocking {
         val cases = listOf(
-            "Two hours later" to json("CHANGE_TIME", time = "two hours later"),
-            "Same time tomorrow" to
+            Triple(
+                "Two hours later",
+                json("CHANGE_TIME", time = "two hours later"),
+                RelativeTemporalExpectedField.TIME
+            ),
+            Triple(
+                "Same time tomorrow",
                 json("CHANGE_DATE", date = "same time tomorrow"),
-            "Actually make it Sunday at 8 PM" to
-                json("CHANGE_SCHEDULE", date = "Sunday", time = "8 PM")
+                RelativeTemporalExpectedField.DATE
+            ),
+            Triple(
+                "Actually make it Sunday at 8 PM",
+                json("CHANGE_SCHEDULE", date = "Sunday", time = "8 PM"),
+                RelativeTemporalExpectedField.SCHEDULE
+            )
         )
 
-        cases.forEach { (input, agentResponse) ->
+        cases.forEach { (input, agentResponse, expectedField) ->
             val result = EditTaskSemanticOrchestrator(QueueClient(agentResponse)).resolve(
                 input,
                 context()
@@ -109,6 +120,10 @@ class EditTaskRelativeProposalRoutingPolicyTest {
             assertEquals(
                 EditTaskRelativeProposalSemanticRoute.RELATIVE_TEMPORAL_CORRECTION,
                 EditTaskRelativeProposalRoutingPolicy.semanticRoute(result)
+            )
+            assertEquals(
+                expectedField,
+                EditTaskRelativeProposalRoutingPolicy.expectedTemporalField(result)
             )
         }
     }

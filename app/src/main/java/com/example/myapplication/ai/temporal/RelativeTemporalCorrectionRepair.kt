@@ -10,6 +10,127 @@ enum class RelativeTemporalRepairField {
     TIME
 }
 
+enum class RelativeTemporalExpectedField {
+    DATE,
+    TIME,
+    SCHEDULE
+}
+
+data class RelativeTemporalFieldConstraintCanonicalization(
+    val response: RelativeTemporalCorrectionResponse,
+    val changedFields: List<String>
+)
+
+/**
+ * Uses an already validated EditTask field move only to repair operation/payload alignment.
+ * It never reads user text, chooses a value, calculates a schedule, or bypasses strict validation.
+ */
+class RelativeTemporalFieldConstraintCanonicalizer {
+    fun conflictingFieldPayloadFailure(
+        response: RelativeTemporalCorrectionResponse,
+        expectedField: RelativeTemporalExpectedField?
+    ): RelativeTemporalValidationFailure? = when (expectedField) {
+        RelativeTemporalExpectedField.DATE -> if (
+            response.replacementTimeText.isNotBlank() || response.timeOffsetMinutes != 0
+        ) {
+            RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION
+        } else {
+            null
+        }
+        RelativeTemporalExpectedField.TIME -> if (
+            response.replacementDateText.isNotBlank() || response.dateOffsetDays != 0
+        ) {
+            RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION
+        } else {
+            null
+        }
+        RelativeTemporalExpectedField.SCHEDULE,
+        null -> null
+    }
+
+    fun hasConflictingFieldPayload(
+        response: RelativeTemporalCorrectionResponse,
+        expectedField: RelativeTemporalExpectedField?
+    ): Boolean = conflictingFieldPayloadFailure(response, expectedField) != null
+
+    fun canonicalize(
+        rejected: RelativeTemporalCorrectionResponse,
+        failure: RelativeTemporalValidationFailure,
+        expectedField: RelativeTemporalExpectedField?
+    ): RelativeTemporalFieldConstraintCanonicalization? {
+        if (
+            expectedField == null ||
+            expectedField == RelativeTemporalExpectedField.SCHEDULE ||
+            failure !in STRUCTURAL_FAILURES ||
+            !rejected.confidence.isFinite() ||
+            rejected.confidence !in RelativeTemporalProposal.MIN_CONFIDENCE..1.0 ||
+            rejected.needClarification ||
+            rejected.move != RelativeTemporalCorrectionMove.APPLY_CHANGE.name ||
+            RelativeTemporalCorrectionRelationMapper.map(rejected.correctionRelation) == null ||
+            hasConflictingFieldPayload(rejected, expectedField)
+        ) {
+            return null
+        }
+
+        val dateLiteralPresent = rejected.replacementDateText.isNotBlank()
+        val timeLiteralPresent = rejected.replacementTimeText.isNotBlank()
+        val dateOffsetPresent = rejected.dateOffsetDays != 0
+        val timeOffsetPresent = rejected.timeOffsetMinutes != 0
+
+        val canonical = when (expectedField) {
+            RelativeTemporalExpectedField.DATE -> {
+                if (
+                    timeLiteralPresent ||
+                    timeOffsetPresent ||
+                    dateLiteralPresent == dateOffsetPresent
+                ) return null
+                rejected.copy(
+                    dateOperation = if (dateLiteralPresent) {
+                        RelativeTemporalOperation.SET.name
+                    } else {
+                        RelativeTemporalOperation.OFFSET.name
+                    },
+                    timeOperation = RelativeTemporalOperation.KEEP.name
+                )
+            }
+            RelativeTemporalExpectedField.TIME -> {
+                if (
+                    dateLiteralPresent ||
+                    dateOffsetPresent ||
+                    timeLiteralPresent == timeOffsetPresent
+                ) return null
+                rejected.copy(
+                    dateOperation = RelativeTemporalOperation.KEEP.name,
+                    timeOperation = if (timeLiteralPresent) {
+                        RelativeTemporalOperation.SET.name
+                    } else {
+                        RelativeTemporalOperation.OFFSET.name
+                    }
+                )
+            }
+            RelativeTemporalExpectedField.SCHEDULE -> return null
+        }
+        val changedFields = buildList {
+            if (canonical.dateOperation != rejected.dateOperation) add(DATE_OPERATION_FIELD)
+            if (canonical.timeOperation != rejected.timeOperation) add(TIME_OPERATION_FIELD)
+        }
+        return changedFields.takeIf { it.isNotEmpty() }?.let {
+            RelativeTemporalFieldConstraintCanonicalization(canonical, it)
+        }
+    }
+
+    private companion object {
+        const val DATE_OPERATION_FIELD = "date_operation"
+        const val TIME_OPERATION_FIELD = "time_operation"
+        val STRUCTURAL_FAILURES = setOf(
+            RelativeTemporalValidationFailure.MALFORMED_DATE_COMBINATION,
+            RelativeTemporalValidationFailure.ZERO_DATE_OFFSET,
+            RelativeTemporalValidationFailure.MALFORMED_TIME_COMBINATION,
+            RelativeTemporalValidationFailure.ZERO_TIME_OFFSET
+        )
+    }
+}
+
 enum class RelativeTemporalRepairRepresentation {
     LITERAL,
     OFFSET,

@@ -74,6 +74,7 @@ import com.example.myapplication.ai.temporal.ExactTemporalSchedule
 import com.example.myapplication.ai.temporal.RelativeTemporalCalculationResult
 import com.example.myapplication.ai.temporal.RelativeTemporalChangeCalculator
 import com.example.myapplication.ai.temporal.RelativeTemporalBase
+import com.example.myapplication.ai.temporal.RelativeTemporalExpectedField
 import com.example.myapplication.ai.temporal.RelativeTemporalOperation
 import com.example.myapplication.ai.temporal.RelativeTemporalProposal
 import com.example.myapplication.ai.temporal.RelativeTemporalProposalValidator
@@ -1220,7 +1221,11 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
             EditTaskRelativeProposalSemanticRoute.RELATIVE_TEMPORAL_CORRECTION -> {
                 Log.d("EDIT_RELATIVE_INPUT", "route=RELATIVE_TEMPORAL_CORRECTION")
-                processRelativeTemporalCorrection(TextNormalizer.normalize(userText))
+                processRelativeTemporalCorrection(
+                    normalized = TextNormalizer.normalize(userText),
+                    expectedField =
+                        EditTaskRelativeProposalRoutingPolicy.expectedTemporalField(resolution)
+                )
             }
         }
     }
@@ -1421,7 +1426,10 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         return true
     }
 
-    private fun processRelativeTemporalCorrection(normalized: String) {
+    private fun processRelativeTemporalCorrection(
+        normalized: String,
+        expectedField: RelativeTemporalExpectedField?
+    ) {
         val session = relativeTemporalSession ?: return
         val correctionContext = session.correctionContext()
         if (correctionContext == null) {
@@ -1449,7 +1457,8 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 }
                 val correction = relativeTemporalAgent.processRelativeTemporalCorrection(
                     normalized,
-                    correctionContext
+                    correctionContext,
+                    expectedField
                 )
                 if (!session.isCurrent(token)) return@launch
                 val authoritativeMatchesAfterCorrection = authoritativeTaskStillMatches()

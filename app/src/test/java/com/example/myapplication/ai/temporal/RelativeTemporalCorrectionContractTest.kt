@@ -272,7 +272,11 @@ class RelativeTemporalCorrectionContractTest {
         val correction = editSource
             .substringAfter("private fun processRelativeTemporalCorrection(")
             .substringBefore("private suspend fun authoritativeTaskStillMatches")
-        assertTrue(correction.contains("processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext"))
+        assertTrue(
+            correction.contains(
+                "processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext,\n                    expectedField"
+            )
+        )
         assertFalse(correction.contains("Regex("))
         assertFalse(correction.contains("contains(\"later\")"))
         assertFalse(correction.contains("contains(\"earlier\")"))

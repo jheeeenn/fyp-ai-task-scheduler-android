@@ -40,10 +40,11 @@ class RelativeTemporalIntegrationContractTest {
         assertTrue(handler.contains(") ?: return false"))
         assertFalse(handler.contains("processRelativeTemporalCorrection(normalized)"))
         assertTrue(routing.contains("EditTaskRelativeProposalRoutingPolicy.semanticRoute"))
-        assertTrue(routing.contains("processRelativeTemporalCorrection(TextNormalizer.normalize(userText))"))
+        assertTrue(routing.contains("expectedTemporalField(resolution)"))
+        assertTrue(routing.contains("processRelativeTemporalCorrection("))
         assertTrue(
             correction.contains(
-                "relativeTemporalAgent.processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext"
+                "relativeTemporalAgent.processRelativeTemporalCorrection(\n                    normalized,\n                    correctionContext,\n                    expectedField"
             )
         )
         assertTrue(correction.contains("session.correctionContext()"))

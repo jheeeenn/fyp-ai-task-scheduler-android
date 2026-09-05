@@ -1499,10 +1499,14 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                         primaryDecision = conversationDecision,
                         capturedSnapshot = taskContextCapture.snapshot,
                         isResultInteraction = isResultInteraction,
-                        contextFocus = contextFocus
+                        contextFocus = contextFocus,
+                        currentGeneration = readOnlyTaskContextStore.currentGeneration()
                     )
                 if (contextActionRepairEligible) {
-                    Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ATTEMPTED")
+                    Log.d(
+                        "HOME_CONTEXT_ACTION_REPAIR",
+                        "CONTEXT_ACTION_REPAIR_ATTEMPTED primarySource=${conversationDecision.source}"
+                    )
                     try {
                         val repairedDecision = conversationOrchestrator.processContextActionRepair(
                             normalizedText = normalized,
@@ -1533,7 +1537,11 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                                 }
                                 if (repairValidation?.isValid == true) {
                                     conversationDecision = groundedRepairDecision
-                                    Log.d("HOME_CONTEXT_ACTION_REPAIR", "CONTEXT_ACTION_REPAIR_ACCEPTED")
+                                    Log.d(
+                                        "HOME_CONTEXT_ACTION_REPAIR",
+                                        "CONTEXT_ACTION_REPAIR_ACCEPTED " +
+                                            "grounding=${repairGrounding.result}"
+                                    )
                                 } else {
                                     if (!repairGrounding.isValid) {
                                         beginContextActionTargetClarification(
