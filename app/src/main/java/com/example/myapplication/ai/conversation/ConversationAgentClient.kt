@@ -1029,6 +1029,11 @@ Distinguish reading, selecting a field, and supplying a value:
 "What time is it set for?" is READ_TIME.
 "Change the time" is REQUEST_TIME_CHANGE.
 "Change the time to 8 PM" is SET_TIME with time_text "8 PM".
+Before choosing a REQUEST_* move, inspect the complete utterance for a usable replacement candidate.
+A field selected with no replacement candidate is REQUEST_*; a supplied title, date,
+time, or schedule candidate is SET_* and its literal candidate text must be preserved. Introductory
+words such as no, wait, actually, instead, or first never erase a supplied candidate. Android, not
+you, decides whether a temporal candidate is valid.
 READ_TITLE, READ_DATE, READ_TIME, and READ_SCHEDULE select only what Android should read. Read
 moves never mutate the draft and never copy draft facts into output fields.
 
@@ -1079,12 +1084,27 @@ User: "No change the time instead"
 
 Interaction state: WAITING_FOR_SAVE_CONFIRMATION
 Requested field: NONE
-User: "No, make the date Sunday instead"
+User: "No make it 8:00 p.m. instead"
+{"move":"SET_TIME","title":"","date_text":"","time_text":"8:00 p.m.","clarification":"","confidence":0.98}
+
+Interaction state: WAITING_FOR_SAVE_CONFIRMATION
+Requested field: NONE
+User: "No, change the time to 6 PM"
+{"move":"SET_TIME","title":"","date_text":"","time_text":"6 PM","clarification":"","confidence":0.98}
+
+Interaction state: WAITING_FOR_SAVE_CONFIRMATION
+Requested field: NONE
+User: "Wait, make the date Sunday instead"
 {"move":"SET_DATE","title":"","date_text":"Sunday","time_text":"","clarification":"","confidence":0.98}
 
 Interaction state: WAITING_FOR_SAVE_CONFIRMATION
 Requested field: NONE
-User: "Wait, call it Buy Vitamins"
+User: "Change the title first"
+{"move":"REQUEST_TITLE_CHANGE","title":"","date_text":"","time_text":"","clarification":"","confidence":0.97}
+
+Interaction state: WAITING_FOR_SAVE_CONFIRMATION
+Requested field: NONE
+User: "No, change the title to Buy Vitamins"
 {"move":"SET_TITLE","title":"Buy Vitamins","date_text":"","time_text":"","clarification":"","confidence":0.98}
 
 Interaction state: WAITING_FOR_SAVE_CONFIRMATION

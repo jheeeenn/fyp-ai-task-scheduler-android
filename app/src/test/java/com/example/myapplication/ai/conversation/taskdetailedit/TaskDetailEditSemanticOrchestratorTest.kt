@@ -37,39 +37,78 @@ class TaskDetailEditSemanticOrchestratorTest {
         }
         listOf(
             "No change the time instead",
+            "No make it 8:00 p.m. instead",
+            "No, change the time to 6 PM",
             "No, make the date Sunday instead",
-            "Wait, call it Buy Vitamins"
+            "Wait, make the date Sunday instead",
+            "Change the title first",
+            "Wait, call it Buy Vitamins",
+            "No, change the title to Buy Vitamins"
         ).forEach { input ->
             assertNull(input, orchestrator.resolveImmediate(input, saveContext()))
         }
     }
 
     @Test
-    fun correctionsBeatGenericRejectionDuringSaveConfirmation() = runBlocking {
+    fun suppliedCorrectionValuesUseSetWhileMissingValuesUseRequest() = runBlocking {
         val cases = listOf(
-            Triple(
+            SaveCorrectionCase(
+                "No make it 8:00 p.m. instead",
+                json("SET_TIME", time = "8:00 p.m."),
+                TaskDetailEditAgentMove.SET_TIME,
+                TaskDetailEditProposal.Schedule(dateText = null, timeText = "8:00 p.m.")
+            ),
+            SaveCorrectionCase(
+                "No, change the time to 6 PM",
+                json("SET_TIME", time = "6 PM"),
+                TaskDetailEditAgentMove.SET_TIME,
+                TaskDetailEditProposal.Schedule(dateText = null, timeText = "6 PM")
+            ),
+            SaveCorrectionCase(
                 "No change the time instead",
                 json("REQUEST_TIME_CHANGE"),
-                TaskDetailEditAgentMove.REQUEST_TIME_CHANGE
+                TaskDetailEditAgentMove.REQUEST_TIME_CHANGE,
+                TaskDetailEditProposal.RequestField(TaskDetailEditField.TIME)
             ),
-            Triple(
+            SaveCorrectionCase(
+                "Wait, make the date Sunday instead",
+                json("SET_DATE", date = "Sunday"),
+                TaskDetailEditAgentMove.SET_DATE,
+                TaskDetailEditProposal.Schedule(dateText = "Sunday", timeText = null)
+            ),
+            SaveCorrectionCase(
                 "No, make the date Sunday instead",
                 json("SET_DATE", date = "Sunday"),
-                TaskDetailEditAgentMove.SET_DATE
+                TaskDetailEditAgentMove.SET_DATE,
+                TaskDetailEditProposal.Schedule(dateText = "Sunday", timeText = null)
             ),
-            Triple(
+            SaveCorrectionCase(
+                "Change the title first",
+                json("REQUEST_TITLE_CHANGE"),
+                TaskDetailEditAgentMove.REQUEST_TITLE_CHANGE,
+                TaskDetailEditProposal.RequestField(TaskDetailEditField.TITLE)
+            ),
+            SaveCorrectionCase(
                 "Wait, call it Buy Vitamins",
                 json("SET_TITLE", title = "Buy Vitamins"),
-                TaskDetailEditAgentMove.SET_TITLE
+                TaskDetailEditAgentMove.SET_TITLE,
+                TaskDetailEditProposal.Title("Buy Vitamins")
+            ),
+            SaveCorrectionCase(
+                "No, change the title to Buy Vitamins",
+                json("SET_TITLE", title = "Buy Vitamins"),
+                TaskDetailEditAgentMove.SET_TITLE,
+                TaskDetailEditProposal.Title("Buy Vitamins")
             )
         )
-        cases.forEach { (input, response, expectedMove) ->
-            val result = TaskDetailEditSemanticOrchestrator(QueueClient(response)).resolve(
-                input,
+        cases.forEach { case ->
+            val result = TaskDetailEditSemanticOrchestrator(QueueClient(case.response)).resolve(
+                case.input,
                 saveContext(),
                 TaskDetailEditLocalCandidate.Invalid
             )
-            assertEquals(expectedMove, result.move)
+            assertEquals(case.expectedMove, result.move)
+            assertEquals(case.expectedProposal, result.proposal)
             assertTrue(result.move != TaskDetailEditAgentMove.REJECT_SAVE)
         }
     }
@@ -226,6 +265,13 @@ class TaskDetailEditSemanticOrchestratorTest {
 
     private fun localTitle() = TaskDetailEditLocalCandidate.Title("breakfast")
     private fun localSchedule() = TaskDetailEditLocalCandidate.Schedule("03/08/2026", "11:45 PM")
+
+    private data class SaveCorrectionCase(
+        val input: String,
+        val response: String,
+        val expectedMove: TaskDetailEditAgentMove,
+        val expectedProposal: TaskDetailEditProposal
+    )
 
     private fun json(
         move: String,
