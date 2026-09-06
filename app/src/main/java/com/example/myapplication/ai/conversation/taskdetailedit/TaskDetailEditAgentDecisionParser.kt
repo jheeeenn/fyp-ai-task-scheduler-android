@@ -94,6 +94,15 @@ class TaskDetailEditAgentDecisionParser {
                 requireSchema(decision.clarification.isNotBlank(), "ASK_CLARIFICATION requires clarification")
                 requireSchema(authorityValues.all(String::isEmpty), "ASK_CLARIFICATION forbids authority fields")
             }
+            TaskDetailEditAgentMove.CONFIRM_SAVE,
+            TaskDetailEditAgentMove.REJECT_SAVE,
+            TaskDetailEditAgentMove.REQUEST_TITLE_CHANGE,
+            TaskDetailEditAgentMove.REQUEST_DATE_CHANGE,
+            TaskDetailEditAgentMove.REQUEST_TIME_CHANGE,
+            TaskDetailEditAgentMove.READ_TITLE,
+            TaskDetailEditAgentMove.READ_DATE,
+            TaskDetailEditAgentMove.READ_TIME,
+            TaskDetailEditAgentMove.READ_SCHEDULE,
             TaskDetailEditAgentMove.CANCEL,
             TaskDetailEditAgentMove.UNKNOWN -> {
                 requireSchema(authorityValues.all(String::isEmpty), "${decision.move} forbids authority fields")

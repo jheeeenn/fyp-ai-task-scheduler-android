@@ -58,6 +58,43 @@ class TaskDetailEditingTest {
     }
 
     @Test
+    fun correctionInvalidatesOldSaveClaimAndFreezesRevisedDraft() {
+        val controller = TaskDetailDraftController.from(task())
+        controller.changeTitle("Buy vitamins")
+        val oldClaim = requireNotNull(controller.freezeSaveClaim())
+        val oldRevision = controller.draft.revision
+
+        assertTrue(controller.changeTime("08:00 PM"))
+        val revisedClaim = requireNotNull(controller.freezeSaveClaim())
+
+        assertEquals(oldRevision + 1L, controller.draft.revision)
+        assertFalse(controller.isCurrent(oldClaim))
+        assertTrue(controller.isCurrent(revisedClaim))
+        assertEquals("08:00 PM", revisedClaim.draft.dueTime)
+        assertEquals(controller.draft, revisedClaim.draft)
+    }
+
+    @Test
+    fun renderingAReadAnswerLeavesRevisionAndSaveClaimCurrent() {
+        val controller = TaskDetailDraftController.from(task(time = "08:00 PM"))
+        controller.changeTitle("Buy Vitamins")
+        val claim = requireNotNull(controller.freezeSaveClaim())
+        val revision = controller.draft.revision
+
+        val response = TaskDetailEditSpeechRenderer.readDraftAndConfirm(
+            com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailDraftReadTarget.TIME,
+            controller.draft
+        )
+
+        assertEquals(
+            "It's currently set for 8:00 PM. Would you like to save these changes?",
+            response
+        )
+        assertEquals(revision, controller.draft.revision)
+        assertTrue(controller.isCurrent(claim))
+    }
+
+    @Test
     fun completionUpdatesAuthoritativeBaseWithoutDiscardingDirtyFields() {
         val controller = TaskDetailDraftController.from(task())
         controller.changeTitle("Unsaved title")

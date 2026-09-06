@@ -140,10 +140,19 @@ object AgentResponseSchemas {
                 put(
                     "move",
                     stringEnum(
+                        "CONFIRM_SAVE",
+                        "REJECT_SAVE",
                         "SET_TITLE",
                         "SET_DATE",
                         "SET_TIME",
                         "SET_SCHEDULE",
+                        "REQUEST_TITLE_CHANGE",
+                        "REQUEST_DATE_CHANGE",
+                        "REQUEST_TIME_CHANGE",
+                        "READ_TITLE",
+                        "READ_DATE",
+                        "READ_TIME",
+                        "READ_SCHEDULE",
                         "ASK_CLARIFICATION",
                         "CANCEL",
                         "UNKNOWN"

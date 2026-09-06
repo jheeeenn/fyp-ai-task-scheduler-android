@@ -1,6 +1,8 @@
 package com.example.myapplication.ai.conversation.taskdetailedit
 
 import android.util.Log
+import com.example.myapplication.voice.BoundedConfirmationPolicy
+import com.example.myapplication.voice.BoundedConfirmationResult
 import com.example.myapplication.voice.TextNormalizer
 import kotlinx.coroutines.CancellationException
 
@@ -25,6 +27,44 @@ class TaskDetailEditSemanticOrchestrator(
         )
     }
 
+    fun resolveImmediate(
+        userText: String,
+        context: TaskDetailEditAgentContext
+    ): TaskDetailEditMoveResolution? {
+        if (context.interactionState != SAVE_CONFIRMATION_STATE) {
+            return resolveImmediate(userText)
+        }
+        val (proposal, move, reason) = when (
+            BoundedConfirmationPolicy.resolve(userText).result
+        ) {
+            BoundedConfirmationResult.AFFIRM -> Triple(
+                TaskDetailEditProposal.ConfirmSave,
+                TaskDetailEditAgentMove.CONFIRM_SAVE,
+                "BOUNDED_CONFIRMATION"
+            )
+            BoundedConfirmationResult.REJECT -> Triple(
+                TaskDetailEditProposal.RejectSave,
+                TaskDetailEditAgentMove.REJECT_SAVE,
+                "BOUNDED_REJECTION"
+            )
+            BoundedConfirmationResult.CANCEL -> Triple(
+                TaskDetailEditProposal.Cancel,
+                TaskDetailEditAgentMove.CANCEL,
+                "BOUNDED_CANCELLATION"
+            )
+            BoundedConfirmationResult.UNKNOWN -> return null
+        }
+        return resolution(
+            context = context,
+            proposal = proposal,
+            move = move,
+            source = TaskDetailEditMoveSource.LOCAL_CONFIRMATION_FAST_PATH,
+            confidence = 1.0,
+            attempted = false,
+            reason = reason
+        )
+    }
+
     suspend fun resolve(
         userText: String,
         context: TaskDetailEditAgentContext,
@@ -41,7 +81,7 @@ class TaskDetailEditSemanticOrchestrator(
             if (decision.move == TaskDetailEditAgentMove.UNKNOWN) {
                 return attemptRepair(userText, context, localCandidate)
             }
-            val validation = validator.validate(decision, context.requestedField)
+            val validation = validator.validate(decision, context)
             if (!validation.accepted) {
                 return localFallback(context, localCandidate, validation.reason)
             }
@@ -69,7 +109,7 @@ class TaskDetailEditSemanticOrchestrator(
     ): TaskDetailEditMoveResolution = try {
         val raw = semanticClient.interpretTaskDetailEditMove(userText, context.toRepairPromptText())
         val decision = parser.parse(raw)
-        val validation = validator.validate(decision, context.requestedField)
+        val validation = validator.validate(decision, context)
         if (decision.move == TaskDetailEditAgentMove.UNKNOWN || !validation.accepted) {
             localFallback(context, localCandidate, "REPAIR_REJECTED_${validation.reason}")
         } else {
@@ -138,19 +178,34 @@ class TaskDetailEditSemanticOrchestrator(
         confidence: Double,
         attempted: Boolean,
         reason: String
-    ): String = "target=${context.requestedField} state=${context.interactionState} move=$move " +
+    ): String = "target=${context.requestedField?.name ?: "NONE"} " +
+        "state=${context.interactionState} move=$move " +
         "source=$source confidence=$confidence agentAttempted=$attempted reason=$reason " +
         "draftRevision=${context.draftRevision} generation=${context.interactionGeneration}"
 
     private fun moveFor(proposal: TaskDetailEditProposal): TaskDetailEditAgentMove = when (proposal) {
+        TaskDetailEditProposal.ConfirmSave -> TaskDetailEditAgentMove.CONFIRM_SAVE
+        TaskDetailEditProposal.RejectSave -> TaskDetailEditAgentMove.REJECT_SAVE
         is TaskDetailEditProposal.Title -> TaskDetailEditAgentMove.SET_TITLE
         is TaskDetailEditProposal.Schedule -> TaskDetailEditAgentMove.SET_SCHEDULE
         is TaskDetailEditProposal.Clarification -> TaskDetailEditAgentMove.ASK_CLARIFICATION
+        is TaskDetailEditProposal.RequestField -> when (proposal.field) {
+            TaskDetailEditField.TITLE -> TaskDetailEditAgentMove.REQUEST_TITLE_CHANGE
+            TaskDetailEditField.DATE -> TaskDetailEditAgentMove.REQUEST_DATE_CHANGE
+            TaskDetailEditField.TIME -> TaskDetailEditAgentMove.REQUEST_TIME_CHANGE
+        }
+        is TaskDetailEditProposal.ReadDraft -> when (proposal.target) {
+            TaskDetailDraftReadTarget.TITLE -> TaskDetailEditAgentMove.READ_TITLE
+            TaskDetailDraftReadTarget.DATE -> TaskDetailEditAgentMove.READ_DATE
+            TaskDetailDraftReadTarget.TIME -> TaskDetailEditAgentMove.READ_TIME
+            TaskDetailDraftReadTarget.SCHEDULE -> TaskDetailEditAgentMove.READ_SCHEDULE
+        }
         TaskDetailEditProposal.Cancel -> TaskDetailEditAgentMove.CANCEL
         TaskDetailEditProposal.Unknown -> TaskDetailEditAgentMove.UNKNOWN
     }
 
     private companion object {
+        const val SAVE_CONFIRMATION_STATE = "WAITING_FOR_SAVE_CONFIRMATION"
         val SAFETY_CANCEL_PHRASES = setOf("cancel", "stop", "never mind", "nevermind")
     }
 }

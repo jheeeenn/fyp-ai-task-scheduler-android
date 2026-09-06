@@ -186,6 +186,63 @@ class TaskScreenSpeechRenderersTest {
         }
     }
 
+    @Test
+    fun taskDetailDraftReadsUseAndroidValuesAndContinueSaveConfirmation() {
+        val draft = EditableTaskDraft(
+            title = "Buy Vitamins",
+            dueDate = "09/08/2026",
+            dueTime = "08:00 PM",
+            revision = 4
+        )
+
+        assertEquals(
+            "The current title is Buy Vitamins. Would you like to save these changes?",
+            TaskDetailEditSpeechRenderer.readDraftAndConfirm(
+                com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailDraftReadTarget.TITLE,
+                draft
+            )
+        )
+        assertEquals(
+            "It's currently set for 8:00 PM. Would you like to save these changes?",
+            TaskDetailEditSpeechRenderer.readDraftAndConfirm(
+                com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailDraftReadTarget.TIME,
+                draft
+            )
+        )
+        assertEquals(
+            "It's currently set for 9 August 2026. Would you like to save these changes?",
+            TaskDetailEditSpeechRenderer.readDraftAndConfirm(
+                com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailDraftReadTarget.DATE,
+                draft
+            )
+        )
+        assertEquals(
+            "It's currently scheduled for 9 August 2026 at 8:00 PM. " +
+                "Would you like to save these changes?",
+            TaskDetailEditSpeechRenderer.readDraftAndConfirm(
+                com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailDraftReadTarget.SCHEDULE,
+                draft
+            )
+        )
+    }
+
+    @Test
+    fun taskDetailCorrectionFeedbackDescribesDraftAndAsksToSave() {
+        assertEquals(
+            "The title is now Buy Vitamins. Would you like to save these changes?",
+            TaskDetailEditSpeechRenderer.titleDraftChangedAndConfirm("Buy Vitamins")
+        )
+        assertEquals(
+            "The time is now 8:00 PM. Would you like to save these changes?",
+            TaskDetailEditSpeechRenderer.scheduleDraftChangedAndConfirm(
+                oldDate = "09/08/2026",
+                oldTime = "07:00 PM",
+                newDate = "09/08/2026",
+                newTime = "08:00 PM"
+            )
+        )
+    }
+
     private fun task(id: Long, isDone: Boolean = false) = TaskEntity(
         id = id,
         title = "Task $id",

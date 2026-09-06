@@ -1,5 +1,7 @@
 package com.example.myapplication
 
+import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
+import com.example.myapplication.ai.conversation.taskdetailedit.TaskDetailDraftReadTarget
 import com.example.myapplication.data.TaskEntity
 
 object TaskListScreenSpeechRenderer {
@@ -67,6 +69,8 @@ object TaskScreenControlSpeechRenderer {
 }
 
 object TaskDetailEditSpeechRenderer {
+    private const val SAVE_QUESTION = "Would you like to save these changes?"
+
     fun askTitle(): String = "What title would you like to use?"
     fun askDate(): String = "What date would you like to use?"
     fun askTime(): String = "What time would you like to use?"
@@ -88,6 +92,52 @@ object TaskDetailEditSpeechRenderer {
         else -> timeChanged(newTime)
     }
     fun confirmSave(title: String): String = "Save changes to ${title.ifBlank { "this task" }}?"
+    fun titleDraftChangedAndConfirm(title: String): String =
+        "The title is now $title. $SAVE_QUESTION"
+
+    fun scheduleDraftChangedAndConfirm(
+        oldDate: String?,
+        oldTime: String?,
+        newDate: String?,
+        newTime: String?
+    ): String {
+        val change = when {
+            oldDate != newDate && oldTime != newTime -> scheduleFact(newDate, newTime, updated = true)
+            oldDate != newDate -> newDate?.let {
+                "The date is now ${TaskCardAccessibilitySemantics.spokenDate(it)}."
+            } ?: "The draft no longer has a date set."
+            else -> newTime?.let {
+                "The time is now ${TaskCardAccessibilitySemantics.spokenTime(it)}."
+            } ?: "The draft no longer has a time set."
+        }
+        return "$change $SAVE_QUESTION"
+    }
+
+    fun readDraftAndConfirm(
+        target: TaskDetailDraftReadTarget,
+        draft: EditableTaskDraft
+    ): String {
+        val fact = when (target) {
+            TaskDetailDraftReadTarget.TITLE -> draft.title.trim()
+                .takeIf(String::isNotEmpty)
+                ?.let { "The current title is $it." }
+                ?: "This draft doesn't have a title yet."
+            TaskDetailDraftReadTarget.DATE -> draft.dueDate?.trim()
+                ?.takeIf(String::isNotEmpty)?.let {
+                    "It's currently set for ${TaskCardAccessibilitySemantics.spokenDate(it)}."
+                } ?: "This draft doesn't have a date set yet."
+            TaskDetailDraftReadTarget.TIME -> draft.dueTime?.trim()
+                ?.takeIf(String::isNotEmpty)?.let {
+                    "It's currently set for ${TaskCardAccessibilitySemantics.spokenTime(it)}."
+                } ?: "This draft doesn't have a time set yet."
+            TaskDetailDraftReadTarget.SCHEDULE ->
+                scheduleFact(draft.dueDate, draft.dueTime, updated = false)
+        }
+        return "$fact $SAVE_QUESTION"
+    }
+
+    fun keepDraftAndConfirm(message: String): String = "$message $SAVE_QUESTION"
+
     fun confirmHomeExit(): String =
         "You have unsaved changes. Would you like to save them before returning home?"
     fun confirmBackExit(): String =
@@ -129,5 +179,23 @@ object TaskDetailEditSpeechRenderer {
         TaskDetailEditInteraction.WAITING_FOR_TIME ->
             "That time would be in the past. What time would you like to use instead?"
         else -> error("No past-schedule retry for $interaction")
+    }
+
+    private fun scheduleFact(date: String?, time: String?, updated: Boolean): String {
+        val timing = if (updated) "now" else "currently"
+        val readableDate = date?.trim()?.takeIf(String::isNotEmpty)
+        val readableTime = time?.trim()?.takeIf(String::isNotEmpty)
+        return when {
+            readableDate != null && readableTime != null ->
+                "It's $timing scheduled for ${TaskCardAccessibilitySemantics.spokenDate(readableDate)} " +
+                    "at ${TaskCardAccessibilitySemantics.spokenTime(readableTime)}."
+            readableDate != null ->
+                "It's $timing scheduled for ${TaskCardAccessibilitySemantics.spokenDate(readableDate)}, " +
+                    "with no time set."
+            readableTime != null ->
+                "It doesn't have a date set. Its current time is " +
+                    "${TaskCardAccessibilitySemantics.spokenTime(readableTime)}."
+            else -> "This draft doesn't have a date or time set."
+        }
     }
 }

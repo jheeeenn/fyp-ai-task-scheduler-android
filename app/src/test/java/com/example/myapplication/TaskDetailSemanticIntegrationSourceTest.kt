@@ -29,12 +29,23 @@ class TaskDetailSemanticIntegrationSourceTest {
 
     @Test
     fun safetyConfirmationsRemainDeterministicAndManualEditorsRemainModelFree() {
+        val dispatch = activity.substringAfter("override fun onAssistantFinalText(text: String)")
+            .substringBefore("private fun handleFieldResponse")
         val confirmation = activity.substringAfter("private fun handleConfirmationResponse")
             .substringBefore("private fun handleConfirmationYes")
         val manual = activity.substringAfter("private fun showManualTitleEditor")
             .substringBefore("private fun renderCurrentDraft")
         assertTrue(confirmation.contains("TaskDetailConfirmationInterpreter.interpret(text)"))
         assertFalse(confirmation.contains("taskDetailEditSemanticOrchestrator"))
+        assertTrue(dispatch.contains("WAITING_FOR_SAVE_CONFIRMATION ->"))
+        assertTrue(dispatch.contains("handleSaveConfirmationResponse(text)"))
+        listOf(
+            "WAITING_FOR_HOME_CONFIRMATION",
+            "WAITING_FOR_BACK_CONFIRMATION",
+            "WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION",
+            "WAITING_FOR_DELETE_DISCARD_CONFIRMATION"
+        ).forEach { state -> assertTrue(dispatch.contains(state)) }
+        assertTrue(dispatch.contains("handleConfirmationResponse(text)"))
         assertTrue(manual.contains("DatePickerDialog("))
         assertTrue(manual.contains("TimePickerDialog("))
         assertFalse(manual.contains("ConversationAgentClient"))
@@ -69,6 +80,73 @@ class TaskDetailSemanticIntegrationSourceTest {
         assertTrue(fieldFlow.indexOf("guard.isCurrent") < fieldFlow.indexOf("applySemanticFieldResolution(resolution)"))
         assertTrue(fieldFlow.contains("activityStopped || isFinishing || isDestroyed"))
         assertTrue(activity.contains("editInteractionGeneration += 1L"))
+    }
+
+    @Test
+    fun saveConfirmationUsesSemanticGuardBeforeApplyingAnyConversationalAct() {
+        val flow = activity.substringAfter("private fun handleSaveConfirmationResponse")
+            .substringBefore("private fun applySaveConfirmationSemanticResolution")
+
+        assertTrue(flow.contains("TaskDetailEditRequestGuard("))
+        assertTrue(flow.contains("controller.draft.revision != interactionRevision"))
+        assertTrue(flow.contains("!controller.isCurrent(claim)"))
+        assertTrue(flow.contains("requestedField = null"))
+        assertTrue(flow.contains("TaskDetailEditAgentContext.saveConfirmationMoves()"))
+        assertTrue(flow.contains("taskDetailEditSemanticOrchestrator.resolveImmediate(text, context)"))
+        assertTrue(flow.contains("taskDetailEditSemanticOrchestrator.resolve("))
+        assertTrue(flow.indexOf("guard.isCurrent") <
+            flow.indexOf("applySaveConfirmationSemanticResolution(resolution)"))
+        assertTrue(flow.contains("activityStopped || isFinishing || isDestroyed"))
+        assertFalse(flow.contains("TaskDetailConfirmationInterpreter"))
+        assertFalse(flow.contains("dao."))
+        assertFalse(flow.contains("ReminderHelper"))
+    }
+
+    @Test
+    fun saveReadIsObservationalAndKeepsTheExistingConfirmationAuthority() {
+        val apply = activity.substringAfter("private fun applySaveConfirmationSemanticResolution")
+            .substringBefore("private fun applySaveConfirmationCorrection")
+        val read = apply.substringAfter("is TaskDetailEditProposal.ReadDraft -> {")
+            .substringBefore("is TaskDetailEditProposal.Title ->")
+
+        assertTrue(read.contains("assistantSession.expectConfirmation()"))
+        assertTrue(read.contains("TaskDetailEditSpeechRenderer.readDraftAndConfirm("))
+        assertTrue(read.contains("draft = controller.draft"))
+        assertFalse(read.contains("freezeSaveClaim()"))
+        assertFalse(read.contains("changeTitle("))
+        assertFalse(read.contains("changeSchedule("))
+        assertFalse(read.contains("renderCurrentDraft()"))
+        assertFalse(read.contains("clearLocalInteraction()"))
+        assertFalse(read.contains("performAuthoritativeSave("))
+        assertFalse(read.contains("dao."))
+        assertFalse(read.contains("ReminderHelper"))
+    }
+
+    @Test
+    fun saveCorrectionUsesAndroidValidationThenRefreshesTheSaveClaim() {
+        val apply = activity.substringAfter("private fun applySaveConfirmationSemanticResolution")
+            .substringBefore("private fun interactionFor(")
+        val fieldApply = activity.substringAfter("private fun applyValidatedFieldResult")
+            .substringBefore("private fun requestedField")
+        val refresh = activity.substringAfter("private fun refreshSaveConfirmation")
+            .substringBefore("private fun repeatSaveConfirmation")
+
+        assertTrue(apply.contains("is TaskDetailEditProposal.RequestField -> startFieldEdit("))
+        assertTrue(apply.contains("resumeSaveConfirmation = true"))
+        assertTrue(apply.contains("fieldResolver.validateProposedTitle"))
+        assertTrue(apply.contains("fieldResolver.resolveScheduleProposal"))
+        assertTrue(apply.contains("controller.changeTitle("))
+        assertTrue(apply.contains("controller.changeSchedule("))
+        assertTrue(apply.contains("renderCurrentDraft()"))
+        assertTrue(apply.contains("refreshSaveConfirmation("))
+        assertFalse(apply.contains("performAuthoritativeSave("))
+        assertFalse(apply.contains("dao."))
+        assertFalse(apply.contains("ReminderHelper"))
+        assertTrue(fieldApply.contains("resumeSaveConfirmationAfterFieldEdit"))
+        assertTrue(fieldApply.contains("refreshSaveConfirmation("))
+        assertTrue(refresh.contains("controller.freezeSaveClaim()"))
+        assertTrue(refresh.contains("beginConfirmation("))
+        assertTrue(refresh.contains("WAITING_FOR_SAVE_CONFIRMATION"))
     }
 
     @Test

@@ -90,6 +90,7 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
     private var pendingFieldClarification: String? = null
     private var pendingSaveClaim: TaskDetailSaveClaim? = null
     private var pendingExitAfterSave: (() -> Unit)? = null
+    private var resumeSaveConfirmationAfterFieldEdit = false
     private var taskMutationInProgress = false
     private var missingTaskSpeechPending = false
     private var activityStopped = false
@@ -620,7 +621,11 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         saveButton.setTextColor(resolveThemeColor(R.attr.appColorTaskDetailActionText))
     }
 
-    private fun startFieldEdit(interaction: TaskDetailEditInteraction) {
+    private fun startFieldEdit(
+        interaction: TaskDetailEditInteraction,
+        resumeSaveConfirmation: Boolean = false,
+        promptOverride: String? = null
+    ) {
         if (taskMutationInProgress) return
         val draft = draftController?.draft ?: run {
             voiceHelper.speak(getString(R.string.task_no_longer_available_spoken))
@@ -633,16 +638,18 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingFieldClarification = null
         pendingSaveClaim = null
         pendingExitAfterSave = null
+        resumeSaveConfirmationAfterFieldEdit = resumeSaveConfirmation
         assistantSession.prepareForContextEntry()
         assistantSession.startPassiveSession()
         assistantSession.speakThenListenAgain(
-            when (interaction) {
+            promptOverride ?: when (interaction) {
                 TaskDetailEditInteraction.WAITING_FOR_TITLE -> TaskDetailEditSpeechRenderer.askTitle()
                 TaskDetailEditInteraction.WAITING_FOR_DATE -> TaskDetailEditSpeechRenderer.askDate()
                 TaskDetailEditInteraction.WAITING_FOR_TIME -> TaskDetailEditSpeechRenderer.askTime()
                 else -> return
             }
         )
+        pendingFieldClarification = promptOverride
     }
 
     private fun requestSave() {
@@ -741,6 +748,7 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingSaveClaim = claim
         pendingExitAfterSave = afterSave
         pendingFieldClarification = null
+        resumeSaveConfirmationAfterFieldEdit = false
         assistantSession.prepareForContextEntry()
         assistantSession.startPassiveSession()
         assistantSession.expectConfirmation()
@@ -752,7 +760,8 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
             TaskDetailEditInteraction.WAITING_FOR_TITLE,
             TaskDetailEditInteraction.WAITING_FOR_DATE,
             TaskDetailEditInteraction.WAITING_FOR_TIME -> handleFieldResponse(text)
-            TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
+            TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION ->
+                handleSaveConfirmationResponse(text)
             TaskDetailEditInteraction.WAITING_FOR_HOME_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_BACK_CONFIRMATION,
             TaskDetailEditInteraction.WAITING_FOR_ASSISTANT_EXIT_CONFIRMATION,
@@ -835,6 +844,14 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
     private fun applySemanticFieldResolution(resolution: TaskDetailEditMoveResolution) {
         val controller = draftController ?: return
         when (val proposal = resolution.proposal) {
+            TaskDetailEditProposal.ConfirmSave,
+            TaskDetailEditProposal.RejectSave,
+            is TaskDetailEditProposal.RequestField,
+            is TaskDetailEditProposal.ReadDraft -> {
+                val question = TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
+                pendingFieldClarification = question
+                assistantSession.speakThenListenAgain(question)
+            }
             is TaskDetailEditProposal.Title ->
                 applyValidatedFieldResult(fieldResolver.validateProposedTitle(proposal.value))
             is TaskDetailEditProposal.Schedule ->
@@ -849,7 +866,11 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
                 pendingFieldClarification = proposal.question
                 assistantSession.speakThenListenAgain(proposal.question)
             }
-            TaskDetailEditProposal.Cancel -> endLocalInteraction("Edit cancelled.")
+            TaskDetailEditProposal.Cancel -> if (resumeSaveConfirmationAfterFieldEdit) {
+                refreshSaveConfirmation("Okay, I kept the current draft.")
+            } else {
+                endLocalInteraction("Edit cancelled.")
+            }
             TaskDetailEditProposal.Unknown -> {
                 val question = pendingFieldClarification
                     ?: TaskDetailEditSpeechRenderer.retryQuestion(editInteraction)
@@ -864,27 +885,52 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         when (result) {
             is TaskFieldEditResult.Title -> {
                 if (!controller.changeTitle(result.value)) {
-                    endLocalInteraction("That title is already set.")
+                    if (resumeSaveConfirmationAfterFieldEdit) {
+                        refreshSaveConfirmation("That title is already set.")
+                    } else {
+                        endLocalInteraction("That title is already set.")
+                    }
                     return
                 }
                 renderCurrentDraft()
-                endLocalInteraction(TaskDetailEditSpeechRenderer.titleChanged(result.value))
+                if (resumeSaveConfirmationAfterFieldEdit) {
+                    refreshSaveConfirmation(
+                        TaskDetailEditSpeechRenderer.titleDraftChangedAndConfirm(result.value),
+                        includesSaveQuestion = true
+                    )
+                } else {
+                    endLocalInteraction(TaskDetailEditSpeechRenderer.titleChanged(result.value))
+                }
             }
             is TaskFieldEditResult.Schedule -> {
                 val oldDraft = controller.draft
                 if (!controller.changeSchedule(result.dueDate, result.dueTime)) {
-                    endLocalInteraction("That schedule is already set.")
+                    if (resumeSaveConfirmationAfterFieldEdit) {
+                        refreshSaveConfirmation("That schedule is already set.")
+                    } else {
+                        endLocalInteraction("That schedule is already set.")
+                    }
                     return
                 }
                 renderCurrentDraft()
-                endLocalInteraction(
-                    TaskDetailEditSpeechRenderer.scheduleChanged(
+                if (resumeSaveConfirmationAfterFieldEdit) {
+                    refreshSaveConfirmation(
+                        TaskDetailEditSpeechRenderer.scheduleDraftChangedAndConfirm(
+                            oldDate = oldDraft.dueDate,
+                            oldTime = oldDraft.dueTime,
+                            newDate = result.dueDate,
+                            newTime = result.dueTime
+                        ),
+                        includesSaveQuestion = true
+                    )
+                } else {
+                    endLocalInteraction(TaskDetailEditSpeechRenderer.scheduleChanged(
                         oldDate = oldDraft.dueDate,
                         oldTime = oldDraft.dueTime,
                         newDate = result.dueDate,
                         newTime = result.dueTime
-                    )
-                )
+                    ))
+                }
             }
             is TaskFieldEditResult.NeedsClarification -> {
                 pendingFieldClarification = result.prompt
@@ -932,6 +978,183 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun formatContextTime(now: Calendar): String =
         SimpleDateFormat("hh:mm a", Locale.UK).apply { timeZone = now.timeZone }.format(now.time)
+
+    private fun handleSaveConfirmationResponse(text: String) {
+        val controller = draftController ?: return
+        val claim = pendingSaveClaim
+        if (controller.draft.revision != interactionRevision ||
+            claim == null || !controller.isCurrent(claim)
+        ) {
+            endLocalInteraction("That save question is no longer current. Please review your changes.")
+            return
+        }
+        val capturedDraft = controller.draft
+        val guard = TaskDetailEditRequestGuard(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
+            interactionGeneration = editInteractionGeneration,
+            draftRevision = capturedDraft.revision
+        )
+        val now = Calendar.getInstance()
+        val context = TaskDetailEditAgentContext(
+            requestedField = null,
+            interactionState = TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION.name,
+            interactionGeneration = guard.interactionGeneration,
+            draftRevision = guard.draftRevision,
+            hasTitle = capturedDraft.title.isNotBlank(),
+            currentDueDate = capturedDraft.dueDate.orEmpty(),
+            currentDueTime = capturedDraft.dueTime.orEmpty(),
+            currentLocalDate = formatContextDate(now),
+            currentLocalTime = formatContextTime(now),
+            timezone = now.timeZone.id,
+            currentSchedulePast = fieldResolver.isSchedulePast(capturedDraft, now),
+            pendingClarification = "",
+            allowedMoves = TaskDetailEditAgentContext.saveConfirmationMoves()
+        )
+
+        taskDetailEditSemanticOrchestrator.resolveImmediate(text, context)?.let { immediate ->
+            applySaveConfirmationSemanticResolution(immediate)
+            return
+        }
+
+        assistantSession.pauseListeningForAssistantSpeech()
+        assistantSession.getBottomSheet()?.setProcessingState()
+        lifecycleScope.launch {
+            val resolution = taskDetailEditSemanticOrchestrator.resolve(
+                userText = text,
+                context = context,
+                localCandidate = TaskDetailEditLocalCandidate.Invalid
+            )
+            val currentRevision = draftController?.draft?.revision ?: -1L
+            if (activityStopped || isFinishing || isDestroyed ||
+                !guard.isCurrent(editInteraction, editInteractionGeneration, currentRevision)
+            ) {
+                Log.d(
+                    "TASK_DETAIL_EDIT_RESOLUTION",
+                    "target=NONE state=${guard.interaction.name} move=${resolution.move} " +
+                        "source=${resolution.source.logValue} confidence=${resolution.confidence} " +
+                        "agentAttempted=${resolution.agentAttempted} reason=STALE_RESPONSE " +
+                        "draftRevision=${guard.draftRevision} generation=${guard.interactionGeneration}"
+                )
+                return@launch
+            }
+            applySaveConfirmationSemanticResolution(resolution)
+        }
+    }
+
+    private fun applySaveConfirmationSemanticResolution(
+        resolution: TaskDetailEditMoveResolution
+    ) {
+        val controller = draftController ?: return
+        when (val proposal = resolution.proposal) {
+            TaskDetailEditProposal.ConfirmSave -> handleConfirmationYes()
+            TaskDetailEditProposal.RejectSave -> handleConfirmationNo()
+            is TaskDetailEditProposal.RequestField -> startFieldEdit(
+                interaction = interactionFor(proposal.field),
+                resumeSaveConfirmation = true
+            )
+            is TaskDetailEditProposal.ReadDraft -> {
+                assistantSession.expectConfirmation()
+                assistantSession.speakThenListenAgain(
+                    TaskDetailEditSpeechRenderer.readDraftAndConfirm(
+                        target = proposal.target,
+                        draft = controller.draft
+                    )
+                )
+            }
+            is TaskDetailEditProposal.Title -> applySaveConfirmationCorrection(
+                fieldResolver.validateProposedTitle(proposal.value)
+            )
+            is TaskDetailEditProposal.Schedule -> applySaveConfirmationCorrection(
+                fieldResolver.resolveScheduleProposal(
+                    dateText = proposal.dateText,
+                    timeText = proposal.timeText,
+                    draft = controller.draft
+                )
+            )
+            is TaskDetailEditProposal.Clarification -> repeatSaveConfirmation(proposal.question)
+            TaskDetailEditProposal.Cancel -> handleConfirmationCancel()
+            TaskDetailEditProposal.Unknown -> repeatSaveConfirmation("I didn't catch that.")
+        }
+    }
+
+    private fun applySaveConfirmationCorrection(result: TaskFieldEditResult) {
+        val controller = draftController ?: return
+        when (result) {
+            is TaskFieldEditResult.Title -> {
+                if (controller.changeTitle(result.value)) {
+                    renderCurrentDraft()
+                    refreshSaveConfirmation(
+                        TaskDetailEditSpeechRenderer.titleDraftChangedAndConfirm(result.value),
+                        includesSaveQuestion = true
+                    )
+                } else {
+                    refreshSaveConfirmation("That title is already set.")
+                }
+            }
+            is TaskFieldEditResult.Schedule -> {
+                val oldDraft = controller.draft
+                if (controller.changeSchedule(result.dueDate, result.dueTime)) {
+                    renderCurrentDraft()
+                    refreshSaveConfirmation(
+                        TaskDetailEditSpeechRenderer.scheduleDraftChangedAndConfirm(
+                            oldDate = oldDraft.dueDate,
+                            oldTime = oldDraft.dueTime,
+                            newDate = result.dueDate,
+                            newTime = result.dueTime
+                        ),
+                        includesSaveQuestion = true
+                    )
+                } else {
+                    refreshSaveConfirmation("That schedule is already set.")
+                }
+            }
+            is TaskFieldEditResult.NeedsClarification -> startFieldEdit(
+                interaction = TaskDetailEditInteraction.WAITING_FOR_TIME,
+                resumeSaveConfirmation = true,
+                promptOverride = result.prompt
+            )
+            TaskFieldEditResult.PastSchedule -> repeatSaveConfirmation(
+                "That schedule would be in the past, so I kept the current draft."
+            )
+            TaskFieldEditResult.Invalid -> repeatSaveConfirmation(
+                "I couldn't safely apply that correction, so I kept the current draft."
+            )
+        }
+    }
+
+    private fun interactionFor(field: TaskDetailEditField): TaskDetailEditInteraction = when (field) {
+        TaskDetailEditField.TITLE -> TaskDetailEditInteraction.WAITING_FOR_TITLE
+        TaskDetailEditField.DATE -> TaskDetailEditInteraction.WAITING_FOR_DATE
+        TaskDetailEditField.TIME -> TaskDetailEditInteraction.WAITING_FOR_TIME
+    }
+
+    private fun refreshSaveConfirmation(
+        feedback: String,
+        includesSaveQuestion: Boolean = false
+    ) {
+        val controller = draftController ?: return
+        val claim = controller.freezeSaveClaim()
+        if (claim == null) {
+            endLocalInteraction("The draft now matches the saved task. There are no changes to save.")
+            return
+        }
+        beginConfirmation(
+            interaction = TaskDetailEditInteraction.WAITING_FOR_SAVE_CONFIRMATION,
+            prompt = if (includesSaveQuestion) {
+                feedback
+            } else {
+                TaskDetailEditSpeechRenderer.keepDraftAndConfirm(feedback)
+            },
+            claim = claim
+        )
+    }
+
+    private fun repeatSaveConfirmation(message: String) {
+        assistantSession.expectConfirmation()
+        assistantSession.speakThenListenAgain(
+            TaskDetailEditSpeechRenderer.keepDraftAndConfirm(message)
+        )
+    }
 
     private fun handleConfirmationResponse(text: String) {
         val resolution = com.example.myapplication.voice.BoundedConfirmationPolicy.resolve(text)
@@ -1149,6 +1372,7 @@ class TaskDetailActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingSaveClaim = null
         pendingExitAfterSave = null
         pendingFieldClarification = null
+        resumeSaveConfirmationAfterFieldEdit = false
     }
 
     override fun onAssistantCancelled() {

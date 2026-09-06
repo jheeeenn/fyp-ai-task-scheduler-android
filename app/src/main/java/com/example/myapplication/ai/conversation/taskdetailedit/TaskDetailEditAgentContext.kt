@@ -1,7 +1,7 @@
 package com.example.myapplication.ai.conversation.taskdetailedit
 
 data class TaskDetailEditAgentContext(
-    val requestedField: TaskDetailEditField,
+    val requestedField: TaskDetailEditField?,
     val interactionState: String,
     val interactionGeneration: Long,
     val draftRevision: Long,
@@ -16,7 +16,7 @@ data class TaskDetailEditAgentContext(
     val allowedMoves: List<TaskDetailEditAgentMove>
 ) {
     fun toPromptText(): String = buildString {
-        appendLine("Requested field: ${requestedField.name}")
+        appendLine("Requested field: ${requestedField?.name ?: "NONE"}")
         appendLine("Interaction state: $interactionState")
         appendLine("Interaction generation: $interactionGeneration")
         appendLine("Draft revision: $draftRevision")
@@ -29,7 +29,11 @@ data class TaskDetailEditAgentContext(
         appendLine("Current draft schedule is already past: $currentSchedulePast")
         appendLine("Pending clarification: $pendingClarification")
         appendLine("Allowed moves: ${allowedMoves.joinToString { it.name }}")
-        appendLine("The user is answering one question about ${requestedField.name}.")
+        if (requestedField == null) {
+            appendLine("The user is responding to Android's save-confirmation question.")
+        } else {
+            appendLine("The user is answering one question about ${requestedField.name}.")
+        }
         appendLine("A natural correction may contain both a date and a time.")
         appendLine("Changing TIME may require changing DATE; changing DATE may include a time.")
         appendLine("Relative expressions use the current draft schedule as their base.")
@@ -66,5 +70,23 @@ data class TaskDetailEditAgentContext(
                 TaskDetailEditAgentMove.UNKNOWN
             )
         }
+
+        fun saveConfirmationMoves(): List<TaskDetailEditAgentMove> = listOf(
+            TaskDetailEditAgentMove.CONFIRM_SAVE,
+            TaskDetailEditAgentMove.REJECT_SAVE,
+            TaskDetailEditAgentMove.SET_TITLE,
+            TaskDetailEditAgentMove.SET_DATE,
+            TaskDetailEditAgentMove.SET_TIME,
+            TaskDetailEditAgentMove.SET_SCHEDULE,
+            TaskDetailEditAgentMove.REQUEST_TITLE_CHANGE,
+            TaskDetailEditAgentMove.REQUEST_DATE_CHANGE,
+            TaskDetailEditAgentMove.REQUEST_TIME_CHANGE,
+            TaskDetailEditAgentMove.READ_TITLE,
+            TaskDetailEditAgentMove.READ_DATE,
+            TaskDetailEditAgentMove.READ_TIME,
+            TaskDetailEditAgentMove.READ_SCHEDULE,
+            TaskDetailEditAgentMove.CANCEL,
+            TaskDetailEditAgentMove.UNKNOWN
+        )
     }
 }
