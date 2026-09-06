@@ -53,6 +53,36 @@ class EditTaskSemanticIntegrationSourceTest {
     }
 
     @Test
+    fun readMovesUseCurrentDraftWithoutMutatingOrClearingPendingState() {
+        val handler = edit.substringAfter("private fun handleEditTaskSemanticMove(")
+            .substringBefore("private fun readCurrentEditDraft(")
+        val read = edit.substringAfter("private fun readCurrentEditDraft(")
+            .substringBefore("private fun applySemanticTitleChange(")
+
+        listOf("READ_TITLE", "READ_DATE", "READ_TIME", "READ_SCHEDULE").forEach { move ->
+            assertTrue(handler.contains("EditTaskSemanticMove.$move"))
+        }
+        assertTrue(read.contains("EditTaskDraftReadResponseRenderer.render("))
+        assertTrue(read.contains("etTaskTitle.text.toString().trim()"))
+        assertTrue(read.contains("date = selectedDate"))
+        assertTrue(read.contains("time = selectedTime"))
+        assertTrue(read.contains("interactionState = interactionState"))
+        assertTrue(read.contains("pendingFieldTarget = pendingFieldTarget"))
+        assertTrue(read.contains("assistantSession.expectConfirmation()"))
+        assertFalse(read.contains("clearPendingEditCollection()"))
+        assertFalse(read.contains("markEditDraftChanged()"))
+        assertFalse(read.contains("pendingFieldTarget = EditFieldTarget."))
+        assertFalse(read.contains("waitingForSaveConfirmation ="))
+        assertFalse(read.contains("pendingTemporalClarification ="))
+        assertFalse(read.contains("relativeTemporalSession?.cancel()"))
+        assertFalse(read.contains("etTaskTitle.setText("))
+        assertFalse(read.contains("setExactDate("))
+        assertFalse(read.contains("setExactMinute("))
+        assertFalse(read.contains("saveTask("))
+        assertFalse(read.contains("performConfirmedDelete("))
+    }
+
+    @Test
     fun activeRelativeProposalRoutesGeneralEditsWithoutDiscardingItsSchedule() {
         val voice = edit.substringAfter("private fun handleVoiceInput(text: String)")
             .substringBefore("private fun requestEditTaskSemanticResolution(")

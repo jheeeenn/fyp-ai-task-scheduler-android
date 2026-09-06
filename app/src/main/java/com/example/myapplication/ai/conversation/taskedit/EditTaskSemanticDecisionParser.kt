@@ -77,6 +77,16 @@ class EditTaskSemanticDecisionParser {
                 requireSchema(decision.title.isEmpty(), "CHANGE_SCHEDULE forbids title")
             }
 
+            EditTaskSemanticMove.READ_TITLE,
+            EditTaskSemanticMove.READ_DATE,
+            EditTaskSemanticMove.READ_TIME,
+            EditTaskSemanticMove.READ_SCHEDULE -> requireSchema(
+                decision.title.isEmpty() &&
+                    decision.dateText.isEmpty() &&
+                    decision.timeText.isEmpty(),
+                "${decision.move} forbids value fields"
+            )
+
             else -> requireSchema(
                 decision.title.isEmpty() &&
                     decision.dateText.isEmpty() &&

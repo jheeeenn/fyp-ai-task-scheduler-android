@@ -92,6 +92,10 @@ data class EditTaskAgentContext(
             EditTaskSemanticMove.REQUEST_TITLE_CHANGE,
             EditTaskSemanticMove.REQUEST_DATE_CHANGE,
             EditTaskSemanticMove.REQUEST_TIME_CHANGE,
+            EditTaskSemanticMove.READ_TITLE,
+            EditTaskSemanticMove.READ_DATE,
+            EditTaskSemanticMove.READ_TIME,
+            EditTaskSemanticMove.READ_SCHEDULE,
             EditTaskSemanticMove.DELETE,
             EditTaskSemanticMove.CANCEL,
             EditTaskSemanticMove.UNKNOWN

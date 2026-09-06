@@ -21,6 +21,13 @@ class EditTaskSemanticDecisionValidator {
         ) {
             return rejected("LOW_CONFIRMATION_CONFIDENCE")
         }
+        if (decision.move in READ_MOVES &&
+            (decision.title.isNotEmpty() ||
+                decision.dateText.isNotEmpty() ||
+                decision.timeText.isNotEmpty())
+        ) {
+            return rejected("READ_MOVE_HAS_VALUES")
+        }
         if (context.saveInFlight || context.deleteInFlight ||
             context.interactionState == EditTaskInteractionState.OPERATION_IN_FLIGHT
         ) {
@@ -35,5 +42,12 @@ class EditTaskSemanticDecisionValidator {
     companion object {
         const val MIN_CONFIDENCE = 0.80
         const val CONFIRM_CONFIDENCE = 0.90
+
+        private val READ_MOVES = setOf(
+            EditTaskSemanticMove.READ_TITLE,
+            EditTaskSemanticMove.READ_DATE,
+            EditTaskSemanticMove.READ_TIME,
+            EditTaskSemanticMove.READ_SCHEDULE
+        )
     }
 }

@@ -32,6 +32,7 @@ import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.agent.TaskAgentResponseParser
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.taskedit.EditTaskAgentContext
+import com.example.myapplication.ai.conversation.taskedit.EditTaskDraftReadResponseRenderer
 import com.example.myapplication.ai.conversation.taskedit.EditFieldTarget
 import com.example.myapplication.ai.conversation.taskedit.EditTaskInteractionPolicy
 import com.example.myapplication.ai.conversation.taskedit.EditTaskInteractionState
@@ -1283,10 +1284,33 @@ class EditTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 requestSemanticFieldChange(EditFieldTarget.DATE)
             EditTaskSemanticMove.REQUEST_TIME_CHANGE ->
                 requestSemanticFieldChange(EditFieldTarget.TIME)
+            EditTaskSemanticMove.READ_TITLE,
+            EditTaskSemanticMove.READ_DATE,
+            EditTaskSemanticMove.READ_TIME,
+            EditTaskSemanticMove.READ_SCHEDULE -> readCurrentEditDraft(resolution.move)
             EditTaskSemanticMove.DELETE -> requestVoiceDeleteConfirmation()
             EditTaskSemanticMove.CANCEL -> cancelSemanticEditInteraction()
             EditTaskSemanticMove.UNKNOWN -> recoverFromUnknownEditSemanticMove()
         }
+    }
+
+    private fun readCurrentEditDraft(move: EditTaskSemanticMove) {
+        val interactionState = currentEditTaskInteractionState()
+        val response = EditTaskDraftReadResponseRenderer.render(
+            move = move,
+            title = etTaskTitle.text.toString().trim(),
+            date = selectedDate,
+            time = selectedTime,
+            interactionState = interactionState,
+            pendingFieldTarget = pendingFieldTarget
+        )
+        if (interactionState == EditTaskInteractionState.WAITING_FOR_SAVE_CONFIRMATION ||
+            interactionState ==
+            EditTaskInteractionState.WAITING_FOR_RELATIVE_TEMPORAL_CONFIRMATION
+        ) {
+            assistantSession.expectConfirmation()
+        }
+        speak(response)
     }
 
     private fun applySemanticTitleChange(title: String) {

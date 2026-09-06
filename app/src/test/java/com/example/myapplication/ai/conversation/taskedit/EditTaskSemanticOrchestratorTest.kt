@@ -3,10 +3,45 @@ package com.example.myapplication.ai.conversation.taskedit
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EditTaskSemanticOrchestratorTest {
+    @Test
+    fun compoundSaveRejectionsPreferExplicitFieldChanges() = runBlocking {
+        val cases = listOf(
+            Triple(
+                "No change the title first",
+                json("REQUEST_TITLE_CHANGE"),
+                EditTaskSemanticMove.REQUEST_TITLE_CHANGE
+            ),
+            Triple(
+                "No change the time instead",
+                json("REQUEST_TIME_CHANGE"),
+                EditTaskSemanticMove.REQUEST_TIME_CHANGE
+            ),
+            Triple(
+                "No, call it Buy Medicine instead",
+                json("CHANGE_TITLE", title = "Buy Medicine"),
+                EditTaskSemanticMove.CHANGE_TITLE
+            )
+        )
+
+        cases.forEach { (utterance, agentResponse, expectedMove) ->
+            val orchestrator = EditTaskSemanticOrchestrator(QueueClient(agentResponse))
+            val context = context(EditTaskInteractionState.WAITING_FOR_SAVE_CONFIRMATION)
+            assertNull(orchestrator.resolveImmediate(utterance, context))
+            val result = orchestrator.resolve(
+                utterance,
+                context
+            )
+
+            assertEquals(expectedMove, result.move)
+            assertTrue(result.move != EditTaskSemanticMove.REJECT_SAVE)
+        }
+    }
+
     @Test
     fun naturalTitleCorrectionsReturnOnlyTheExtractedReplacement() = runBlocking {
         val cases = listOf(
@@ -47,6 +82,69 @@ class EditTaskSemanticOrchestratorTest {
         ).resolve("change the date instead", context(state))
         assertEquals(EditTaskSemanticMove.REQUEST_DATE_CHANGE, switch.move)
         assertEquals("", switch.title)
+    }
+
+    @Test
+    fun pendingDateAndTimeAcceptRealisticVoiceTranscriptValues() = runBlocking {
+        val date = EditTaskSemanticOrchestrator(
+            QueueClient(json("CHANGE_DATE", date = "Sunday"))
+        ).resolve("Sunday", context(EditTaskInteractionState.WAITING_FOR_DATE))
+        assertEquals(EditTaskSemanticMove.CHANGE_DATE, date.move)
+        assertEquals("Sunday", date.dateText)
+
+        val time = EditTaskSemanticOrchestrator(
+            QueueClient(json("CHANGE_TIME", time = "8 PM"))
+        ).resolve("8 PM", context(EditTaskInteractionState.WAITING_FOR_TIME))
+        assertEquals(EditTaskSemanticMove.CHANGE_TIME, time.move)
+        assertEquals("8 PM", time.timeText)
+    }
+
+    @Test
+    fun readOnlyQuestionsSelectAFieldWithoutReturningDraftFacts() = runBlocking {
+        val cases = listOf(
+            Triple("What is the title", "READ_TITLE", EditTaskSemanticMove.READ_TITLE),
+            Triple("What is this task called", "READ_TITLE", EditTaskSemanticMove.READ_TITLE),
+            Triple(
+                "What date is this task set for",
+                "READ_DATE",
+                EditTaskSemanticMove.READ_DATE
+            ),
+            Triple(
+                "What time is this task currently set for",
+                "READ_TIME",
+                EditTaskSemanticMove.READ_TIME
+            ),
+            Triple(
+                "When is this task scheduled",
+                "READ_SCHEDULE",
+                EditTaskSemanticMove.READ_SCHEDULE
+            )
+        )
+
+        cases.forEach { (utterance, responseMove, expectedMove) ->
+            val result = EditTaskSemanticOrchestrator(
+                QueueClient(json(responseMove))
+            ).resolve(utterance, context(EditTaskInteractionState.READY_FOR_EDIT))
+
+            assertEquals(expectedMove, result.move)
+            assertEquals("", result.title)
+            assertEquals("", result.dateText)
+            assertEquals("", result.timeText)
+        }
+    }
+
+    @Test
+    fun readQuestionRemainsAvailableWhileCollectingAnotherField() = runBlocking {
+        val result = EditTaskSemanticOrchestrator(
+            QueueClient(json("READ_TIME"))
+        ).resolve(
+            "What time is this task currently set for",
+            context(EditTaskInteractionState.WAITING_FOR_TITLE)
+        )
+
+        assertEquals(EditTaskSemanticMove.READ_TIME, result.move)
+        assertTrue(EditTaskSemanticMove.READ_TIME in
+            context(EditTaskInteractionState.WAITING_FOR_TITLE).allowedMoves)
     }
 
     @Test
@@ -125,6 +223,40 @@ class EditTaskSemanticOrchestratorTest {
 
         assertEquals(EditTaskSemanticMove.CONFIRM_SAVE, result.move)
         assertEquals(EditTaskMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+    }
+
+    @Test
+    fun existingConversationalCorrectionsAndApprovalRemainSupported() = runBlocking {
+        val cases = listOf(
+            Triple(
+                "Actually make it 8 PM instead",
+                json("CHANGE_TIME", time = "8 PM"),
+                EditTaskSemanticMove.CHANGE_TIME
+            ),
+            Triple(
+                "No make it Sunday",
+                json("CHANGE_DATE", date = "Sunday"),
+                EditTaskSemanticMove.CHANGE_DATE
+            ),
+            Triple(
+                "Actually call it medicine",
+                json("CHANGE_TITLE", title = "medicine"),
+                EditTaskSemanticMove.CHANGE_TITLE
+            ),
+            Triple(
+                "That sounds good",
+                json("CONFIRM_SAVE"),
+                EditTaskSemanticMove.CONFIRM_SAVE
+            )
+        )
+
+        cases.forEach { (utterance, agentResponse, expectedMove) ->
+            val result = EditTaskSemanticOrchestrator(QueueClient(agentResponse)).resolve(
+                utterance,
+                context(EditTaskInteractionState.WAITING_FOR_SAVE_CONFIRMATION)
+            )
+            assertEquals(expectedMove, result.move)
+        }
     }
 
     @Test

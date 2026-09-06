@@ -182,6 +182,10 @@ object AgentResponseSchemas {
                         "REQUEST_TITLE_CHANGE",
                         "REQUEST_DATE_CHANGE",
                         "REQUEST_TIME_CHANGE",
+                        "READ_TITLE",
+                        "READ_DATE",
+                        "READ_TIME",
+                        "READ_SCHEDULE",
                         "DELETE",
                         "CANCEL",
                         "UNKNOWN"

@@ -38,6 +38,8 @@ class EditTaskRelativeProposalRoutingPolicyTest {
         listOf(
             "Actually call it Take Supplements",
             "Change the title instead",
+            "No change the title first",
+            "No change the time instead",
             "Delete this task instead",
             "No, call it Take Supplements instead",
             "Two hours later",

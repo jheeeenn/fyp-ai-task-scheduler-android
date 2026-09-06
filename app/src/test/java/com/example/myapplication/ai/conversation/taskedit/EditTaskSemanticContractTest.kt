@@ -30,6 +30,17 @@ class EditTaskSemanticContractTest {
             json("CHANGE_TIME"),
             json("CHANGE_SCHEDULE", date = "Sunday")
         ).forEach(::assertSchemaFailure)
+
+        listOf("READ_TITLE", "READ_DATE", "READ_TIME", "READ_SCHEDULE").forEach { move ->
+            val decision = parser.parse(json(move))
+            assertEquals(EditTaskSemanticMove.valueOf(move), decision.move)
+            assertEquals("", decision.title)
+            assertEquals("", decision.dateText)
+            assertEquals("", decision.timeText)
+        }
+        assertSchemaFailure(json("READ_TITLE", title = "Take Medicine"))
+        assertSchemaFailure(json("READ_DATE", date = "Sunday"))
+        assertSchemaFailure(json("READ_TIME", time = "8 PM"))
     }
 
     @Test
@@ -52,6 +63,28 @@ class EditTaskSemanticContractTest {
             ).accepted
         )
         assertFalse(
+            EditTaskSemanticMove.READ_TITLE in
+                context(EditTaskInteractionState.WAITING_FOR_DELETE_CONFIRMATION).allowedMoves
+        )
+        assertEquals(
+            listOf(EditTaskSemanticMove.UNKNOWN),
+            context(EditTaskInteractionState.OPERATION_IN_FLIGHT).allowedMoves
+        )
+        val readMoves = setOf(
+            EditTaskSemanticMove.READ_TITLE,
+            EditTaskSemanticMove.READ_DATE,
+            EditTaskSemanticMove.READ_TIME,
+            EditTaskSemanticMove.READ_SCHEDULE
+        )
+        EditTaskInteractionState.entries
+            .filterNot {
+                it == EditTaskInteractionState.WAITING_FOR_DELETE_CONFIRMATION ||
+                    it == EditTaskInteractionState.OPERATION_IN_FLIGHT
+            }
+            .forEach { state ->
+                assertTrue(context(state).allowedMoves.containsAll(readMoves))
+            }
+        assertFalse(
             validator.validate(
                 parser.parse(json("CONFIRM_SAVE", confidence = 0.89)),
                 saveContext
@@ -61,6 +94,18 @@ class EditTaskSemanticContractTest {
             validator.validate(
                 parser.parse(json("CHANGE_TITLE", title = "New title")),
                 context(EditTaskInteractionState.OPERATION_IN_FLIGHT)
+            ).accepted
+        )
+        assertFalse(
+            validator.validate(
+                EditTaskSemanticDecision(
+                    move = EditTaskSemanticMove.READ_TIME,
+                    title = "",
+                    dateText = "",
+                    timeText = "8 PM",
+                    confidence = 0.97
+                ),
+                context(EditTaskInteractionState.READY_FOR_EDIT)
             ).accepted
         )
     }
@@ -95,6 +140,12 @@ class EditTaskSemanticContractTest {
         assertTrue(prompt.contains("same application assistant"))
         assertTrue(prompt.contains("Android owns"))
         assertTrue(prompt.contains("A concrete correction always takes precedence"))
+        assertTrue(prompt.contains("complete conversational act"))
+        assertTrue(prompt.contains("explicit correction or field-change request takes precedence"))
+        assertTrue(prompt.contains("READ_TITLE"))
+        assertTrue(prompt.contains("Read-only questions never mutate the draft"))
+        assertTrue(prompt.contains("natural literal answer normally supplies that field"))
+        assertTrue(prompt.contains("illustrative semantic contrasts"))
         assertTrue(prompt.contains("No, call it Take Supplements instead"))
         assertTrue(prompt.contains("two hours later"))
         assertTrue(prompt.contains("same time tomorrow"))
