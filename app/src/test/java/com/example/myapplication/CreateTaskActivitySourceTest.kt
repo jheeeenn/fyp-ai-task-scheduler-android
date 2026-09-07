@@ -82,6 +82,8 @@ class CreateTaskActivitySourceTest {
         assertFalse(readBody.contains("markCreateDraftChanged()"))
         assertFalse(Regex("dialogState\\s*=(?!=)").containsMatchIn(readBody))
         assertFalse(readBody.contains("pendingTaskState.title ="))
+        assertFalse(readBody.contains("pendingTemporalClarification = null"))
+        assertFalse(readBody.contains("pendingReplacementField = null"))
         assertFalse(readBody.contains("selectedDate ="))
         assertFalse(readBody.contains("selectedTime ="))
         assertFalse(readBody.contains("saveTask()"))
@@ -139,6 +141,75 @@ class CreateTaskActivitySourceTest {
         assertTrue(partialBody.contains("acceptExactMinute("))
         assertTrue(partialBody.contains("moveToNextMissingStep()"))
         assertFalse(partialBody.contains("saveTask()"))
+    }
+
+    @Test
+    fun partialReplacementScheduleStartsAndroidOwnedClarificationWithoutMutatingDraft() {
+        val scheduleBody = source
+            .substringAfter("private fun handleProvidedSchedule")
+            .substringBefore("private fun beginReplacementScheduleClarification")
+        val partialPolicyBranch = scheduleBody
+            .substringAfter("is TemporalPolicyResult.NeedsExactDate,")
+            .substringBefore("is TemporalPolicyResult.InvalidPastSchedule")
+        val beginBody = source
+            .substringAfter("private fun beginReplacementScheduleClarification")
+            .substringBefore("private fun handlePendingReplacementScheduleClarification")
+
+        assertTrue(partialPolicyBranch.contains("if (replacingSchedule)"))
+        assertTrue(partialPolicyBranch.contains("beginReplacementScheduleClarification(resolution, policy)"))
+        assertFalse(partialPolicyBranch.contains("correctionNotUnderstood()"))
+
+        assertTrue(beginBody.contains("PendingTemporalClarification("))
+        assertTrue(beginBody.contains("replacingOriginalConstraint = true"))
+        assertTrue(beginBody.contains("exactDate = resolution.startDateInclusive"))
+        assertTrue(beginBody.contains("exactMinute = resolution.startMinuteInclusive"))
+        assertTrue(beginBody.contains("promptNextReplacementScheduleClarification()"))
+        assertFalse(beginBody.contains("pendingTaskState.dateText ="))
+        assertFalse(beginBody.contains("pendingTaskState.timeText ="))
+        assertFalse(beginBody.contains("selectedDate ="))
+        assertFalse(beginBody.contains("selectedTime ="))
+        assertFalse(beginBody.contains("markCreateDraftChanged()"))
+    }
+
+    @Test
+    fun replacementScheduleClarificationValidatesThenAppliesAtomicallyBeforeReconfirming() {
+        val clarificationBody = source
+            .substringAfter("private fun handlePendingReplacementScheduleClarification")
+            .substringBefore("private fun promptNextReplacementScheduleClarification")
+        val promptBody = source
+            .substringAfter("private fun promptNextReplacementScheduleClarification")
+            .substringBefore("private fun replacementScheduleRetry")
+
+        assertTrue(clarificationBody.contains("temporalResolver.resolve(value, null, value)"))
+        assertTrue(clarificationBody.contains("temporalResolver.resolve(null, value, value)"))
+        assertTrue(clarificationBody.contains("TemporalActionPolicy.validateClarification"))
+        assertTrue(clarificationBody.contains("TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.CREATE)"))
+        assertTrue(clarificationBody.contains("applyExactSchedule(finalResolution, replacingConstraint = true)"))
+        assertTrue(clarificationBody.contains("pendingTaskState.dateText = exactDate"))
+        assertTrue(clarificationBody.contains("pendingTaskState.timeText = exactTime"))
+        assertTrue(clarificationBody.contains("returnToSaveConfirmation(updatedField = null)"))
+        assertFalse(clarificationBody.contains("saveTask()"))
+        assertFalse(clarificationBody.contains("dao.insert("))
+
+        assertTrue(promptBody.contains("WAITING_FOR_DATE"))
+        assertTrue(promptBody.contains("WAITING_FOR_TIME"))
+        assertTrue(promptBody.contains("What exact date within"))
+        assertTrue(promptBody.contains("What exact time on"))
+    }
+
+    @Test
+    fun manualPickersAlsoCompletePendingReplacementScheduleWithoutPartialMutation() {
+        val datePickerBody = source
+            .substringAfter("private fun openDatePicker")
+            .substringBefore("private fun openTimePicker")
+        val timePickerBody = source
+            .substringAfter("private fun openTimePicker")
+            .substringBefore("private fun saveTask")
+
+        assertTrue(datePickerBody.contains("acceptPendingReplacementScheduleValue("))
+        assertTrue(datePickerBody.contains("field = CreateDraftField.DATE"))
+        assertTrue(timePickerBody.contains("acceptPendingReplacementScheduleValue("))
+        assertTrue(timePickerBody.contains("field = CreateDraftField.TIME"))
     }
 
     @Test

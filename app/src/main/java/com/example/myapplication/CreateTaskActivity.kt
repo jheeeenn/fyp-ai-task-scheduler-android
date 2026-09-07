@@ -500,7 +500,13 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             { _, pickedYear, pickedMonth, pickedDay ->
                 val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
                 assistantSession.pauseListeningForAssistantSpeech()
-                if (acceptExactDate(pickedDate, replacingConstraint = false)) {
+                if (acceptPendingReplacementScheduleValue(
+                        field = CreateDraftField.DATE,
+                        exactDate = pickedDate
+                    )
+                ) {
+                    Unit
+                } else if (acceptExactDate(pickedDate, replacingConstraint = false)) {
                     pendingTaskState.dateText = selectedDate
                     if (AccessibilityStateHelper.isScreenReaderActive(dateInfoGroup)) {
                         AccessibilityAnnouncementHelper.announce(
@@ -538,7 +544,13 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             { _, pickedHour, pickedMinute ->
                 val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
                 assistantSession.pauseListeningForAssistantSpeech()
-                if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
+                if (acceptPendingReplacementScheduleValue(
+                        field = CreateDraftField.TIME,
+                        exactMinute = pickedMinuteOfDay
+                    )
+                ) {
+                    Unit
+                } else if (acceptExactMinute(pickedMinuteOfDay, replacingConstraint = false)) {
                     pendingTaskState.timeText = selectedTime
                     pendingSemanticTimePhrase = null
                     suggestedLearnedTime = null
@@ -834,6 +846,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun handleProvidedField(field: CreateDraftField, value: String) {
+        if (handlePendingReplacementScheduleClarification(field, value)) return
         val replacingField = pendingReplacementField == field
         when (field) {
             CreateDraftField.TITLE -> applyProvidedTitle(value, replacingField)
@@ -872,8 +885,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             is TemporalPolicyResult.NeedsExactTime,
             is TemporalPolicyResult.NeedsExactDateAndTime -> {
                 if (replacingSchedule) {
-                    dialogState = priorState
-                    speakAndContinueListening(responseManager.correctionNotUnderstood())
+                    beginReplacementScheduleClarification(resolution, policy)
                 } else {
                     retainPartialScheduleForClarification(resolution, dateText, timeText, policy)
                 }
@@ -887,6 +899,152 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 speakAndContinueListening(responseManager.correctionNotUnderstood())
             }
         }
+    }
+
+    private fun beginReplacementScheduleClarification(
+        resolution: TemporalResolution,
+        policy: TemporalPolicyResult
+    ) {
+        val needsDate = policy is TemporalPolicyResult.NeedsExactDate ||
+            policy is TemporalPolicyResult.NeedsExactDateAndTime
+        val needsTime = policy is TemporalPolicyResult.NeedsExactTime ||
+            policy is TemporalPolicyResult.NeedsExactDateAndTime
+        pendingTemporalConstraint = resolution
+        pendingTemporalClarification = PendingTemporalClarification(
+            original = resolution,
+            exactDate = resolution.startDateInclusive.takeIf { resolution.isExactDate },
+            exactMinute = resolution.startMinuteInclusive.takeIf { resolution.isExactTime },
+            needsExactDate = needsDate,
+            needsExactTime = needsTime,
+            replacingOriginalConstraint = true
+        )
+        promptNextReplacementScheduleClarification()
+    }
+
+    private fun handlePendingReplacementScheduleClarification(
+        field: CreateDraftField,
+        value: String
+    ): Boolean {
+        if (pendingTemporalClarification?.replacingOriginalConstraint != true ||
+            field != pendingReplacementField
+        ) return false
+        return when (field) {
+            CreateDraftField.DATE -> {
+                val resolution = temporalResolver.resolve(value, null, value)
+                val date = resolution.startDateInclusive?.takeIf { resolution.isExactDate }
+                if (date == null) {
+                    speakAndContinueListening(replacementScheduleRetry(CreateDraftField.DATE))
+                    return true
+                }
+                acceptPendingReplacementScheduleValue(field = field, exactDate = date)
+            }
+            CreateDraftField.TIME -> {
+                val resolution = temporalResolver.resolve(null, value, value)
+                val minute = resolution.startMinuteInclusive?.takeIf { resolution.isExactTime }
+                if (minute == null) {
+                    speakAndContinueListening(replacementScheduleRetry(CreateDraftField.TIME))
+                    return true
+                }
+                acceptPendingReplacementScheduleValue(field = field, exactMinute = minute)
+            }
+            CreateDraftField.TITLE -> return false
+        }
+    }
+
+    private fun acceptPendingReplacementScheduleValue(
+        field: CreateDraftField,
+        exactDate: String? = null,
+        exactMinute: Int? = null
+    ): Boolean {
+        val pending = pendingTemporalClarification
+            ?.takeIf { it.replacingOriginalConstraint }
+            ?: return false
+        if (field != pendingReplacementField) return false
+        if (!TemporalActionPolicy.validateClarification(pending.original, exactDate, exactMinute)) {
+            speakAndContinueListening(replacementScheduleRetry(field))
+            return true
+        }
+        val updated = when (field) {
+            CreateDraftField.DATE -> pending.copy(exactDate = exactDate ?: return true)
+            CreateDraftField.TIME -> pending.copy(exactMinute = exactMinute ?: return true)
+            CreateDraftField.TITLE -> return false
+        }
+
+        if (!updated.isComplete) {
+            pendingTemporalClarification = updated
+            promptNextReplacementScheduleClarification()
+            return true
+        }
+
+        val exactDate = updated.exactDate ?: return true
+        val exactMinute = updated.exactMinute ?: return true
+        val exactTime = formatTime(exactMinute / 60, exactMinute % 60)
+        val finalResolution = temporalResolver.resolve(
+            exactDate,
+            exactTime,
+            "$exactDate $exactTime"
+        )
+        when (TemporalActionPolicy.evaluate(finalResolution, TemporalUseCase.CREATE)) {
+            is TemporalPolicyResult.Ready -> Unit
+            is TemporalPolicyResult.InvalidPastSchedule -> {
+                speakAndContinueListening(
+                    "${responseManager.pastDateTime()} ${replacementScheduleRetry(field)}"
+                )
+                return true
+            }
+            else -> {
+                speakAndContinueListening(replacementScheduleRetry(field))
+                return true
+            }
+        }
+        if (!applyExactSchedule(finalResolution, replacingConstraint = true)) {
+            speakAndContinueListening(replacementScheduleRetry(field))
+            return true
+        }
+
+        pendingTaskState.dateText = exactDate
+        pendingTaskState.timeText = exactTime
+        pendingReplacementField = null
+        pendingSemanticTimePhrase = null
+        suggestedLearnedTime = null
+        returnToSaveConfirmation(updatedField = null)
+        return true
+    }
+
+    private fun promptNextReplacementScheduleClarification() {
+        val pending = pendingTemporalClarification
+            ?.takeIf { it.replacingOriginalConstraint }
+            ?: return
+        val response = when {
+            pending.needsExactDate && pending.exactDate == null -> {
+                pendingReplacementField = CreateDraftField.DATE
+                dialogState = CreateTaskDialogState.WAITING_FOR_DATE
+                val range = pending.original.originalDatePhrase.trim()
+                if (range.isNotEmpty()) {
+                    "What exact date within $range would you like?"
+                } else {
+                    "What exact date would you like?"
+                }
+            }
+            pending.needsExactTime && pending.exactMinute == null -> {
+                pendingReplacementField = CreateDraftField.TIME
+                dialogState = CreateTaskDialogState.WAITING_FOR_TIME
+                val date = pending.original.originalDatePhrase.trim()
+                if (date.isNotEmpty()) {
+                    "What exact time on $date would you like?"
+                } else {
+                    "What exact time would you like?"
+                }
+            }
+            else -> return
+        }
+        speakAndContinueListening(response)
+    }
+
+    private fun replacementScheduleRetry(field: CreateDraftField): String = when (field) {
+        CreateDraftField.DATE -> "That date is outside the requested range. What exact date would you like?"
+        CreateDraftField.TIME -> "That time is outside the requested range. What exact time would you like?"
+        CreateDraftField.TITLE -> responseManager.correctionNotUnderstood()
     }
 
     private fun applyExactSchedule(
