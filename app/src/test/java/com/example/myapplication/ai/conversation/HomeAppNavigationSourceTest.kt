@@ -66,10 +66,27 @@ class HomeAppNavigationSourceTest {
         assertTrue(commit < log)
         assertTrue(log < speakThenOpen)
         assertTrue(navigationBranch.contains("result=OPENING"))
-        assertTrue(navigationBranch.contains("startActivity(Intent(this@HomeActivity"))
+        assertTrue(navigationBranch.contains("val navigationIntent = Intent(this@HomeActivity, navigation.second).apply"))
+        assertTrue(
+            navigationBranch.contains(
+                "conversationDecision.navigationTarget == ConversationNavigationTarget.CREATE_TASK"
+            )
+        )
+        assertTrue(navigationBranch.contains("putExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF, true)"))
+        assertTrue(navigationBranch.contains("startActivity(navigationIntent)"))
         assertFalse(navigationBranch.contains("agentOrchestrator"))
         assertFalse(navigationBranch.contains("TaskMatcher"))
         assertFalse(navigationBranch.contains("AppDatabase"))
         assertFalse(navigationBranch.contains("taskDao"))
+    }
+
+    @Test
+    fun manualCreateTaskNavigationDoesNotSetAssistantHandoff() {
+        val manualCreateButton = source
+            .substringAfter("view = btnCreateTask")
+            .substringBefore("view = btnScheduledTasks")
+
+        assertTrue(manualCreateButton.contains("startActivity(Intent(this, CreateTaskActivity::class.java))"))
+        assertFalse(manualCreateButton.contains("EXTRA_CREATE_TASK_ASSISTANT_HANDOFF"))
     }
 }

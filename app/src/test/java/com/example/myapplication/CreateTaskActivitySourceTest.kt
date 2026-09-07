@@ -21,6 +21,72 @@ class CreateTaskActivitySourceTest {
         .substringBefore("private fun formatDateForSpeech")
 
     @Test
+    fun assistantHandoffWithoutPrefillContinuesIntoTitleCollection() {
+        assertTrue(
+            shouldContinueIncomingCreateDraft(
+                hasPrefill = false,
+                assistantHandoff = true
+            )
+        )
+
+        val prefillBody = source
+            .substringAfter("private fun applyIncomingPrefill")
+            .substringBefore("private fun applyTemporalPrefill")
+
+        assertTrue(prefillBody.contains("getBooleanExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF, false)"))
+        assertTrue(prefillBody.contains("shouldContinueIncomingCreateDraft(hasPrefill, assistantHandoff)"))
+        assertTrue(prefillBody.contains("assistantSession.startPassiveSession(clearConversation = true)"))
+        assertTrue(prefillBody.contains("moveToNextMissingStep()"))
+        assertTrue(source.contains("CreateTaskDialogState.WAITING_FOR_TITLE -> promptHelper.askTitle()"))
+    }
+
+    @Test
+    fun openingWithoutPrefillOrAssistantHandoffDoesNotAutoStart() {
+        assertFalse(
+            shouldContinueIncomingCreateDraft(
+                hasPrefill = false,
+                assistantHandoff = false
+            )
+        )
+
+        val prefillBody = source
+            .substringAfter("private fun applyIncomingPrefill")
+            .substringBefore("private fun applyTemporalPrefill")
+        val noHandoffExit = prefillBody
+            .substringAfter("if (!shouldContinueIncomingCreateDraft(hasPrefill, assistantHandoff))")
+            .substringBefore("resetTaskDraftState()")
+
+        assertTrue(noHandoffExit.contains("hasConsumedPrefill = true"))
+        assertTrue(noHandoffExit.contains("return"))
+        assertFalse(noHandoffExit.contains("startPassiveSession"))
+    }
+
+    @Test
+    fun existingPartialPrefillStillContinuesThroughTheSameHandoffFlow() {
+        assertTrue(
+            shouldContinueIncomingCreateDraft(
+                hasPrefill = true,
+                assistantHandoff = true
+            )
+        )
+        assertTrue(
+            shouldContinueIncomingCreateDraft(
+                hasPrefill = true,
+                assistantHandoff = false
+            )
+        )
+
+        val prefillBody = source
+            .substringAfter("private fun applyIncomingPrefill")
+            .substringBefore("private fun applyTemporalPrefill")
+
+        assertTrue(prefillBody.contains("applyTitle(prefillTitle)"))
+        assertTrue(prefillBody.contains("applyTemporalPrefill(prefillDateText, prefillTimeText)"))
+        assertTrue(prefillBody.contains("moveToNextMissingStep()"))
+        assertTrue(source.contains("intent.removeExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF)"))
+    }
+
+    @Test
     fun assistantActivationResumesFromNativeDraftWithoutAutoSaving() {
         val activation = source
             .substringAfter("speechProvider = TaskFormControlSpeechRenderer::assistant")

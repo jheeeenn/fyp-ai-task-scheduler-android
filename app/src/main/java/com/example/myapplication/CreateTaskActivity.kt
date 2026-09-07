@@ -57,6 +57,13 @@ import com.example.myapplication.accessibility.TaskCardAccessibilitySemantics
 import com.example.myapplication.accessibility.AssistantAccessibilityState
 import com.example.myapplication.accessibility.AccessibilityAnnouncementHelper
 
+internal const val EXTRA_CREATE_TASK_ASSISTANT_HANDOFF = "assistant_handoff"
+
+internal fun shouldContinueIncomingCreateDraft(
+    hasPrefill: Boolean,
+    assistantHandoff: Boolean
+): Boolean = hasPrefill || assistantHandoff
+
 internal fun isCreateDraftFieldReplacement(
     field: CreateDraftField,
     state: CreateTaskDialogState,
@@ -341,13 +348,14 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         val prefillTitle = intent.getStringExtra("prefill_title")
         val prefillDateText = intent.getStringExtra("prefill_date_text")
         val prefillTimeText = intent.getStringExtra("prefill_time_text")
+        val assistantHandoff = intent.getBooleanExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF, false)
 
         val hasPrefill =
             !prefillTitle.isNullOrBlank() ||
                     !prefillDateText.isNullOrBlank() ||
                     !prefillTimeText.isNullOrBlank()
 
-        if (!hasPrefill) {
+        if (!shouldContinueIncomingCreateDraft(hasPrefill, assistantHandoff)) {
             clearPrefillExtras()
             hasConsumedPrefill = true
             return
@@ -1606,6 +1614,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         intent.removeExtra("prefill_title")
         intent.removeExtra("prefill_date_text")
         intent.removeExtra("prefill_time_text")
+        intent.removeExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF)
     }
 
     override fun onAssistantFinalText(text: String) {

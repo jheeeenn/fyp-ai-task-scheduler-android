@@ -105,6 +105,7 @@ class GenericCreateTaskDraftHandoffTest {
         assertTrue(createBranch.contains("speakObservationThenRun("))
         assertTrue(createBranch.contains("ExecutionOperation.CREATE_TASK"))
         assertTrue(createBranch.contains("startActivity(openCreateIntent)"))
+        assertTrue(createBranch.contains("putExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF, true)"))
         assertTrue(createBranch.contains("putExtra(\"prefill_title\", aiResult.taskTitle)"))
         assertTrue(
             createBranch.contains(

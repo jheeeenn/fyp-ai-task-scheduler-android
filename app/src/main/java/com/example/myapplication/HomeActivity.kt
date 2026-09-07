@@ -1820,7 +1820,12 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             "target=${conversationDecision.navigationTarget.name} result=OPENING"
                         )
                         speakThenOpen(navigation.first) {
-                            startActivity(Intent(this@HomeActivity, navigation.second))
+                            val navigationIntent = Intent(this@HomeActivity, navigation.second).apply {
+                                if (conversationDecision.navigationTarget == ConversationNavigationTarget.CREATE_TASK) {
+                                    putExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF, true)
+                                }
+                            }
+                            startActivity(navigationIntent)
                         }
                         return@launch
                     }
@@ -2535,6 +2540,7 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                             )
                         ) {
                             val openCreateIntent = Intent(this@HomeActivity, CreateTaskActivity::class.java).apply {
+                                putExtra(EXTRA_CREATE_TASK_ASSISTANT_HANDOFF, true)
                                 putExtra("prefill_title", aiResult.taskTitle)
                                 putExtra("prefill_date_text", aiResult.newDateText ?: aiResult.dateText)
                                 putExtra("prefill_time_text", aiResult.newTimeText ?: aiResult.timeText)
