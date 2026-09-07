@@ -38,40 +38,70 @@ class CreateDraftAgentDecisionParser {
             else -> throw ConversationSchemaException("Invalid create-draft field: $fieldText")
         }
         val value = requireString(json, "value")
+        val dateText = requireString(json, "date_text")
+        val timeText = requireString(json, "time_text")
         val confidence = requireNumber(json, "confidence")
         if (confidence !in 0.0..1.0) {
             throw ConversationSchemaException("Create-draft confidence out of range: $confidence")
         }
 
-        validateMoveShape(move, field, value)
-        return CreateDraftAgentDecision(move, field, value, confidence)
+        validateMoveShape(move, field, value, dateText, timeText)
+        return CreateDraftAgentDecision(move, field, value, dateText, timeText, confidence)
     }
 
     private fun validateMoveShape(
         move: CreateDraftAgentMoveType,
         field: CreateDraftField?,
-        value: String
+        value: String,
+        dateText: String,
+        timeText: String
     ) {
         when (move) {
             CreateDraftAgentMoveType.CHANGE_FIELD -> {
                 if (field == null) throw ConversationSchemaException("CHANGE_FIELD requires a field")
+                requireEmptySchedule(move, dateText, timeText)
             }
             CreateDraftAgentMoveType.PROVIDE_FIELD -> {
                 if (field == null) throw ConversationSchemaException("PROVIDE_FIELD requires a field")
                 if (value.isBlank()) throw ConversationSchemaException("PROVIDE_FIELD requires a value")
+                requireEmptySchedule(move, dateText, timeText)
+            }
+            CreateDraftAgentMoveType.PROVIDE_SCHEDULE -> {
+                if (field != null) throw ConversationSchemaException("PROVIDE_SCHEDULE requires an empty field")
+                if (value.isNotEmpty()) throw ConversationSchemaException("PROVIDE_SCHEDULE requires an empty value")
+                if (dateText.isBlank() || timeText.isBlank()) {
+                    throw ConversationSchemaException("PROVIDE_SCHEDULE requires date_text and time_text")
+                }
             }
             CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION -> {
                 if (field != null) throw ConversationSchemaException("APPLY_UNSPECIFIED_CORRECTION requires an empty field")
                 if (value.isBlank()) throw ConversationSchemaException("APPLY_UNSPECIFIED_CORRECTION requires a value")
+                requireEmptySchedule(move, dateText, timeText)
             }
             CreateDraftAgentMoveType.CONFIRM_SAVE,
             CreateDraftAgentMoveType.REJECT_SAVE,
+            CreateDraftAgentMoveType.READ_TITLE,
+            CreateDraftAgentMoveType.READ_DATE,
+            CreateDraftAgentMoveType.READ_TIME,
+            CreateDraftAgentMoveType.READ_SCHEDULE,
+            CreateDraftAgentMoveType.READ_SUMMARY,
             CreateDraftAgentMoveType.CANCEL,
             CreateDraftAgentMoveType.REQUEST_HELP,
             CreateDraftAgentMoveType.UNKNOWN -> {
                 if (field != null) throw ConversationSchemaException("$move requires an empty field")
                 if (value.isNotEmpty()) throw ConversationSchemaException("$move requires an empty value")
+                requireEmptySchedule(move, dateText, timeText)
             }
+        }
+    }
+
+    private fun requireEmptySchedule(
+        move: CreateDraftAgentMoveType,
+        dateText: String,
+        timeText: String
+    ) {
+        if (dateText.isNotEmpty() || timeText.isNotEmpty()) {
+            throw ConversationSchemaException("$move requires empty date_text and time_text")
         }
     }
 
@@ -135,7 +165,7 @@ class CreateDraftAgentDecisionParser {
     }
 
     private companion object {
-        val REQUIRED_FIELDS = setOf("move", "field", "value", "confidence")
+        val REQUIRED_FIELDS = setOf("move", "field", "value", "date_text", "time_text", "confidence")
         val TASK_AGENT_FIELDS = setOf(
             "action", "natural_response", "task_title", "target_task_title", "date", "time",
             "target_date", "target_time", "new_date", "new_time", "recurrence", "priority",

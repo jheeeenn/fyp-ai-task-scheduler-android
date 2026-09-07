@@ -22,7 +22,10 @@ class CreateDraftMoveSchemaTest {
     fun allFieldsAreRequiredAndAdditionalPropertiesAreDisabled() {
         val required = schema.getJSONArray("required")
         val fields = (0 until required.length()).map(required::getString).toSet()
-        assertEquals(setOf("move", "field", "value", "confidence"), fields)
+        assertEquals(
+            setOf("move", "field", "value", "date_text", "time_text", "confidence"),
+            fields
+        )
         assertFalse(schema.getBoolean("additionalProperties"))
         assertTrue(jsonSchema.getBoolean("strict"))
     }
@@ -32,11 +35,15 @@ class CreateDraftMoveSchemaTest {
         assertEquals(
             setOf(
                 "CONFIRM_SAVE", "REJECT_SAVE", "CHANGE_FIELD", "PROVIDE_FIELD",
-                "APPLY_UNSPECIFIED_CORRECTION", "CANCEL", "REQUEST_HELP", "UNKNOWN"
+                "PROVIDE_SCHEDULE", "APPLY_UNSPECIFIED_CORRECTION", "READ_TITLE",
+                "READ_DATE", "READ_TIME", "READ_SCHEDULE", "READ_SUMMARY", "CANCEL",
+                "REQUEST_HELP", "UNKNOWN"
             ),
             enumValues("move")
         )
         assertEquals(setOf("", "TITLE", "DATE", "TIME"), enumValues("field"))
+        assertTrue(properties.has("date_text"))
+        assertTrue(properties.has("time_text"))
     }
 
     @Test

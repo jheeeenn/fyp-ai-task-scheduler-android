@@ -2,6 +2,7 @@ package com.example.myapplication.ai.conversation.createdraft
 
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
+import com.example.myapplication.voice.CreateDraftReadTarget
 import com.example.myapplication.voice.CreateTaskDialogState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,6 +42,53 @@ class CreateDraftAgentDecisionValidatorTest {
     }
 
     @Test
+    fun combinedScheduleIsAcceptedOnlyInScheduleCapableStates() {
+        val expected = CreateDraftMove.ProvideSchedule("Sunday", "9 PM")
+        listOf(
+            CreateTaskDialogState.WAITING_FOR_DATE,
+            CreateTaskDialogState.WAITING_FOR_TIME,
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD,
+            saveState
+        ).forEach { state ->
+            assertAccepted(
+                expected,
+                decision(
+                    CreateDraftAgentMoveType.PROVIDE_SCHEDULE,
+                    dateText = "Sunday",
+                    timeText = "9 PM"
+                ),
+                state
+            )
+        }
+        assertRejected(
+            decision(
+                CreateDraftAgentMoveType.PROVIDE_SCHEDULE,
+                dateText = "Sunday",
+                timeText = "9 PM"
+            ),
+            CreateTaskDialogState.WAITING_FOR_TITLE
+        )
+    }
+
+    @Test
+    fun readMovesAreObservationalAndRejectedDuringSaveExecution() {
+        assertAccepted(
+            CreateDraftMove.ReadDraft(CreateDraftReadTarget.TIME),
+            decision(CreateDraftAgentMoveType.READ_TIME),
+            saveState
+        )
+        assertAccepted(
+            CreateDraftMove.ReadDraft(CreateDraftReadTarget.TITLE),
+            decision(CreateDraftAgentMoveType.READ_TITLE),
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertRejected(
+            decision(CreateDraftAgentMoveType.READ_SCHEDULE),
+            CreateTaskDialogState.READY_TO_SAVE
+        )
+    }
+
+    @Test
     fun unspecifiedCorrectionIsRejectedOutsideSaveConfirmation() {
         assertRejected(
             decision(CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION, value = "tomorrow"),
@@ -51,7 +99,12 @@ class CreateDraftAgentDecisionValidatorTest {
     @Test
     fun lowConfidenceMoveBecomesUnknown() {
         assertRejected(
-            decision(CreateDraftAgentMoveType.CHANGE_FIELD, CreateDraftField.TITLE, "revision", 0.74),
+            decision(
+                CreateDraftAgentMoveType.CHANGE_FIELD,
+                CreateDraftField.TITLE,
+                "revision",
+                confidence = 0.74
+            ),
             saveState
         )
     }
@@ -96,8 +149,10 @@ class CreateDraftAgentDecisionValidatorTest {
         move: CreateDraftAgentMoveType,
         field: CreateDraftField? = null,
         value: String = "",
+        dateText: String = "",
+        timeText: String = "",
         confidence: Double = 0.95
-    ) = CreateDraftAgentDecision(move, field, value, confidence)
+    ) = CreateDraftAgentDecision(move, field, value, dateText, timeText, confidence)
 
     private val saveState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
 }

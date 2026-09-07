@@ -2,6 +2,7 @@ package com.example.myapplication.ai.conversation.createdraft
 
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
+import com.example.myapplication.voice.CreateDraftReadTarget
 import com.example.myapplication.voice.CreateTaskDialogState
 
 data class CreateDraftDecisionValidation(
@@ -25,9 +26,15 @@ class CreateDraftAgentDecisionValidator {
             CreateDraftAgentMoveType.CONFIRM_SAVE -> state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
             CreateDraftAgentMoveType.REJECT_SAVE -> state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
             CreateDraftAgentMoveType.PROVIDE_FIELD -> decision.field == expectedField(state)
+            CreateDraftAgentMoveType.PROVIDE_SCHEDULE -> state in SCHEDULE_STATES
             CreateDraftAgentMoveType.CHANGE_FIELD -> isChangeAllowed(decision.field, state)
             CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION ->
                 state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION && decision.value.isNotBlank()
+            CreateDraftAgentMoveType.READ_TITLE,
+            CreateDraftAgentMoveType.READ_DATE,
+            CreateDraftAgentMoveType.READ_TIME,
+            CreateDraftAgentMoveType.READ_SCHEDULE,
+            CreateDraftAgentMoveType.READ_SUMMARY -> state in ACTIVE_STATES
             CreateDraftAgentMoveType.CANCEL -> state != CreateTaskDialogState.READY_TO_SAVE
             CreateDraftAgentMoveType.REQUEST_HELP -> state in ACTIVE_STATES
             CreateDraftAgentMoveType.UNKNOWN -> true
@@ -41,8 +48,15 @@ class CreateDraftAgentDecisionValidator {
                 CreateDraftMove.ChangeField(decision.field!!, decision.value.ifBlank { null })
             CreateDraftAgentMoveType.PROVIDE_FIELD ->
                 CreateDraftMove.ProvideField(decision.field!!, decision.value)
+            CreateDraftAgentMoveType.PROVIDE_SCHEDULE ->
+                CreateDraftMove.ProvideSchedule(decision.dateText, decision.timeText)
             CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION ->
                 CreateDraftMove.ApplyUnspecifiedCorrection(decision.value)
+            CreateDraftAgentMoveType.READ_TITLE -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.TITLE)
+            CreateDraftAgentMoveType.READ_DATE -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.DATE)
+            CreateDraftAgentMoveType.READ_TIME -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.TIME)
+            CreateDraftAgentMoveType.READ_SCHEDULE -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.SCHEDULE)
+            CreateDraftAgentMoveType.READ_SUMMARY -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.SUMMARY)
             CreateDraftAgentMoveType.CANCEL -> CreateDraftMove.Cancel
             CreateDraftAgentMoveType.REQUEST_HELP -> CreateDraftMove.RequestHelp
             CreateDraftAgentMoveType.UNKNOWN -> CreateDraftMove.Unknown
@@ -60,8 +74,11 @@ class CreateDraftAgentDecisionValidator {
             is CreateDraftMove.ChangeField -> isChangeAllowed(candidate.field, state)
             is CreateDraftMove.ProvideField ->
                 candidate.value.isNotBlank() && candidate.field == expectedField(state)
+            is CreateDraftMove.ProvideSchedule ->
+                candidate.dateText.isNotBlank() && candidate.timeText.isNotBlank() && state in SCHEDULE_STATES
             is CreateDraftMove.ApplyUnspecifiedCorrection ->
                 candidate.value.isNotBlank() && state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+            is CreateDraftMove.ReadDraft -> state in ACTIVE_STATES
             CreateDraftMove.Cancel -> state != CreateTaskDialogState.READY_TO_SAVE
             CreateDraftMove.RequestHelp -> state in ACTIVE_STATES
             CreateDraftMove.Unknown -> false
@@ -96,6 +113,12 @@ class CreateDraftAgentDecisionValidator {
         val ACTIVE_STATES = setOf(
             CreateTaskDialogState.IDLE,
             CreateTaskDialogState.WAITING_FOR_TITLE,
+            CreateTaskDialogState.WAITING_FOR_DATE,
+            CreateTaskDialogState.WAITING_FOR_TIME,
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD,
+            CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+        )
+        val SCHEDULE_STATES = setOf(
             CreateTaskDialogState.WAITING_FOR_DATE,
             CreateTaskDialogState.WAITING_FOR_TIME,
             CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD,

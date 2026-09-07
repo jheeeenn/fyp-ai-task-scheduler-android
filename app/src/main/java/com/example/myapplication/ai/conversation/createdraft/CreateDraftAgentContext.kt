@@ -116,7 +116,9 @@ data class CreateDraftAgentContext(
             CreateDraftMove.RejectSave -> "REJECT_SAVE"
             is CreateDraftMove.ChangeField -> "CHANGE_FIELD"
             is CreateDraftMove.ProvideField -> "PROVIDE_FIELD"
+            is CreateDraftMove.ProvideSchedule -> "PROVIDE_SCHEDULE"
             is CreateDraftMove.ApplyUnspecifiedCorrection -> "APPLY_UNSPECIFIED_CORRECTION"
+            is CreateDraftMove.ReadDraft -> "READ_${move.target.name}"
             CreateDraftMove.Cancel -> "CANCEL"
             CreateDraftMove.RequestHelp -> "REQUEST_HELP"
             CreateDraftMove.Unknown -> "UNKNOWN"
@@ -131,6 +133,8 @@ data class CreateDraftAgentContext(
         private fun moveHasValue(move: CreateDraftMove): Boolean = when (move) {
             is CreateDraftMove.ChangeField -> !move.value.isNullOrBlank()
             is CreateDraftMove.ProvideField -> move.value.isNotBlank()
+            is CreateDraftMove.ProvideSchedule ->
+                move.dateText.isNotBlank() && move.timeText.isNotBlank()
             is CreateDraftMove.ApplyUnspecifiedCorrection -> move.value.isNotBlank()
             else -> false
         }
@@ -171,13 +175,23 @@ data class CreateDraftAgentContext(
 
         private fun allowedMoves(state: CreateTaskDialogState): List<String> = when (state) {
             CreateTaskDialogState.IDLE,
-            CreateTaskDialogState.WAITING_FOR_TITLE -> listOf("PROVIDE_FIELD", "CHANGE_FIELD", "CANCEL", "REQUEST_HELP", "UNKNOWN")
+            CreateTaskDialogState.WAITING_FOR_TITLE -> listOf(
+                "PROVIDE_FIELD", "CHANGE_FIELD", "READ_TITLE", "READ_DATE", "READ_TIME",
+                "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
+            )
             CreateTaskDialogState.WAITING_FOR_DATE,
-            CreateTaskDialogState.WAITING_FOR_TIME -> listOf("PROVIDE_FIELD", "CHANGE_FIELD", "CANCEL", "REQUEST_HELP", "UNKNOWN")
-            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> listOf("CHANGE_FIELD", "CANCEL", "REQUEST_HELP", "UNKNOWN")
+            CreateTaskDialogState.WAITING_FOR_TIME -> listOf(
+                "PROVIDE_FIELD", "PROVIDE_SCHEDULE", "CHANGE_FIELD", "READ_TITLE", "READ_DATE",
+                "READ_TIME", "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
+            )
+            CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> listOf(
+                "CHANGE_FIELD", "PROVIDE_SCHEDULE", "READ_TITLE", "READ_DATE", "READ_TIME",
+                "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
+            )
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> listOf(
-                "CONFIRM_SAVE", "REJECT_SAVE", "CHANGE_FIELD", "APPLY_UNSPECIFIED_CORRECTION",
-                "CANCEL", "REQUEST_HELP", "UNKNOWN"
+                "CONFIRM_SAVE", "REJECT_SAVE", "CHANGE_FIELD", "PROVIDE_SCHEDULE",
+                "APPLY_UNSPECIFIED_CORRECTION", "READ_TITLE", "READ_DATE", "READ_TIME",
+                "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
             )
             CreateTaskDialogState.READY_TO_SAVE -> listOf("UNKNOWN")
         }

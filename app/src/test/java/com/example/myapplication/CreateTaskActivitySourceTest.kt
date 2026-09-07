@@ -59,7 +59,86 @@ class CreateTaskActivitySourceTest {
         assertTrue(voiceHandler.contains("handleCreateDraftMove(result.move)"))
         assertTrue(moveHandler.contains("CreateDraftMove.ConfirmSave ->"))
         assertTrue(moveHandler.contains("is CreateDraftMove.ChangeField ->"))
+        assertTrue(moveHandler.contains("is CreateDraftMove.ProvideSchedule ->"))
+        assertTrue(moveHandler.contains("is CreateDraftMove.ReadDraft ->"))
         assertTrue(moveHandler.contains("CreateDraftMove.Unknown ->"))
+    }
+
+    @Test
+    fun readDraftIsObservationalAndPreservesConversationState() {
+        val readBody = source
+            .substringAfter("private fun readCurrentDraft")
+            .substringBefore("private fun applyProvidedTitle")
+
+        assertTrue(readBody.contains("CreateDraftReadResponseRenderer.render("))
+        assertTrue(readBody.contains("title = pendingTaskState.title"))
+        assertTrue(readBody.contains("date = selectedDate"))
+        assertTrue(readBody.contains("time = selectedTime"))
+        assertTrue(readBody.contains("state = dialogState"))
+        assertTrue(readBody.contains("pendingReplacementField = pendingReplacementField"))
+        assertTrue(readBody.contains("WAITING_FOR_SAVE_CONFIRMATION"))
+        assertTrue(readBody.contains("assistantSession.expectConfirmation()"))
+        assertTrue(readBody.contains("speakAndContinueListening(response)"))
+        assertFalse(readBody.contains("markCreateDraftChanged()"))
+        assertFalse(Regex("dialogState\\s*=(?!=)").containsMatchIn(readBody))
+        assertFalse(readBody.contains("pendingTaskState.title ="))
+        assertFalse(readBody.contains("selectedDate ="))
+        assertFalse(readBody.contains("selectedTime ="))
+        assertFalse(readBody.contains("saveTask()"))
+        assertFalse(readBody.contains("dao.insert("))
+        assertFalse(readBody.contains("ReminderHelper"))
+    }
+
+    @Test
+    fun combinedScheduleUsesAndroidTemporalAuthorityAndOneAtomicMutation() {
+        val scheduleBody = source
+            .substringAfter("private fun handleProvidedSchedule")
+            .substringBefore("private fun applyExactSchedule")
+        val exactBody = source
+            .substringAfter("private fun applyExactSchedule")
+            .substringBefore("private fun retainPartialScheduleForClarification")
+
+        assertTrue(scheduleBody.contains("temporalResolver.resolve(dateText, timeText, originalText)"))
+        assertTrue(scheduleBody.contains("TemporalActionPolicy.evaluate(resolution, TemporalUseCase.CREATE)"))
+        assertTrue(scheduleBody.contains("applyExactSchedule("))
+        assertTrue(scheduleBody.contains("pendingTaskState.dateText = dateText"))
+        assertTrue(scheduleBody.contains("pendingTaskState.timeText = timeText"))
+        assertTrue(scheduleBody.contains("pendingReplacementField == CreateDraftField.DATE"))
+        assertTrue(scheduleBody.contains("pendingReplacementField == CreateDraftField.TIME"))
+        assertTrue(scheduleBody.contains("returnToSaveConfirmation(updatedField = null)"))
+        assertTrue(scheduleBody.contains("moveToNextMissingStep()"))
+        assertFalse(scheduleBody.contains("saveTask()"))
+        assertFalse(scheduleBody.contains("dao.insert("))
+
+        assertTrue(exactBody.contains("resolution.isExactDate"))
+        assertTrue(exactBody.contains("resolution.isExactTime"))
+        assertTrue(exactBody.contains("TemporalActionPolicy.validateClarification"))
+        assertTrue(exactBody.contains("selectedDate = date"))
+        assertTrue(exactBody.contains("selectedTime = formatTime"))
+        assertEquals(1, Regex("markCreateDraftChanged\\(\\)").findAll(exactBody).count())
+        assertFalse(exactBody.contains("acceptExactDate("))
+        assertFalse(exactBody.contains("acceptExactMinute("))
+
+        val confirmationBody = source
+            .substringAfter("private fun returnToSaveConfirmation")
+            .substringBefore("private fun isDraftCompleteForSaveConfirmation")
+        assertTrue(confirmationBody.contains("assistantSession.expectConfirmation()"))
+        assertTrue(confirmationBody.contains("responseManager.inlineScheduleUpdated(summary)"))
+    }
+
+    @Test
+    fun partialCombinedScheduleRetainsExistingClarificationAndLearnedTimeFlow() {
+        val partialBody = source
+            .substringAfter("private fun retainPartialScheduleForClarification")
+            .substringBefore("private fun readCurrentDraft")
+
+        assertTrue(partialBody.contains("PendingTemporalClarification("))
+        assertTrue(partialBody.contains("pendingTemporalConstraint = resolution"))
+        assertTrue(partialBody.contains("pendingSemanticTimePhrase = timeText"))
+        assertTrue(partialBody.contains("acceptExactDate("))
+        assertTrue(partialBody.contains("acceptExactMinute("))
+        assertTrue(partialBody.contains("moveToNextMissingStep()"))
+        assertFalse(partialBody.contains("saveTask()"))
     }
 
     @Test

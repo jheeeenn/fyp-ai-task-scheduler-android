@@ -108,4 +108,39 @@ class CreateDraftAgentContextTest {
         assertTrue(text.contains("No create-draft semantic request is allowed"))
         assertTrue(text.contains("Allowed moves: UNKNOWN"))
     }
+
+    @Test
+    fun allowedMovesExposeReadsAndCombinedScheduleOnlyInBoundedStates() {
+        val dateContext = CreateDraftAgentContext.capture(
+            state = CreateTaskDialogState.WAITING_FOR_DATE,
+            pendingReplacementField = null,
+            hasTitle = true,
+            hasSelectedDate = false,
+            hasSelectedTime = false,
+            localCandidate = CreateDraftMove.Unknown
+        )
+        listOf("PROVIDE_SCHEDULE", "READ_TITLE", "READ_DATE", "READ_TIME", "READ_SCHEDULE")
+            .forEach { move -> assertTrue(move, dateContext.allowedMoves.contains(move)) }
+
+        val saveContext = CreateDraftAgentContext.capture(
+            state = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION,
+            pendingReplacementField = null,
+            hasTitle = true,
+            hasSelectedDate = true,
+            hasSelectedTime = true,
+            localCandidate = CreateDraftMove.Unknown
+        )
+        assertTrue(saveContext.allowedMoves.contains("PROVIDE_SCHEDULE"))
+        assertTrue(saveContext.allowedMoves.contains("READ_SUMMARY"))
+
+        val titleContext = CreateDraftAgentContext.capture(
+            state = CreateTaskDialogState.WAITING_FOR_TITLE,
+            pendingReplacementField = null,
+            hasTitle = false,
+            hasSelectedDate = false,
+            hasSelectedTime = false,
+            localCandidate = CreateDraftMove.Unknown
+        )
+        assertFalse(titleContext.allowedMoves.contains("PROVIDE_SCHEDULE"))
+    }
 }

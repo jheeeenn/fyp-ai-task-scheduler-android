@@ -265,6 +265,12 @@ class AssistantResponseManager(
         AssistantTone.PROFESSIONAL -> "The time has been updated. I now have $summary. Should I save it?"
     }
 
+    fun inlineScheduleUpdated(summary: String): String = when (tone) {
+        AssistantTone.FRIENDLY -> "Okay, I updated the schedule. I now have $summary. Should I save it?"
+        AssistantTone.NEUTRAL -> "I updated the schedule. I now have $summary. Should I save it?"
+        AssistantTone.PROFESSIONAL -> "The schedule has been updated. I now have $summary. Should I save it?"
+    }
+
     fun inlineTitleUpdated(summary: String): String = when (tone) {
         AssistantTone.FRIENDLY -> "Okay, I updated the title. I now have $summary. Should I save it?"
         AssistantTone.NEUTRAL -> "I updated the title. I now have $summary. Should I save it?"
@@ -607,4 +613,3 @@ class UserPreferenceState {
         }
     }
 }
-

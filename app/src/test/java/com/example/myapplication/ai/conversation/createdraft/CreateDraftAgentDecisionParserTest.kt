@@ -12,12 +12,28 @@ class CreateDraftAgentDecisionParserTest {
     @Test
     fun exactValidResponseIsAccepted() {
         val decision = parser.parse(
-            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.96}"""
+            json("CHANGE_FIELD", field = "TIME", value = "10 AM", confidence = 0.96)
         )
         assertEquals(CreateDraftAgentMoveType.CHANGE_FIELD, decision.move)
         assertEquals(CreateDraftField.TIME, decision.field)
         assertEquals("10 AM", decision.value)
         assertEquals(0.96, decision.confidence, 0.0)
+    }
+
+    @Test
+    fun combinedScheduleAndReadMovesUseStrictShapes() {
+        val schedule = parser.parse(
+            json("PROVIDE_SCHEDULE", date = "Sunday", time = "9 PM")
+        )
+        assertEquals(CreateDraftAgentMoveType.PROVIDE_SCHEDULE, schedule.move)
+        assertEquals("Sunday", schedule.dateText)
+        assertEquals("9 PM", schedule.timeText)
+
+        val read = parser.parse(json("READ_TIME"))
+        assertEquals(CreateDraftAgentMoveType.READ_TIME, read.move)
+        assertEquals("", read.value)
+        assertEquals("", read.dateText)
+        assertEquals("", read.timeText)
     }
 
     @Test
@@ -33,18 +49,18 @@ class CreateDraftAgentDecisionParserTest {
 
     @Test
     fun invalidMoveIsRejected() {
-        assertRejected("""{"move":"SAVE_TASK","field":"","value":"","confidence":0.9}""")
+        assertRejected(json("SAVE_TASK"))
     }
 
     @Test
     fun invalidFieldIsRejected() {
-        assertRejected("""{"move":"CHANGE_FIELD","field":"PRIORITY","value":"high","confidence":0.9}""")
+        assertRejected(json("CHANGE_FIELD", field = "PRIORITY", value = "high"))
     }
 
     @Test
     fun confidenceOutsideRangeIsRejected() {
-        assertRejected("""{"move":"UNKNOWN","field":"","value":"","confidence":1.1}""")
-        assertRejected("""{"move":"UNKNOWN","field":"","value":"","confidence":-0.1}""")
+        assertRejected(json("UNKNOWN", confidence = 1.1))
+        assertRejected(json("UNKNOWN", confidence = -0.1))
     }
 
     @Test
@@ -54,10 +70,15 @@ class CreateDraftAgentDecisionParserTest {
 
     @Test
     fun moveSpecificFieldAndValueRequirementsAreEnforced() {
-        assertRejected("""{"move":"CHANGE_FIELD","field":"","value":"revision","confidence":0.9}""")
-        assertRejected("""{"move":"PROVIDE_FIELD","field":"TITLE","value":"","confidence":0.9}""")
-        assertRejected("""{"move":"APPLY_UNSPECIFIED_CORRECTION","field":"","value":"","confidence":0.9}""")
-        assertRejected("""{"move":"CONFIRM_SAVE","field":"TIME","value":"","confidence":0.95}""")
+        assertRejected(json("CHANGE_FIELD", value = "revision"))
+        assertRejected(json("PROVIDE_FIELD", field = "TITLE"))
+        assertRejected(json("PROVIDE_FIELD", field = "DATE", value = "Sunday", time = "9 PM"))
+        assertRejected(json("PROVIDE_SCHEDULE", date = "Sunday"))
+        assertRejected(json("PROVIDE_SCHEDULE", field = "DATE", date = "Sunday", time = "9 PM"))
+        assertRejected(json("APPLY_UNSPECIFIED_CORRECTION"))
+        assertRejected(json("CONFIRM_SAVE", field = "TIME"))
+        assertRejected(json("READ_TITLE", value = "Buy medicine"))
+        assertRejected(json("READ_TIME", time = "9 PM"))
     }
 
     @Test
@@ -65,17 +86,30 @@ class CreateDraftAgentDecisionParserTest {
         listOf(
             "CONFIRM_SAVE",
             "REJECT_SAVE",
+            "READ_TITLE",
+            "READ_DATE",
+            "READ_TIME",
+            "READ_SCHEDULE",
+            "READ_SUMMARY",
             "CANCEL",
             "REQUEST_HELP",
             "UNKNOWN"
         ).forEach { move ->
-            assertRejected("""{"move":"$move","field":"","value":"unexpected","confidence":0.95}""")
-            assertRejected("""{"move":"$move","field":"","value":" ","confidence":0.95}""")
+            assertRejected(json(move, value = "unexpected"))
+            assertRejected(json(move, value = " "))
         }
     }
 
-    private fun validUnknown() =
-        """{"move":"UNKNOWN","field":"","value":"","confidence":0.9}"""
+    private fun validUnknown() = json("UNKNOWN")
+
+    private fun json(
+        move: String,
+        field: String = "",
+        value: String = "",
+        date: String = "",
+        time: String = "",
+        confidence: Double = 0.9
+    ): String = """{"move":"$move","field":"$field","value":"$value","date_text":"$date","time_text":"$time","confidence":$confidence}"""
 
     private fun assertRejected(json: String) {
         assertThrows(ConversationSchemaException::class.java) { parser.parse(json) }

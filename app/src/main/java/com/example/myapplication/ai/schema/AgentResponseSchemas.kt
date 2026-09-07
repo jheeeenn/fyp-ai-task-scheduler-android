@@ -114,7 +114,13 @@ object AgentResponseSchemas {
                         "REJECT_SAVE",
                         "CHANGE_FIELD",
                         "PROVIDE_FIELD",
+                        "PROVIDE_SCHEDULE",
                         "APPLY_UNSPECIFIED_CORRECTION",
+                        "READ_TITLE",
+                        "READ_DATE",
+                        "READ_TIME",
+                        "READ_SCHEDULE",
+                        "READ_SUMMARY",
                         "CANCEL",
                         "REQUEST_HELP",
                         "UNKNOWN"
@@ -122,12 +128,16 @@ object AgentResponseSchemas {
                 )
                 put("field", stringEnum("", "TITLE", "DATE", "TIME"))
                 put("value", stringType())
+                put("date_text", stringType())
+                put("time_text", stringType())
                 put("confidence", numberType(minimum = 0.0, maximum = 1.0))
             },
             required = JSONArray().apply {
                 put("move")
                 put("field")
                 put("value")
+                put("date_text")
+                put("time_text")
                 put("confidence")
             }
         )

@@ -48,6 +48,7 @@ import com.example.myapplication.ai.temporal.TemporalUseCase
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftAgentContext
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftMoveResolution
+import com.example.myapplication.ai.conversation.createdraft.CreateDraftReadResponseRenderer
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticOrchestrator
 import kotlinx.coroutines.CancellationException
 import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
@@ -477,6 +478,8 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         val field = when (val move = result.move) {
             is CreateDraftMove.ChangeField -> move.field.name
             is CreateDraftMove.ProvideField -> move.field.name
+            is CreateDraftMove.ProvideSchedule -> "SCHEDULE"
+            is CreateDraftMove.ReadDraft -> move.target.name
             else -> "none"
         }
         Log.d(
@@ -764,8 +767,18 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 true
             }
 
+            is CreateDraftMove.ProvideSchedule -> {
+                handleProvidedSchedule(move.dateText, move.timeText)
+                true
+            }
+
             is CreateDraftMove.ApplyUnspecifiedCorrection -> {
                 applyUnspecifiedCorrection(move.value)
+                true
+            }
+
+            is CreateDraftMove.ReadDraft -> {
+                readCurrentDraft(move)
                 true
             }
 
@@ -827,6 +840,132 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             CreateDraftField.DATE -> applyProvidedDate(value, replacingField)
             CreateDraftField.TIME -> applyProvidedTime(value, replacingField)
         }
+    }
+
+    private fun handleProvidedSchedule(dateText: String, timeText: String) {
+        val priorState = dialogState
+        val replacingSchedule =
+            priorState == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ||
+                pendingReplacementField == CreateDraftField.DATE ||
+                pendingReplacementField == CreateDraftField.TIME
+        val originalText = listOf(dateText, timeText).joinToString(" ")
+        val resolution = temporalResolver.resolve(dateText, timeText, originalText)
+        when (val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.CREATE)) {
+            is TemporalPolicyResult.Ready -> {
+                if (!applyExactSchedule(policy.resolution, replacingConstraint = replacingSchedule)) {
+                    dialogState = priorState
+                    speakAndContinueListening(responseManager.correctionNotUnderstood())
+                    return
+                }
+                pendingTaskState.dateText = dateText
+                pendingTaskState.timeText = timeText
+                pendingSemanticTimePhrase = null
+                suggestedLearnedTime = null
+                pendingReplacementField = null
+                if (replacingSchedule) {
+                    returnToSaveConfirmation(updatedField = null)
+                } else {
+                    moveToNextMissingStep()
+                }
+            }
+            is TemporalPolicyResult.NeedsExactDate,
+            is TemporalPolicyResult.NeedsExactTime,
+            is TemporalPolicyResult.NeedsExactDateAndTime -> {
+                if (replacingSchedule) {
+                    dialogState = priorState
+                    speakAndContinueListening(responseManager.correctionNotUnderstood())
+                } else {
+                    retainPartialScheduleForClarification(resolution, dateText, timeText, policy)
+                }
+            }
+            is TemporalPolicyResult.InvalidPastSchedule -> {
+                dialogState = priorState
+                speakAndContinueListening(responseManager.pastDateTime())
+            }
+            is TemporalPolicyResult.Unresolved -> {
+                dialogState = priorState
+                speakAndContinueListening(responseManager.correctionNotUnderstood())
+            }
+        }
+    }
+
+    private fun applyExactSchedule(
+        resolution: TemporalResolution,
+        replacingConstraint: Boolean
+    ): Boolean {
+        val date = resolution.startDateInclusive?.takeIf { resolution.isExactDate } ?: return false
+        val minute = resolution.startMinuteInclusive?.takeIf { resolution.isExactTime } ?: return false
+        val constraint = if (replacingConstraint) {
+            null
+        } else {
+            pendingTemporalClarification?.original ?: pendingTemporalConstraint
+        }
+        if (constraint != null && !TemporalActionPolicy.validateClarification(constraint, date, minute)) {
+            return false
+        }
+
+        selectedDate = date
+        val parts = date.split("/")
+        selectedDay = parts.getOrNull(0)?.toIntOrNull()
+        selectedMonth = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
+        selectedYear = parts.getOrNull(2)?.toIntOrNull()
+        selectedHour24 = minute / 60
+        selectedMinute = minute % 60
+        selectedTime = formatTime(selectedHour24!!, selectedMinute!!)
+        pendingTemporalConstraint = null
+        pendingTemporalClarification = null
+        renderSelectedDate()
+        renderSelectedTime()
+        updateScheduleAccessibilityState()
+        markCreateDraftChanged()
+        return true
+    }
+
+    private fun retainPartialScheduleForClarification(
+        resolution: TemporalResolution,
+        dateText: String,
+        timeText: String,
+        policy: TemporalPolicyResult
+    ) {
+        val needsDate = policy is TemporalPolicyResult.NeedsExactDate ||
+            policy is TemporalPolicyResult.NeedsExactDateAndTime
+        val needsTime = policy is TemporalPolicyResult.NeedsExactTime ||
+            policy is TemporalPolicyResult.NeedsExactDateAndTime
+        pendingTemporalConstraint = resolution
+        pendingTemporalClarification = PendingTemporalClarification(
+            original = resolution,
+            exactDate = resolution.startDateInclusive.takeIf { resolution.isExactDate },
+            exactMinute = resolution.startMinuteInclusive.takeIf { resolution.isExactTime },
+            needsExactDate = needsDate,
+            needsExactTime = needsTime
+        )
+        if (resolution.isExactDate && resolution.startDateInclusive != null) {
+            acceptExactDate(resolution.startDateInclusive, replacingConstraint = true)
+            pendingTaskState.dateText = dateText
+        }
+        if (resolution.isExactTime && resolution.startMinuteInclusive != null) {
+            acceptExactMinute(resolution.startMinuteInclusive, replacingConstraint = true)
+            pendingTaskState.timeText = timeText
+        } else if (needsTime) {
+            pendingTaskState.timeText = timeText
+            pendingSemanticTimePhrase = timeText
+        }
+        moveToNextMissingStep()
+    }
+
+    private fun readCurrentDraft(move: CreateDraftMove.ReadDraft) {
+        val response = CreateDraftReadResponseRenderer.render(
+            target = move.target,
+            title = pendingTaskState.title ?: etTaskTitle.text.toString().trim(),
+            date = selectedDate,
+            time = selectedTime,
+            state = dialogState,
+            pendingReplacementField = pendingReplacementField
+        )
+        if (dialogState == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION) {
+            assistantSession.expectConfirmation()
+        }
+        speakAndContinueListening(response)
     }
 
     private fun applyProvidedTitle(value: String, replacingField: Boolean) {
@@ -923,18 +1062,20 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         speakAndContinueListening(responseManager.correctionNotUnderstood())
     }
 
-    private fun returnToSaveConfirmation(field: CreateDraftField) {
+    private fun returnToSaveConfirmation(updatedField: CreateDraftField?) {
         pendingReplacementField = null
         if (!isDraftCompleteForSaveConfirmation()) {
             moveToNextMissingStep()
             return
         }
         dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+        assistantSession.expectConfirmation()
         val summary = buildTaskSummary()
-        val response = when (field) {
+        val response = when (updatedField) {
             CreateDraftField.TITLE -> responseManager.inlineTitleUpdated(summary)
             CreateDraftField.DATE -> responseManager.inlineDateUpdated(summary)
             CreateDraftField.TIME -> responseManager.inlineTimeUpdated(summary)
+            null -> responseManager.inlineScheduleUpdated(summary)
         }
         speakAndContinueListening(response)
     }
@@ -1004,11 +1145,15 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         val field = when (move) {
             is CreateDraftMove.ChangeField -> move.field.name
             is CreateDraftMove.ProvideField -> move.field.name
+            is CreateDraftMove.ProvideSchedule -> "SCHEDULE"
+            is CreateDraftMove.ReadDraft -> move.target.name
             else -> "none"
         }
         val valueSupplied = when (move) {
             is CreateDraftMove.ChangeField -> !move.value.isNullOrBlank()
             is CreateDraftMove.ProvideField -> move.value.isNotBlank()
+            is CreateDraftMove.ProvideSchedule ->
+                move.dateText.isNotBlank() && move.timeText.isNotBlank()
             is CreateDraftMove.ApplyUnspecifiedCorrection -> move.value.isNotBlank()
             else -> false
         }

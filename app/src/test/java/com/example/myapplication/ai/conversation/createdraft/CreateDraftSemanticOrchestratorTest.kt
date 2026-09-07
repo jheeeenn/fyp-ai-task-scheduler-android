@@ -5,6 +5,7 @@ import com.example.myapplication.ai.temporal.TemporalResolutionType
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftMove
 import com.example.myapplication.voice.CreateDraftMoveInterpreter
+import com.example.myapplication.voice.CreateDraftReadTarget
 import com.example.myapplication.voice.CreateTaskDialogState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -43,7 +44,7 @@ class CreateDraftSemanticOrchestratorTest {
     @Test
     fun recognisedLocalTitleChangeStillCallsAgentAndCandidateIsAdvisoryOnly() = runBlocking {
         val client = FakeClient(
-            """{"move":"CHANGE_FIELD","field":"TITLE","value":"revision","confidence":0.97}"""
+            json("CHANGE_FIELD", field = "TITLE", value = "revision", confidence = 0.97)
         )
         val result = resolve(client, "change the title to revision", saveState)
 
@@ -60,7 +61,7 @@ class CreateDraftSemanticOrchestratorTest {
     @Test
     fun validAgentDecisionIsPrimaryAndMayCorrectRecognisedCandidate() = runBlocking {
         val client = FakeClient(
-            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.96}"""
+            json("CHANGE_FIELD", field = "TIME", value = "10 AM", confidence = 0.96)
         )
         val result = resolve(client, "change the title to revision", saveState)
 
@@ -72,7 +73,7 @@ class CreateDraftSemanticOrchestratorTest {
     @Test
     fun agentMayCorrectLocalUnknown() = runBlocking {
         val client = FakeClient(
-            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.97}"""
+            json("CHANGE_FIELD", field = "TIME", value = "10 AM", confidence = 0.97)
         )
         val result = resolve(client, "move the time to 10 am", saveState)
 
@@ -84,7 +85,7 @@ class CreateDraftSemanticOrchestratorTest {
     @Test
     fun punctuatedAgentTimeRemainsAcceptedAndResolvesExactlyInAndroid() = runBlocking {
         val client = FakeClient(
-            """{"move":"PROVIDE_FIELD","field":"TIME","value":"9:00 a.m.","confidence":0.95}"""
+            json("PROVIDE_FIELD", field = "TIME", value = "9:00 a.m.")
         )
         val result = resolve(client, "9:00 am", CreateTaskDialogState.WAITING_FOR_TIME)
 
@@ -150,7 +151,7 @@ class CreateDraftSemanticOrchestratorTest {
     fun doubleAbstentionCanBeRepairedAsAllowedTimeChange() = runBlocking {
         val client = SequentialFakeClient(
             validUnknown(),
-            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.96}"""
+            json("CHANGE_FIELD", field = "TIME", value = "10 AM", confidence = 0.96)
         )
         val result = resolve(client, "move the time over", saveState)
 
@@ -163,7 +164,7 @@ class CreateDraftSemanticOrchestratorTest {
     fun lowConfidenceRepairBecomesDeterministicUnknown() = runBlocking {
         val client = SequentialFakeClient(
             validUnknown(),
-            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.50}"""
+            json("CHANGE_FIELD", field = "TIME", value = "10 AM", confidence = 0.50)
         )
         val result = resolve(client, "unclear words", saveState)
 
@@ -176,7 +177,7 @@ class CreateDraftSemanticOrchestratorTest {
     fun stateInvalidRepairBecomesDeterministicUnknown() = runBlocking {
         val client = SequentialFakeClient(
             validUnknown(),
-            """{"move":"PROVIDE_FIELD","field":"TITLE","value":"revision","confidence":0.96}"""
+            json("PROVIDE_FIELD", field = "TITLE", value = "revision", confidence = 0.96)
         )
         val state = CreateTaskDialogState.WAITING_FOR_TIME
         val candidate = CreateDraftMove.Unknown
@@ -253,7 +254,7 @@ class CreateDraftSemanticOrchestratorTest {
     @Test
     fun lowConfidenceAgentOutputUsesValidLocalFallback() = runBlocking {
         val client = FakeClient(
-            """{"move":"CHANGE_FIELD","field":"TIME","value":"10 AM","confidence":0.50}"""
+            json("CHANGE_FIELD", field = "TIME", value = "10 AM", confidence = 0.50)
         )
         val result = resolve(client, "change the title to revision", saveState)
 
@@ -275,7 +276,7 @@ class CreateDraftSemanticOrchestratorTest {
     fun stateValidationRejectsAgentDecisionWhenLocalCandidateIsAlsoInvalid() = runBlocking {
         val state = CreateTaskDialogState.WAITING_FOR_TIME
         val client = FakeClient(
-            """{"move":"PROVIDE_FIELD","field":"TITLE","value":"revision","confidence":0.96}"""
+            json("PROVIDE_FIELD", field = "TITLE", value = "revision", confidence = 0.96)
         )
         val result = resolve(client, "", state)
 
@@ -341,6 +342,158 @@ class CreateDraftSemanticOrchestratorTest {
         assertEquals(2, client.calls)
     }
 
+    @Test
+    fun readRequestsSelectOnlyAndroidDraftTargetsAcrossPendingStates() = runBlocking {
+        val cases = listOf(
+            Triple("What is the title?", "READ_TITLE", CreateDraftReadTarget.TITLE),
+            Triple("What time is it currently set for?", "READ_TIME", CreateDraftReadTarget.TIME),
+            Triple("When is this task scheduled?", "READ_SCHEDULE", CreateDraftReadTarget.SCHEDULE)
+        )
+        cases.forEach { (input, move, target) ->
+            val result = resolve(FakeClient(json(move)), input, saveState)
+            assertEquals(CreateDraftMove.ReadDraft(target), result.move)
+            assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+        }
+
+        val collectingDate = resolve(
+            FakeClient(json("READ_TITLE")),
+            "What title did I set?",
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertEquals(CreateDraftMove.ReadDraft(CreateDraftReadTarget.TITLE), collectingDate.move)
+    }
+
+    @Test
+    fun combinedScheduleMeaningPreservesSeparateLiteralCandidates() = runBlocking {
+        val initial = resolve(
+            FakeClient(json("PROVIDE_SCHEDULE", date = "Sunday", time = "9 PM")),
+            "Sunday at 9 PM",
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertEquals(CreateDraftMove.ProvideSchedule("Sunday", "9 PM"), initial.move)
+
+        val correction = resolve(
+            FakeClient(json("PROVIDE_SCHEDULE", date = "Sunday", time = "9 PM")),
+            "Actually make it Sunday at 9 PM instead",
+            saveState
+        )
+        assertEquals(CreateDraftMove.ProvideSchedule("Sunday", "9 PM"), correction.move)
+        assertFalse(correction.move == CreateDraftMove.RejectSave)
+    }
+
+    @Test
+    fun fieldRequestAndSuppliedValueRemainDistinctAtSaveConfirmation() = runBlocking {
+        val cases = listOf(
+            Pair(
+                "Change the time",
+                CreateDraftMove.ChangeField(CreateDraftField.TIME)
+            ) to json("CHANGE_FIELD", field = "TIME"),
+            Pair(
+                "Change the time to 8 PM",
+                CreateDraftMove.ChangeField(CreateDraftField.TIME, "8 PM")
+            ) to json("CHANGE_FIELD", field = "TIME", value = "8 PM"),
+            Pair(
+                "Change the title",
+                CreateDraftMove.ChangeField(CreateDraftField.TITLE)
+            ) to json("CHANGE_FIELD", field = "TITLE"),
+            Pair(
+                "Change the title to Buy medicine",
+                CreateDraftMove.ChangeField(CreateDraftField.TITLE, "Buy medicine")
+            ) to json("CHANGE_FIELD", field = "TITLE", value = "Buy medicine"),
+            Pair(
+                "No, make it 9 PM instead",
+                CreateDraftMove.ChangeField(CreateDraftField.TIME, "9 PM")
+            ) to json("CHANGE_FIELD", field = "TIME", value = "9 PM")
+        )
+        cases.forEach { case ->
+            val (inputAndExpected, response) = case
+            val (input, expected) = inputAndExpected
+            val result = resolve(FakeClient(response), input, saveState)
+            assertEquals(expected, result.move)
+            assertFalse(result.move == CreateDraftMove.RejectSave)
+        }
+    }
+
+    @Test
+    fun ambiguousClockCandidateIsPreservedWithoutInventingMeridiem() = runBlocking {
+        val result = resolve(
+            FakeClient(json("CHANGE_FIELD", field = "TIME", value = "9")),
+            "make it 9",
+            saveState
+        )
+        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TIME, "9"), result.move)
+    }
+
+    @Test
+    fun realisticBareFieldsAndSingleFieldCorrectionsRemainSupported() = runBlocking {
+        val bareCases = listOf(
+            Triple(
+                CreateTaskDialogState.WAITING_FOR_TITLE,
+                "Buy medicine",
+                CreateDraftMove.ProvideField(CreateDraftField.TITLE, "Buy medicine")
+            ),
+            Triple(
+                CreateTaskDialogState.WAITING_FOR_DATE,
+                "Sunday",
+                CreateDraftMove.ProvideField(CreateDraftField.DATE, "Sunday")
+            ),
+            Triple(
+                CreateTaskDialogState.WAITING_FOR_TIME,
+                "8 PM",
+                CreateDraftMove.ProvideField(CreateDraftField.TIME, "8 PM")
+            )
+        )
+        bareCases.forEach { (state, input, expected) ->
+            val provided = expected as CreateDraftMove.ProvideField
+            val result = resolve(
+                FakeClient(
+                    json(
+                        "PROVIDE_FIELD",
+                        field = provided.field.name,
+                        value = provided.value
+                    )
+                ),
+                input,
+                state
+            )
+            assertEquals(expected, result.move)
+        }
+
+        val correctionCases = listOf(
+            Triple(
+                "No, make it Sunday instead",
+                json("CHANGE_FIELD", field = "DATE", value = "Sunday"),
+                CreateDraftMove.ChangeField(CreateDraftField.DATE, "Sunday")
+            ),
+            Triple(
+                "No, make it 8 PM instead",
+                json("CHANGE_FIELD", field = "TIME", value = "8 PM"),
+                CreateDraftMove.ChangeField(CreateDraftField.TIME, "8 PM")
+            )
+        )
+        correctionCases.forEach { (input, response, expected) ->
+            val result = resolve(FakeClient(response), input, saveState)
+            assertEquals(expected, result.move)
+            assertFalse(result.move == CreateDraftMove.RejectSave)
+        }
+    }
+
+    @Test
+    fun naturalSaveApprovalRemainsSemanticAndStateBounded() = runBlocking {
+        listOf("That sounds good", "Sure thing").forEach { input ->
+            val result = resolve(FakeClient(json("CONFIRM_SAVE", confidence = 0.97)), input, saveState)
+            assertEquals(CreateDraftMove.ConfirmSave, result.move)
+            assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY, result.source)
+        }
+
+        val outsideConfirmation = resolve(
+            FakeClient(json("CONFIRM_SAVE", confidence = 0.97)),
+            "That sounds good",
+            CreateTaskDialogState.WAITING_FOR_TIME
+        )
+        assertFalse(outsideConfirmation.move == CreateDraftMove.ConfirmSave)
+    }
+
     private suspend fun resolve(
         client: CreateDraftSemanticClient,
         text: String,
@@ -367,11 +520,18 @@ class CreateDraftSemanticOrchestratorTest {
         localCandidate = candidate
     )
 
-    private fun validUnknown() =
-        """{"move":"UNKNOWN","field":"","value":"","confidence":0.95}"""
+    private fun validUnknown() = json("UNKNOWN")
 
-    private fun validConfirm() =
-        """{"move":"CONFIRM_SAVE","field":"","value":"","confidence":0.95}"""
+    private fun validConfirm() = json("CONFIRM_SAVE")
+
+    private fun json(
+        move: String,
+        field: String = "",
+        value: String = "",
+        date: String = "",
+        time: String = "",
+        confidence: Double = 0.95
+    ): String = """{"move":"$move","field":"$field","value":"$value","date_text":"$date","time_text":"$time","confidence":$confidence}"""
 
     private val saveState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
 }
