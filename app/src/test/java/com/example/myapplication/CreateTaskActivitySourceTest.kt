@@ -435,6 +435,31 @@ class CreateTaskActivitySourceTest {
     }
 
     @Test
+    fun outOfOrderBoundedFieldsApplyThenContinueFromTheNextMissingField() {
+        val providedFieldBody = source
+            .substringAfter("private fun handleProvidedField")
+            .substringBefore("private fun handleProvidedSchedule")
+        val titleBody = source
+            .substringAfter("private fun applyProvidedTitle")
+            .substringBefore("private fun applyProvidedDate")
+        val timeBody = source
+            .substringAfter("private fun applyProvidedTime")
+            .substringBefore("private fun applyUnspecifiedCorrection")
+        val confirmationBody = source
+            .substringAfter("private fun returnToSaveConfirmation")
+            .substringBefore("private fun isDraftCompleteForSaveConfirmation")
+
+        assertTrue(providedFieldBody.contains("CreateDraftField.TITLE -> applyProvidedTitle"))
+        assertTrue(providedFieldBody.contains("CreateDraftField.DATE -> applyProvidedDate"))
+        assertTrue(providedFieldBody.contains("CreateDraftField.TIME -> applyProvidedTime"))
+        assertFalse(providedFieldBody.contains("expectedField"))
+        assertTrue(titleBody.contains("moveToNextMissingStep()"))
+        assertTrue(timeBody.contains("moveToNextMissingStep()"))
+        assertTrue(confirmationBody.contains("if (!isDraftCompleteForSaveConfirmation())"))
+        assertTrue(confirmationBody.contains("moveToNextMissingStep()"))
+    }
+
+    @Test
     fun semanticRequestDisablesAndReliablyRestoresMutableControls() {
         val primaryBody = source
             .substringAfter("private fun requestCreateDraftPrimary")
@@ -655,6 +680,14 @@ class CreateTaskActivitySourceTest {
         assertTrue(move is com.example.myapplication.voice.CreateDraftMove.ApplyUnspecifiedCorrection)
         assertFalse(correctionBody.contains("applyTitle("))
         assertFalse(correctionBody.contains("CreateDraftField.TITLE"))
+        assertTrue(correctionBody.contains("hasExplicitDateExpression(value)"))
+        assertTrue(correctionBody.contains("hasExplicitTimeExpression(value)"))
+        assertTrue(correctionBody.contains("temporalResolver.resolve(null, null, value)"))
+        assertTrue(correctionBody.contains("handleProvidedSchedule(dateText, timeText)"))
+        assertTrue(
+            correctionBody.indexOf("if (hasDate && hasTime)") <
+                correctionBody.indexOf("applySpokenDate(value, replacingConstraint = true)")
+        )
         assertTrue(correctionBody.contains("correctionNotUnderstood()"))
     }
 

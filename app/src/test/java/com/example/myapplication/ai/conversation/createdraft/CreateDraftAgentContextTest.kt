@@ -131,7 +131,9 @@ class CreateDraftAgentContextTest {
             localCandidate = CreateDraftMove.Unknown
         )
         assertTrue(saveContext.allowedMoves.contains("PROVIDE_SCHEDULE"))
+        assertTrue(saveContext.allowedMoves.contains("PROVIDE_FIELD"))
         assertTrue(saveContext.allowedMoves.contains("READ_SUMMARY"))
+        assertFalse(saveContext.allowedMoves.contains("APPLY_UNSPECIFIED_CORRECTION"))
 
         val titleContext = CreateDraftAgentContext.capture(
             state = CreateTaskDialogState.WAITING_FOR_TITLE,
@@ -142,5 +144,43 @@ class CreateDraftAgentContextTest {
             localCandidate = CreateDraftMove.Unknown
         )
         assertFalse(titleContext.allowedMoves.contains("PROVIDE_SCHEDULE"))
+    }
+
+    @Test
+    fun repairContextTruthfullyDescribesEachBoundedReason() {
+        val context = CreateDraftAgentContext.capture(
+            state = CreateTaskDialogState.WAITING_FOR_DATE,
+            pendingReplacementField = null,
+            hasTitle = true,
+            hasSelectedDate = false,
+            hasSelectedTime = false,
+            localCandidate = CreateDraftMove.Unknown
+        )
+
+        CreateDraftRepairReason.entries.forEach { reason ->
+            val repair = context.toRepairPromptText(reason)
+            assertTrue(repair.contains("Semantic repair status: ${reason.name}"))
+            assertTrue(repair.contains(reason.instruction))
+        }
+        assertTrue(
+            context.toRepairPromptText(CreateDraftRepairReason.PRIMARY_TEMPORAL_MEANING_INCOMPLETE)
+                .contains("PROVIDE_SCHEDULE")
+        )
+    }
+
+    @Test
+    fun internalUnspecifiedFallbackIsNotExposedAsAnAgentMove() {
+        val context = CreateDraftAgentContext.capture(
+            state = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION,
+            pendingReplacementField = null,
+            hasTitle = true,
+            hasSelectedDate = true,
+            hasSelectedTime = true,
+            localCandidate = CreateDraftMove.ApplyUnspecifiedCorrection("Friday evening")
+        )
+
+        assertEquals("UNKNOWN", context.localCandidateMove)
+        assertFalse(context.localCandidateRecognised)
+        assertFalse(context.toPromptText().contains("APPLY_UNSPECIFIED_CORRECTION"))
     }
 }

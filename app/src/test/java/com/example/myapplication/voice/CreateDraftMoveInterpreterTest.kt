@@ -190,7 +190,12 @@ class CreateDraftMoveInterpreterTest {
 
         listOf("revision", "review assignment", "call dentist", "buy medicine").forEach { title ->
             assertTrue(interpreter.isReasonableTitleCandidate(title))
+            assertTrue(interpreter.isConservativeBareTitleCandidate(title))
         }
+        assertFalse(interpreter.isConservativeBareTitleCandidate("can you remind to buy pill"))
+        assertFalse(interpreter.isConservativeBareTitleCandidate("can you remind me to buy pills"))
+        assertFalse(interpreter.isConservativeBareTitleCandidate("i need to remember to submit my report"))
+        assertFalse(interpreter.isConservativeBareTitleCandidate("create a task to call Mum"))
     }
 
     @Test

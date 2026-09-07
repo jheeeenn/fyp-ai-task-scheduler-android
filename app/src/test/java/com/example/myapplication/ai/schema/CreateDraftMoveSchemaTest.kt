@@ -35,7 +35,7 @@ class CreateDraftMoveSchemaTest {
         assertEquals(
             setOf(
                 "CONFIRM_SAVE", "REJECT_SAVE", "CHANGE_FIELD", "PROVIDE_FIELD",
-                "PROVIDE_SCHEDULE", "APPLY_UNSPECIFIED_CORRECTION", "READ_TITLE",
+                "PROVIDE_SCHEDULE", "READ_TITLE",
                 "READ_DATE", "READ_TIME", "READ_SCHEDULE", "READ_SUMMARY", "CANCEL",
                 "REQUEST_HELP", "UNKNOWN"
             ),

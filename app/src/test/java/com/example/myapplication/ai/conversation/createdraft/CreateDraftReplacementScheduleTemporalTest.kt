@@ -33,7 +33,21 @@ class CreateDraftReplacementScheduleTemporalTest {
         assertNull(pending.exactMinute)
         assertFalse(pending.isComplete)
         assertTrue(TemporalActionPolicy.validateClarification(resolution, null, 20 * 60))
+        assertTrue(TemporalActionPolicy.validateClarification(resolution, null, 21 * 60))
         assertFalse(TemporalActionPolicy.validateClarification(resolution, null, 16 * 60))
+    }
+
+    @Test
+    fun observedFridayEveningCorrectionRequiresExactTimeWithoutReusingOldTime() {
+        val resolution = resolver.resolve("Friday", "evening", "Friday evening", base())
+        val policy = TemporalActionPolicy.evaluate(resolution, TemporalUseCase.CREATE, base())
+
+        assertTrue(policy is TemporalPolicyResult.NeedsExactTime)
+        assertTrue(resolution.isExactDate)
+        assertFalse(resolution.isExactTime)
+        assertEquals("friday", resolution.originalDatePhrase)
+        assertEquals("evening", resolution.originalTimePhrase)
+        assertTrue(TemporalActionPolicy.validateClarification(resolution, null, 21 * 60))
     }
 
     @Test

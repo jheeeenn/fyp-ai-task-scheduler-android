@@ -31,6 +31,7 @@ class CreateDraftAgentDecisionParserTest {
 
         val read = parser.parse(json("READ_TIME"))
         assertEquals(CreateDraftAgentMoveType.READ_TIME, read.move)
+        assertEquals(null, read.field)
         assertEquals("", read.value)
         assertEquals("", read.dateText)
         assertEquals("", read.timeText)
@@ -79,6 +80,37 @@ class CreateDraftAgentDecisionParserTest {
         assertRejected(json("CONFIRM_SAVE", field = "TIME"))
         assertRejected(json("READ_TITLE", value = "Buy medicine"))
         assertRejected(json("READ_TIME", time = "9 PM"))
+    }
+
+    @Test
+    fun matchingReadFieldsAreCanonicalizedAndContradictionsAreRejected() {
+        listOf(
+            Triple("READ_TITLE", "TITLE", CreateDraftAgentMoveType.READ_TITLE),
+            Triple("READ_DATE", "DATE", CreateDraftAgentMoveType.READ_DATE),
+            Triple("READ_TIME", "TIME", CreateDraftAgentMoveType.READ_TIME)
+        ).forEach { (move, field, expectedMove) ->
+            assertEquals(null, parser.parse(json(move)).field)
+            val redundant = parser.parse(json(move, field = field))
+            assertEquals(expectedMove, redundant.move)
+            assertEquals(null, redundant.field)
+        }
+
+        listOf(
+            "READ_TITLE" to listOf("DATE", "TIME"),
+            "READ_DATE" to listOf("TITLE", "TIME"),
+            "READ_TIME" to listOf("TITLE", "DATE")
+        ).forEach { (move, contradictoryFields) ->
+            contradictoryFields.forEach { field -> assertRejected(json(move, field = field)) }
+        }
+    }
+
+    @Test
+    fun readCanonicalizationNeverAcceptsDraftFacts() {
+        assertRejected(json("READ_TITLE", field = "TITLE", value = "Buy medicine"))
+        assertRejected(json("READ_DATE", field = "DATE", date = "Sunday"))
+        assertRejected(json("READ_TIME", field = "TIME", time = "9 PM"))
+        assertRejected(json("READ_SCHEDULE", field = "DATE"))
+        assertRejected(json("READ_SUMMARY", field = "TITLE"))
     }
 
     @Test

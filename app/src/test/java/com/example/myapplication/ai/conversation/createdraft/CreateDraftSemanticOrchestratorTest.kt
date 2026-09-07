@@ -102,24 +102,24 @@ class CreateDraftSemanticOrchestratorTest {
     }
 
     @Test
-    fun agentUnknownFallsBackToLocalConfirmSave() = runBlocking {
-        val client = FakeClient(validUnknown())
+    fun agentUnknownFallsBackToLocalConfirmSaveAfterOneRepairAttempt() = runBlocking {
+        val client = SequentialFakeClient(validUnknown(), validUnknown())
         val result = resolve(client, "yes", saveState)
 
         assertEquals(CreateDraftMove.ConfirmSave, result.move)
         assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
         assertFalse(result.source == CreateDraftMoveSource.CONVERSATION_AGENT_PRIMARY)
-        assertEquals(1, client.calls)
+        assertEquals(2, client.calls)
     }
 
     @Test
-    fun agentUnknownFallsBackToLocalChangeField() = runBlocking {
-        val client = FakeClient(validUnknown())
+    fun agentUnknownFallsBackToLocalChangeFieldAfterOneRepairAttempt() = runBlocking {
+        val client = SequentialFakeClient(validUnknown(), validUnknown())
         val result = resolve(client, "change the title to revision", saveState)
 
         assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
         assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
-        assertEquals(1, client.calls)
+        assertEquals(2, client.calls)
     }
 
     @Test
@@ -143,8 +143,8 @@ class CreateDraftSemanticOrchestratorTest {
         assertEquals(2, client.calls)
         assertTrue(client.contexts[1].contains("Previous assistant act: ASKED_TO_CONFIRM_SAVE"))
         assertTrue(client.contexts[1].contains("Expected response kind: CONFIRM_REJECT_OR_CORRECT"))
-        assertTrue(client.contexts[1].contains("Semantic repair status: PRIMARY_AND_LOCAL_ABSTAINED"))
-        assertTrue(client.contexts[1].contains("no valid deterministic proposal exists"))
+        assertTrue(client.contexts[1].contains("Semantic repair status: PRIMARY_ABSTAINED"))
+        assertTrue(client.contexts[1].contains("first semantic interpretation abstained", ignoreCase = true))
     }
 
     @Test
@@ -177,7 +177,7 @@ class CreateDraftSemanticOrchestratorTest {
     fun stateInvalidRepairBecomesDeterministicUnknown() = runBlocking {
         val client = SequentialFakeClient(
             validUnknown(),
-            json("PROVIDE_FIELD", field = "TITLE", value = "revision", confidence = 0.96)
+            json("CONFIRM_SAVE", confidence = 0.96)
         )
         val state = CreateTaskDialogState.WAITING_FOR_TIME
         val candidate = CreateDraftMove.Unknown
@@ -241,14 +241,19 @@ class CreateDraftSemanticOrchestratorTest {
     }
 
     @Test
-    fun malformedAgentOutputUsesValidLocalFallback() = runBlocking {
-        val client = FakeClient("not json")
-        val result = resolve(client, "change the title to revision", saveState)
+    fun malformedPrimaryCanRepairNaturalTitleExtraction() = runBlocking {
+        val client = SequentialFakeClient(
+            json("PROVIDE_FIELD", field = "TITLE"),
+            json("PROVIDE_FIELD", field = "TITLE", value = "buy pills", confidence = 0.98)
+        )
+        val result = resolve(client, "Can you remind me to buy pills", CreateTaskDialogState.IDLE)
 
-        assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
-        assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+        assertEquals(CreateDraftMove.ProvideField(CreateDraftField.TITLE, "buy pills"), result.move)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_REPAIR, result.source)
         assertTrue(result.agentAttempted)
-        assertEquals(1, client.calls)
+        assertEquals(2, client.calls)
+        assertTrue(client.contexts[1].contains("Semantic repair status: PRIMARY_SCHEMA_INVALID"))
+        assertFalse((result.move as CreateDraftMove.ProvideField).value.contains("remind", ignoreCase = true))
     }
 
     @Test
@@ -260,29 +265,82 @@ class CreateDraftSemanticOrchestratorTest {
 
         assertEquals(CreateDraftMove.ChangeField(CreateDraftField.TITLE, "revision"), result.move)
         assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+        assertEquals(2, client.calls)
     }
 
     @Test
-    fun malformedAgentOutputWithoutValidLocalCandidateBecomesUnknown() = runBlocking {
+    fun malformedPrimaryAndRepairFailClosedWithoutStoringConversationalWrapper() = runBlocking {
         val client = FakeClient("not json")
-        val result = resolve(client, "unclear words", saveState)
+        val result = resolve(client, "Can you remind me to buy pills", CreateTaskDialogState.IDLE)
 
         assertEquals(CreateDraftMove.Unknown, result.move)
         assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
-        assertEquals(1, client.calls)
+        assertEquals(2, client.calls)
+        assertFalse(result.move is CreateDraftMove.ProvideField)
     }
 
     @Test
-    fun stateValidationRejectsAgentDecisionWhenLocalCandidateIsAlsoInvalid() = runBlocking {
-        val state = CreateTaskDialogState.WAITING_FOR_TIME
-        val client = FakeClient(
-            json("PROVIDE_FIELD", field = "TITLE", value = "revision", confidence = 0.96)
+    fun abstainedPrimaryAndRepairDoNotUseUnsafeStateForcedLocalValues() = runBlocking {
+        val wrappedTitleClient = SequentialFakeClient(validUnknown(), validUnknown())
+        val wrappedTitle = resolve(
+            wrappedTitleClient,
+            "Can you remind me to buy pills",
+            CreateTaskDialogState.IDLE
         )
-        val result = resolve(client, "", state)
+        assertEquals(CreateDraftMove.Unknown, wrappedTitle.move)
+        assertEquals(2, wrappedTitleClient.calls)
+
+        val wrongDateClient = SequentialFakeClient(validUnknown(), validUnknown())
+        val wrongDate = resolve(
+            wrongDateClient,
+            "Buy vit",
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertEquals(CreateDraftMove.Unknown, wrongDate.move)
+        assertEquals(2, wrongDateClient.calls)
+    }
+
+    @Test
+    fun doubleAbstentionRetainsConservativeBareValueFallbacks() = runBlocking {
+        val cases = listOf(
+            Triple(
+                CreateTaskDialogState.WAITING_FOR_TITLE,
+                "Buy vitamins",
+                CreateDraftMove.ProvideField(CreateDraftField.TITLE, "buy vitamins")
+            ),
+            Triple(
+                CreateTaskDialogState.WAITING_FOR_DATE,
+                "Sunday",
+                CreateDraftMove.ProvideField(CreateDraftField.DATE, "sunday")
+            ),
+            Triple(
+                CreateTaskDialogState.WAITING_FOR_TIME,
+                "8 PM",
+                CreateDraftMove.ProvideField(CreateDraftField.TIME, "8 pm")
+            )
+        )
+        cases.forEach { (state, input, expected) ->
+            val client = SequentialFakeClient(validUnknown(), validUnknown())
+            val result = resolve(client, input, state)
+            assertEquals(expected, result.move)
+            assertEquals(CreateDraftMoveSource.LOCAL_FAILURE_FALLBACK, result.source)
+            assertEquals(2, client.calls)
+        }
+    }
+
+    @Test
+    fun stateValidationRejectionReceivesOneTruthfulRepairAttempt() = runBlocking {
+        val state = CreateTaskDialogState.WAITING_FOR_TITLE
+        val client = SequentialFakeClient(
+            json("PROVIDE_SCHEDULE", date = "Sunday", time = "9 PM", confidence = 0.96),
+            validUnknown()
+        )
+        val result = resolve(client, "Can you remind me to buy pills", state)
 
         assertEquals(CreateDraftMove.Unknown, result.move)
         assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
-        assertEquals(1, client.calls)
+        assertEquals(2, client.calls)
+        assertTrue(client.contexts[1].contains("Semantic repair status: PRIMARY_STATE_VALIDATION_REJECTED"))
     }
 
     @Test
@@ -361,6 +419,93 @@ class CreateDraftSemanticOrchestratorTest {
             CreateTaskDialogState.WAITING_FOR_DATE
         )
         assertEquals(CreateDraftMove.ReadDraft(CreateDraftReadTarget.TITLE), collectingDate.move)
+
+        val redundantReadField = resolve(
+            FakeClient(json("READ_DATE", field = "DATE")),
+            "What is the date?",
+            saveState
+        )
+        assertEquals(CreateDraftMove.ReadDraft(CreateDraftReadTarget.DATE), redundantReadField.move)
+    }
+
+    @Test
+    fun semanticAgentMaySupplyAnotherBoundedFieldDuringCollection() = runBlocking {
+        val titleWhileDatePending = resolve(
+            FakeClient(json("PROVIDE_FIELD", field = "TITLE", value = "Buy vitamins")),
+            "Buy vitamins",
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertEquals(
+            CreateDraftMove.ProvideField(CreateDraftField.TITLE, "Buy vitamins"),
+            titleWhileDatePending.move
+        )
+
+        val timeWhileDatePending = resolve(
+            FakeClient(json("PROVIDE_FIELD", field = "TIME", value = "9 PM")),
+            "9 PM",
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertEquals(
+            CreateDraftMove.ProvideField(CreateDraftField.TIME, "9 PM"),
+            timeWhileDatePending.move
+        )
+
+        val titleWhileTimePending = resolve(
+            FakeClient(json("CHANGE_FIELD", field = "TITLE", value = "Buy medicine")),
+            "Actually call it Buy medicine",
+            CreateTaskDialogState.WAITING_FOR_TIME
+        )
+        assertEquals(
+            CreateDraftMove.ChangeField(CreateDraftField.TITLE, "Buy medicine"),
+            titleWhileTimePending.move
+        )
+    }
+
+    @Test
+    fun explicitDateAndTimeRepairLossyPrimaryIntoCombinedSchedule() = runBlocking {
+        val client = SequentialFakeClient(
+            json("CHANGE_FIELD", field = "DATE", value = "Thursday", confidence = 0.96),
+            json("PROVIDE_SCHEDULE", date = "Thursday", time = "9 PM", confidence = 0.98)
+        )
+
+        val result = resolve(client, "No, make it Thursday at 9 PM instead", saveState)
+
+        assertEquals(CreateDraftMove.ProvideSchedule("Thursday", "9 PM"), result.move)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_REPAIR, result.source)
+        assertEquals(2, client.calls)
+        assertTrue(
+            client.contexts[1].contains(
+                "Semantic repair status: PRIMARY_TEMPORAL_MEANING_INCOMPLETE"
+            )
+        )
+    }
+
+    @Test
+    fun broadTimeEvidenceIsPreservedByCombinedScheduleRepair() = runBlocking {
+        val client = SequentialFakeClient(
+            json("CHANGE_FIELD", field = "DATE", value = "Friday", confidence = 0.96),
+            json("PROVIDE_SCHEDULE", date = "Friday", time = "evening", confidence = 0.98)
+        )
+
+        val result = resolve(client, "Actually make it Friday evening instead", saveState)
+
+        assertEquals(CreateDraftMove.ProvideSchedule("Friday", "evening"), result.move)
+        assertEquals(CreateDraftMoveSource.CONVERSATION_AGENT_REPAIR, result.source)
+        assertEquals(2, client.calls)
+    }
+
+    @Test
+    fun lossyTemporalRepairFailsClosedWithoutReturningSingleFieldMutation() = runBlocking {
+        val client = SequentialFakeClient(
+            json("CHANGE_FIELD", field = "DATE", value = "Thursday", confidence = 0.96),
+            json("PROVIDE_FIELD", field = "TIME", value = "9 PM", confidence = 0.98)
+        )
+
+        val result = resolve(client, "No, make it Thursday at 9 PM instead", saveState)
+
+        assertEquals(CreateDraftMove.Unknown, result.move)
+        assertEquals(CreateDraftMoveSource.DETERMINISTIC_UNKNOWN, result.source)
+        assertEquals(2, client.calls)
     }
 
     @Test

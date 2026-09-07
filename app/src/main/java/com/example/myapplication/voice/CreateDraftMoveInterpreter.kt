@@ -47,6 +47,13 @@ class CreateDraftMoveInterpreter {
 
     fun isConfirmationUtterance(value: String): Boolean = isConfirmation(clean(value))
 
+    fun isConservativeBareTitleCandidate(value: String): Boolean {
+        val text = clean(value)
+        if (!isReasonableTitleCandidate(text)) return false
+        if (stripConversationLeadIn(text) != text) return false
+        return text.split(' ').size <= MAX_LOCAL_TITLE_WORDS
+    }
+
     private fun interpretTitleInput(text: String): CreateDraftMove {
         parseExplicitFieldChange(text)?.let { return it }
         return if (isReasonableTitleCandidate(text)) {
@@ -145,6 +152,7 @@ class CreateDraftMoveInterpreter {
         .trim()
 
     private companion object {
+        const val MAX_LOCAL_TITLE_WORDS = 5
         val cancellations = setOf(
             "cancel", "cancel this task", "stop creating", "stop creating this task", "discard this task"
         )

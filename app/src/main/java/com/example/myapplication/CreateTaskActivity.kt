@@ -1246,6 +1246,21 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             return
         }
 
+        val hasDate = temporalResolver.hasExplicitDateExpression(value)
+        val hasTime = temporalResolver.hasExplicitTimeExpression(value)
+        if (hasDate && hasTime) {
+            val resolution = temporalResolver.resolve(null, null, value)
+            val dateText = resolution.originalDatePhrase
+            val timeText = resolution.originalTimePhrase
+            if (dateText.isBlank() || timeText.isBlank()) {
+                dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
+                speakAndContinueListening(responseManager.correctionNotUnderstood())
+                return
+            }
+            handleProvidedSchedule(dateText, timeText)
+            return
+        }
+
         if (applySpokenDate(value, replacingConstraint = true)) {
             pendingTaskState.dateText = value
             returnToSaveConfirmation(CreateDraftField.DATE)

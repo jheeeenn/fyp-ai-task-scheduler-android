@@ -23,6 +23,30 @@ enum class CreateDraftExpectedResponseKind {
     NONE
 }
 
+enum class CreateDraftRepairReason(val instruction: String) {
+    PRIMARY_SCHEMA_INVALID(
+        "The first structured interpretation was malformed. Re-evaluate the same complete user " +
+            "utterance using only the allowed create-draft moves. Preserve literal user-supplied " +
+            "values and do not invent missing fields."
+    ),
+    PRIMARY_STATE_VALIDATION_REJECTED(
+        "The first structured interpretation was not valid for the supplied Android interaction " +
+            "state or confidence threshold. Re-evaluate the complete utterance within the allowed " +
+            "moves. Treat the expected field as conversational context, not a vocabulary restriction."
+    ),
+    PRIMARY_TEMPORAL_MEANING_INCOMPLETE(
+        "Android detected explicit date evidence and explicit time evidence in the complete utterance, " +
+            "but the first interpretation preserved only one temporal component. Re-evaluate the " +
+            "complete utterance and use PROVIDE_SCHEDULE with both literal components when they form " +
+            "one schedule."
+    ),
+    PRIMARY_ABSTAINED(
+        "The first semantic interpretation abstained. Re-evaluate the user's complete meaning only " +
+            "within the supplied interaction state and allowed moves. Do not invent missing values. " +
+            "Use UNKNOWN only if the meaning remains genuinely ambiguous."
+    )
+}
+
 data class CreateDraftAgentContext(
     val currentState: String,
     val previousAssistantAct: CreateDraftPreviousAssistantAct,
@@ -60,16 +84,11 @@ data class CreateDraftAgentContext(
         append("Authority limitations: ${authorityLimitations.joinToString("; ")}")
     }
 
-    fun toRepairPromptText(): String = buildString {
+    fun toRepairPromptText(reason: CreateDraftRepairReason): String = buildString {
         appendLine(toPromptText())
         appendLine()
-        appendLine("Semantic repair status: PRIMARY_AND_LOCAL_ABSTAINED")
-        append(
-            "Repair instruction: The first semantic interpretation abstained and no valid deterministic " +
-                    "proposal exists. Re-evaluate the user's meaning only within the supplied interaction act " +
-                    "and allowed moves. Do not invent missing values. Use UNKNOWN only if the meaning remains " +
-                    "genuinely ambiguous."
-        )
+        appendLine("Semantic repair status: ${reason.name}")
+        append("Repair instruction: ${reason.instruction}")
     }
 
     companion object {
@@ -97,7 +116,8 @@ data class CreateDraftAgentContext(
                 localCandidateMove = moveName(localCandidate),
                 localCandidateField = moveField(localCandidate)?.name.orEmpty(),
                 localCandidateValuePresent = moveHasValue(localCandidate),
-                localCandidateRecognised = localCandidate != CreateDraftMove.Unknown,
+                localCandidateRecognised = localCandidate != CreateDraftMove.Unknown &&
+                    localCandidate !is CreateDraftMove.ApplyUnspecifiedCorrection,
                 allowedMoves = allowedMoves(state),
                 authorityLimitations = listOf(
                     "Interpret one bounded move only",
@@ -117,7 +137,7 @@ data class CreateDraftAgentContext(
             is CreateDraftMove.ChangeField -> "CHANGE_FIELD"
             is CreateDraftMove.ProvideField -> "PROVIDE_FIELD"
             is CreateDraftMove.ProvideSchedule -> "PROVIDE_SCHEDULE"
-            is CreateDraftMove.ApplyUnspecifiedCorrection -> "APPLY_UNSPECIFIED_CORRECTION"
+            is CreateDraftMove.ApplyUnspecifiedCorrection -> "UNKNOWN"
             is CreateDraftMove.ReadDraft -> "READ_${move.target.name}"
             CreateDraftMove.Cancel -> "CANCEL"
             CreateDraftMove.RequestHelp -> "REQUEST_HELP"
@@ -135,7 +155,7 @@ data class CreateDraftAgentContext(
             is CreateDraftMove.ProvideField -> move.value.isNotBlank()
             is CreateDraftMove.ProvideSchedule ->
                 move.dateText.isNotBlank() && move.timeText.isNotBlank()
-            is CreateDraftMove.ApplyUnspecifiedCorrection -> move.value.isNotBlank()
+            is CreateDraftMove.ApplyUnspecifiedCorrection -> false
             else -> false
         }
 
@@ -185,13 +205,13 @@ data class CreateDraftAgentContext(
                 "READ_TIME", "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
             )
             CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD -> listOf(
-                "CHANGE_FIELD", "PROVIDE_SCHEDULE", "READ_TITLE", "READ_DATE", "READ_TIME",
-                "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
+                "CHANGE_FIELD", "PROVIDE_FIELD", "PROVIDE_SCHEDULE", "READ_TITLE", "READ_DATE",
+                "READ_TIME", "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
             )
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> listOf(
-                "CONFIRM_SAVE", "REJECT_SAVE", "CHANGE_FIELD", "PROVIDE_SCHEDULE",
-                "APPLY_UNSPECIFIED_CORRECTION", "READ_TITLE", "READ_DATE", "READ_TIME",
-                "READ_SCHEDULE", "READ_SUMMARY", "CANCEL", "REQUEST_HELP", "UNKNOWN"
+                "CONFIRM_SAVE", "REJECT_SAVE", "CHANGE_FIELD", "PROVIDE_FIELD", "PROVIDE_SCHEDULE",
+                "READ_TITLE", "READ_DATE", "READ_TIME", "READ_SCHEDULE", "READ_SUMMARY", "CANCEL",
+                "REQUEST_HELP", "UNKNOWN"
             )
             CreateTaskDialogState.READY_TO_SAVE -> listOf("UNKNOWN")
         }

@@ -46,7 +46,13 @@ class CreateDraftAgentDecisionParser {
         }
 
         validateMoveShape(move, field, value, dateText, timeText)
-        return CreateDraftAgentDecision(move, field, value, dateText, timeText, confidence)
+        val canonicalField = when (move) {
+            CreateDraftAgentMoveType.READ_TITLE,
+            CreateDraftAgentMoveType.READ_DATE,
+            CreateDraftAgentMoveType.READ_TIME -> null
+            else -> field
+        }
+        return CreateDraftAgentDecision(move, canonicalField, value, dateText, timeText, confidence)
     }
 
     private fun validateMoveShape(
@@ -73,16 +79,17 @@ class CreateDraftAgentDecisionParser {
                     throw ConversationSchemaException("PROVIDE_SCHEDULE requires date_text and time_text")
                 }
             }
-            CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION -> {
-                if (field != null) throw ConversationSchemaException("APPLY_UNSPECIFIED_CORRECTION requires an empty field")
-                if (value.isBlank()) throw ConversationSchemaException("APPLY_UNSPECIFIED_CORRECTION requires a value")
-                requireEmptySchedule(move, dateText, timeText)
-            }
+            CreateDraftAgentMoveType.READ_TITLE -> requireReadShape(
+                move, field, CreateDraftField.TITLE, value, dateText, timeText
+            )
+            CreateDraftAgentMoveType.READ_DATE -> requireReadShape(
+                move, field, CreateDraftField.DATE, value, dateText, timeText
+            )
+            CreateDraftAgentMoveType.READ_TIME -> requireReadShape(
+                move, field, CreateDraftField.TIME, value, dateText, timeText
+            )
             CreateDraftAgentMoveType.CONFIRM_SAVE,
             CreateDraftAgentMoveType.REJECT_SAVE,
-            CreateDraftAgentMoveType.READ_TITLE,
-            CreateDraftAgentMoveType.READ_DATE,
-            CreateDraftAgentMoveType.READ_TIME,
             CreateDraftAgentMoveType.READ_SCHEDULE,
             CreateDraftAgentMoveType.READ_SUMMARY,
             CreateDraftAgentMoveType.CANCEL,
@@ -93,6 +100,21 @@ class CreateDraftAgentDecisionParser {
                 requireEmptySchedule(move, dateText, timeText)
             }
         }
+    }
+
+    private fun requireReadShape(
+        move: CreateDraftAgentMoveType,
+        field: CreateDraftField?,
+        matchingField: CreateDraftField,
+        value: String,
+        dateText: String,
+        timeText: String
+    ) {
+        if (field != null && field != matchingField) {
+            throw ConversationSchemaException("$move contains a contradictory field")
+        }
+        if (value.isNotEmpty()) throw ConversationSchemaException("$move requires an empty value")
+        requireEmptySchedule(move, dateText, timeText)
     }
 
     private fun requireEmptySchedule(

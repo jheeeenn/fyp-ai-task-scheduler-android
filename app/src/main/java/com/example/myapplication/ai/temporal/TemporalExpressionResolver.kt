@@ -339,7 +339,7 @@ class TemporalExpressionResolver {
 
     private fun parseTimeWindow(text: String): TemporalResolution? {
         val t = text.trim()
-        when (t) { "morning" -> return time(300, 719); "afternoon" -> return time(720, 1019); "evening" -> return time(1020, 1259); "night", "tonight" -> return time(1260, 299, true); "noon" -> return time(720,720); "midnight" -> return time(0,0) }
+        when (t) { "morning" -> return time(300, 719); "afternoon" -> return time(720, 1019); "evening" -> return time(1020, 1260); "night", "tonight" -> return time(1260, 299, true); "noon" -> return time(720,720); "midnight" -> return time(0,0) }
         Regex("at (.+)").matchEntire(t)?.let { val m = parseMinute(it.groupValues[1]) ?: return null; return time(m, m) }
         Regex("before (.+)").matchEntire(t)?.let { val m = parseMinute(it.groupValues[1]) ?: return null; return time(0, (m - 1).coerceAtLeast(0)) }
         Regex("after (.+)").matchEntire(t)?.let { val m = parseMinute(it.groupValues[1]) ?: return null; return time((m + 1).coerceAtMost(1439), 1439) }

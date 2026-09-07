@@ -45,7 +45,7 @@ class TemporalQueryResolverTest {
     @Test fun timeWindows() {
         assertTime(r(time = "morning"), 300, 719, false)
         assertTime(r(time = "afternoon"), 720, 1019, false)
-        assertTime(r(time = "evening"), 1020, 1259, false)
+        assertTime(r(time = "evening"), 1020, 1260, false)
         assertTime(r(time = "night"), 1260, 299, true)
         assertTime(r(time = "before 10 AM"), 0, 599, false)
         assertTime(r(time = "after 6 PM"), 1081, 1439, false)

@@ -25,11 +25,10 @@ class CreateDraftAgentDecisionValidator {
         val allowed = when (decision.move) {
             CreateDraftAgentMoveType.CONFIRM_SAVE -> state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
             CreateDraftAgentMoveType.REJECT_SAVE -> state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
-            CreateDraftAgentMoveType.PROVIDE_FIELD -> decision.field == expectedField(state)
+            CreateDraftAgentMoveType.PROVIDE_FIELD ->
+                decision.field != null && state in ACTIVE_STATES
             CreateDraftAgentMoveType.PROVIDE_SCHEDULE -> state in SCHEDULE_STATES
             CreateDraftAgentMoveType.CHANGE_FIELD -> isChangeAllowed(decision.field, state)
-            CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION ->
-                state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION && decision.value.isNotBlank()
             CreateDraftAgentMoveType.READ_TITLE,
             CreateDraftAgentMoveType.READ_DATE,
             CreateDraftAgentMoveType.READ_TIME,
@@ -50,8 +49,6 @@ class CreateDraftAgentDecisionValidator {
                 CreateDraftMove.ProvideField(decision.field!!, decision.value)
             CreateDraftAgentMoveType.PROVIDE_SCHEDULE ->
                 CreateDraftMove.ProvideSchedule(decision.dateText, decision.timeText)
-            CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION ->
-                CreateDraftMove.ApplyUnspecifiedCorrection(decision.value)
             CreateDraftAgentMoveType.READ_TITLE -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.TITLE)
             CreateDraftAgentMoveType.READ_DATE -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.DATE)
             CreateDraftAgentMoveType.READ_TIME -> CreateDraftMove.ReadDraft(CreateDraftReadTarget.TIME)
@@ -92,9 +89,7 @@ class CreateDraftAgentDecisionValidator {
 
     private fun isChangeAllowed(field: CreateDraftField?, state: CreateTaskDialogState): Boolean {
         if (field == null) return false
-        return state == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION ||
-                state == CreateTaskDialogState.WAITING_FOR_CHANGE_FIELD ||
-                expectedField(state) == field
+        return state in ACTIVE_STATES
     }
 
     private fun expectedField(state: CreateTaskDialogState): CreateDraftField? = when (state) {

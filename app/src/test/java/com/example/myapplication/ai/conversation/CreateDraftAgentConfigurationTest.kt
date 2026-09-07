@@ -40,6 +40,9 @@ class CreateDraftAgentConfigurationTest {
         assertTrue(prompt.contains("do not turn a correction into confirmation"))
         assertTrue(prompt.contains("Interpret the complete conversational act"))
         assertTrue(prompt.contains("State constrains authority, not the"))
+        assertTrue(prompt.contains("expected field is conversational context"))
+        assertTrue(prompt.contains("Extract only the task-content candidate"))
+        assertTrue(prompt.contains("Broad time meaning"))
         assertTrue(prompt.contains("A field selected with no candidate is CHANGE_FIELD"))
         assertTrue(prompt.contains("When both date and time meaning are supplied"))
         assertTrue(prompt.contains("Read moves never mutate"))
@@ -54,6 +57,8 @@ class CreateDraftAgentConfigurationTest {
     @Test
     fun promptContainsBoundedExamplesAndJsonOnlyRule() {
         assertTrue(prompt.contains("User: \"just 9 AM\""))
+        assertTrue(prompt.contains("User: \"Can you remind me to buy pills\""))
+        assertTrue(prompt.contains("\"field\":\"TITLE\",\"value\":\"buy pills\""))
         assertTrue(prompt.contains("User: \"move the time to 10 AM\""))
         assertTrue(prompt.contains("User: \"could you use revision as the name\""))
         assertTrue(prompt.contains("User: \"what's the time to 10 AM\""))
@@ -63,6 +68,8 @@ class CreateDraftAgentConfigurationTest {
         assertTrue(prompt.contains("User: \"later\""))
         assertTrue(prompt.contains("User: \"Sunday at 9 PM\""))
         assertTrue(prompt.contains("User: \"Actually make it Sunday at 9 PM instead\""))
+        assertTrue(prompt.contains("User: \"Actually make it Friday evening instead\""))
+        assertTrue(prompt.contains("\"date_text\":\"Friday\",\"time_text\":\"evening\""))
         assertTrue(prompt.contains("\"date_text\":\"Sunday\",\"time_text\":\"9 PM\""))
         assertTrue(prompt.contains("User: \"What time is it currently set for?\""))
         assertTrue(prompt.contains("illustrative and are not an exhaustive command list"))
@@ -71,5 +78,6 @@ class CreateDraftAgentConfigurationTest {
         assertFalse(prompt.contains("go ahead", ignoreCase = true))
         assertFalse(prompt.contains("that works for me", ignoreCase = true))
         assertTrue(prompt.contains("Do not output explanations, markdown, task-agent fields"))
+        assertFalse(prompt.contains("APPLY_UNSPECIFIED_CORRECTION"))
     }
 }

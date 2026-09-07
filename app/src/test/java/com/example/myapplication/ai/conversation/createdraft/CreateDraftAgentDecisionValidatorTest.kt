@@ -20,15 +20,25 @@ class CreateDraftAgentDecisionValidatorTest {
     }
 
     @Test
-    fun provideTimeMatchesExpectedField() {
+    fun providedBoundedFieldMayDifferFromExpectedFieldAcrossActiveStates() {
         assertAccepted(
             CreateDraftMove.ProvideField(CreateDraftField.TIME, "9 AM"),
             decision(CreateDraftAgentMoveType.PROVIDE_FIELD, CreateDraftField.TIME, "9 AM"),
             CreateTaskDialogState.WAITING_FOR_TIME
         )
-        assertRejected(
-            decision(CreateDraftAgentMoveType.PROVIDE_FIELD, CreateDraftField.TITLE, "revision"),
+        assertAccepted(
+            CreateDraftMove.ProvideField(CreateDraftField.TITLE, "Buy vitamins"),
+            decision(CreateDraftAgentMoveType.PROVIDE_FIELD, CreateDraftField.TITLE, "Buy vitamins"),
             CreateTaskDialogState.WAITING_FOR_TIME
+        )
+        assertAccepted(
+            CreateDraftMove.ProvideField(CreateDraftField.TIME, "9 PM"),
+            decision(CreateDraftAgentMoveType.PROVIDE_FIELD, CreateDraftField.TIME, "9 PM"),
+            CreateTaskDialogState.WAITING_FOR_DATE
+        )
+        assertRejected(
+            decision(CreateDraftAgentMoveType.PROVIDE_FIELD, CreateDraftField.TIME, "9 PM"),
+            CreateTaskDialogState.READY_TO_SAVE
         )
     }
 
@@ -89,10 +99,11 @@ class CreateDraftAgentDecisionValidatorTest {
     }
 
     @Test
-    fun unspecifiedCorrectionIsRejectedOutsideSaveConfirmation() {
-        assertRejected(
-            decision(CreateDraftAgentMoveType.APPLY_UNSPECIFIED_CORRECTION, value = "tomorrow"),
-            CreateTaskDialogState.WAITING_FOR_DATE
+    fun changeFieldMayTargetAnotherBoundedFieldDuringCollection() {
+        assertAccepted(
+            CreateDraftMove.ChangeField(CreateDraftField.TITLE, "Buy medicine"),
+            decision(CreateDraftAgentMoveType.CHANGE_FIELD, CreateDraftField.TITLE, "Buy medicine"),
+            CreateTaskDialogState.WAITING_FOR_TIME
         )
     }
 

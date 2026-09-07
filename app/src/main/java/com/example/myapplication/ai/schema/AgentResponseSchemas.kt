@@ -115,7 +115,6 @@ object AgentResponseSchemas {
                         "CHANGE_FIELD",
                         "PROVIDE_FIELD",
                         "PROVIDE_SCHEDULE",
-                        "APPLY_UNSPECIFIED_CORRECTION",
                         "READ_TITLE",
                         "READ_DATE",
                         "READ_TIME",
