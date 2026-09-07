@@ -79,6 +79,27 @@ internal fun isCreateDraftFieldReplacement(
     }
 }
 
+internal enum class CreateDraftReplacementPickerRoute {
+    NORMAL_DRAFT,
+    ACCEPT_PENDING_REPLACEMENT,
+    KEEP_PENDING_REPLACEMENT
+}
+
+internal fun createDraftReplacementPickerRoute(
+    replacementClarificationActive: Boolean,
+    pendingReplacementField: CreateDraftField?,
+    pickedField: CreateDraftField
+): CreateDraftReplacementPickerRoute {
+    if (!replacementClarificationActive) {
+        return CreateDraftReplacementPickerRoute.NORMAL_DRAFT
+    }
+    return if (pendingReplacementField == pickedField) {
+        CreateDraftReplacementPickerRoute.ACCEPT_PENDING_REPLACEMENT
+    } else {
+        CreateDraftReplacementPickerRoute.KEEP_PENDING_REPLACEMENT
+    }
+}
+
 class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private lateinit var promptHelper: AssistantPromptHelper
 
@@ -500,7 +521,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             { _, pickedYear, pickedMonth, pickedDay ->
                 val pickedDate = formatDate(pickedYear, pickedMonth, pickedDay)
                 assistantSession.pauseListeningForAssistantSpeech()
-                if (acceptPendingReplacementScheduleValue(
+                if (handleReplacementSchedulePickerSelection(
                         field = CreateDraftField.DATE,
                         exactDate = pickedDate
                     )
@@ -544,7 +565,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             { _, pickedHour, pickedMinute ->
                 val pickedMinuteOfDay = pickedHour * 60 + pickedMinute
                 assistantSession.pauseListeningForAssistantSpeech()
-                if (acceptPendingReplacementScheduleValue(
+                if (handleReplacementSchedulePickerSelection(
                         field = CreateDraftField.TIME,
                         exactMinute = pickedMinuteOfDay
                     )
@@ -1009,6 +1030,27 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         suggestedLearnedTime = null
         returnToSaveConfirmation(updatedField = null)
         return true
+    }
+
+    private fun handleReplacementSchedulePickerSelection(
+        field: CreateDraftField,
+        exactDate: String? = null,
+        exactMinute: Int? = null
+    ): Boolean = when (
+        createDraftReplacementPickerRoute(
+            replacementClarificationActive =
+                pendingTemporalClarification?.replacingOriginalConstraint == true,
+            pendingReplacementField = pendingReplacementField,
+            pickedField = field
+        )
+    ) {
+        CreateDraftReplacementPickerRoute.NORMAL_DRAFT -> false
+        CreateDraftReplacementPickerRoute.ACCEPT_PENDING_REPLACEMENT ->
+            acceptPendingReplacementScheduleValue(field, exactDate, exactMinute)
+        CreateDraftReplacementPickerRoute.KEEP_PENDING_REPLACEMENT -> {
+            promptNextReplacementScheduleClarification()
+            true
+        }
     }
 
     private fun promptNextReplacementScheduleClarification() {

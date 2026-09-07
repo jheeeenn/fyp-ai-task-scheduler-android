@@ -198,18 +198,93 @@ class CreateTaskActivitySourceTest {
     }
 
     @Test
-    fun manualPickersAlsoCompletePendingReplacementScheduleWithoutPartialMutation() {
+    fun manualPickersRouteThroughReplacementGuardBeforeNormalDraftMutation() {
         val datePickerBody = source
             .substringAfter("private fun openDatePicker")
             .substringBefore("private fun openTimePicker")
         val timePickerBody = source
             .substringAfter("private fun openTimePicker")
             .substringBefore("private fun saveTask")
+        val guardBody = source
+            .substringAfter("private fun handleReplacementSchedulePickerSelection")
+            .substringBefore("private fun promptNextReplacementScheduleClarification")
 
-        assertTrue(datePickerBody.contains("acceptPendingReplacementScheduleValue("))
+        assertTrue(datePickerBody.contains("handleReplacementSchedulePickerSelection("))
         assertTrue(datePickerBody.contains("field = CreateDraftField.DATE"))
-        assertTrue(timePickerBody.contains("acceptPendingReplacementScheduleValue("))
+        assertTrue(timePickerBody.contains("handleReplacementSchedulePickerSelection("))
         assertTrue(timePickerBody.contains("field = CreateDraftField.TIME"))
+        assertTrue(
+            datePickerBody.indexOf("handleReplacementSchedulePickerSelection(") <
+                datePickerBody.indexOf("acceptExactDate(")
+        )
+        assertTrue(
+            timePickerBody.indexOf("handleReplacementSchedulePickerSelection(") <
+                timePickerBody.indexOf("acceptExactMinute(")
+        )
+        assertTrue(guardBody.contains("ACCEPT_PENDING_REPLACEMENT"))
+        assertTrue(guardBody.contains("acceptPendingReplacementScheduleValue(field, exactDate, exactMinute)"))
+        assertTrue(guardBody.contains("KEEP_PENDING_REPLACEMENT"))
+        assertTrue(guardBody.contains("promptNextReplacementScheduleClarification()"))
+        assertFalse(guardBody.contains("acceptExactDate("))
+        assertFalse(guardBody.contains("acceptExactMinute("))
+        assertFalse(guardBody.contains("selectedDate ="))
+        assertFalse(guardBody.contains("selectedTime ="))
+        assertFalse(guardBody.contains("markCreateDraftChanged()"))
+        assertFalse(guardBody.contains("pendingTemporalClarification = null"))
+    }
+
+    @Test
+    fun mismatchedManualPickerKeepsPendingReplacementClarification() {
+        assertEquals(
+            CreateDraftReplacementPickerRoute.KEEP_PENDING_REPLACEMENT,
+            createDraftReplacementPickerRoute(
+                replacementClarificationActive = true,
+                pendingReplacementField = CreateDraftField.TIME,
+                pickedField = CreateDraftField.DATE
+            )
+        )
+        assertEquals(
+            CreateDraftReplacementPickerRoute.KEEP_PENDING_REPLACEMENT,
+            createDraftReplacementPickerRoute(
+                replacementClarificationActive = true,
+                pendingReplacementField = CreateDraftField.DATE,
+                pickedField = CreateDraftField.TIME
+            )
+        )
+    }
+
+    @Test
+    fun matchingManualPickerContinuesPendingReplacementClarification() {
+        assertEquals(
+            CreateDraftReplacementPickerRoute.ACCEPT_PENDING_REPLACEMENT,
+            createDraftReplacementPickerRoute(
+                replacementClarificationActive = true,
+                pendingReplacementField = CreateDraftField.TIME,
+                pickedField = CreateDraftField.TIME
+            )
+        )
+        assertEquals(
+            CreateDraftReplacementPickerRoute.ACCEPT_PENDING_REPLACEMENT,
+            createDraftReplacementPickerRoute(
+                replacementClarificationActive = true,
+                pendingReplacementField = CreateDraftField.DATE,
+                pickedField = CreateDraftField.DATE
+            )
+        )
+    }
+
+    @Test
+    fun manualPickersUseNormalDraftPathOutsideReplacementClarification() {
+        listOf(CreateDraftField.DATE, CreateDraftField.TIME).forEach { pickedField ->
+            assertEquals(
+                CreateDraftReplacementPickerRoute.NORMAL_DRAFT,
+                createDraftReplacementPickerRoute(
+                    replacementClarificationActive = false,
+                    pendingReplacementField = null,
+                    pickedField = pickedField
+                )
+            )
+        }
     }
 
     @Test
