@@ -113,7 +113,7 @@ class DeveloperTestHarnessSourceContractTest {
         assertTrue(submit.contains("assistantSession.submitTypedText(text, clearConversation = false)"))
         assertTrue(host.contains("handleVoiceCommand(text)"))
         assertTrue(create.contains("assistantSession.expectConfirmation()"))
-        assertTrue(create.contains("promptHelper.askSaveTask(buildTaskSummary())"))
+        assertTrue(create.contains("verbalizeSaveConfirmation()"))
     }
 
     @Test

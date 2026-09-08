@@ -108,7 +108,7 @@ class CreateTaskActivitySourceTest {
         assertTrue(resume.contains("CreateDraftResumePolicy.nextState"))
         assertTrue(resume.contains("WAITING_FOR_SAVE_CONFIRMATION"))
         assertTrue(completeResume.contains("assistantSession.expectConfirmation()"))
-        assertTrue(completeResume.contains("promptHelper.askSaveTask(buildTaskSummary())"))
+        assertTrue(completeResume.contains("verbalizeSaveConfirmation()"))
         assertTrue(resume.contains("CREATE_RESUME"))
         assertFalse(resume.contains("saveTask()"))
     }
@@ -137,14 +137,18 @@ class CreateTaskActivitySourceTest {
             .substringBefore("private fun applyProvidedTitle")
 
         assertTrue(readBody.contains("CreateDraftReadResponseRenderer.render("))
-        assertTrue(readBody.contains("title = pendingTaskState.title"))
+        assertTrue(readBody.contains("val title = pendingTaskState.title"))
         assertTrue(readBody.contains("date = selectedDate"))
         assertTrue(readBody.contains("time = selectedTime"))
         assertTrue(readBody.contains("state = dialogState"))
         assertTrue(readBody.contains("pendingReplacementField = pendingReplacementField"))
         assertTrue(readBody.contains("WAITING_FOR_SAVE_CONFIRMATION"))
         assertTrue(readBody.contains("assistantSession.expectConfirmation()"))
-        assertTrue(readBody.contains("speakAndContinueListening(response)"))
+        assertTrue(
+            readBody.contains(
+                "verbalizeCreateDraftResponse(plan, fallback, ::speakAndContinueListening)"
+            )
+        )
         assertFalse(readBody.contains("markCreateDraftChanged()"))
         assertFalse(Regex("dialogState\\s*=(?!=)").containsMatchIn(readBody))
         assertFalse(readBody.contains("pendingTaskState.title ="))

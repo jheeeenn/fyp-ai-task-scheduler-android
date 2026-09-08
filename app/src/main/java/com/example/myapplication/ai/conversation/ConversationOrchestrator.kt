@@ -30,6 +30,11 @@ class ConversationOrchestrator(
     private val noContextMutationRepairParser: NoContextMutationRepairParser =
         NoContextMutationRepairParser()
 ) {
+    private val responseVerbalizationEngine = ResponseVerbalizationEngine(
+        conversationAgentClient = conversationAgentClient,
+        parser = responseVerbalizationParser
+    )
+
     suspend fun styleTaskQuerySpeech(
         plan: TaskQuerySpeechPlan,
         budgetAvailable: Boolean
@@ -107,89 +112,7 @@ class ConversationOrchestrator(
             tone = tone,
             verbosity = verbosity
         ) ?: return AndroidObservationResponseRenderer.render(observation)
-        val startedAt = System.currentTimeMillis()
-        Log.d(
-            "RESPONSE_VERBALIZATION_REQUEST",
-            "operation=${observation.operation} outcome=${observation.outcome} " +
-                "responseType=${plan.responseType} tone=$tone verbosity=$verbosity"
-        )
-        return try {
-            val rawContent = conversationAgentClient.respondToObservation(
-                observationJson = plan.toSafeAgentJson(),
-                memorySnapshot = "",
-                appContextSummary = ""
-            )
-            val envelope = responseVerbalizationParser.parse(rawContent)
-            val validation = ResponseVerbalizationValidator.evaluate(plan, envelope)
-            val latencyMs = System.currentTimeMillis() - startedAt
-            Log.d(
-                "RESPONSE_VERBALIZATION_RESULT",
-                "operation=${observation.operation} outcome=${observation.outcome} " +
-                    "accepted=${validation.accepted} source=conversation_agent " +
-                    "validation=${validation.reason} latencyMs=$latencyMs"
-            )
-            if (!validation.accepted) {
-                verbalizationFallback(plan, validation.reason.name, latencyMs)
-            } else {
-                val response = plan.deterministicResponse.copy(
-                    speech = ResponseVerbalizationComposer.compose(plan, envelope),
-                    source = "conversation_agent_verbalization"
-                )
-                Log.d(
-                    "RESPONSE_VERBALIZATION_ACCEPTED",
-                    "operation=${observation.operation} outcome=${observation.outcome} " +
-                        "source=${response.source} latencyMs=$latencyMs"
-                )
-                response
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: ConversationSchemaException) {
-            val latencyMs = System.currentTimeMillis() - startedAt
-            Log.d(
-                "RESPONSE_VERBALIZATION_RESULT",
-                "operation=${observation.operation} outcome=${observation.outcome} " +
-                    "accepted=false source=conversation_agent " +
-                    "validation=${ResponseVerbalizationValidationReason.INVALID_FORMAT} " +
-                    "latencyMs=$latencyMs"
-            )
-            verbalizationFallback(
-                plan,
-                ResponseVerbalizationValidationReason.INVALID_FORMAT.name,
-                latencyMs
-            )
-        } catch (e: Exception) {
-            val latencyMs = System.currentTimeMillis() - startedAt
-            val reason = if (
-                e.message.orEmpty().contains("timed out", ignoreCase = true) ||
-                e.message.orEmpty().contains("timeout", ignoreCase = true)
-            ) {
-                "TIMEOUT"
-            } else {
-                "REQUEST_FAILURE"
-            }
-            Log.e(
-                "RESPONSE_VERBALIZATION_RESULT",
-                "operation=${observation.operation} outcome=${observation.outcome} " +
-                    "accepted=false source=conversation_agent validation=$reason " +
-                    "latencyMs=$latencyMs",
-                e
-            )
-            verbalizationFallback(plan, reason, latencyMs)
-        }
-    }
-
-    private fun verbalizationFallback(
-        plan: ResponseVerbalizationPlan,
-        reason: String,
-        latencyMs: Long
-    ): ConversationResponse {
-        Log.d(
-            "RESPONSE_VERBALIZATION_FALLBACK",
-            "operation=${plan.operation} outcome=${plan.outcome} reason=$reason " +
-                "source=android_deterministic latencyMs=$latencyMs"
-        )
-        return plan.deterministicResponse
+        return responseVerbalizationEngine.verbalize(plan)
     }
 
     fun recordDeliveredObservationResponse(

@@ -60,6 +60,8 @@ class ConversationResponseConfigurationTest {
         val prompt = ConversationAgentClient.RESPONSE_SYSTEM_PROMPT
         assertTrue(prompt.contains("presentation-only response verbalizer"))
         assertTrue(prompt.contains("Follow response_act exactly"))
+        assertTrue(prompt.contains("REPORT_AND_REQUEST_INPUT"))
+        assertTrue(prompt.contains("meaning_detail narrows"))
         assertTrue(prompt.contains("Use every name in required_placeholders exactly once"))
         assertTrue(prompt.contains("optional_placeholders may be used zero or one time"))
         assertTrue(prompt.contains("Never output a placeholder outside available_placeholders"))
@@ -70,5 +72,8 @@ class ConversationResponseConfigurationTest {
         assertTrue(prompt.contains("Room IDs"))
         assertTrue(prompt.contains("temporary refs such as T1 or T2"))
         assertTrue(prompt.contains("must remain concise"))
+        assertTrue(prompt.contains("semantic illustrations for schema reliability, not wording templates"))
+        assertTrue(prompt.contains("Do not vary wording merely to appear random"))
+        assertFalse(prompt.contains("Okay — I'll open {transition_target} for you."))
     }
 }

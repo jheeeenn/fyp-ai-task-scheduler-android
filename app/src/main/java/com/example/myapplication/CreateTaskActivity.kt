@@ -46,10 +46,17 @@ import com.example.myapplication.ai.temporal.PendingTemporalClarification
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
 import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.ResponseVerbalizationEngine
+import com.example.myapplication.ai.conversation.ResponseVerbalizationPlan
+import com.example.myapplication.ai.conversation.ResponseVerbalizationTone
+import com.example.myapplication.ai.conversation.ResponseVerbalizationVerbosity
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftAgentContext
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftMoveResolution
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftReadResponseRenderer
+import com.example.myapplication.ai.conversation.createdraft.CreateDraftResponseVerbalization
 import com.example.myapplication.ai.conversation.createdraft.CreateDraftSemanticOrchestrator
+import com.example.myapplication.voice.AssistantTone
+import com.example.myapplication.voice.AssistantVerbosity
 import kotlinx.coroutines.CancellationException
 import com.example.myapplication.accessibility.AccessibleAssistantInputDialog
 import com.example.myapplication.accessibility.AccessibilityStateHelper
@@ -121,11 +128,13 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     private val temporalResolver = TemporalExpressionResolver()
     private val createDraftMoveInterpreter = CreateDraftMoveInterpreter()
     private lateinit var createDraftSemanticOrchestrator: CreateDraftSemanticOrchestrator
+    private lateinit var createDraftResponseVerbalization: ResponseVerbalizationEngine
     private var pendingTemporalConstraint: TemporalResolution? = null
     private var pendingTemporalClarification: PendingTemporalClarification? = null
     private var pendingReplacementField: CreateDraftField? = null
     private var isResolvingCreateDraftMove = false
     private var createDraftResolutionGeneration = 0L
+    private var createDraftVerbalizationGeneration = 0L
     private var createDraftRevision = 0L
     private var isSavingTask = false
     private var isCreateTaskExitPending = false
@@ -197,10 +206,12 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
         voiceHelper = VoiceHelper(this)
         responseManager = AssistantResponseManager.fromPreferences(this)
+        val conversationAgentClient = ConversationAgentClient(this)
         createDraftSemanticOrchestrator = CreateDraftSemanticOrchestrator(
             localInterpreter = createDraftMoveInterpreter,
-            semanticClient = ConversationAgentClient(this)
+            semanticClient = conversationAgentClient
         )
+        createDraftResponseVerbalization = ResponseVerbalizationEngine(conversationAgentClient)
 
         assistantSession = AssistantVoiceSession(
             activity = this,
@@ -336,7 +347,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             CreateTaskDialogState.WAITING_FOR_TIME -> promptHelper.askTime()
             CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION -> {
                 assistantSession.expectConfirmation()
-                promptHelper.askSaveTask(buildTaskSummary())
+                verbalizeSaveConfirmation()
             }
             else -> Unit
         }
@@ -691,7 +702,17 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 dialogState = CreateTaskDialogState.IDLE
                 pendingTaskState.clear()
                 hasConsumedPrefill = false
-                speakThenFinish(responseManager.saveSuccess())
+                val fallback = responseManager.saveSuccess()
+                val plan = CreateDraftResponseVerbalization.saveResult(
+                    title = finalTitle,
+                    date = finalDate,
+                    time = finalTime,
+                    reminderScheduled = true,
+                    fallbackSpeech = fallback,
+                    tone = responseVerbalizationTone(),
+                    verbosity = responseVerbalizationVerbosity()
+                )
+                verbalizeCreateDraftResponse(plan, fallback, ::speakThenFinish)
 
             } else {
                 Toast.makeText(
@@ -702,7 +723,17 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 dialogState = CreateTaskDialogState.IDLE
                 pendingTaskState.clear()
                 hasConsumedPrefill = false
-                speakThenFinish(responseManager.savePartialFailure())
+                val fallback = responseManager.savePartialFailure()
+                val plan = CreateDraftResponseVerbalization.saveResult(
+                    title = finalTitle,
+                    date = finalDate,
+                    time = finalTime,
+                    reminderScheduled = false,
+                    fallbackSpeech = fallback,
+                    tone = responseVerbalizationTone(),
+                    verbosity = responseVerbalizationVerbosity()
+                )
+                verbalizeCreateDraftResponse(plan, fallback, ::speakThenFinish)
             }
         }
     }
@@ -1162,9 +1193,10 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
     }
 
     private fun readCurrentDraft(move: CreateDraftMove.ReadDraft) {
-        val response = CreateDraftReadResponseRenderer.render(
+        val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
+        val fallback = CreateDraftReadResponseRenderer.render(
             target = move.target,
-            title = pendingTaskState.title ?: etTaskTitle.text.toString().trim(),
+            title = title,
             date = selectedDate,
             time = selectedTime,
             state = dialogState,
@@ -1173,7 +1205,17 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         if (dialogState == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION) {
             assistantSession.expectConfirmation()
         }
-        speakAndContinueListening(response)
+        val plan = CreateDraftResponseVerbalization.readOrNull(
+            target = move.target,
+            title = title,
+            date = selectedDate,
+            time = selectedTime,
+            state = dialogState,
+            fallbackSpeech = fallback,
+            tone = responseVerbalizationTone(),
+            verbosity = responseVerbalizationVerbosity()
+        )
+        verbalizeCreateDraftResponse(plan, fallback, ::speakAndContinueListening)
     }
 
     private fun applyProvidedTitle(value: String, replacingField: Boolean) {
@@ -1300,7 +1342,17 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             CreateDraftField.TIME -> responseManager.inlineTimeUpdated(summary)
             null -> responseManager.inlineScheduleUpdated(summary)
         }
-        speakAndContinueListening(response)
+        val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
+        val plan = CreateDraftResponseVerbalization.updateConfirmationOrNull(
+            updatedField = updatedField,
+            title = title,
+            date = selectedDate,
+            time = selectedTime,
+            fallbackSpeech = response,
+            tone = responseVerbalizationTone(),
+            verbosity = responseVerbalizationVerbosity()
+        )
+        verbalizeCreateDraftResponse(plan, response, ::speakAndContinueListening)
     }
 
     private fun isDraftCompleteForSaveConfirmation(): Boolean {
@@ -1420,6 +1472,70 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         return "$title, $date, $time"
     }
 
+    private fun verbalizeSaveConfirmation() {
+        val fallback = responseManager.confirmTaskSummary(buildTaskSummary())
+        val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
+        val plan = CreateDraftResponseVerbalization.saveConfirmationOrNull(
+            title = title,
+            date = selectedDate,
+            time = selectedTime,
+            fallbackSpeech = fallback,
+            tone = responseVerbalizationTone(),
+            verbosity = responseVerbalizationVerbosity()
+        )
+        verbalizeCreateDraftResponse(plan, fallback, ::speakAndContinueListening)
+    }
+
+    private fun verbalizeCreateDraftResponse(
+        plan: ResponseVerbalizationPlan?,
+        deterministicFallback: String,
+        deliver: (String) -> Unit
+    ) {
+        if (plan == null) {
+            deliver(deterministicFallback)
+            return
+        }
+        createDraftVerbalizationGeneration += 1
+        val requestGeneration = createDraftVerbalizationGeneration
+        val requestDraftRevision = createDraftRevision
+        val requestDialogState = dialogState
+        assistantSession.pauseListeningForAssistantSpeech()
+        assistantSession.getBottomSheet()?.setProcessingState()
+        lifecycleScope.launch {
+            val response = createDraftResponseVerbalization.verbalize(plan)
+            if (
+                requestGeneration != createDraftVerbalizationGeneration ||
+                requestDraftRevision != createDraftRevision ||
+                requestDialogState != dialogState ||
+                !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) ||
+                isFinishing || isDestroyed || isCreateTaskExitPending
+            ) {
+                Log.d(
+                    "CREATE_RESPONSE_VERBALIZATION",
+                    "meaning=${plan.meaningDetail} result=STALE_RESULT_DISCARDED"
+                )
+                return@launch
+            }
+            deliver(response.speech)
+        }
+    }
+
+    private fun responseVerbalizationTone(): ResponseVerbalizationTone = when (
+        responseManager.tone
+    ) {
+        AssistantTone.FRIENDLY -> ResponseVerbalizationTone.FRIENDLY
+        AssistantTone.NEUTRAL -> ResponseVerbalizationTone.NEUTRAL
+        AssistantTone.PROFESSIONAL -> ResponseVerbalizationTone.PROFESSIONAL
+    }
+
+    private fun responseVerbalizationVerbosity(): ResponseVerbalizationVerbosity = when (
+        responseManager.verbosity
+    ) {
+        AssistantVerbosity.BRIEF -> ResponseVerbalizationVerbosity.SHORT
+        AssistantVerbosity.BALANCED -> ResponseVerbalizationVerbosity.NORMAL
+        AssistantVerbosity.DETAILED -> ResponseVerbalizationVerbosity.DETAILED
+    }
+
     private fun moveToNextMissingStep() {
         // log
         if (BuildConfig.DEBUG) {
@@ -1493,7 +1609,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                 Log.d("CREATE_STATE", "next=WAITING_FOR_SAVE_CONFIRMATION")
                 dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
                 assistantSession.expectConfirmation()
-                promptHelper.askSaveTask(buildTaskSummary())
+                verbalizeSaveConfirmation()
             }
         }
     }
@@ -1606,6 +1722,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun invalidateCreateDraftResolution() {
         createDraftResolutionGeneration += 1
+        createDraftVerbalizationGeneration += 1
         isResolvingCreateDraftMove = false
         setCreateDraftControlsEnabled(true)
     }

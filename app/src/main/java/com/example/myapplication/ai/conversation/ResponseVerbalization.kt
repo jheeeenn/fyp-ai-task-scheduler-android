@@ -10,6 +10,7 @@ enum class ResponseVerbalizationVerbosity { SHORT, NORMAL, DETAILED }
 enum class ResponseAct {
     ACKNOWLEDGE,
     REPORT_INFORMATION,
+    REPORT_AND_REQUEST_INPUT,
     REPORT_RESULT,
     ASK_CONFIRMATION,
     ASK_CLARIFICATION,
@@ -19,7 +20,23 @@ enum class ResponseVerbalizationContract {
     AUTHORITATIVE_MESSAGE,
     TASK_CONFIRMATION,
     TASK_ACTION_RESULT,
-    TASK_TRANSITION
+    TASK_TRANSITION,
+    CREATE_DRAFT_PRESENTATION
+}
+enum class ResponseMeaningDetail {
+    GENERAL,
+    CREATE_DRAFT_READ_TITLE,
+    CREATE_DRAFT_READ_DATE,
+    CREATE_DRAFT_READ_TIME,
+    CREATE_DRAFT_READ_SCHEDULE,
+    CREATE_DRAFT_READ_SUMMARY,
+    CREATE_DRAFT_UPDATE_TITLE,
+    CREATE_DRAFT_UPDATE_DATE,
+    CREATE_DRAFT_UPDATE_TIME,
+    CREATE_DRAFT_UPDATE_SCHEDULE,
+    CREATE_DRAFT_SAVE_CONFIRMATION,
+    CREATE_DRAFT_SAVE_SUCCESS,
+    CREATE_DRAFT_SAVE_PARTIAL_REMINDER_FAILURE
 }
 
 /**
@@ -42,7 +59,8 @@ data class ResponseVerbalizationPlan(
     val protectedValues: Map<String, String>,
     val requiredPlaceholders: Set<String>,
     val optionalPlaceholders: Set<String>,
-    val deterministicResponse: ConversationResponse
+    val deterministicResponse: ConversationResponse,
+    val meaningDetail: ResponseMeaningDetail = ResponseMeaningDetail.GENERAL
 ) {
     init {
         require(requiredPlaceholders.intersect(optionalPlaceholders).isEmpty())
@@ -69,19 +87,25 @@ data class ResponseVerbalizationPlan(
                         optionalPlaceholders == setOf(TASK_TITLE)
                 ResponseVerbalizationContract.TASK_TRANSITION ->
                     outcome == ExecutionOutcome.INFORMATION &&
-                        responseAct == ResponseAct.TRANSITION && when (operation) {
-                        ExecutionOperation.CREATE_TASK ->
-                            requiredPlaceholders == setOf(TRANSITION_TARGET) &&
-                                optionalPlaceholders.isEmpty()
-                        ExecutionOperation.UPDATE_TASK,
-                        ExecutionOperation.RESCHEDULE_TASK ->
-                            requiredPlaceholders.isEmpty() &&
-                                TASK_TITLE in optionalPlaceholders &&
-                                optionalPlaceholders.all {
-                                    it == TASK_TITLE || it == DATE_TEXT || it == TIME_TEXT
-                                }
-                        else -> false
-                    }
+                        responseAct == ResponseAct.TRANSITION &&
+                        when (operation) {
+                            ExecutionOperation.CREATE_TASK ->
+                                requiredPlaceholders == setOf(TRANSITION_TARGET) &&
+                                    optionalPlaceholders.isEmpty()
+                            ExecutionOperation.UPDATE_TASK,
+                            ExecutionOperation.RESCHEDULE_TASK ->
+                                requiredPlaceholders.isEmpty() &&
+                                    TASK_TITLE in optionalPlaceholders &&
+                                    optionalPlaceholders.all {
+                                        it == TASK_TITLE || it == DATE_TEXT || it == TIME_TEXT
+                                    }
+                            else -> false
+                        }
+                ResponseVerbalizationContract.CREATE_DRAFT_PRESENTATION ->
+                    operation == ExecutionOperation.CREATE_TASK &&
+                        meaningDetail != ResponseMeaningDetail.GENERAL &&
+                        protectedValues.keys.all { it in CREATE_DRAFT_FACTS } &&
+                        hasValidCreateDraftContract()
             }
         )
     }
@@ -92,6 +116,7 @@ data class ResponseVerbalizationPlan(
         put("outcome", outcome.name)
         put("response_type", responseType.name)
         put("response_act", responseAct.name)
+        put("meaning_detail", meaningDetail.name)
         put("tone", tone.name)
         put("verbosity", verbosity.name)
         put("verbalization_contract", contract.name)
@@ -128,6 +153,61 @@ data class ResponseVerbalizationPlan(
             ExecutionOperation.MARK_DONE,
             ExecutionOperation.MARK_UNDONE
         )
+
+        private val CREATE_DRAFT_FACTS = setOf(TASK_TITLE, DATE_TEXT, TIME_TEXT)
+    }
+
+    private fun hasValidCreateDraftContract(): Boolean = when (meaningDetail) {
+        ResponseMeaningDetail.CREATE_DRAFT_READ_TITLE ->
+            requiredPlaceholders == setOf(TASK_TITLE) && optionalPlaceholders.isEmpty() &&
+                hasValidCreateDraftReadAct()
+        ResponseMeaningDetail.CREATE_DRAFT_READ_DATE ->
+            requiredPlaceholders == setOf(DATE_TEXT) && optionalPlaceholders.isEmpty() &&
+                hasValidCreateDraftReadAct()
+        ResponseMeaningDetail.CREATE_DRAFT_READ_TIME ->
+            requiredPlaceholders == setOf(TIME_TEXT) && optionalPlaceholders.isEmpty() &&
+                hasValidCreateDraftReadAct()
+        ResponseMeaningDetail.CREATE_DRAFT_READ_SCHEDULE ->
+            requiredPlaceholders == setOf(DATE_TEXT, TIME_TEXT) &&
+                optionalPlaceholders.isEmpty() && hasValidCreateDraftReadAct()
+        ResponseMeaningDetail.CREATE_DRAFT_READ_SUMMARY ->
+            requiredPlaceholders == setOf(TASK_TITLE, DATE_TEXT, TIME_TEXT) &&
+                optionalPlaceholders.isEmpty() && hasValidCreateDraftReadAct()
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TITLE,
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_DATE,
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TIME,
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_SCHEDULE,
+        ResponseMeaningDetail.CREATE_DRAFT_SAVE_CONFIRMATION ->
+            outcome == ExecutionOutcome.NEEDS_CONFIRMATION &&
+                responseAct == ResponseAct.ASK_CONFIRMATION &&
+                responseType == ConversationResponseType.REQUEST_CONFIRMATION &&
+                requiredInput == RequiredInput.CONFIRMATION &&
+                continuedInteractionExpected &&
+                requiredPlaceholders == CREATE_DRAFT_FACTS && optionalPlaceholders.isEmpty()
+        ResponseMeaningDetail.CREATE_DRAFT_SAVE_SUCCESS ->
+            outcome == ExecutionOutcome.SUCCESS && responseAct == ResponseAct.REPORT_RESULT &&
+                responseType == ConversationResponseType.SUCCESS &&
+                requiredInput == RequiredInput.NONE && !continuedInteractionExpected &&
+                requiredPlaceholders.isEmpty() && optionalPlaceholders == CREATE_DRAFT_FACTS
+        ResponseMeaningDetail.CREATE_DRAFT_SAVE_PARTIAL_REMINDER_FAILURE ->
+            outcome == ExecutionOutcome.PARTIAL_SUCCESS &&
+                responseAct == ResponseAct.REPORT_RESULT &&
+                responseType == ConversationResponseType.PARTIAL_SUCCESS &&
+                requiredInput == RequiredInput.NONE && !continuedInteractionExpected &&
+                requiredPlaceholders.isEmpty() && optionalPlaceholders == CREATE_DRAFT_FACTS
+        ResponseMeaningDetail.GENERAL -> false
+    }
+
+    private fun hasValidCreateDraftReadAct(): Boolean = when (responseAct) {
+        ResponseAct.REPORT_INFORMATION ->
+            outcome == ExecutionOutcome.INFORMATION && requiredInput == RequiredInput.NONE
+        ResponseAct.REPORT_AND_REQUEST_INPUT ->
+            outcome == ExecutionOutcome.NEEDS_CLARIFICATION && requiredInput != RequiredInput.NONE &&
+                requiredInput != RequiredInput.CONFIRMATION && continuedInteractionExpected
+        ResponseAct.ASK_CONFIRMATION ->
+            outcome == ExecutionOutcome.NEEDS_CONFIRMATION &&
+                requiredInput == RequiredInput.CONFIRMATION && continuedInteractionExpected
+        else -> false
     }
 }
 
@@ -481,6 +561,7 @@ object ResponseVerbalizationValidator {
             return rejected(ResponseVerbalizationValidationReason.UNSUPPORTED_CONTROL_INSTRUCTION)
         }
         if (
+            plan.contract != ResponseVerbalizationContract.CREATE_DRAFT_PRESENTATION &&
             plan.outcome !in setOf(ExecutionOutcome.SUCCESS, ExecutionOutcome.PARTIAL_SUCCESS) &&
             (
                 successClaim.containsMatchIn(presentationText) ||
@@ -490,6 +571,7 @@ object ResponseVerbalizationValidator {
             return rejected(ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT)
         }
         if (
+            plan.contract != ResponseVerbalizationContract.CREATE_DRAFT_PRESENTATION &&
             plan.outcome in setOf(ExecutionOutcome.SUCCESS, ExecutionOutcome.PARTIAL_SUCCESS) &&
             failureClaim.containsMatchIn(presentationText)
         ) {
@@ -505,6 +587,8 @@ object ResponseVerbalizationValidator {
                 hasSafeTaskActionResult(plan.operation, template, presentationText)
             ResponseVerbalizationContract.TASK_TRANSITION ->
                 hasSafeTaskTransition(plan.operation, template, presentationText)
+            ResponseVerbalizationContract.CREATE_DRAFT_PRESENTATION ->
+                hasSafeCreateDraftPresentation(plan, template, presentationText)
         }
         if (!contractIsSafe) {
             return rejected(ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT)
@@ -615,6 +699,156 @@ object ResponseVerbalizationValidator {
         )
     }
 
+    private fun hasSafeCreateDraftPresentation(
+        plan: ResponseVerbalizationPlan,
+        template: String,
+        presentationText: String
+    ): Boolean = when (plan.meaningDetail) {
+        ResponseMeaningDetail.CREATE_DRAFT_READ_TITLE,
+        ResponseMeaningDetail.CREATE_DRAFT_READ_DATE,
+        ResponseMeaningDetail.CREATE_DRAFT_READ_TIME,
+        ResponseMeaningDetail.CREATE_DRAFT_READ_SCHEDULE,
+        ResponseMeaningDetail.CREATE_DRAFT_READ_SUMMARY ->
+            hasSafeCreateDraftRead(plan, template, presentationText)
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TITLE,
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_DATE,
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TIME,
+        ResponseMeaningDetail.CREATE_DRAFT_UPDATE_SCHEDULE ->
+            hasSafeCreateDraftUpdate(plan.meaningDetail, template, presentationText)
+        ResponseMeaningDetail.CREATE_DRAFT_SAVE_CONFIRMATION ->
+            hasSafeCreateDraftSaveConfirmation(template, presentationText)
+        ResponseMeaningDetail.CREATE_DRAFT_SAVE_SUCCESS,
+        ResponseMeaningDetail.CREATE_DRAFT_SAVE_PARTIAL_REMINDER_FAILURE ->
+            hasSafeCreateDraftSaveResult(plan.meaningDetail, template, presentationText)
+        ResponseMeaningDetail.GENERAL -> false
+    }
+
+    private fun hasSafeCreateDraftRead(
+        plan: ResponseVerbalizationPlan,
+        template: String,
+        presentationText: String
+    ): Boolean {
+        val questionIsSafe = when (plan.responseAct) {
+            ResponseAct.REPORT_INFORMATION -> '?' !in template
+            ResponseAct.REPORT_AND_REQUEST_INPUT ->
+                hasExactlyOneTrailingQuestion(template) &&
+                    questionMatches(plan.requiredInput, presentationText)
+            ResponseAct.ASK_CONFIRMATION ->
+                hasExactlyOneTrailingQuestion(template) &&
+                    confirmationQuestion.containsMatchIn(presentationText)
+            else -> false
+        }
+        if (
+            !questionIsSafe ||
+            successClaim.containsMatchIn(presentationText) ||
+            futureCreateMutationPromise.containsMatchIn(presentationText) ||
+            userMutationInstruction.containsMatchIn(presentationText)
+        ) {
+            return false
+        }
+        val factDescriptionRemoved = if (
+            plan.meaningDetail == ResponseMeaningDetail.CREATE_DRAFT_READ_SCHEDULE
+        ) {
+            descriptiveScheduleClaim.replace(presentationText, " ")
+        } else {
+            presentationText
+        }
+        return !createDraftCompletedMutation.containsMatchIn(factDescriptionRemoved) &&
+            !unrelatedCreateDraftMutation.containsMatchIn(factDescriptionRemoved)
+    }
+
+    private fun hasSafeCreateDraftUpdate(
+        meaningDetail: ResponseMeaningDetail,
+        template: String,
+        presentationText: String
+    ): Boolean {
+        if (
+            !hasExactlyOneTrailingQuestion(template) ||
+            !confirmationQuestion.containsMatchIn(presentationText) ||
+            prematureCreateSaveClaim.containsMatchIn(presentationText) ||
+            futureCreateMutationPromise.containsMatchIn(presentationText) ||
+            userMutationInstruction.containsMatchIn(presentationText) ||
+            unrelatedCreateDraftMutation.containsMatchIn(presentationText)
+        ) {
+            return false
+        }
+        val expectedField = when (meaningDetail) {
+            ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TITLE -> "title"
+            ResponseMeaningDetail.CREATE_DRAFT_UPDATE_DATE -> "date"
+            ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TIME -> "time"
+            ResponseMeaningDetail.CREATE_DRAFT_UPDATE_SCHEDULE -> "schedule"
+            else -> return false
+        }
+        val acknowledgedFields = CREATE_DRAFT_FIELD_NAMES.filterTo(mutableSetOf()) { field ->
+            Regex(
+                """\b(?:(?:updated|changed|set|revised|adjusted)\s+(?:the\s+)?$field|(?:the\s+)?$field\s+(?:has\s+been|is|was)\s+(?:updated|changed|set|revised|adjusted)|new\s+$field)\b""",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(presentationText)
+        }
+        return acknowledgedFields == setOf(expectedField)
+    }
+
+    private fun hasSafeCreateDraftSaveConfirmation(
+        template: String,
+        presentationText: String
+    ): Boolean = hasExactlyOneTrailingQuestion(template) &&
+        confirmationQuestion.containsMatchIn(presentationText) &&
+        !successClaim.containsMatchIn(presentationText) &&
+        !prematureCreateSaveClaim.containsMatchIn(presentationText) &&
+        !futureCreateMutationPromise.containsMatchIn(presentationText) &&
+        !createDraftUpdateMutation.containsMatchIn(presentationText) &&
+        !userMutationInstruction.containsMatchIn(presentationText) &&
+        !unrelatedCreateDraftMutation.containsMatchIn(presentationText)
+
+    private fun hasSafeCreateDraftSaveResult(
+        meaningDetail: ResponseMeaningDetail,
+        template: String,
+        presentationText: String
+    ): Boolean {
+        if (
+            '?' in template ||
+            futureCreateMutationPromise.containsMatchIn(presentationText) ||
+            createDraftUpdateMutation.containsMatchIn(presentationText) ||
+            userMutationInstruction.containsMatchIn(presentationText) ||
+            unrelatedCreateDraftMutation.containsMatchIn(presentationText) ||
+            !authoritativeCreateSaveClaim.containsMatchIn(presentationText)
+        ) {
+            return false
+        }
+        return when (meaningDetail) {
+            ResponseMeaningDetail.CREATE_DRAFT_SAVE_SUCCESS ->
+                !failureClaim.containsMatchIn(presentationText)
+            ResponseMeaningDetail.CREATE_DRAFT_SAVE_PARTIAL_REMINDER_FAILURE ->
+                reminderFailureClaim.containsMatchIn(presentationText)
+            else -> false
+        }
+    }
+
+    private fun questionMatches(requiredInput: RequiredInput, text: String): Boolean = when (
+        requiredInput
+    ) {
+        RequiredInput.TITLE -> Regex(
+            """\b(title|name|call)\b""",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(text)
+        RequiredInput.EXACT_DATE -> Regex(
+            """\b(date|day|when)\b""",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(text)
+        RequiredInput.EXACT_TIME -> Regex(
+            """\b(time|when)\b""",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(text)
+        RequiredInput.CHANGE_FIELD -> Regex(
+            """\b(change|title|date|time)\b""",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(text)
+        else -> false
+    }
+
+    private fun hasExactlyOneTrailingQuestion(template: String): Boolean =
+        template.trim().endsWith('?') && template.count { it == '?' } == 1
+
     private fun authorizedTransitionPurpose(operation: ExecutionOperation): List<Regex> =
         when (operation) {
             ExecutionOperation.CREATE_TASK -> listOf(
@@ -647,7 +881,8 @@ object ResponseVerbalizationValidator {
 
     private fun permitsControlLanguage(responseAct: ResponseAct): Boolean = responseAct in setOf(
         ResponseAct.ASK_CONFIRMATION,
-        ResponseAct.ASK_CLARIFICATION
+        ResponseAct.ASK_CLARIFICATION,
+        ResponseAct.REPORT_AND_REQUEST_INPUT
     )
 
     private fun containsLiteralProtectedValue(
@@ -690,6 +925,47 @@ object ResponseVerbalizationValidator {
         """\bgo\s+ahead(?:\s+(?:and|to))?\b""",
         RegexOption.IGNORE_CASE
     )
+    private val confirmationQuestion = Regex(
+        """\b(save|confirm)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val descriptiveScheduleClaim = Regex(
+        """\b(?:is|it['’]s|currently)\s+(?:currently\s+)?(?:set|scheduled)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val futureCreateMutationPromise = Regex(
+        """(?:\b(?:i|we)(?:['’]ll|\s+will|['’]m\s+going\s+to|\s+am\s+going\s+to|\s+can)\s+(?:create|save|add|update|edit|change|reschedule|schedule|delete|remove|complete|mark)\b|\b(?:it|the\s+task|this\s+task|your\s+task)\s+will\s+be\s+(?:created|saved|added|updated|changed|scheduled|deleted|completed)\b)""",
+        RegexOption.IGNORE_CASE
+    )
+    private val createDraftCompletedMutation = Regex(
+        """\b(created|saved|added|deleted|removed|completed|marked|updated|edited|changed|rescheduled|scheduled|moved)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val prematureCreateSaveClaim = Regex(
+        """\b(created|saved|added)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val authoritativeCreateSaveClaim = Regex(
+        """\b(created|saved|added)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val unrelatedCreateDraftMutation = Regex(
+        """\b(delet(?:e|ing|ed)|remov(?:e|ing|ed)|complet(?:e|ing|ed)|mark(?:ing|ed)?|reopen(?:ing|ed)?|reschedul(?:e|ing|ed)|mov(?:e|ing|ed))\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val createDraftUpdateMutation = Regex(
+        """\b(updat(?:e|ing|ed)|edit(?:ing|ed)?|chang(?:e|ing|ed)|revis(?:e|ing|ed)|adjust(?:ing|ed)?)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val userMutationInstruction = Regex(
+        """\byou\s+(?:can|should|need\s+to|must)\s+(?:create|save|add|update|edit|change|reschedule|schedule|delete|remove|complete|mark)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val reminderFailureClaim = Regex(
+        """(?:\b(?:could\s+not|couldn['’]t|was\s+not|unable\s+to|failed\s+to)\s+(?:set|schedule)\s+(?:the\s+)?reminder\b|\breminder\b.{0,24}\b(?:failed|could\s+not|couldn['’]t|was\s+not|unable)\b)""",
+        RegexOption.IGNORE_CASE
+    )
+    private val CREATE_DRAFT_FIELD_NAMES = setOf("title", "date", "time", "schedule")
 
     private const val MIN_CONFIDENCE = 0.85
 }
