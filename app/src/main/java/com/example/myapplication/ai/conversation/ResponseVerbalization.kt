@@ -553,9 +553,10 @@ object ResponseVerbalizationValidator {
         ) {
             return false
         }
+        val nonIdiomaticText = GO_AHEAD_IDIOM.replace(presentationText, " ")
         return !containsContradictoryOperation(
-            presentationText,
-            allowedClaims = setOf(OperationClaim.DELETE, OperationClaim.TRANSITION)
+            nonIdiomaticText,
+            allowedClaims = setOf(OperationClaim.DELETE)
         )
     }
 
@@ -602,26 +603,47 @@ object ResponseVerbalizationValidator {
         ) {
             return false
         }
-        return when (operation) {
-            ExecutionOperation.CREATE_TASK -> !containsContradictoryOperation(
-                presentationText,
-                allowedClaims = setOf(OperationClaim.CREATE, OperationClaim.TRANSITION)
-            )
-            ExecutionOperation.UPDATE_TASK -> !containsContradictoryOperation(
-                presentationText,
-                allowedClaims = setOf(OperationClaim.UPDATE, OperationClaim.TRANSITION)
-            )
-            ExecutionOperation.RESCHEDULE_TASK -> !containsContradictoryOperation(
-                presentationText,
-                allowedClaims = setOf(
-                    OperationClaim.UPDATE,
-                    OperationClaim.RESCHEDULE,
-                    OperationClaim.TRANSITION
-                )
-            )
-            else -> false
+        if (operation !in TRANSITION_OPERATIONS) return false
+        val nonPurposeText = authorizedTransitionPurpose(operation).fold(
+            presentationText
+        ) { remaining, purpose ->
+            purpose.replace(remaining, " ")
         }
+        return !containsContradictoryOperation(
+            nonPurposeText,
+            allowedClaims = setOf(OperationClaim.TRANSITION)
+        )
     }
+
+    private fun authorizedTransitionPurpose(operation: ExecutionOperation): List<Regex> =
+        when (operation) {
+            ExecutionOperation.CREATE_TASK -> listOf(
+                purpose("""so\s+you\s+can\s+(?:create|add|save)(?:\s+it)?"""),
+                purpose("""to\s+(?:create|add)(?:\s+it)?""")
+            )
+            ExecutionOperation.UPDATE_TASK -> listOf(
+                purpose(
+                    """so\s+you\s+can\s+(?:make\s+(?:(?:that|the|your)\s+)?changes?|(?:change|edit|update)(?:\s+it)?)"""
+                ),
+                purpose("""to\s+(?:change|edit|update)(?:\s+it)?"""),
+                purpose("""for\s+editing""")
+            )
+            ExecutionOperation.RESCHEDULE_TASK -> listOf(
+                purpose(
+                    """so\s+you\s+can\s+(?:reschedule(?:\s+it)?|(?:change|update)\s+(?:(?:its|the)\s+)?schedule)"""
+                ),
+                purpose(
+                    """to\s+(?:reschedule(?:\s+it)?|(?:change|update)\s+(?:(?:its|the)\s+)?schedule)"""
+                ),
+                purpose("""for\s+rescheduling""")
+            )
+            else -> emptyList()
+        }
+
+    private fun purpose(expression: String) = Regex(
+        """\b(?:$expression)\b(?!\s+(?:it\s+)?for\s+you\b)""",
+        RegexOption.IGNORE_CASE
+    )
 
     private fun permitsControlLanguage(responseAct: ResponseAct): Boolean = responseAct in setOf(
         ResponseAct.ASK_CONFIRMATION,
@@ -658,6 +680,16 @@ object ResponseVerbalizationValidator {
         UNDO(Regex("""\b(incomplete|reopen|reopening|reopened|active)\b|\bnot\s+(?:complete|done)\b""", RegexOption.IGNORE_CASE)),
         TRANSITION(Regex("""\b(open|opening|head|go|take|bring|pull|switch|start|begin)\b""", RegexOption.IGNORE_CASE))
     }
+
+    private val TRANSITION_OPERATIONS = setOf(
+        ExecutionOperation.CREATE_TASK,
+        ExecutionOperation.UPDATE_TASK,
+        ExecutionOperation.RESCHEDULE_TASK
+    )
+    private val GO_AHEAD_IDIOM = Regex(
+        """\bgo\s+ahead(?:\s+(?:and|to))?\b""",
+        RegexOption.IGNORE_CASE
+    )
 
     private const val MIN_CONFIDENCE = 0.85
 }

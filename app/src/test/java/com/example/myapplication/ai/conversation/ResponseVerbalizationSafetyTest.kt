@@ -265,6 +265,18 @@ class ResponseVerbalizationSafetyTest {
                 "Would you like me to delete {task_title}?"
             ).accepted
         )
+        assertTrue(
+            evaluate(
+                confirmationPlan,
+                "Would you like me to go ahead and delete {task_title}?"
+            ).accepted
+        )
+        assertFalse(
+            evaluate(
+                confirmationPlan,
+                "Would you like me to delete {task_title} and open it?"
+            ).accepted
+        )
         assertEquals(
             ResponseVerbalizationContract.TASK_CONFIRMATION,
             confirmationPlan.contract
@@ -398,8 +410,30 @@ class ResponseVerbalizationSafetyTest {
         )
         assertTrue(
             evaluate(
+                update,
+                "I'll open {task_title} to edit it."
+            ).accepted
+        )
+        assertTrue(
+            evaluate(
                 reschedule,
-                "Okay — let's update the schedule for {task_title}."
+                "I'll open {task_title} so you can reschedule it."
+            ).accepted
+        )
+        listOf(
+            "I'll open {task_title} and change it for you.",
+            "I'll open {task_title} and update it.",
+            "I'll open {task_title} and save the changes.",
+            "I'll open {task_title} to edit it for you."
+        ).forEach { assertFalse(evaluate(update, it).accepted) }
+        listOf(
+            "I'll open {transition_target} and create it.",
+            "I'll open {transition_target} and save it."
+        ).forEach { assertFalse(evaluate(create, it).accepted) }
+        assertFalse(
+            evaluate(
+                reschedule,
+                "I'll open {task_title} and reschedule it."
             ).accepted
         )
         assertFalse(evaluate(update, "I've updated {task_title}.").accepted)
