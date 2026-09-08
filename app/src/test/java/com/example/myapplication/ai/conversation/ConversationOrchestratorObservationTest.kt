@@ -78,7 +78,8 @@ class ConversationOrchestratorObservationTest {
         assertFalse(client.capturedPlanJson.contains("id", ignoreCase = true))
         val safePlan = JSONObject(client.capturedPlanJson)
         assertEquals("TASK_ACTION_RESULT", safePlan.getString("verbalization_contract"))
-        assertTrue(safePlan.getJSONArray("required_placeholders").toString().contains("task_title"))
+        assertEquals(0, safePlan.getJSONArray("required_placeholders").length())
+        assertTrue(safePlan.getJSONArray("optional_placeholders").toString().contains("task_title"))
         assertFalse(
             safePlan.getJSONArray("required_placeholders").toString()
                 .contains("authoritative_action")
@@ -318,12 +319,15 @@ class ConversationOrchestratorObservationTest {
         assertEquals("NEEDS_CONFIRMATION", json.getString("outcome"))
         assertEquals("PROFESSIONAL", json.getString("tone"))
         assertEquals("SHORT", json.getString("verbosity"))
+        assertEquals("ASK_CONFIRMATION", json.getString("response_act"))
         assertEquals("CONFIRMATION", json.getString("required_input"))
         assertEquals(
             "TASK_CONFIRMATION",
             json.getString("verbalization_contract")
         )
         assertTrue(json.getJSONArray("allowed_user_moves").toString().contains("CONFIRM"))
+        assertTrue(json.getJSONArray("available_placeholders").toString().contains("task_title"))
+        assertEquals(0, json.getJSONArray("optional_placeholders").length())
         assertFalse(json.toString().contains("buy groceries"))
         assertFalse(json.toString().contains("yes or no"))
         assertFalse(json.has("task_id"))

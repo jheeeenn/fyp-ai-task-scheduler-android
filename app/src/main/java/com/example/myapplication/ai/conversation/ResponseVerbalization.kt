@@ -7,6 +7,14 @@ import java.util.Locale
 
 enum class ResponseVerbalizationTone { FRIENDLY, NEUTRAL, PROFESSIONAL }
 enum class ResponseVerbalizationVerbosity { SHORT, NORMAL, DETAILED }
+enum class ResponseAct {
+    ACKNOWLEDGE,
+    REPORT_INFORMATION,
+    REPORT_RESULT,
+    ASK_CONFIRMATION,
+    ASK_CLARIFICATION,
+    TRANSITION
+}
 enum class ResponseVerbalizationContract {
     AUTHORITATIVE_MESSAGE,
     TASK_CONFIRMATION,
@@ -26,38 +34,52 @@ data class ResponseVerbalizationPlan(
     val responseType: ConversationResponseType,
     val tone: ResponseVerbalizationTone,
     val verbosity: ResponseVerbalizationVerbosity,
+    val responseAct: ResponseAct,
     val contract: ResponseVerbalizationContract,
     val requiredInput: RequiredInput,
     val allowedUserMoves: List<AllowedUserMove>,
     val continuedInteractionExpected: Boolean,
     val protectedValues: Map<String, String>,
     val requiredPlaceholders: Set<String>,
+    val optionalPlaceholders: Set<String>,
     val deterministicResponse: ConversationResponse
 ) {
     init {
-        require(protectedValues.keys == requiredPlaceholders)
+        require(requiredPlaceholders.intersect(optionalPlaceholders).isEmpty())
+        require(protectedValues.keys == requiredPlaceholders + optionalPlaceholders)
         require(protectedValues.values.all { it.isNotBlank() })
         require(deterministicResponse.responseType == responseType)
         require(
             when (contract) {
                 ResponseVerbalizationContract.AUTHORITATIVE_MESSAGE ->
-                    requiredPlaceholders == setOf(AUTHORITATIVE_MESSAGE)
+                    requiredPlaceholders == setOf(AUTHORITATIVE_MESSAGE) &&
+                        optionalPlaceholders.isEmpty()
                 ResponseVerbalizationContract.TASK_CONFIRMATION ->
                     operation == ExecutionOperation.DELETE_TASK &&
                         outcome == ExecutionOutcome.NEEDS_CONFIRMATION &&
+                        responseAct == ResponseAct.ASK_CONFIRMATION &&
                         requiredInput == RequiredInput.CONFIRMATION &&
-                        requiredPlaceholders == setOf(TASK_TITLE)
+                        requiredPlaceholders == setOf(TASK_TITLE) &&
+                        optionalPlaceholders.isEmpty()
                 ResponseVerbalizationContract.TASK_ACTION_RESULT ->
                     outcome == ExecutionOutcome.SUCCESS &&
+                        responseAct == ResponseAct.REPORT_RESULT &&
                         operation in SIMPLE_RESULT_OPERATIONS &&
-                        requiredPlaceholders == setOf(TASK_TITLE)
+                        requiredPlaceholders.isEmpty() &&
+                        optionalPlaceholders == setOf(TASK_TITLE)
                 ResponseVerbalizationContract.TASK_TRANSITION ->
-                    outcome == ExecutionOutcome.INFORMATION && when (operation) {
+                    outcome == ExecutionOutcome.INFORMATION &&
+                        responseAct == ResponseAct.TRANSITION && when (operation) {
                         ExecutionOperation.CREATE_TASK ->
-                            requiredPlaceholders == setOf(TRANSITION_TARGET)
+                            requiredPlaceholders == setOf(TRANSITION_TARGET) &&
+                                optionalPlaceholders.isEmpty()
                         ExecutionOperation.UPDATE_TASK,
                         ExecutionOperation.RESCHEDULE_TASK ->
-                            requiredPlaceholders == setOf(TASK_TITLE)
+                            requiredPlaceholders.isEmpty() &&
+                                TASK_TITLE in optionalPlaceholders &&
+                                optionalPlaceholders.all {
+                                    it == TASK_TITLE || it == DATE_TEXT || it == TIME_TEXT
+                                }
                         else -> false
                     }
             }
@@ -69,6 +91,7 @@ data class ResponseVerbalizationPlan(
         put("operation", operation.name)
         put("outcome", outcome.name)
         put("response_type", responseType.name)
+        put("response_act", responseAct.name)
         put("tone", tone.name)
         put("verbosity", verbosity.name)
         put("verbalization_contract", contract.name)
@@ -79,14 +102,25 @@ data class ResponseVerbalizationPlan(
         )
         put("continued_interaction_expected", continuedInteractionExpected)
         put(
+            "available_placeholders",
+            JSONArray().apply { protectedValues.keys.sorted().forEach { put(it) } }
+        )
+        put(
             "required_placeholders",
             JSONArray().apply { requiredPlaceholders.sorted().forEach { put(it) } }
+        )
+        put(
+            "optional_placeholders",
+            JSONArray().apply { optionalPlaceholders.sorted().forEach { put(it) } }
         )
     }.toString()
 
     companion object {
         const val AUTHORITATIVE_MESSAGE = "authoritative_message"
         const val TASK_TITLE = "task_title"
+        const val DATE_TEXT = "date_text"
+        const val TIME_TEXT = "time_text"
+        const val TASK_COUNT = "task_count"
         const val TRANSITION_TARGET = "transition_target"
 
         private val SIMPLE_RESULT_OPERATIONS = setOf(
@@ -108,39 +142,71 @@ object ResponseVerbalizationPlanner {
             return null
         }
         val deterministic = AndroidObservationResponseRenderer.render(observation)
-        val protectedContract = protectedSimpleContractOrNull(observation)
-        val contract = protectedContract?.first
+        val responseAct = deriveResponseAct(observation)
+        val protectedContract = protectedSimpleContractOrNull(observation, responseAct)
+        val contract = protectedContract?.contract
             ?: ResponseVerbalizationContract.AUTHORITATIVE_MESSAGE
-        val protectedValues = protectedContract?.second ?: mapOf(
+        val protectedValues = protectedContract?.protectedValues ?: mapOf(
             ResponseVerbalizationPlan.AUTHORITATIVE_MESSAGE to deterministic.speech
         )
+        val requiredPlaceholders = protectedContract?.requiredPlaceholders ?: setOf(
+            ResponseVerbalizationPlan.AUTHORITATIVE_MESSAGE
+        )
+        val optionalPlaceholders = protectedContract?.optionalPlaceholders.orEmpty()
         return ResponseVerbalizationPlan(
             operation = observation.operation,
             outcome = observation.outcome,
             responseType = observation.outcome.toConversationResponseType(),
             tone = tone,
             verbosity = verbosity,
+            responseAct = responseAct,
             contract = contract,
             requiredInput = observation.requiredInput,
             allowedUserMoves = observation.allowedUserMoves.toList(),
             continuedInteractionExpected = observation.listenAgain,
             protectedValues = protectedValues,
-            requiredPlaceholders = protectedValues.keys,
+            requiredPlaceholders = requiredPlaceholders,
+            optionalPlaceholders = optionalPlaceholders,
             deterministicResponse = deterministic
         )
     }
 
+    fun deriveResponseAct(observation: ExecutionObservation): ResponseAct = when {
+        observation.outcome == ExecutionOutcome.NEEDS_CONFIRMATION ||
+            observation.requiredInput == RequiredInput.CONFIRMATION -> ResponseAct.ASK_CONFIRMATION
+        observation.outcome in setOf(
+            ExecutionOutcome.AMBIGUOUS,
+            ExecutionOutcome.NEEDS_CLARIFICATION
+        ) || observation.requiredInput != RequiredInput.NONE -> ResponseAct.ASK_CLARIFICATION
+        observation.outcome == ExecutionOutcome.INFORMATION &&
+            !observation.listenAgain &&
+            observation.operation in TRANSITION_OPERATIONS -> ResponseAct.TRANSITION
+        observation.outcome in setOf(
+            ExecutionOutcome.SUCCESS,
+            ExecutionOutcome.PARTIAL_SUCCESS,
+            ExecutionOutcome.REJECTED,
+            ExecutionOutcome.FAILURE
+        ) -> ResponseAct.REPORT_RESULT
+        observation.outcome == ExecutionOutcome.CANCELLED -> ResponseAct.ACKNOWLEDGE
+        else -> ResponseAct.REPORT_INFORMATION
+    }
+
     private fun protectedSimpleContractOrNull(
-        observation: ExecutionObservation
-    ): Pair<ResponseVerbalizationContract, Map<String, String>>? {
+        observation: ExecutionObservation,
+        responseAct: ResponseAct
+    ): ProtectedContract? {
         if (
             observation.operation == ExecutionOperation.DELETE_TASK &&
             observation.outcome == ExecutionOutcome.NEEDS_CONFIRMATION &&
             observation.requiredInput == RequiredInput.CONFIRMATION &&
             observation.taskTitle.isNotBlank()
         ) {
-            return ResponseVerbalizationContract.TASK_CONFIRMATION to mapOf(
-                ResponseVerbalizationPlan.TASK_TITLE to observation.taskTitle
+            return ProtectedContract(
+                contract = ResponseVerbalizationContract.TASK_CONFIRMATION,
+                protectedValues = mapOf(
+                    ResponseVerbalizationPlan.TASK_TITLE to observation.taskTitle
+                ),
+                requiredPlaceholders = setOf(ResponseVerbalizationPlan.TASK_TITLE)
             )
         }
 
@@ -153,28 +219,64 @@ object ResponseVerbalizationPlanner {
                 ExecutionOperation.MARK_UNDONE
             )
         ) {
-            return ResponseVerbalizationContract.TASK_ACTION_RESULT to mapOf(
-                ResponseVerbalizationPlan.TASK_TITLE to observation.taskTitle
+            return ProtectedContract(
+                contract = ResponseVerbalizationContract.TASK_ACTION_RESULT,
+                protectedValues = mapOf(
+                    ResponseVerbalizationPlan.TASK_TITLE to observation.taskTitle
+                ),
+                requiredPlaceholders = emptySet(),
+                optionalPlaceholders = setOf(ResponseVerbalizationPlan.TASK_TITLE)
             )
         }
 
-        if (observation.outcome != ExecutionOutcome.INFORMATION) return null
+        if (
+            observation.outcome != ExecutionOutcome.INFORMATION ||
+            responseAct != ResponseAct.TRANSITION
+        ) return null
         return when (observation.operation) {
-            ExecutionOperation.CREATE_TASK ->
-                ResponseVerbalizationContract.TASK_TRANSITION to mapOf(
+            ExecutionOperation.CREATE_TASK -> ProtectedContract(
+                contract = ResponseVerbalizationContract.TASK_TRANSITION,
+                protectedValues = mapOf(
                     ResponseVerbalizationPlan.TRANSITION_TARGET to "task creation"
-                )
+                ),
+                requiredPlaceholders = setOf(ResponseVerbalizationPlan.TRANSITION_TARGET)
+            )
             ExecutionOperation.UPDATE_TASK,
             ExecutionOperation.RESCHEDULE_TASK -> observation.taskTitle
                 .takeIf(String::isNotBlank)
-                ?.let {
-                    ResponseVerbalizationContract.TASK_TRANSITION to mapOf(
-                        ResponseVerbalizationPlan.TASK_TITLE to it
+                ?.let { title ->
+                    val values = buildMap {
+                        put(ResponseVerbalizationPlan.TASK_TITLE, title)
+                        observation.dateText.takeIf(String::isNotBlank)?.let {
+                            put(ResponseVerbalizationPlan.DATE_TEXT, it)
+                        }
+                        observation.timeText.takeIf(String::isNotBlank)?.let {
+                            put(ResponseVerbalizationPlan.TIME_TEXT, it)
+                        }
+                    }
+                    ProtectedContract(
+                        contract = ResponseVerbalizationContract.TASK_TRANSITION,
+                        protectedValues = values,
+                        requiredPlaceholders = emptySet(),
+                        optionalPlaceholders = values.keys
                     )
                 }
             else -> null
         }
     }
+
+    private data class ProtectedContract(
+        val contract: ResponseVerbalizationContract,
+        val protectedValues: Map<String, String>,
+        val requiredPlaceholders: Set<String>,
+        val optionalPlaceholders: Set<String> = emptySet()
+    )
+
+    private val TRANSITION_OPERATIONS = setOf(
+        ExecutionOperation.CREATE_TASK,
+        ExecutionOperation.UPDATE_TASK,
+        ExecutionOperation.RESCHEDULE_TASK
+    )
 }
 
 data class ResponseVerbalizationEnvelope(
@@ -236,6 +338,7 @@ enum class ResponseVerbalizationValidationReason {
     UNKNOWN_PLACEHOLDER,
     MISSING_REQUIRED_PLACEHOLDER,
     DUPLICATE_REQUIRED_PLACEHOLDER,
+    DUPLICATE_OPTIONAL_PLACEHOLDER,
     MALFORMED_PLACEHOLDER,
     UNSAFE_PRESENTATION_TEXT,
     UNSUPPORTED_CONTROL_INSTRUCTION,
@@ -256,46 +359,49 @@ object ResponseVerbalizationValidator {
         """\b(room|database|schema|json|android|agent|model|prompt|identifier|uuid|id|task[_ -]?id)\b""",
         RegexOption.IGNORE_CASE
     )
-    private val genericFactualOrOperationalTerm = Regex(
-        """\b(tasks?|titles?|dates?|times?|counts?|pages?|items?|results?|created?|saved?|deleted?|removed?|completed?|incomplete|marked|updated?|rescheduled?|moved|opened?|closed?|scheduled?|reminders?|found|exists?|available|overdue|remaining|matching|anything|nothing|today|tomorrow|yesterday|weeks?|months?|years?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""",
+    private val unauthorizedFactLanguage = Regex(
+        """\b(dates?|times?|counts?|pages?|reminders?|overdue|remaining|today|tomorrow|yesterday|weeks?|months?|years?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|noon|midnight|morning|afternoon|evening|am|pm)\b""",
         RegexOption.IGNORE_CASE
     )
-    private val genericControlInstruction = Regex(
-        """\b(confirm|reject|cancel|choose|select|pick|say|answer|respond|reply|continue|repeat|stop|retry|listen|yes|no|next|first|second|third|last|please)\b""",
+    private val authoritativeFactClaim = Regex(
+        """\b(tasks?|titles?|items?|results?|found|exists?|available|matching|anything|nothing)\b""",
         RegexOption.IGNORE_CASE
     )
-    private val atomicAddedFact = Regex(
-        """\b(tasks?|titles?|dates?|times?|counts?|pages?|items?|results?|created?|saved?|updated|rescheduled|moved|opened|closed|scheduled|reminders?|found|exists?|available|overdue|remaining|matching|anything|nothing|today|tomorrow|yesterday|weeks?|months?|years?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""",
+    private val controlInstruction = Regex(
+        """\b(confirm|reject|cancel|choose|select|pick|say|answer|respond|reply|continue|repeat|stop|retry)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val operationClaim = Regex(
+        """\b(created?|saved?|added?|deleted?|removed?|completed?|marked|updated?|edited?|changed?|rescheduled?|scheduled?|moved|opened?|opening|reopened?|worked)\b""",
         RegexOption.IGNORE_CASE
     )
     private val successClaim = Regex(
-        """\b(success|successful|succeeded|finished|done)\b|\ball\s+set\b""",
+        """\b(success|successful|succeeded|finished|completed|accomplished|done)\b|\ball\s+set\b|\btaken\s+care\s+of\b""",
         RegexOption.IGNORE_CASE
     )
-    private val safePresentationCharacters = Regex("""^[\p{L}\s.,!?\-'’—–]*$""")
+    private val completedOperationClaim = Regex(
+        """\b(created|saved|added|deleted|removed|marked|updated|edited|changed|rescheduled|scheduled|moved)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val failureClaim = Regex(
+        """\b(failed|failure|unsuccessful|unable)\b|\bcould\s+not\b|\bcouldn't\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val deletionClaim = Regex("""\b(delet(?:e|ed)|remov(?:e|ed))\b""", RegexOption.IGNORE_CASE)
+    private val completionClaim = Regex(
+        """\b(complete|completed|done|finished)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val undoneClaim = Regex(
+        """\b(incomplete|reopened|active)\b|\bnot\s+(?:complete|done)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val transitionClaim = Regex(
+        """\b(open|opening|head|go|take|bring|pull|switch|start|begin)\b|\blet['’]s\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val safePresentationCharacters = Regex("""^[\p{L}\s.,!?:;\-'’—–]*$""")
     private val wrapperWord = Regex("""\p{L}+(?:['’]\p{L}+)?""")
-    private val genericWrapperWords = setOf(
-        "okay", "ok", "sure", "certainly", "absolutely", "alright", "right",
-        "of", "course", "got", "it", "understood", "well", "here", "there",
-        "we", "go", "thanks", "thank", "you", "now", "then", "thing", "i",
-        "i've", "we've", "your", "the", "has", "have", "been", "was", "is"
-    )
-    private val successWrapperWords = setOf("all", "set", "done")
-    private val acknowledgementWords = setOf(
-        "all", "set", "done", "okay", "ok", "sure", "certainly", "alright",
-        "i", "i've", "we", "we've", "have", "has", "been", "was", "is", "now",
-        "successfully"
-    )
-    private val confirmationWords = setOf(
-        "would", "you", "like", "me", "to", "delete", "remove", "should", "i",
-        "do", "want", "just", "confirm", "can", "shall", "sure", "okay", "ok"
-    )
-    private val transitionWords = setOf(
-        "okay", "ok", "sure", "certainly", "alright", "right", "now", "i", "i'll",
-        "will", "let's", "let", "us", "we", "can", "open", "take", "you", "to", "go",
-        "for", "so", "make", "that", "the", "a", "change", "edit", "editing", "update",
-        "it", "its", "reschedule", "schedule"
-    )
 
     fun evaluate(
         plan: ResponseVerbalizationPlan,
@@ -312,9 +418,9 @@ object ResponseVerbalizationValidator {
         }
         val template = envelope.speechTemplate.trim()
         val maxTemplateLength = when (plan.verbosity) {
-            ResponseVerbalizationVerbosity.SHORT -> 80
-            ResponseVerbalizationVerbosity.NORMAL -> 120
-            ResponseVerbalizationVerbosity.DETAILED -> 160
+            ResponseVerbalizationVerbosity.SHORT -> 120
+            ResponseVerbalizationVerbosity.NORMAL -> 200
+            ResponseVerbalizationVerbosity.DETAILED -> 280
         }
         if (template.isBlank() || template.length > maxTemplateLength) {
             return rejected(ResponseVerbalizationValidationReason.TEMPLATE_TOO_LONG)
@@ -324,29 +430,32 @@ object ResponseVerbalizationValidator {
         if (placeholders.any { it !in plan.protectedValues }) {
             return rejected(ResponseVerbalizationValidationReason.UNKNOWN_PLACEHOLDER)
         }
+        val presentationText = placeholder.replace(template, " ").trim()
+        if (presentationText.contains('{') || presentationText.contains('}')) {
+            return rejected(ResponseVerbalizationValidationReason.MALFORMED_PLACEHOLDER)
+        }
         if (plan.requiredPlaceholders.any { it !in placeholders }) {
             return rejected(ResponseVerbalizationValidationReason.MISSING_REQUIRED_PLACEHOLDER)
         }
         if (plan.requiredPlaceholders.any { required -> placeholders.count { it == required } != 1 }) {
             return rejected(ResponseVerbalizationValidationReason.DUPLICATE_REQUIRED_PLACEHOLDER)
         }
-        val presentationText = placeholder.replace(template, " ").trim()
-        if (presentationText.contains('{') || presentationText.contains('}')) {
-            return rejected(ResponseVerbalizationValidationReason.MALFORMED_PLACEHOLDER)
+        if (plan.optionalPlaceholders.any { optional -> placeholders.count { it == optional } > 1 }) {
+            return rejected(ResponseVerbalizationValidationReason.DUPLICATE_OPTIONAL_PLACEHOLDER)
         }
         val wrapperWords = wrapperWord.findAll(presentationText)
             .map { it.value.lowercase(Locale.ROOT) }
             .toList()
         val maxWrapperWords = when (plan.contract) {
             ResponseVerbalizationContract.AUTHORITATIVE_MESSAGE -> when (plan.verbosity) {
-                ResponseVerbalizationVerbosity.SHORT -> 4
-                ResponseVerbalizationVerbosity.NORMAL -> 8
-                ResponseVerbalizationVerbosity.DETAILED -> 12
+                ResponseVerbalizationVerbosity.SHORT -> 10
+                ResponseVerbalizationVerbosity.NORMAL -> 18
+                ResponseVerbalizationVerbosity.DETAILED -> 26
             }
             else -> when (plan.verbosity) {
-                ResponseVerbalizationVerbosity.SHORT -> 10
-                ResponseVerbalizationVerbosity.NORMAL -> 14
-                ResponseVerbalizationVerbosity.DETAILED -> 18
+                ResponseVerbalizationVerbosity.SHORT -> 18
+                ResponseVerbalizationVerbosity.NORMAL -> 30
+                ResponseVerbalizationVerbosity.DETAILED -> 45
             }
         }
         if (wrapperWords.size > maxWrapperWords) {
@@ -360,20 +469,42 @@ object ResponseVerbalizationValidator {
             markdown.containsMatchIn(presentationText) ||
             temporaryRef.containsMatchIn(presentationText) ||
             internalIdentifier.containsMatchIn(presentationText) ||
+            containsLiteralProtectedValue(plan, presentationText) ||
             !safePresentationCharacters.matches(presentationText)
+        ) {
+            return rejected(ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT)
+        }
+        if (!permitsControlLanguage(plan.responseAct) && (
+                '?' in presentationText || controlInstruction.containsMatchIn(presentationText)
+            )
+        ) {
+            return rejected(ResponseVerbalizationValidationReason.UNSUPPORTED_CONTROL_INSTRUCTION)
+        }
+        if (
+            plan.outcome !in setOf(ExecutionOutcome.SUCCESS, ExecutionOutcome.PARTIAL_SUCCESS) &&
+            (
+                successClaim.containsMatchIn(presentationText) ||
+                    completedOperationClaim.containsMatchIn(presentationText)
+                )
+        ) {
+            return rejected(ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT)
+        }
+        if (
+            plan.outcome in setOf(ExecutionOutcome.SUCCESS, ExecutionOutcome.PARTIAL_SUCCESS) &&
+            failureClaim.containsMatchIn(presentationText)
         ) {
             return rejected(ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT)
         }
 
         val contractIsSafe = when (plan.contract) {
             ResponseVerbalizationContract.AUTHORITATIVE_MESSAGE ->
-                hasSafeAuthoritativeWrapper(plan, presentationText, wrapperWords)
+                hasSafeAuthoritativeWrapper(plan, presentationText)
             ResponseVerbalizationContract.TASK_CONFIRMATION ->
-                hasSafeDeleteConfirmation(template, presentationText, wrapperWords)
+                hasSafeDeleteConfirmation(template, presentationText)
             ResponseVerbalizationContract.TASK_ACTION_RESULT ->
-                hasSafeTaskActionResult(plan.operation, template, presentationText, wrapperWords)
+                hasSafeTaskActionResult(plan.operation, template, presentationText)
             ResponseVerbalizationContract.TASK_TRANSITION ->
-                hasSafeTaskTransition(plan.operation, template, presentationText, wrapperWords)
+                hasSafeTaskTransition(plan.operation, template, presentationText)
         }
         if (!contractIsSafe) {
             return rejected(ResponseVerbalizationValidationReason.UNSAFE_PRESENTATION_TEXT)
@@ -389,81 +520,71 @@ object ResponseVerbalizationValidator {
 
     private fun hasSafeAuthoritativeWrapper(
         plan: ResponseVerbalizationPlan,
-        presentationText: String,
-        words: List<String>
+        presentationText: String
     ): Boolean {
         if (
-            genericControlInstruction.containsMatchIn(presentationText) ||
-            '?' in presentationText ||
-            genericFactualOrOperationalTerm.containsMatchIn(presentationText)
+            unauthorizedFactLanguage.containsMatchIn(presentationText) ||
+            authoritativeFactClaim.containsMatchIn(presentationText) ||
+            operationClaim.containsMatchIn(presentationText)
         ) {
             return false
         }
-        val successLanguageAllowed = plan.outcome == ExecutionOutcome.SUCCESS ||
-            plan.outcome == ExecutionOutcome.PARTIAL_SUCCESS
-        if (!successLanguageAllowed && successClaim.containsMatchIn(presentationText)) return false
-        val allowedWords = if (successLanguageAllowed) {
-            genericWrapperWords + successWrapperWords
-        } else {
-            genericWrapperWords
+        if ('?' in presentationText) {
+            if (plan.responseAct !in setOf(ResponseAct.ASK_CONFIRMATION, ResponseAct.ASK_CLARIFICATION)) {
+                return false
+            }
+            val boundedQuestion = Regex(
+                """\b(confirm|clarify|provide|tell|which|what|when|where|ready|right)\b""",
+                RegexOption.IGNORE_CASE
+            )
+            if (!boundedQuestion.containsMatchIn(presentationText)) return false
         }
-        return words.all { it in allowedWords }
+        return true
     }
 
     private fun hasSafeDeleteConfirmation(
         template: String,
-        presentationText: String,
-        words: List<String>
+        presentationText: String
     ): Boolean {
-        if (!template.trim().endsWith('?') || atomicAddedFact.containsMatchIn(presentationText)) {
+        if (
+            !template.trim().endsWith('?') ||
+            unauthorizedFactLanguage.containsMatchIn(presentationText) ||
+            !deletionClaim.containsMatchIn(presentationText)
+        ) {
             return false
         }
-        if (words.any { it !in confirmationWords }) return false
-        val title = Regex.escape("{${ResponseVerbalizationPlan.TASK_TITLE}}")
-        val naturalQuestion = Regex(
-            """(?:(?:sure|okay|ok|just to confirm) )?(?:would you like me to|do you want me to|should i|can i|shall i) (?:delete|remove) $title"""
+        return !containsContradictoryOperation(
+            presentationText,
+            allowedClaims = setOf(OperationClaim.DELETE, OperationClaim.TRANSITION)
         )
-        return naturalQuestion.matches(canonical(template))
     }
 
     private fun hasSafeTaskActionResult(
         operation: ExecutionOperation,
         template: String,
-        presentationText: String,
-        words: List<String>
+        presentationText: String
     ): Boolean {
-        if ('?' in template || atomicAddedFact.containsMatchIn(presentationText)) return false
-        val title = Regex.escape("{${ResponseVerbalizationPlan.TASK_TITLE}}")
-        val canonical = canonical(template)
-        val actor = "(?:i['’]ve|i have|we['’]ve|we have|i|we)"
-        val state = "(?:has been|was|is now|is)"
-        val acknowledgement = "(?:(?:all set|done|okay|ok|sure|certainly|alright) )?"
+        if ('?' in template || unauthorizedFactLanguage.containsMatchIn(presentationText)) return false
         return when (operation) {
-            ExecutionOperation.DELETE_TASK -> {
-                val allowed = acknowledgementWords + setOf("deleted", "removed")
-                val result = Regex(
-                    """$acknowledgement(?:$actor (?:successfully )?(?:deleted|removed) $title|$title $state (?:successfully )?(?:deleted|removed))"""
-                )
-                words.all { it in allowed } && result.matches(canonical)
-            }
-            ExecutionOperation.MARK_DONE -> {
-                val allowed = acknowledgementWords + setOf(
-                    "marked", "as", "complete", "completed"
-                )
-                val result = Regex(
-                    """$acknowledgement(?:$actor (?:successfully )?marked $title as (?:complete|completed|done)|$title $state (?:successfully )?(?:marked as )?(?:complete|completed|done))"""
-                )
-                words.all { it in allowed } && result.matches(canonical)
-            }
-            ExecutionOperation.MARK_UNDONE -> {
-                val allowed = acknowledgementWords + setOf(
-                    "marked", "as", "incomplete", "active", "again", "not", "complete"
-                )
-                val result = Regex(
-                    """$acknowledgement(?:$actor (?:successfully )?marked $title as (?:incomplete|not complete)|$title $state (?:successfully )?(?:marked as )?(?:incomplete|active again|not complete))"""
-                )
-                words.all { it in allowed } && result.matches(canonical)
-            }
+            ExecutionOperation.DELETE_TASK ->
+                deletionClaim.containsMatchIn(presentationText) &&
+                    !containsContradictoryOperation(
+                        presentationText,
+                        allowedClaims = setOf(OperationClaim.DELETE)
+                    )
+            ExecutionOperation.MARK_DONE ->
+                completionClaim.containsMatchIn(presentationText) &&
+                    !undoneClaim.containsMatchIn(presentationText) &&
+                    !containsContradictoryOperation(
+                        presentationText,
+                        allowedClaims = setOf(OperationClaim.COMPLETE, OperationClaim.MARK)
+                    )
+            ExecutionOperation.MARK_UNDONE ->
+                undoneClaim.containsMatchIn(presentationText) &&
+                    !containsContradictoryOperation(
+                        presentationText,
+                        allowedClaims = setOf(OperationClaim.MARK, OperationClaim.UNDO)
+                    )
             else -> false
         }
     }
@@ -471,47 +592,72 @@ object ResponseVerbalizationValidator {
     private fun hasSafeTaskTransition(
         operation: ExecutionOperation,
         template: String,
-        presentationText: String,
-        words: List<String>
+        presentationText: String
     ): Boolean {
         if (
             '?' in template ||
-            atomicAddedFact.containsMatchIn(presentationText) ||
-            words.any { it !in transitionWords }
+            unauthorizedFactLanguage.containsMatchIn(presentationText) ||
+            successClaim.containsMatchIn(presentationText) ||
+            !transitionClaim.containsMatchIn(presentationText)
         ) {
             return false
         }
-        val canonical = canonical(template)
-        val future = "(?:i['’]ll|i will|let['’]s|let us|we can)"
-        val acknowledgement = "(?:(?:okay|ok|sure|certainly|alright) )?"
         return when (operation) {
-            ExecutionOperation.CREATE_TASK -> {
-                val target = Regex.escape("{${ResponseVerbalizationPlan.TRANSITION_TARGET}}")
-                Regex(
-                    """$acknowledgement(?:$future open $target(?: for you| now)?|(?:i['’]ll|i will) take you to $target|(?:let['’]s|let us) go to $target)"""
-                ).matches(canonical)
-            }
-            ExecutionOperation.UPDATE_TASK -> {
-                val title = Regex.escape("{${ResponseVerbalizationPlan.TASK_TITLE}}")
-                Regex(
-                    """$acknowledgement$future open $title(?: so you can (?:make that change|edit it|update it)| for editing)?"""
-                ).matches(canonical)
-            }
-            ExecutionOperation.RESCHEDULE_TASK -> {
-                val title = Regex.escape("{${ResponseVerbalizationPlan.TASK_TITLE}}")
-                Regex(
-                    """$acknowledgement(?:$future open $title(?: so you can (?:reschedule it|update its schedule)| for rescheduling)?|(?:let['’]s|let us|we can) (?:reschedule $title|update (?:the )?schedule for $title))"""
-                ).matches(canonical)
-            }
+            ExecutionOperation.CREATE_TASK -> !containsContradictoryOperation(
+                presentationText,
+                allowedClaims = setOf(OperationClaim.CREATE, OperationClaim.TRANSITION)
+            )
+            ExecutionOperation.UPDATE_TASK -> !containsContradictoryOperation(
+                presentationText,
+                allowedClaims = setOf(OperationClaim.UPDATE, OperationClaim.TRANSITION)
+            )
+            ExecutionOperation.RESCHEDULE_TASK -> !containsContradictoryOperation(
+                presentationText,
+                allowedClaims = setOf(
+                    OperationClaim.UPDATE,
+                    OperationClaim.RESCHEDULE,
+                    OperationClaim.TRANSITION
+                )
+            )
             else -> false
         }
     }
 
-    private fun canonical(template: String): String = template
-        .lowercase(Locale.ROOT)
-        .replace(Regex("""[.,!?—–-]"""), " ")
-        .replace(Regex("""\s+"""), " ")
-        .trim()
+    private fun permitsControlLanguage(responseAct: ResponseAct): Boolean = responseAct in setOf(
+        ResponseAct.ASK_CONFIRMATION,
+        ResponseAct.ASK_CLARIFICATION
+    )
+
+    private fun containsLiteralProtectedValue(
+        plan: ResponseVerbalizationPlan,
+        presentationText: String
+    ): Boolean {
+        val normalizedPresentation = presentationText.lowercase(Locale.ROOT)
+        return plan.protectedValues.values.any { value ->
+            val normalizedValue = value.trim().lowercase(Locale.ROOT)
+            normalizedValue.length >= 2 && Regex(
+                """(?<![\p{L}\p{N}])${Regex.escape(normalizedValue)}(?![\p{L}\p{N}])"""
+            ).containsMatchIn(normalizedPresentation)
+        }
+    }
+
+    private fun containsContradictoryOperation(
+        text: String,
+        allowedClaims: Set<OperationClaim>
+    ): Boolean = OperationClaim.values().any { claim ->
+        claim !in allowedClaims && claim.pattern.containsMatchIn(text)
+    }
+
+    private enum class OperationClaim(val pattern: Regex) {
+        CREATE(Regex("""\b(create|creating|created|save|saving|saved|add|adding|added)\b""", RegexOption.IGNORE_CASE)),
+        UPDATE(Regex("""\b(update|updating|updated|edit|editing|edited|change|changing|changed)\b""", RegexOption.IGNORE_CASE)),
+        RESCHEDULE(Regex("""\b(reschedule|rescheduling|rescheduled|schedule|scheduling|scheduled|move|moving|moved)\b""", RegexOption.IGNORE_CASE)),
+        DELETE(Regex("""\b(delete|deleting|deleted|remove|removing|removed)\b""", RegexOption.IGNORE_CASE)),
+        COMPLETE(Regex("""\b(complete|completing|completed)\b""", RegexOption.IGNORE_CASE)),
+        MARK(Regex("""\b(mark|marking|marked)\b""", RegexOption.IGNORE_CASE)),
+        UNDO(Regex("""\b(incomplete|reopen|reopening|reopened|active)\b|\bnot\s+(?:complete|done)\b""", RegexOption.IGNORE_CASE)),
+        TRANSITION(Regex("""\b(open|opening|head|go|take|bring|pull|switch|start|begin)\b""", RegexOption.IGNORE_CASE))
+    }
 
     private const val MIN_CONFIDENCE = 0.85
 }

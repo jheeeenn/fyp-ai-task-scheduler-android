@@ -62,6 +62,113 @@ class ResponseVerbalizationSafetyTest {
                 "{authoritative_message} Okay. {authoritative_message}"
             ).reason
         )
+        assertEquals(
+            ResponseVerbalizationValidationReason.MALFORMED_PLACEHOLDER,
+            evaluate(plan, "Sure — {Authoritative_message}").reason
+        )
+    }
+
+    @Test
+    fun requiredAndOptionalProtectedFactsHaveIndependentCardinality() {
+        val plan = plan(
+            ExecutionObservation(
+                operation = ExecutionOperation.RESCHEDULE_TASK,
+                outcome = ExecutionOutcome.INFORMATION,
+                taskTitle = "private title",
+                dateText = "private Sunday",
+                timeText = "private evening",
+                listenAgain = false,
+                fallbackSpeech = "Opening the reschedule screen."
+            )
+        )
+
+        assertTrue(plan.requiredPlaceholders.isEmpty())
+        assertEquals(
+            setOf(
+                ResponseVerbalizationPlan.TASK_TITLE,
+                ResponseVerbalizationPlan.DATE_TEXT,
+                ResponseVerbalizationPlan.TIME_TEXT
+            ),
+            plan.optionalPlaceholders
+        )
+        assertEquals(
+            plan.protectedValues.keys,
+            plan.requiredPlaceholders + plan.optionalPlaceholders
+        )
+        assertTrue(evaluate(plan, "Got it — I'll pull it up.").accepted)
+        assertTrue(
+            evaluate(
+                plan,
+                "I'll open it with {time_text} ready for review."
+            ).accepted
+        )
+        assertEquals(
+            "I'll open it with private evening ready for review.",
+            ResponseVerbalizationComposer.compose(
+                plan,
+                ResponseVerbalizationEnvelope(
+                    true,
+                    "I'll open it with {time_text} ready for review.",
+                    0.96
+                )
+            )
+        )
+        assertEquals(
+            ResponseVerbalizationValidationReason.DUPLICATE_OPTIONAL_PLACEHOLDER,
+            evaluate(
+                plan,
+                "I'll open {task_title} at {time_text}; that's {time_text}."
+            ).reason
+        )
+        assertEquals(
+            ResponseVerbalizationValidationReason.UNKNOWN_PLACEHOLDER,
+            evaluate(plan, "I'll open {task_title} on {unknown_date}.").reason
+        )
+        assertFalse(evaluate(plan, "I'll open private title.").accepted)
+        assertFalse(evaluate(plan, "I'll open it on private Sunday.").accepted)
+        assertFalse(plan.toSafeAgentJson().contains("private", ignoreCase = true))
+    }
+
+    @Test
+    fun plannerDerivesBoundedResponseActsFromObservationState() {
+        val base = ExecutionObservation(
+            operation = ExecutionOperation.SYSTEM,
+            outcome = ExecutionOutcome.INFORMATION,
+            listenAgain = false,
+            fallbackSpeech = "Information."
+        )
+
+        assertEquals(ResponseAct.REPORT_INFORMATION, ResponseVerbalizationPlanner.deriveResponseAct(base))
+        assertEquals(
+            ResponseAct.REPORT_RESULT,
+            ResponseVerbalizationPlanner.deriveResponseAct(base.copy(outcome = ExecutionOutcome.SUCCESS))
+        )
+        assertEquals(
+            ResponseAct.ACKNOWLEDGE,
+            ResponseVerbalizationPlanner.deriveResponseAct(base.copy(outcome = ExecutionOutcome.CANCELLED))
+        )
+        assertEquals(
+            ResponseAct.ASK_CLARIFICATION,
+            ResponseVerbalizationPlanner.deriveResponseAct(
+                base.copy(requiredInput = RequiredInput.EXACT_TIME, listenAgain = true)
+            )
+        )
+        assertEquals(
+            ResponseAct.ASK_CONFIRMATION,
+            ResponseVerbalizationPlanner.deriveResponseAct(
+                base.copy(
+                    outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
+                    requiredInput = RequiredInput.CONFIRMATION,
+                    listenAgain = true
+                )
+            )
+        )
+        assertEquals(
+            ResponseAct.TRANSITION,
+            ResponseVerbalizationPlanner.deriveResponseAct(
+                base.copy(operation = ExecutionOperation.UPDATE_TASK)
+            )
+        )
     }
 
     @Test
@@ -129,7 +236,7 @@ class ResponseVerbalizationSafetyTest {
             ResponseVerbalizationValidationReason.TEMPLATE_TOO_LONG,
             evaluate(
                 plan,
-                "Certainly okay sure absolutely alright well here now then {authoritative_message}"
+                "Very ".repeat(50) + "{authoritative_message}"
             ).reason
         )
     }
@@ -212,14 +319,42 @@ class ResponseVerbalizationSafetyTest {
             )
         )
 
+        assertTrue(
+            evaluate(successPlan(), "Handled — it's been removed.").accepted
+        )
         assertTrue(evaluate(markDone, "I've marked {task_title} as complete.").accepted)
         assertTrue(evaluate(markDone, "{task_title} is now complete.").accepted)
-        assertFalse(evaluate(markDone, "I've marked as complete {task_title}.").accepted)
+        assertTrue(evaluate(markDone, "Consider {task_title} officially complete.").accepted)
         assertFalse(evaluate(markDone, "{task_title} is active again.").accepted)
 
         assertTrue(evaluate(markUndone, "I've marked {task_title} as incomplete.").accepted)
         assertTrue(evaluate(markUndone, "{task_title} is active again.").accepted)
         assertFalse(evaluate(markUndone, "{task_title} is now complete.").accepted)
+    }
+
+    @Test
+    fun responseActsPermitNaturalWordingWithoutPermittingFalseSuccess() {
+        val confirmationPlan = plan(
+            ExecutionObservation(
+                operation = ExecutionOperation.DELETE_TASK,
+                outcome = ExecutionOutcome.NEEDS_CONFIRMATION,
+                taskTitle = "private title",
+                requiredInput = RequiredInput.CONFIRMATION,
+                listenAgain = true,
+                fallbackSpeech = "Delete private title?"
+            )
+        )
+        val transition = transitionPlan(
+            ExecutionOperation.UPDATE_TASK,
+            "Opening edit task."
+        )
+
+        assertEquals(ResponseAct.ASK_CONFIRMATION, confirmationPlan.responseAct)
+        assertTrue(evaluate(confirmationPlan, "Ready for me to remove {task_title}?").accepted)
+        assertFalse(evaluate(confirmationPlan, "I've removed {task_title}, okay?").accepted)
+        assertEquals(ResponseAct.TRANSITION, transition.responseAct)
+        assertFalse(evaluate(transition, "All set — I've updated {task_title}.").accepted)
+        assertTrue(evaluate(transition, "No problem — I'll pull up {task_title}.").accepted)
     }
 
     @Test
