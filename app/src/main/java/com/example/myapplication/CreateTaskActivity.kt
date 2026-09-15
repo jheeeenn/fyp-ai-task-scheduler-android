@@ -46,6 +46,7 @@ import com.example.myapplication.ai.temporal.PendingTemporalClarification
 import com.example.myapplication.ai.temporal.TemporalPolicyResult
 import com.example.myapplication.ai.temporal.TemporalUseCase
 import com.example.myapplication.ai.conversation.ConversationAgentClient
+import com.example.myapplication.ai.conversation.ConversationalScheduleValueRenderer
 import com.example.myapplication.ai.conversation.ResponseVerbalizationEngine
 import com.example.myapplication.ai.conversation.ResponseVerbalizationPlan
 import com.example.myapplication.ai.conversation.ResponseVerbalizationTone
@@ -557,7 +558,11 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                         )
                         dateInfoGroup.postDelayed({ moveToNextMissingStep() }, 1200)
                     } else {
-                        voiceHelper.speak(responseManager.dateSelected(selectedDate ?: ""))
+                        voiceHelper.speak(
+                            responseManager.dateSelected(
+                                ConversationalScheduleValueRenderer.date(selectedDate)
+                            )
+                        )
                         moveToNextMissingStep()
                     }
                 } else {
@@ -603,7 +608,11 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                         )
                         timeInfoGroup.postDelayed({ moveToNextMissingStep() }, 1200)
                     } else {
-                        voiceHelper.speak(responseManager.timeSelected(selectedTime ?: ""))
+                        voiceHelper.speak(
+                            responseManager.timeSelected(
+                                ConversationalScheduleValueRenderer.time(selectedTime)
+                            )
+                        )
                         moveToNextMissingStep()
                     }
                 } else {
@@ -737,22 +746,13 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             }
         }
     }
-    private fun formatDateForSpeech(date: String?): String {
-        if (date.isNullOrBlank()) return "no date"
+    private fun formatDateForSpeech(
+        date: String?,
+        baseCalendar: Calendar = Calendar.getInstance()
+    ): String = ConversationalScheduleValueRenderer.date(date, baseCalendar)
 
-        return try {
-            val inputFormat = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.UK)
-            val outputFormat = java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.UK)
-            val parsedDate = inputFormat.parse(date)
-            if (parsedDate != null) {
-                outputFormat.format(parsedDate)
-            } else {
-                date
-            }
-        } catch (e: Exception) {
-            date
-        }
-    }
+    private fun formatTimeForSpeech(time: String?): String =
+        ConversationalScheduleValueRenderer.time(time)
 
     private fun formatDate(year: Int, month: Int, day: Int): String {
         val displayMonth = month + 1
@@ -1194,13 +1194,15 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun readCurrentDraft(move: CreateDraftMove.ReadDraft) {
         val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
+        val responseBaseCalendar = Calendar.getInstance()
         val fallback = CreateDraftReadResponseRenderer.render(
             target = move.target,
             title = title,
             date = selectedDate,
             time = selectedTime,
             state = dialogState,
-            pendingReplacementField = pendingReplacementField
+            pendingReplacementField = pendingReplacementField,
+            baseCalendar = responseBaseCalendar
         )
         if (dialogState == CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION) {
             assistantSession.expectConfirmation()
@@ -1213,7 +1215,8 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             state = dialogState,
             fallbackSpeech = fallback,
             tone = responseVerbalizationTone(),
-            verbosity = responseVerbalizationVerbosity()
+            verbosity = responseVerbalizationVerbosity(),
+            baseCalendar = responseBaseCalendar
         )
         verbalizeCreateDraftResponse(plan, fallback, ::speakAndContinueListening)
     }
@@ -1248,7 +1251,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             returnToSaveConfirmation(CreateDraftField.DATE)
         } else {
             assistantSession.pauseListeningForAssistantSpeech()
-            voiceHelper.speak(responseManager.dateSet(selectedDate ?: ""))
+            voiceHelper.speak(responseManager.dateSet(formatDateForSpeech(selectedDate)))
             moveToNextMissingStep()
         }
     }
@@ -1286,7 +1289,7 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         pendingSemanticTimePhrase = null
         suggestedLearnedTime = null
         assistantSession.pauseListeningForAssistantSpeech()
-        voiceHelper.speak(responseManager.timeSet(selectedTime ?: ""))
+        voiceHelper.speak(responseManager.timeSet(formatTimeForSpeech(selectedTime)))
         moveToNextMissingStep()
     }
 
@@ -1335,7 +1338,8 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
         dialogState = CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION
         assistantSession.expectConfirmation()
-        val summary = buildTaskSummary()
+        val responseBaseCalendar = Calendar.getInstance()
+        val summary = buildTaskSummary(responseBaseCalendar)
         val response = when (updatedField) {
             CreateDraftField.TITLE -> responseManager.inlineTitleUpdated(summary)
             CreateDraftField.DATE -> responseManager.inlineDateUpdated(summary)
@@ -1350,7 +1354,8 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             time = selectedTime,
             fallbackSpeech = response,
             tone = responseVerbalizationTone(),
-            verbosity = responseVerbalizationVerbosity()
+            verbosity = responseVerbalizationVerbosity(),
+            baseCalendar = responseBaseCalendar
         )
         verbalizeCreateDraftResponse(plan, response, ::speakAndContinueListening)
     }
@@ -1465,15 +1470,16 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
         markCreateDraftChanged()
     }
 
-    private fun buildTaskSummary(): String {
+    private fun buildTaskSummary(baseCalendar: Calendar = Calendar.getInstance()): String {
         val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
-        val date = formatDateForSpeech(selectedDate)
-        val time = selectedTime ?: pendingTaskState.timeText ?: "no time"
+        val date = formatDateForSpeech(selectedDate, baseCalendar)
+        val time = formatTimeForSpeech(selectedTime ?: pendingTaskState.timeText)
         return "$title, $date, $time"
     }
 
     private fun verbalizeSaveConfirmation() {
-        val fallback = responseManager.confirmTaskSummary(buildTaskSummary())
+        val responseBaseCalendar = Calendar.getInstance()
+        val fallback = responseManager.confirmTaskSummary(buildTaskSummary(responseBaseCalendar))
         val title = pendingTaskState.title ?: etTaskTitle.text.toString().trim()
         val plan = CreateDraftResponseVerbalization.saveConfirmationOrNull(
             title = title,
@@ -1481,7 +1487,8 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
             time = selectedTime,
             fallbackSpeech = fallback,
             tone = responseVerbalizationTone(),
-            verbosity = responseVerbalizationVerbosity()
+            verbosity = responseVerbalizationVerbosity(),
+            baseCalendar = responseBaseCalendar
         )
         verbalizeCreateDraftResponse(plan, fallback, ::speakAndContinueListening)
     }
@@ -1583,7 +1590,10 @@ class CreateTaskActivity : AccessibilityActivity(), AssistantVoiceHost {
                             suggestedLearnedTime = learned.resolvedTime
                             speakAndContinueListening(
                                 //"You usually mean ${learned.resolvedTime} when you say ${semanticPhrase}. Please say yes to use it, or say a different time."
-                                responseManager.learnedTimeSuggestion(semanticPhrase, learned.resolvedTime)
+                                responseManager.learnedTimeSuggestion(
+                                    semanticPhrase,
+                                    formatTimeForSpeech(learned.resolvedTime)
+                                )
                             )
                         } else {
                             speakAndContinueListening(

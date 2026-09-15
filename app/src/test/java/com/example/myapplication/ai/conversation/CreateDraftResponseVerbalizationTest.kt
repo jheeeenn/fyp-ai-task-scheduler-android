@@ -12,6 +12,8 @@ import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.util.Calendar
+import java.util.TimeZone
 
 class CreateDraftResponseVerbalizationTest {
     @Test
@@ -27,6 +29,41 @@ class CreateDraftResponseVerbalizationTest {
         assertTrue(safeJson.contains(ResponseVerbalizationPlan.DATE_TEXT))
         assertTrue(safeJson.contains(ResponseVerbalizationPlan.TIME_TEXT))
         assertTrue(safeJson.contains(ResponseMeaningDetail.CREATE_DRAFT_SAVE_CONFIRMATION.name))
+    }
+
+    @Test
+    fun protectedScheduleFactsUseSpeechRenderingWithoutChangingAuthoritativeValues() {
+        val authoritativeDate = "24/09/2026"
+        val authoritativeTime = "7:00 AM"
+        val base = Calendar.getInstance(TimeZone.getTimeZone("Asia/Kuala_Lumpur")).apply {
+            set(2026, Calendar.SEPTEMBER, 8, 9, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val plan = requireNotNull(
+            CreateDraftResponseVerbalization.saveConfirmationOrNull(
+                title = PRIVATE_TITLE,
+                date = authoritativeDate,
+                time = authoritativeTime,
+                fallbackSpeech = FALLBACK_CONFIRMATION,
+                tone = TONE,
+                verbosity = VERBOSITY,
+                baseCalendar = base
+            )
+        )
+
+        assertEquals("24/09/2026", authoritativeDate)
+        assertEquals("7:00 AM", authoritativeTime)
+        assertEquals(
+            "Thursday, 24 September",
+            plan.protectedValues.getValue(ResponseVerbalizationPlan.DATE_TEXT)
+        )
+        assertEquals(
+            "7 AM",
+            plan.protectedValues.getValue(ResponseVerbalizationPlan.TIME_TEXT)
+        )
+        assertFalse(plan.toSafeAgentJson().contains("Thursday, 24 September"))
+        assertFalse(plan.toSafeAgentJson().contains("7 AM"))
     }
 
     @Test

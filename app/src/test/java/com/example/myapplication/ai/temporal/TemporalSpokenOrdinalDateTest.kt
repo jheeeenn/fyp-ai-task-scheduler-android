@@ -106,6 +106,34 @@ class TemporalSpokenOrdinalDateTest {
         assertEquals("01/08/2026", result.startDateInclusive)
     }
 
+    @Test
+    fun cardinalOfCalendarDatesResolveLikeExistingCardinalForms() {
+        mapOf(
+            "24 of September" to "24/09/2026",
+            "24 of September 2026" to "24/09/2026",
+            "24 of September 2027" to "24/09/2027",
+            "24 September" to "24/09/2026",
+            "September 24" to "24/09/2026",
+            "24th of September" to "24/09/2026",
+            "twenty-fourth of September" to "24/09/2026"
+        ).forEach { (phrase, expected) ->
+            assertExact(phrase, expected)
+        }
+    }
+
+    @Test
+    fun cardinalOfDateIsExtractedFromNaturalInput() {
+        val result = resolver.resolve(
+            agentDateText = null,
+            agentTimeText = null,
+            originalText = "set it for 24 of September",
+            baseCalendar = base()
+        )
+
+        assertTrue(result.isExactDate)
+        assertEquals("24/09/2026", result.startDateInclusive)
+    }
+
     private fun assertExact(phrase: String, expected: String) {
         val result = resolver.resolve(phrase, null, phrase, base())
         assertTrue("phrase=$phrase result=$result", result.isExactDate)

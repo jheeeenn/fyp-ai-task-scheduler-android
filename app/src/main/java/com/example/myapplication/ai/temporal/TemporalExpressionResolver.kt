@@ -131,13 +131,16 @@ class TemporalExpressionResolver {
             Regex("""\b(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"""),
             Regex("""\b\d{1,2}/\d{1,2}/\d{2,4}\b"""),
             Regex("""\b\d{4}/\d{1,2}/\d{1,2}\b"""),
+            Regex("""\b\d{1,2} of (?:$monthNames)(?: \d{4})?\b"""),
             Regex("""\b\d{1,2} (?:$monthNames)(?: \d{4})?\b"""),
             Regex("""\b(?:$monthNames) \d{1,2}(?: \d{4})?\b""")
         ).firstNotNullOfOrNull { it.find(text)?.value?.trim() }.orEmpty()
     }
 
     private fun looksLikeDateExpression(text: String): Boolean {
-        val t = canonicalizeSpokenOrdinalCalendarDate(text.trim()) ?: text.trim()
+        val t = canonicalizeSpokenOrdinalCalendarDate(text.trim())
+            ?: canonicalizeCardinalOfCalendarDate(text.trim())
+            ?: text.trim()
         if (t in setOf("today", "tomorrow", "tonight", "day after tomorrow", "the day after tomorrow")) return true
         if (parseRelativeDayOffset(t) != null) return true
         if (Regex("""^(?:this |next )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$""").matches(t)) return true
@@ -207,7 +210,9 @@ class TemporalExpressionResolver {
 
     private fun parseSingleDate(text: String, base: Calendar): Calendar? {
         val raw = text.removePrefix("on ").trim()
-        val t = canonicalizeSpokenOrdinalCalendarDate(raw) ?: raw
+        val t = canonicalizeSpokenOrdinalCalendarDate(raw)
+            ?: canonicalizeCardinalOfCalendarDate(raw)
+            ?: raw
         val c = strip(base)
         when (t) { "today", "tonight" -> return c; "tomorrow" -> return add(c, Calendar.DAY_OF_MONTH, 1); "day after tomorrow", "the day after tomorrow" -> return add(c, Calendar.DAY_OF_MONTH, 2) }
         parseRelativeDayOffset(t)?.let { offset ->
@@ -306,6 +311,18 @@ class TemporalExpressionResolver {
             )
         }
         return null
+    }
+
+    private fun canonicalizeCardinalOfCalendarDate(text: String): String? {
+        val match = Regex(
+            """^(\d{1,2})\s+of\s+($monthNames)(?:\s+(\d{4}))?$"""
+        ).matchEntire(text) ?: return null
+        val day = match.groupValues[1].toIntOrNull()?.takeIf { it in 1..31 } ?: return null
+        return canonicalCalendarDate(
+            day,
+            match.groupValues[2],
+            match.groupValues[3]
+        )
     }
 
     private fun validatedNumericOrdinal(number: String, suffix: String): Int? {

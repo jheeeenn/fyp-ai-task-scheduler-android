@@ -1,7 +1,7 @@
 package com.example.myapplication.ai.conversation.createdraft
 
-import com.example.myapplication.TaskFormScheduleValueRenderer
 import com.example.myapplication.ai.conversation.AllowedUserMove
+import com.example.myapplication.ai.conversation.ConversationalScheduleValueRenderer
 import com.example.myapplication.ai.conversation.ConversationResponse
 import com.example.myapplication.ai.conversation.ConversationResponseType
 import com.example.myapplication.ai.conversation.ExecutionOperation
@@ -16,6 +16,7 @@ import com.example.myapplication.ai.conversation.ResponseVerbalizationVerbosity
 import com.example.myapplication.voice.CreateDraftField
 import com.example.myapplication.voice.CreateDraftReadTarget
 import com.example.myapplication.voice.CreateTaskDialogState
+import java.util.Calendar
 
 /** Builds presentation-only plans from Android-owned Create Task draft state. */
 object CreateDraftResponseVerbalization {
@@ -27,9 +28,10 @@ object CreateDraftResponseVerbalization {
         state: CreateTaskDialogState,
         fallbackSpeech: String,
         tone: ResponseVerbalizationTone,
-        verbosity: ResponseVerbalizationVerbosity
+        verbosity: ResponseVerbalizationVerbosity,
+        baseCalendar: Calendar = Calendar.getInstance()
     ): ResponseVerbalizationPlan? {
-        val allFacts = protectedFacts(title, date, time)
+        val allFacts = protectedFacts(title, date, time, baseCalendar)
         val required = when (target) {
             CreateDraftReadTarget.TITLE -> setOf(ResponseVerbalizationPlan.TASK_TITLE)
             CreateDraftReadTarget.DATE -> setOf(ResponseVerbalizationPlan.DATE_TEXT)
@@ -72,9 +74,10 @@ object CreateDraftResponseVerbalization {
         time: String?,
         fallbackSpeech: String,
         tone: ResponseVerbalizationTone,
-        verbosity: ResponseVerbalizationVerbosity
+        verbosity: ResponseVerbalizationVerbosity,
+        baseCalendar: Calendar = Calendar.getInstance()
     ): ResponseVerbalizationPlan? {
-        val facts = completeProtectedFactsOrNull(title, date, time) ?: return null
+        val facts = completeProtectedFactsOrNull(title, date, time, baseCalendar) ?: return null
         return confirmationPlan(
             meaningDetail = when (updatedField) {
                 CreateDraftField.TITLE -> ResponseMeaningDetail.CREATE_DRAFT_UPDATE_TITLE
@@ -95,9 +98,10 @@ object CreateDraftResponseVerbalization {
         time: String?,
         fallbackSpeech: String,
         tone: ResponseVerbalizationTone,
-        verbosity: ResponseVerbalizationVerbosity
+        verbosity: ResponseVerbalizationVerbosity,
+        baseCalendar: Calendar = Calendar.getInstance()
     ): ResponseVerbalizationPlan? {
-        val facts = completeProtectedFactsOrNull(title, date, time) ?: return null
+        val facts = completeProtectedFactsOrNull(title, date, time, baseCalendar) ?: return null
         return confirmationPlan(
             meaningDetail = ResponseMeaningDetail.CREATE_DRAFT_SAVE_CONFIRMATION,
             facts = facts,
@@ -114,9 +118,10 @@ object CreateDraftResponseVerbalization {
         reminderScheduled: Boolean,
         fallbackSpeech: String,
         tone: ResponseVerbalizationTone,
-        verbosity: ResponseVerbalizationVerbosity
+        verbosity: ResponseVerbalizationVerbosity,
+        baseCalendar: Calendar = Calendar.getInstance()
     ): ResponseVerbalizationPlan {
-        val facts = requireNotNull(completeProtectedFactsOrNull(title, date, time))
+        val facts = requireNotNull(completeProtectedFactsOrNull(title, date, time, baseCalendar))
         val outcome = if (reminderScheduled) {
             ExecutionOutcome.SUCCESS
         } else {
@@ -215,24 +220,29 @@ object CreateDraftResponseVerbalization {
     private fun protectedFacts(
         title: String?,
         date: String?,
-        time: String?
+        time: String?,
+        baseCalendar: Calendar
     ): Map<String, String> = buildMap {
         title?.trim()?.takeIf(String::isNotEmpty)?.let {
             put(ResponseVerbalizationPlan.TASK_TITLE, it)
         }
         date?.trim()?.takeIf(String::isNotEmpty)?.let {
-            put(ResponseVerbalizationPlan.DATE_TEXT, TaskFormScheduleValueRenderer.date(it))
+            put(
+                ResponseVerbalizationPlan.DATE_TEXT,
+                ConversationalScheduleValueRenderer.date(it, baseCalendar)
+            )
         }
         time?.trim()?.takeIf(String::isNotEmpty)?.let {
-            put(ResponseVerbalizationPlan.TIME_TEXT, TaskFormScheduleValueRenderer.time(it))
+            put(ResponseVerbalizationPlan.TIME_TEXT, ConversationalScheduleValueRenderer.time(it))
         }
     }
 
     private fun completeProtectedFactsOrNull(
         title: String?,
         date: String?,
-        time: String?
-    ): Map<String, String>? = protectedFacts(title, date, time)
+        time: String?,
+        baseCalendar: Calendar
+    ): Map<String, String>? = protectedFacts(title, date, time, baseCalendar)
         .takeIf { it.keys == CREATE_DRAFT_FACTS }
 
     private fun readInteraction(state: CreateTaskDialogState): ReadInteraction = when (state) {

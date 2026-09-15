@@ -7,6 +7,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
+import java.util.TimeZone
 
 class CreateDraftReadResponseRendererTest {
     @Test
@@ -16,11 +18,11 @@ class CreateDraftReadResponseRendererTest {
             render(CreateDraftReadTarget.TITLE, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )
         assertEquals(
-            "It's currently set for 9:00 PM. Would you like to save this task?",
+            "It's currently set for 9 PM. Would you like to save this task?",
             render(CreateDraftReadTarget.TIME, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )
         assertEquals(
-            "It's currently scheduled for Monday, 7 September 2026 at 9:00 PM. " +
+            "It's currently scheduled for next Monday at 9 PM. " +
                 "Would you like to save this task?",
             render(CreateDraftReadTarget.SCHEDULE, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )
@@ -63,6 +65,14 @@ class CreateDraftReadResponseRendererTest {
         date = "07/09/2026",
         time = "9:00 PM",
         state = state,
-        pendingReplacementField = null
+        pendingReplacementField = null,
+        baseCalendar = baseCalendar()
     )
+
+    private fun baseCalendar(): Calendar = Calendar.getInstance(
+        TimeZone.getTimeZone("Asia/Kuala_Lumpur")
+    ).apply {
+        set(2026, Calendar.SEPTEMBER, 1, 9, 0, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
 }
