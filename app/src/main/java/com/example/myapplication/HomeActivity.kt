@@ -36,6 +36,7 @@ import java.util.Locale
 import com.example.myapplication.voice.TextNormalizer
 import com.example.myapplication.voice.BoundedConfirmationPolicy
 import com.example.myapplication.voice.BoundedConfirmationResult
+import com.example.myapplication.voice.DeleteConfirmationPolicy
 
 import com.example.myapplication.ai.AiIntent
 import com.example.myapplication.ai.TaskQueryPresentation
@@ -4540,7 +4541,7 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
 
     private fun handleBoundedDeleteConfirmation(normalized: String): Boolean {
         if (homeFollowUpContext != HomeFollowUpContext.DELETE_CONFIRMATION) return false
-        val resolution = BoundedConfirmationPolicy.resolve(normalized)
+        val resolution = DeleteConfirmationPolicy.resolve(normalized)
         Log.d(
             "CONFIRMATION_RESOLUTION",
             "raw='${resolution.normalizedText}' context=DELETE_CONFIRMATION " +
@@ -7437,7 +7438,7 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             HomeFollowUpContext.CONTEXT_ACTION_TARGET_CLARIFICATION -> false
             HomeFollowUpContext.CONTEXT_ACTION_CHANGE_CLARIFICATION -> false
             HomeFollowUpContext.DELETE_CONFIRMATION -> {
-                val confirmation = BoundedConfirmationPolicy.resolve(normalized)
+                val confirmation = DeleteConfirmationPolicy.resolve(normalized)
                 when (intent) {
                     ConversationIntent.CONFIRM_YES -> {
                         if (confirmation.result != BoundedConfirmationResult.AFFIRM) return false

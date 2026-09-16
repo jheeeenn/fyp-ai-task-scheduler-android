@@ -73,6 +73,18 @@ class ContextualDeleteAndNaturalEndingSourceTest {
     }
 
     @Test
+    fun deletePreservationIsCancelledBeforeAgentRoutingWithoutRoomMutation() {
+        val boundedHandler = home
+            .substringAfter("private fun handleBoundedDeleteConfirmation")
+            .substringBefore("private fun cancelPendingDeleteConfirmation")
+
+        assertTrue(boundedHandler.contains("DeleteConfirmationPolicy.resolve(normalized)"))
+        assertTrue(boundedHandler.contains("BoundedConfirmationResult.REJECT"))
+        assertTrue(boundedHandler.contains("cancelPendingDeleteConfirmation()"))
+        assertFalse(boundedHandler.contains("deleteTaskAndSubtasks"))
+    }
+
+    @Test
     fun promptsSupportDeleteGroundingAndNaturalEndSession() {
         assertTrue(prompt.contains("context_action\":\"DELETE"))
         assertTrue(prompt.contains("Current validated focus: T1. User: Delete this task."))

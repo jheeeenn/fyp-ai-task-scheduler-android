@@ -65,7 +65,7 @@ class HomeConversationStabilizationSourceTest {
         assertTrue(classifierGate.contains("LocalConversationIntentClassifier.shouldExecuteLocally"))
         assertTrue(afterNoTasks.contains("isBoundedCreateFollowUpControl(normalized)"))
         assertTrue(afterNoTasks.contains("isSimpleFollowUpEndCommand(normalized)"))
-        assertTrue(deleteConfirmation.contains("BoundedConfirmationPolicy.resolve(normalized)"))
+        assertTrue(deleteConfirmation.contains("DeleteConfirmationPolicy.resolve(normalized)"))
         assertTrue(deleteConfirmation.contains("BoundedConfirmationResult.AFFIRM"))
         assertTrue(source.contains("handleBoundedDeleteConfirmation(normalized)"))
         assertTrue(AssistantExitInterpreter.isFollowUpExitUtterance("no"))
@@ -85,6 +85,9 @@ class HomeConversationStabilizationSourceTest {
         )
         assertTrue(boundedHandler.contains("BoundedConfirmationResult.AFFIRM"))
         assertTrue(boundedHandler.contains("confirmPendingDelete()"))
+        assertTrue(boundedHandler.contains("DeleteConfirmationPolicy.resolve(normalized)"))
+        assertTrue(boundedHandler.contains("cancelPendingDeleteConfirmation()"))
+        assertFalse(boundedHandler.contains("deleteTaskAndSubtasks"))
     }
 
     @Test
