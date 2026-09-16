@@ -114,6 +114,15 @@
     <string name="developer_heading">Developer</string>
     <string name="developer_testing">Developer Testing</string>
     <string name="developer_testing_description">Open the text-based assistant testing interface.</string>
+    <string name="reset_demo_tasks">Reset Demo Tasks</string>
+    <string name="reset_demo_tasks_description">Clear current task records and prepare the presentation demo tasks.</string>
+    <string name="reset_demo_tasks_dialog_title">Reset demo tasks?</string>
+    <string name="reset_demo_tasks_dialog_message">This will delete all current task records and recreate the presentation demo tasks. Saved routines and settings will not be changed.</string>
+    <string name="reset_demo_tasks_action">Reset</string>
+    <string name="reset_demo_tasks_success">Demo tasks have been reset.</string>
+    <string name="reset_demo_tasks_partial_reminder_schedule">Demo tasks were reset, but some reminders could not be scheduled.</string>
+    <string name="reset_demo_tasks_partial_reminder_update">Demo tasks were reset, but some reminders could not be updated.</string>
+    <string name="reset_demo_tasks_failure">Demo tasks could not be reset.</string>
     <string name="developer_test_title">Developer Assistant Testing</string>
     <string name="developer_test_warning">Developer tool. Uses the live assistant logic and live app database. Actions performed here can modify real tasks and routines.</string>
     <string name="developer_test_tts">Text-to-speech</string>

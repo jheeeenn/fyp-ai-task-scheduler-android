@@ -84,6 +84,21 @@
                     style="@style/SettingsDescriptionText"
                     android:text="@string/developer_testing_description" />
             </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardResetDemoTasks"
+                style="@style/SettingsTechnicalCard"
+                android:clickable="true"
+                android:focusable="true">
+
+                <TextView
+                    style="@style/SettingsTechnicalTitleText"
+                    android:text="@string/reset_demo_tasks" />
+
+                <TextView
+                    style="@style/SettingsDescriptionText"
+                    android:text="@string/reset_demo_tasks_description" />
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 

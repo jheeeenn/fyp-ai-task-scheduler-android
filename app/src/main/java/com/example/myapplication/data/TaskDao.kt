@@ -17,6 +17,11 @@ data class BreakdownTransactionResult(
     val insertedCount: Int = 0
 )
 
+data class TaskTableReplacementResult(
+    val previousTaskIds: List<Long>,
+    val insertedTasks: List<TaskEntity>
+)
+
 @Dao // data access object
 interface TaskDao {
 
@@ -28,6 +33,25 @@ interface TaskDao {
 
     @Insert
     suspend fun insertAll(tasks: List<TaskEntity>): List<Long>
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAllTasks(): Int
+
+    @Transaction
+    suspend fun replaceTaskTableWithRootTasksAtomically(
+        tasks: List<TaskEntity>
+    ): TaskTableReplacementResult {
+        require(tasks.all { it.id == 0L && it.parentTaskId == null })
+        val previousTaskIds = getAll().map(TaskEntity::id)
+        deleteAllTasks()
+        val insertedIds = insertAll(tasks)
+        check(insertedIds.size == tasks.size)
+        check(insertedIds.all { it > 0L })
+        return TaskTableReplacementResult(
+            previousTaskIds = previousTaskIds,
+            insertedTasks = tasks.zip(insertedIds) { task, id -> task.copy(id = id) }
+        )
+    }
 
     @Transaction
     suspend fun insertRootTasksAtomically(tasks: List<TaskEntity>): List<Long> {

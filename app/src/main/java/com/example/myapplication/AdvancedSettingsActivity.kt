@@ -9,15 +9,28 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.accessibility.AccessibilityActivity
 import com.example.myapplication.accessibility.AccessibilityStateHelper
+import com.example.myapplication.data.AppDatabase
+import com.example.myapplication.developer.DemoTaskReminderCanceller
+import com.example.myapplication.developer.DemoTaskReminderScheduler
+import com.example.myapplication.developer.DemoTaskResetCategory
+import com.example.myapplication.developer.DemoTaskResetCoordinator
+import com.example.myapplication.developer.DemoTaskResetResult
+import com.example.myapplication.developer.DemoTaskStore
 import com.example.myapplication.preferences.AppPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AdvancedSettingsActivity : AccessibilityActivity() {
     private lateinit var appPreferences: AppPreferences
     private lateinit var voiceHelper: VoiceHelper
     private lateinit var conversationEndpointValue: TextView
     private lateinit var taskEndpointValue: TextView
+    private lateinit var demoTaskResetCoordinator: DemoTaskResetCoordinator
+    private var demoTaskResetInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,6 +38,17 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
 
         appPreferences = AppPreferences(this)
         voiceHelper = VoiceHelper(this)
+        val taskDao = AppDatabase.getInstance(this).taskDao()
+        val appContext = applicationContext
+        demoTaskResetCoordinator = DemoTaskResetCoordinator(
+            store = DemoTaskStore(taskDao::replaceTaskTableWithRootTasksAtomically),
+            reminderCanceller = DemoTaskReminderCanceller { taskId ->
+                ReminderHelper.cancelReminder(appContext, taskId)
+            },
+            reminderScheduler = DemoTaskReminderScheduler { task ->
+                ReminderHelper.scheduleReminderFromTask(appContext, task)
+            }
+        )
         AccessibilityStateHelper.markHeading(findViewById(R.id.tvAdvancedSettingsTitle))
         AccessibilityStateHelper.markHeading(findViewById(R.id.tvAiConnectionsHeading))
         AccessibilityStateHelper.markHeading(findViewById(R.id.tvDeveloperHeading))
@@ -75,6 +99,12 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
             }
         )
         VoiceFirstGestureBinder.bindAction(
+            view = findViewById<LinearLayout>(R.id.cardResetDemoTasks),
+            speechProvider = { getString(R.string.reset_demo_tasks_description) },
+            speak = voiceHelper::speak,
+            activate = ::showResetDemoTasksConfirmation
+        )
+        VoiceFirstGestureBinder.bindAction(
             view = findViewById<Button>(R.id.btnBackToSettings),
             speechProvider = { getString(R.string.back_to_settings) },
             speak = voiceHelper::speak,
@@ -89,6 +119,48 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
             getString(R.string.conversation_agent_endpoint)
         findViewById<LinearLayout>(R.id.cardTaskAgentEndpoint).contentDescription =
             getString(R.string.task_agent_endpoint)
+    }
+
+    private fun showResetDemoTasksConfirmation() {
+        if (demoTaskResetInProgress) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.reset_demo_tasks_dialog_title)
+            .setMessage(R.string.reset_demo_tasks_dialog_message)
+            .setPositiveButton(R.string.reset_demo_tasks_action) { _, _ ->
+                resetDemoTasks()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun resetDemoTasks() {
+        if (demoTaskResetInProgress) return
+        demoTaskResetInProgress = true
+        lifecycleScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    demoTaskResetCoordinator.reset()
+                }
+                if (!isFinishing && !isDestroyed) presentDemoTaskResetResult(result)
+            } finally {
+                demoTaskResetInProgress = false
+            }
+        }
+    }
+
+    private fun presentDemoTaskResetResult(result: DemoTaskResetResult) {
+        val message = when (result.category) {
+            DemoTaskResetCategory.SUCCESS -> R.string.reset_demo_tasks_success
+            DemoTaskResetCategory.DATABASE_FAILURE -> R.string.reset_demo_tasks_failure
+            DemoTaskResetCategory.PARTIAL_REMINDER_FAILURE ->
+                if (result.newReminderScheduleFailureCount > 0) {
+                    R.string.reset_demo_tasks_partial_reminder_schedule
+                } else {
+                    R.string.reset_demo_tasks_partial_reminder_update
+                }
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        voiceHelper.speak(getString(message))
     }
 
     private fun showEndpointDialog(
