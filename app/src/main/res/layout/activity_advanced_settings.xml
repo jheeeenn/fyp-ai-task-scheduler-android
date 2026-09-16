@@ -80,9 +80,6 @@
                     style="@style/SettingsTechnicalTitleText"
                     android:text="@string/developer_testing" />
 
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:text="@string/developer_testing_description" />
             </LinearLayout>
 
             <LinearLayout
@@ -95,9 +92,6 @@
                     style="@style/SettingsTechnicalTitleText"
                     android:text="@string/reset_demo_tasks" />
 
-                <TextView
-                    style="@style/SettingsDescriptionText"
-                    android:text="@string/reset_demo_tasks_description" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
