@@ -56,6 +56,27 @@ class AssistantVoiceSessionTerminalDeliverySourceTest {
     }
 
     @Test
+    fun routineSaveResultUsesTerminalSpeechWithoutUserCancellation() {
+        val save = homeSource
+            .substringAfter("private fun savePendingRoutine")
+            .substringBefore("private fun speakRoutineTerminalResponse")
+        val saveResult = save.substringAfter("if (assistantSession.assistantSessionActive)")
+        val terminal = homeSource
+            .substringAfter("private fun speakRoutineTerminalResponse")
+            .substringBefore("private fun speakRoutineResponse")
+
+        assertTrue(saveResult.contains("RoutineResponseKind.SAVE_RESULT"))
+        assertTrue(saveResult.contains("speakRoutineTerminalResponse("))
+        assertFalse(saveResult.contains("listenAgain = false"))
+        assertTrue(terminal.contains("\"ROUTINE_RESPONSE_DEBUG\""))
+        assertTrue(terminal.contains("assistantSession.speakThenStop(text, dismissPanel = true)"))
+        assertFalse(terminal.contains("assistantSession.speak("))
+        assertFalse(terminal.contains("startVoiceRecognition"))
+        assertFalse(terminal.contains("USER_CANCELLED"))
+        assertFalse(terminal.contains("responseManager.stopListening()"))
+    }
+
+    @Test
     fun terminalStopCallbackRetainsHostRequestAndContextCleanup() {
         val stopped = homeSource
             .substringAfter("override fun onAssistantSessionStopped()")

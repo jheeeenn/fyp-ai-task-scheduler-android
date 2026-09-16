@@ -34,6 +34,24 @@ class AccessibleTaskQueryReadingTest {
     }
 
     @Test
+    fun canonicalWholeHourUsesNaturalQuerySpeech() {
+        val base = pageObservation(session(1), TaskQuerySpeechDetail.BRIEF)
+        val observation = base.copy(
+            tasks = listOf(
+                base.tasks.single().copy(
+                    title = "Doctor appointment",
+                    dueTime = "9:00 AM"
+                )
+            )
+        )
+
+        val speech = AndroidObservationResponseRenderer.render(observation).speech
+
+        assertTrue(speech.contains("Doctor appointment at 9 AM."))
+        assertFalse(speech.contains("9:00 AM"))
+    }
+
+    @Test
     fun eightTasksProduceFiveThenThreeWithoutRequerying() {
         val first = session(8)
         val second = requireNotNull(first.advanceOnePage())

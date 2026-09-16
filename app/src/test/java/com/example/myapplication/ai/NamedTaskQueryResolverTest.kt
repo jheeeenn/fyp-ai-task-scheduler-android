@@ -23,9 +23,9 @@ class NamedTaskQueryResolverTest {
     @Test
     fun modelSuppliesOnlySemanticsWhileRoomAndTaskMatcherSupplyTheRenderedSchedule() {
         mapOf(
-            TaskQueryDetail.TIME to "Read Book is scheduled at 7:00 PM.",
+            TaskQueryDetail.TIME to "Read Book is scheduled at 7 PM.",
             TaskQueryDetail.DATE to "Read Book is scheduled for 31 August.",
-            TaskQueryDetail.DATE_TIME to "Read Book is scheduled for 31 August at 7:00 PM."
+            TaskQueryDetail.DATE_TIME to "Read Book is scheduled for 31 August at 7 PM."
         ).forEach { (detail, expected) ->
             val command = ActionValidator().validate(TaskActionNormalizer().normalize(TaskAgentResponse(
                 action = "QUERY_TASK", target_task_title = "Read Book", query_detail = detail.name,
@@ -86,7 +86,7 @@ class NamedTaskQueryResolverTest {
         assertEquals("It does not have a time.", render(book.copy(dueTime = ""), TaskQueryDetail.TIME))
         assertEquals("Read Book does not have a date or time set.",
             render(book.copy(dueDate = null, dueTime = null), TaskQueryDetail.DATE_TIME))
-        assertEquals("Read Book has no date set. Its time is 7:00 PM.",
+        assertEquals("Read Book has no date set. Its time is 7 PM.",
             render(book.copy(dueDate = null), TaskQueryDetail.DATE_TIME))
         assertEquals("Read Book is scheduled for 31 August, with no time set.",
             render(book.copy(dueTime = null), TaskQueryDetail.DATE_TIME))
@@ -111,7 +111,7 @@ class NamedTaskQueryResolverTest {
         ))
         val validation = ReadOnlyTaskContextReadValidator.validate(followUp, capture.snapshot, store.currentGeneration())
         assertTrue(validation.isValid)
-        assertEquals("Read Book is scheduled for 31 August at 7:00 PM.",
+        assertEquals("Read Book is scheduled for 31 August at 7 PM.",
             ReadOnlyTaskContextResponseRenderer.render(requireNotNull(validation.item), validation.detail))
         store.clear()
         assertNull(orchestrator.contextFocusForSnapshot(store.snapshot()))

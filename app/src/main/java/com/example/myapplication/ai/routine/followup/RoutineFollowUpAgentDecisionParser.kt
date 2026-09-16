@@ -66,11 +66,15 @@ class RoutineFollowUpAgentDecisionParser {
                 }
             }
             RoutineFollowUpAgentMove.PROVIDE_SHARED_DATE,
-            RoutineFollowUpAgentMove.PROVIDE_STEP_TIME,
             RoutineFollowUpAgentMove.CHANGE_SHARED_DATE -> {
                 if (stepIndex != 0) {
                     throw ConversationSchemaException("$move requires step_index 0")
                 }
+                if (value.isBlank()) {
+                    throw ConversationSchemaException("$move requires a non-empty value")
+                }
+            }
+            RoutineFollowUpAgentMove.PROVIDE_STEP_TIME -> {
                 if (value.isBlank()) {
                     throw ConversationSchemaException("$move requires a non-empty value")
                 }

@@ -34,6 +34,10 @@ class ConversationalScheduleValueRendererTest {
     fun exactTimesUseNaturalClockSpeechWithoutBecomingVague() {
         mapOf(
             "7:00 AM" to "7 AM",
+            "9:00 AM" to "9 AM",
+            "10:00 AM" to "10 AM",
+            "4:00 PM" to "4 PM",
+            "6:00 PM" to "6 PM",
             "8:00 PM" to "8 PM",
             "7:30 AM" to "7:30 AM",
             "12:00 PM" to "noon",

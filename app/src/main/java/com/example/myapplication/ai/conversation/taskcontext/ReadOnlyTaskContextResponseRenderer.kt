@@ -1,6 +1,7 @@
 package com.example.myapplication.ai.conversation.taskcontext
 
 import com.example.myapplication.ai.conversation.ConversationContextDetail
+import com.example.myapplication.ai.conversation.ConversationalScheduleValueRenderer
 import com.example.myapplication.ai.TaskQueryDetail
 
 object ReadOnlyTaskContextResponseRenderer {
@@ -38,7 +39,7 @@ object ReadOnlyTaskContextResponseRenderer {
     ): String {
         val title = taskTitle.ifBlank { "This task" }
         val date = dueDate.orEmpty()
-        val time = dueTime.orEmpty()
+        val time = spokenTime(dueTime)
         return when (detail) {
             TaskQueryDetail.DATE -> if (date.isBlank()) "It does not have a date."
                 else "$title is scheduled for ${spokenDate(date)}."
@@ -60,11 +61,11 @@ object ReadOnlyTaskContextResponseRenderer {
         val prefix = "The ${ordinalLabel(item.ref)} task was $title"
         return when {
             item.dueDate.isNotBlank() && item.dueTime.isNotBlank() ->
-                "$prefix, scheduled for ${spokenDate(item.dueDate)} at ${item.dueTime}."
+                "$prefix, scheduled for ${spokenDate(item.dueDate)} at ${spokenTime(item.dueTime)}."
             item.dueDate.isNotBlank() ->
                 "$prefix, scheduled for ${spokenDate(item.dueDate)}. It does not have a time."
             item.dueTime.isNotBlank() ->
-                "$prefix, scheduled at ${item.dueTime}. It does not have a date."
+                "$prefix, scheduled at ${spokenTime(item.dueTime)}. It does not have a date."
             else -> "$prefix. It does not have a date or time."
         }
     }
@@ -108,6 +109,11 @@ object ReadOnlyTaskContextResponseRenderer {
         val monthName = MONTH_NAMES.getOrNull(month - 1) ?: return date
         return "$day $monthName"
     }
+
+    private fun spokenTime(time: String?): String =
+        time?.takeIf { it.isNotBlank() }
+            ?.let(ConversationalScheduleValueRenderer::time)
+            .orEmpty()
 
     private val DATE_PATTERN = Regex("([0-9]{1,2})/([0-9]{1,2})/[0-9]{4}")
     private val MONTH_NAMES = listOf(

@@ -90,6 +90,7 @@ internal object AccessibleTaskQuerySpeechRenderer {
         val date = task.dueDate.takeIf { page.includeTaskDates && it.isNotBlank() }
             ?.let(::formatDateForSpeech)
         val time = task.dueTime.takeIf { it.isNotBlank() }
+            ?.let(ConversationalScheduleValueRenderer::time)
         val schedule = when {
             date != null && time != null -> "$title on $date at $time."
             date != null -> "$title on $date."

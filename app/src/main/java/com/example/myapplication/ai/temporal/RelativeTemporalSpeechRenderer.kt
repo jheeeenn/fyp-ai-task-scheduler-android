@@ -1,5 +1,6 @@
 package com.example.myapplication.ai.temporal
 
+import com.example.myapplication.ai.conversation.ConversationalScheduleValueRenderer
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -57,11 +58,14 @@ object RelativeTemporalSpeechRenderer {
 
     private fun destination(schedule: ExactTemporalSchedule): String = when {
         schedule.date != null && schedule.time != null ->
-            "to ${spokenDate(schedule.date)} at ${schedule.time}"
+            "to ${spokenDate(schedule.date)} at ${spokenTime(schedule.time)}"
         schedule.date != null -> "to ${spokenDate(schedule.date)}, keeping no task time"
-        schedule.time != null -> "to ${schedule.time}, keeping no task date"
+        schedule.time != null -> "to ${spokenTime(schedule.time)}, keeping no task date"
         else -> "with no date or time"
     }
+
+    private fun spokenTime(value: String): String =
+        ConversationalScheduleValueRenderer.time(value)
 
     private fun spokenDate(value: String): String {
         val input = SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }

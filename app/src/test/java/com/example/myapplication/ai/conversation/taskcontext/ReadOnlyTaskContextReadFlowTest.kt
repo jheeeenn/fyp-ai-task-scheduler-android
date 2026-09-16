@@ -46,9 +46,30 @@ class ReadOnlyTaskContextReadFlowTest {
             item = requireNotNull(validated.item),
             detail = validated.detail
         )
-        assertEquals("Take medicine is scheduled at 11:00 AM.", speech)
+        assertEquals("Take medicine is scheduled at 11 AM.", speech)
         assertFalse(speech.contains("23 July"))
         assertFalse(speech.contains("Buy groceries"))
+    }
+
+    @Test
+    fun canonicalWholeHourUsesNaturalContextTimeSpeech() {
+        val item = ReadOnlyTaskContextItem(
+            ref = "T1",
+            title = "Doctor appointment",
+            dueDate = "17/09/2026",
+            dueTime = "9:00 AM",
+            isDone = false,
+            subtaskCount = 0,
+            unfinishedSubtaskCount = 0
+        )
+
+        assertEquals(
+            "Doctor appointment is scheduled at 9 AM.",
+            ReadOnlyTaskContextResponseRenderer.render(
+                item,
+                ConversationContextDetail.TIME
+            )
+        )
     }
 
     @Test

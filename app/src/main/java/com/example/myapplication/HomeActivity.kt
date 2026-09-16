@@ -6020,13 +6020,23 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 refreshOverview()
             }
             if (assistantSession.assistantSessionActive) {
-                speakRoutineResponse(
+                speakRoutineTerminalResponse(
                     RoutineResponseKind.SAVE_RESULT,
-                    RoutineResultSpeechRenderer.render(result),
-                    listenAgain = false
+                    RoutineResultSpeechRenderer.render(result)
                 )
             }
         }
+    }
+
+    private fun speakRoutineTerminalResponse(
+        kind: RoutineResponseKind,
+        text: String
+    ) {
+        DebugDiagnosticLog.longEvent(
+            "ROUTINE_RESPONSE_DEBUG",
+            "kind=${kind.name}\ntext=$text"
+        )
+        assistantSession.speakThenStop(text, dismissPanel = true)
     }
 
     private fun speakRoutineResponse(

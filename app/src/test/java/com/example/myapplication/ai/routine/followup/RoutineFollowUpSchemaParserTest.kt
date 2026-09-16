@@ -53,6 +53,15 @@ class RoutineFollowUpSchemaParserTest {
     }
 
     @Test
+    fun provideStepTimeMayCarryAValidatorOwnedStepIndex() {
+        val decision = parser.parse(json("PROVIDE_STEP_TIME", 3, "9:00 am"))
+
+        assertEquals(RoutineFollowUpAgentMove.PROVIDE_STEP_TIME, decision.move)
+        assertEquals(3, decision.stepIndex)
+        assertEquals("9:00 am", decision.value)
+    }
+
+    @Test
     fun additionalFieldsInvalidMovesWrongTypesAndIndexesAreRejected() {
         val invalid = listOf(
             """{"move":"CONFIRM","step_index":0,"value":"","confidence":0.9,"reply":"done"}""",
@@ -61,7 +70,7 @@ class RoutineFollowUpSchemaParserTest {
             """{"move":"CONFIRM","step_index":0,"value":false,"confidence":0.9}""",
             """{"move":"CONFIRM","step_index":0.5,"value":"","confidence":0.9}""",
             json("CHANGE_STEP_TIME", 0, "8 PM"),
-            json("PROVIDE_STEP_TIME", 2, "8 PM"),
+            json("PROVIDE_STEP_TIME", 2, ""),
             json("CONFIRM", 6, "")
         )
         invalid.forEach { raw ->
