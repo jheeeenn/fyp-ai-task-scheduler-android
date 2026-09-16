@@ -973,10 +973,15 @@ correction must remain CHANGE_FIELD, PROVIDE_FIELD, or PROVIDE_SCHEDULE; do not 
 it into rejection because it begins with no, wait, actually, instead, or first.
 A field selected with no candidate is CHANGE_FIELD with an empty value. If the same
 utterance supplies a replacement candidate, preserve it instead of asking for the field again.
-When both date and time meaning are supplied, always use PROVIDE_SCHEDULE with separate literal
-date_text and time_text. Broad time meaning such as morning, afternoon, evening, night, or tonight
-is supplied time meaning and must be preserved literally; Android may ask for an exact time. State
-must not make you discard the additional supplied schedule meaning or reuse an old opposite field.
+Choose the temporal move only from the meaning present in the current user utterance:
+- date meaning only -> PROVIDE_FIELD with field DATE and the literal date in value;
+- time meaning only -> PROVIDE_FIELD with field TIME and the literal time in value;
+- both date and time meaning -> PROVIDE_SCHEDULE with separate literal date_text and time_text.
+PROVIDE_SCHEDULE is permitted only when both date and time meaning are present in the current
+utterance. Never reuse an existing draft date or time to fill its missing component. Broad time
+meaning such as morning, afternoon, evening, night, or tonight is supplied time meaning and must be
+preserved literally; Android may ask for an exact time. State must not make you discard additional
+supplied schedule meaning.
 Distinguish "What time is it set for?" from "Change the time" and "Change the time to 8 PM".
 READ_TITLE, READ_DATE, READ_TIME, READ_SCHEDULE, and READ_SUMMARY select only what Android should
 read. Read moves never mutate and must never output actual draft facts. Android owns those facts.
@@ -1001,6 +1006,10 @@ User: "Can you remind me to buy pills"
 State: WAITING_FOR_TIME
 User: "just 9 AM"
 {"move":"PROVIDE_FIELD","field":"TIME","value":"9 AM","date_text":"","time_text":"","confidence":0.98}
+
+State: WAITING_FOR_DATE
+User: "Tomorrow"
+{"move":"PROVIDE_FIELD","field":"DATE","value":"Tomorrow","date_text":"","time_text":"","confidence":0.98}
 
 State: WAITING_FOR_DATE
 User: "Sunday at 9 PM"

@@ -25,6 +25,7 @@ object BoundedConfirmationPolicy {
         val result = when {
             normalized in CANCELLATIONS -> BoundedConfirmationResult.CANCEL
             normalized in REJECTIONS ||
+                NATURAL_PRESERVATION_REJECTION.matches(normalized) ||
                 (AFFIRMATIVE_SIGNAL.containsMatchIn(normalized) &&
                     NEGATION.containsMatchIn(normalized)) ->
                 BoundedConfirmationResult.REJECT
@@ -58,6 +59,10 @@ object BoundedConfirmationPolicy {
     private val NEGATION = Regex("(?:^|\\s)(?:no|nope|not|never|don't|dont|do not)(?:\\s|$)")
     private val AFFIRMATIVE_SIGNAL = Regex(
         "(?:^|\\s)(?:yes|yeah|yep|sure|okay|ok|confirm|please do|go ahead|do it)(?:\\s|$)"
+    )
+    private val NATURAL_PRESERVATION_REJECTION = Regex(
+        "^no(?:pe)? (?:(?:i (?:want|would like) to )?(?:keep|leave) it|" +
+            "(?:don't|dont|do not) delete it)$"
     )
     private val PUNCTUATION = Regex("[.,!?;:]+")
     private val WHITESPACE = Regex("\\s+")

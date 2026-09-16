@@ -42,9 +42,12 @@ class CreateDraftAgentConfigurationTest {
         assertTrue(prompt.contains("State constrains authority, not the"))
         assertTrue(prompt.contains("expected field is conversational context"))
         assertTrue(prompt.contains("Extract only the task-content candidate"))
-        assertTrue(prompt.contains("Broad time meaning"))
+        assertTrue(prompt.contains("Broad time"))
         assertTrue(prompt.contains("A field selected with no candidate is CHANGE_FIELD"))
-        assertTrue(prompt.contains("When both date and time meaning are supplied"))
+        assertTrue(prompt.contains("both date and time meaning -> PROVIDE_SCHEDULE"))
+        assertTrue(prompt.contains("date meaning only -> PROVIDE_FIELD with field DATE"))
+        assertTrue(prompt.contains("time meaning only -> PROVIDE_FIELD with field TIME"))
+        assertTrue(prompt.contains("PROVIDE_SCHEDULE is permitted only when both date and time meaning"))
         assertTrue(prompt.contains("Read moves never mutate"))
         assertTrue(prompt.contains("Android owns those facts"))
         assertTrue(prompt.contains("Use UNKNOWN only when the meaning remains genuinely ambiguous"))
@@ -57,6 +60,8 @@ class CreateDraftAgentConfigurationTest {
     @Test
     fun promptContainsBoundedExamplesAndJsonOnlyRule() {
         assertTrue(prompt.contains("User: \"just 9 AM\""))
+        assertTrue(prompt.contains("User: \"Tomorrow\""))
+        assertTrue(prompt.contains("\"field\":\"DATE\",\"value\":\"Tomorrow\""))
         assertTrue(prompt.contains("User: \"Can you remind me to buy pills\""))
         assertTrue(prompt.contains("\"field\":\"TITLE\",\"value\":\"buy pills\""))
         assertTrue(prompt.contains("User: \"move the time to 10 AM\""))

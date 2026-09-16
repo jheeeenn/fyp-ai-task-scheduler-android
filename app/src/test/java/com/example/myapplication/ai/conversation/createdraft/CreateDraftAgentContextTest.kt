@@ -166,6 +166,11 @@ class CreateDraftAgentContextTest {
             context.toRepairPromptText(CreateDraftRepairReason.PRIMARY_TEMPORAL_MEANING_INCOMPLETE)
                 .contains("PROVIDE_SCHEDULE")
         )
+        val schemaRepair =
+            context.toRepairPromptText(CreateDraftRepairReason.PRIMARY_SCHEMA_INVALID)
+        assertTrue(schemaRepair.contains("Date meaning alone is PROVIDE_FIELD DATE"))
+        assertTrue(schemaRepair.contains("time meaning alone is PROVIDE_FIELD TIME"))
+        assertTrue(schemaRepair.contains("only an utterance containing both date"))
     }
 
     @Test

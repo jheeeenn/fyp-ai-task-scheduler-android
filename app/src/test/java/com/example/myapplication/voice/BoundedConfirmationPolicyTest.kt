@@ -31,5 +31,25 @@ class BoundedConfirmationPolicyTest {
         )
     }
 
+    @Test
+    fun naturalNegationWithBoundedPreservationMeaningIsRejected() {
+        listOf(
+            "no keep it",
+            "no, I want to keep it",
+            "no leave it",
+            "no, don't delete it"
+        ).forEach { text ->
+            assertEquals(text, BoundedConfirmationResult.REJECT, resolve(text))
+        }
+    }
+
+    @Test
+    fun unrelatedSentenceContainingNoRemainsUnknown() {
+        assertEquals(
+            BoundedConfirmationResult.UNKNOWN,
+            resolve("no tasks are due tomorrow")
+        )
+    }
+
     private fun resolve(text: String) = BoundedConfirmationPolicy.resolve(text).result
 }

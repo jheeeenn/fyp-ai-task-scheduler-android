@@ -74,14 +74,48 @@ class RoutineFollowUpAgentDecisionValidatorTest {
     }
 
     @Test
-    fun missingTimeCollectionCannotSelectAnotherStep() {
-        val invalidSelection = decision(
+    fun missingTimeCollectionAcceptsZeroOrMatchingAuthoritativeStepOnly() {
+        val draftWithThirdStepUnresolved = draft.copy(
+            steps = draft.steps.mapIndexed { index, step ->
+                if (index == 2) step.copy(resolvedTime = null) else step
+            }
+        )
+        val matchingSelection = decision(
+            move = RoutineFollowUpAgentMove.PROVIDE_STEP_TIME,
+            stepIndex = 3,
+            value = "9 AM"
+        )
+        val mismatchedSelection = decision(
             move = RoutineFollowUpAgentMove.PROVIDE_STEP_TIME,
             stepIndex = 2,
             value = "8:15 AM"
         )
+        val zeroSelection = decision(
+            move = RoutineFollowUpAgentMove.PROVIDE_STEP_TIME,
+            stepIndex = 0,
+            value = "9 AM"
+        )
+
+        val matching = validate(
+            matchingSelection,
+            RoutineDraftState.COLLECTING_STEP_TIME,
+            draftWithThirdStepUnresolved
+        )
+        assertTrue(matching.accepted)
+        assertEquals(RoutineFollowUpMove.ProvideStepTime("9 AM"), matching.move)
         assertFalse(
-            validate(invalidSelection, RoutineDraftState.COLLECTING_STEP_TIME).accepted
+            validate(
+                mismatchedSelection,
+                RoutineDraftState.COLLECTING_STEP_TIME,
+                draftWithThirdStepUnresolved
+            ).accepted
+        )
+        assertTrue(
+            validate(
+                zeroSelection,
+                RoutineDraftState.COLLECTING_STEP_TIME,
+                draftWithThirdStepUnresolved
+            ).accepted
         )
     }
 
@@ -125,11 +159,12 @@ class RoutineFollowUpAgentDecisionValidatorTest {
 
     private fun validate(
         decision: RoutineFollowUpAgentDecision,
-        state: RoutineDraftState
+        state: RoutineDraftState,
+        validationDraft: PendingRoutineDraft = draft
     ) = validator.validate(
         decision = decision,
         state = state,
-        draft = draft,
+        draft = validationDraft,
         userText = "candidate",
         localMove = RoutineFollowUpMove.Unknown
     )

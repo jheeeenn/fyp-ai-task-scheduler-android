@@ -27,7 +27,9 @@ enum class CreateDraftRepairReason(val instruction: String) {
     PRIMARY_SCHEMA_INVALID(
         "The first structured interpretation was malformed. Re-evaluate the same complete user " +
             "utterance using only the allowed create-draft moves. Preserve literal user-supplied " +
-            "values and do not invent missing fields."
+            "values and do not invent missing fields. Date meaning alone is PROVIDE_FIELD DATE, " +
+            "time meaning alone is PROVIDE_FIELD TIME, and only an utterance containing both date " +
+            "and time meaning may use PROVIDE_SCHEDULE with both components."
     ),
     PRIMARY_STATE_VALIDATION_REJECTED(
         "The first structured interpretation was not valid for the supplied Android interaction " +

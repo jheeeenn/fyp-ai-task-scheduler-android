@@ -23,7 +23,9 @@ class RoutineFollowUpAgentDecisionValidator {
         ) {
             return rejected("LOW_OR_INVALID_CONFIDENCE")
         }
-        if (!hasValidShape(decision)) return rejected("INVALID_FIELD_COMBINATION")
+        if (!hasValidShape(decision, state, draft)) {
+            return rejected("INVALID_FIELD_COMBINATION")
+        }
         if (state == RoutineDraftState.SAVING || state == RoutineDraftState.NONE) {
             return rejected("STATE_DISALLOWS_MOVE")
         }
@@ -106,17 +108,30 @@ class RoutineFollowUpAgentDecisionValidator {
         RoutineDraftState.SAVING -> false
     }
 
-    private fun hasValidShape(decision: RoutineFollowUpAgentDecision): Boolean =
+    private fun hasValidShape(
+        decision: RoutineFollowUpAgentDecision,
+        state: RoutineDraftState,
+        draft: PendingRoutineDraft?
+    ): Boolean =
         when (decision.move) {
             RoutineFollowUpAgentMove.CHANGE_STEP_TIME,
             RoutineFollowUpAgentMove.CHANGE_STEP_TITLE ->
                 decision.stepIndex in 1..5 && decision.value.isNotBlank()
             RoutineFollowUpAgentMove.PROVIDE_SHARED_DATE,
-            RoutineFollowUpAgentMove.PROVIDE_STEP_TIME,
             RoutineFollowUpAgentMove.CHANGE_SHARED_DATE ->
                 decision.stepIndex == 0 && decision.value.isNotBlank()
+            RoutineFollowUpAgentMove.PROVIDE_STEP_TIME ->
+                decision.value.isNotBlank() &&
+                    (decision.stepIndex == 0 ||
+                        (state == RoutineDraftState.COLLECTING_STEP_TIME &&
+                            decision.stepIndex == draft.firstUnresolvedTimeStepIndex()))
             else -> decision.stepIndex == 0 && decision.value.isEmpty()
         }
+
+    private fun PendingRoutineDraft?.firstUnresolvedTimeStepIndex(): Int {
+        val zeroBasedIndex = this?.steps?.indexOfFirst { it.resolvedTime == null } ?: -1
+        return if (zeroBasedIndex >= 0) zeroBasedIndex + 1 else 0
+    }
 
     private fun confirmationIsContradicted(
         userText: String,
