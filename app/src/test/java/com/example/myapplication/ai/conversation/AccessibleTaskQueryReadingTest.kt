@@ -47,8 +47,7 @@ class AccessibleTaskQueryReadingTest {
 
         val speech = AndroidObservationResponseRenderer.render(observation).speech
 
-        assertTrue(speech.contains("Doctor appointment at 9 AM."))
-        assertFalse(speech.contains("9:00 AM"))
+        assertTrue(speech.contains("Doctor appointment at 9:00 AM."))
     }
 
     @Test

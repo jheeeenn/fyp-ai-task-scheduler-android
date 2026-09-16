@@ -46,7 +46,7 @@ class ReadOnlyTaskContextReadFlowTest {
             item = requireNotNull(validated.item),
             detail = validated.detail
         )
-        assertEquals("Take medicine is scheduled at 11 AM.", speech)
+        assertEquals("Take medicine is scheduled at 11:00 AM.", speech)
         assertFalse(speech.contains("23 July"))
         assertFalse(speech.contains("Buy groceries"))
     }
@@ -64,7 +64,7 @@ class ReadOnlyTaskContextReadFlowTest {
         )
 
         assertEquals(
-            "Doctor appointment is scheduled at 9 AM.",
+            "Doctor appointment is scheduled at 9:00 AM.",
             ReadOnlyTaskContextResponseRenderer.render(
                 item,
                 ConversationContextDetail.TIME

@@ -1,7 +1,6 @@
 package com.example.myapplication.ai.temporal
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,8 +13,7 @@ class RelativeTemporalSpeechRendererTest {
             crossedDateBoundary = false
         )
 
-        assertTrue(speech.contains("at 10 AM"))
-        assertFalse(speech.contains("10:00 AM"))
+        assertTrue(speech.contains("at 10:00 AM"))
     }
 
     @Test

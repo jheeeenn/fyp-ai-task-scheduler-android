@@ -18,11 +18,11 @@ class CreateDraftReadResponseRendererTest {
             render(CreateDraftReadTarget.TITLE, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )
         assertEquals(
-            "It's currently set for 9 PM. Would you like to save this task?",
+            "It's currently set for 9:00 PM. Would you like to save this task?",
             render(CreateDraftReadTarget.TIME, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )
         assertEquals(
-            "It's currently scheduled for next Monday at 9 PM. " +
+            "It's currently scheduled for next Monday at 9:00 PM. " +
                 "Would you like to save this task?",
             render(CreateDraftReadTarget.SCHEDULE, CreateTaskDialogState.WAITING_FOR_SAVE_CONFIRMATION)
         )

@@ -41,7 +41,6 @@ object ConversationalScheduleValueRenderer {
         return when {
             hour == 12 && minute == 0 && meridiem == "PM" -> "noon"
             hour == 12 && minute == 0 && meridiem == "AM" -> "midnight"
-            minute == 0 -> "$hour $meridiem"
             else -> "%d:%02d %s".format(Locale.UK, hour, minute, meridiem)
         }
     }

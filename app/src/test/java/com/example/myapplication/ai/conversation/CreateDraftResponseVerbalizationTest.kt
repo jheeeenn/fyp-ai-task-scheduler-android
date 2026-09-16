@@ -59,11 +59,11 @@ class CreateDraftResponseVerbalizationTest {
             plan.protectedValues.getValue(ResponseVerbalizationPlan.DATE_TEXT)
         )
         assertEquals(
-            "7 AM",
+            "7:00 AM",
             plan.protectedValues.getValue(ResponseVerbalizationPlan.TIME_TEXT)
         )
         assertFalse(plan.toSafeAgentJson().contains("Thursday, 24 September"))
-        assertFalse(plan.toSafeAgentJson().contains("7 AM"))
+        assertFalse(plan.toSafeAgentJson().contains("7:00 AM"))
     }
 
     @Test
