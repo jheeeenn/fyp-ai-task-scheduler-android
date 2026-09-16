@@ -83,14 +83,14 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/cardResetDemoTasks"
+                android:id="@+id/cardResetDemoEnvironment"
                 style="@style/SettingsTechnicalCard"
                 android:clickable="true"
                 android:focusable="true">
 
                 <TextView
                     style="@style/SettingsTechnicalTitleText"
-                    android:text="@string/reset_demo_tasks" />
+                    android:text="@string/reset_demo_environment" />
 
             </LinearLayout>
         </LinearLayout>

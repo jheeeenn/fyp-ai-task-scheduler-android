@@ -1,7 +1,8 @@
 package com.example.myapplication.developer
 
+import androidx.room.withTransaction
+import com.example.myapplication.data.AppDatabase
 import com.example.myapplication.data.TaskEntity
-import com.example.myapplication.data.TaskTableReplacementResult
 import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -20,8 +21,36 @@ data class DemoTaskResetResult(
     val newReminderScheduleFailureCount: Int = 0
 )
 
-fun interface DemoTaskStore {
-    suspend fun replaceAllTasks(tasks: List<TaskEntity>): TaskTableReplacementResult
+data class DemoEnvironmentDatabaseResult(
+    val previousTaskIds: List<Long>,
+    val insertedTasks: List<TaskEntity>
+)
+
+fun interface DemoEnvironmentStore {
+    suspend fun resetWithDemoTasks(tasks: List<TaskEntity>): DemoEnvironmentDatabaseResult
+}
+
+class RoomDemoEnvironmentStore(
+    private val database: AppDatabase
+) : DemoEnvironmentStore {
+    override suspend fun resetWithDemoTasks(
+        tasks: List<TaskEntity>
+    ): DemoEnvironmentDatabaseResult = database.withTransaction {
+        require(tasks.all { it.id == 0L && it.parentTaskId == null })
+        val taskDao = database.taskDao()
+        val routineDao = database.routineDao()
+        val previousTaskIds = taskDao.getAll().map(TaskEntity::id)
+        taskDao.deleteAllTasks()
+        routineDao.deleteAllRoutineSteps()
+        routineDao.deleteAllRoutines()
+        val insertedIds = taskDao.insertAll(tasks)
+        check(insertedIds.size == tasks.size)
+        check(insertedIds.all { it > 0L })
+        DemoEnvironmentDatabaseResult(
+            previousTaskIds = previousTaskIds,
+            insertedTasks = tasks.zip(insertedIds) { task, id -> task.copy(id = id) }
+        )
+    }
 }
 
 fun interface DemoTaskReminderCanceller {
@@ -33,14 +62,14 @@ fun interface DemoTaskReminderScheduler {
 }
 
 class DemoTaskResetCoordinator(
-    private val store: DemoTaskStore,
+    private val store: DemoEnvironmentStore,
     private val reminderCanceller: DemoTaskReminderCanceller,
     private val reminderScheduler: DemoTaskReminderScheduler,
     private val currentCalendar: () -> Calendar = Calendar::getInstance
 ) {
     suspend fun reset(): DemoTaskResetResult {
         val replacement = try {
-            store.replaceAllTasks(buildDemoTasks())
+            store.resetWithDemoTasks(buildDemoTasks())
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {

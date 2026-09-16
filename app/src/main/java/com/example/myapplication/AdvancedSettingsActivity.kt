@@ -18,7 +18,7 @@ import com.example.myapplication.developer.DemoTaskReminderScheduler
 import com.example.myapplication.developer.DemoTaskResetCategory
 import com.example.myapplication.developer.DemoTaskResetCoordinator
 import com.example.myapplication.developer.DemoTaskResetResult
-import com.example.myapplication.developer.DemoTaskStore
+import com.example.myapplication.developer.RoomDemoEnvironmentStore
 import com.example.myapplication.preferences.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,8 +29,8 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
     private lateinit var voiceHelper: VoiceHelper
     private lateinit var conversationEndpointValue: TextView
     private lateinit var taskEndpointValue: TextView
-    private lateinit var demoTaskResetCoordinator: DemoTaskResetCoordinator
-    private var demoTaskResetInProgress = false
+    private lateinit var demoEnvironmentResetCoordinator: DemoTaskResetCoordinator
+    private var demoEnvironmentResetInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,10 +38,10 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
 
         appPreferences = AppPreferences(this)
         voiceHelper = VoiceHelper(this)
-        val taskDao = AppDatabase.getInstance(this).taskDao()
+        val database = AppDatabase.getInstance(this)
         val appContext = applicationContext
-        demoTaskResetCoordinator = DemoTaskResetCoordinator(
-            store = DemoTaskStore(taskDao::replaceTaskTableWithRootTasksAtomically),
+        demoEnvironmentResetCoordinator = DemoTaskResetCoordinator(
+            store = RoomDemoEnvironmentStore(database),
             reminderCanceller = DemoTaskReminderCanceller { taskId ->
                 ReminderHelper.cancelReminder(appContext, taskId)
             },
@@ -91,7 +91,7 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
         )
         VoiceFirstGestureBinder.bindAction(
             view = findViewById<LinearLayout>(R.id.cardDeveloperTesting),
-            speechProvider = { getString(R.string.developer_testing_description) },
+            speechProvider = { getString(R.string.developer_testing) },
             speak = voiceHelper::speak,
             activate = {
                 DeveloperTestSession.activate()
@@ -99,10 +99,10 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
             }
         )
         VoiceFirstGestureBinder.bindAction(
-            view = findViewById<LinearLayout>(R.id.cardResetDemoTasks),
-            speechProvider = { getString(R.string.reset_demo_tasks_description) },
+            view = findViewById<LinearLayout>(R.id.cardResetDemoEnvironment),
+            speechProvider = { getString(R.string.reset_demo_environment) },
             speak = voiceHelper::speak,
-            activate = ::showResetDemoTasksConfirmation
+            activate = ::showResetDemoEnvironmentConfirmation
         )
         VoiceFirstGestureBinder.bindAction(
             view = findViewById<Button>(R.id.btnBackToSettings),
@@ -121,42 +121,42 @@ class AdvancedSettingsActivity : AccessibilityActivity() {
             getString(R.string.task_agent_endpoint)
     }
 
-    private fun showResetDemoTasksConfirmation() {
-        if (demoTaskResetInProgress) return
+    private fun showResetDemoEnvironmentConfirmation() {
+        if (demoEnvironmentResetInProgress) return
         AlertDialog.Builder(this)
-            .setTitle(R.string.reset_demo_tasks_dialog_title)
-            .setMessage(R.string.reset_demo_tasks_dialog_message)
-            .setPositiveButton(R.string.reset_demo_tasks_action) { _, _ ->
-                resetDemoTasks()
+            .setTitle(R.string.reset_demo_environment_dialog_title)
+            .setMessage(R.string.reset_demo_environment_dialog_message)
+            .setPositiveButton(R.string.reset_demo_environment_action) { _, _ ->
+                resetDemoEnvironment()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun resetDemoTasks() {
-        if (demoTaskResetInProgress) return
-        demoTaskResetInProgress = true
+    private fun resetDemoEnvironment() {
+        if (demoEnvironmentResetInProgress) return
+        demoEnvironmentResetInProgress = true
         lifecycleScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    demoTaskResetCoordinator.reset()
+                    demoEnvironmentResetCoordinator.reset()
                 }
-                if (!isFinishing && !isDestroyed) presentDemoTaskResetResult(result)
+                if (!isFinishing && !isDestroyed) presentDemoEnvironmentResetResult(result)
             } finally {
-                demoTaskResetInProgress = false
+                demoEnvironmentResetInProgress = false
             }
         }
     }
 
-    private fun presentDemoTaskResetResult(result: DemoTaskResetResult) {
+    private fun presentDemoEnvironmentResetResult(result: DemoTaskResetResult) {
         val message = when (result.category) {
-            DemoTaskResetCategory.SUCCESS -> R.string.reset_demo_tasks_success
-            DemoTaskResetCategory.DATABASE_FAILURE -> R.string.reset_demo_tasks_failure
+            DemoTaskResetCategory.SUCCESS -> R.string.reset_demo_environment_success
+            DemoTaskResetCategory.DATABASE_FAILURE -> R.string.reset_demo_environment_failure
             DemoTaskResetCategory.PARTIAL_REMINDER_FAILURE ->
                 if (result.newReminderScheduleFailureCount > 0) {
-                    R.string.reset_demo_tasks_partial_reminder_schedule
+                    R.string.reset_demo_environment_partial_reminder_schedule
                 } else {
-                    R.string.reset_demo_tasks_partial_reminder_update
+                    R.string.reset_demo_environment_partial_reminder_update
                 }
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()

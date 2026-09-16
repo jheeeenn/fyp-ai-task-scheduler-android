@@ -61,7 +61,7 @@ object BoundedConfirmationPolicy {
         "(?:^|\\s)(?:yes|yeah|yep|sure|okay|ok|confirm|please do|go ahead|do it)(?:\\s|$)"
     )
     private val NATURAL_PRESERVATION_REJECTION = Regex(
-        "^no(?:pe)? (?:(?:i (?:want|would like) to )?(?:keep|leave) it|" +
+        "^(?:actually )?no(?:pe)? (?:(?:i (?:want|would like) to )?(?:keep|leave) it|" +
             "(?:don't|dont|do not) delete it)$"
     )
     private val PUNCTUATION = Regex("[.,!?;:]+")

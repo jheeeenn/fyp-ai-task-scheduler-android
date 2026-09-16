@@ -1,7 +1,6 @@
 package com.example.myapplication.developer
 
 import com.example.myapplication.data.TaskEntity
-import com.example.myapplication.data.TaskTableReplacementResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,16 +16,22 @@ class DemoTaskResetCoordinatorTest {
             task(id = 41L, title = "Old root"),
             task(id = 42L, title = "Old child", parentTaskId = 41L)
         )
+        val routines = mutableListOf("Morning routine", "Evening routine")
+        val routineSteps = mutableListOf("Wake up", "Prepare breakfast")
+        val learnedPreferences = mutableListOf("morning=08:00")
+        val settings = mutableMapOf("tone" to "friendly")
         val reminderEvents = mutableListOf<String>()
         val coordinator = coordinator(
             replace = { replacements ->
                 val previousIds = taskTable.map(TaskEntity::id)
                 taskTable.clear()
+                routineSteps.clear()
+                routines.clear()
                 val inserted = replacements.mapIndexed { index, task ->
                     task.copy(id = 101L + index)
                 }
                 taskTable += inserted
-                TaskTableReplacementResult(previousIds, inserted)
+                DemoEnvironmentDatabaseResult(previousIds, inserted)
             },
             cancel = { reminderEvents += "cancel:$it" },
             schedule = {
@@ -47,6 +52,10 @@ class DemoTaskResetCoordinatorTest {
         assertTrue(taskTable.all { !it.isDone && it.parentTaskId == null })
         assertFalse(taskTable.any { it.title == "Doctor appointment" })
         assertFalse(taskTable.any { it.id == 41L || it.id == 42L })
+        assertTrue(routines.isEmpty())
+        assertTrue(routineSteps.isEmpty())
+        assertEquals(listOf("morning=08:00"), learnedPreferences)
+        assertEquals(mapOf("tone" to "friendly"), settings)
         assertEquals(
             listOf("cancel:41", "cancel:42", "schedule:101", "schedule:102"),
             reminderEvents
@@ -60,7 +69,7 @@ class DemoTaskResetCoordinatorTest {
         val coordinator = coordinator(
             replace = { replacements ->
                 stored = replacements.mapIndexed { index, task -> task.copy(id = index + 1L) }
-                TaskTableReplacementResult(listOf(7L), stored)
+                DemoEnvironmentDatabaseResult(listOf(7L), stored)
             },
             schedule = {
                 scheduleCall += 1
@@ -98,11 +107,11 @@ class DemoTaskResetCoordinatorTest {
     }
 
     private fun coordinator(
-        replace: suspend (List<TaskEntity>) -> TaskTableReplacementResult,
+        replace: suspend (List<TaskEntity>) -> DemoEnvironmentDatabaseResult,
         cancel: (Long) -> Unit = {},
         schedule: (TaskEntity) -> Boolean = { true }
     ) = DemoTaskResetCoordinator(
-        store = DemoTaskStore(replace),
+        store = DemoEnvironmentStore(replace),
         reminderCanceller = DemoTaskReminderCanceller(cancel),
         reminderScheduler = DemoTaskReminderScheduler(schedule),
         currentCalendar = ::fixedCalendar

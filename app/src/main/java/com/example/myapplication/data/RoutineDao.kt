@@ -100,6 +100,12 @@ interface RoutineDao {
     @Query("DELETE FROM routines WHERE id = :routineId")
     suspend fun deleteRoutineRow(routineId: Long): Int
 
+    @Query("DELETE FROM routine_steps")
+    suspend fun deleteAllRoutineSteps(): Int
+
+    @Query("DELETE FROM routines")
+    suspend fun deleteAllRoutines(): Int
+
     @Transaction
     suspend fun deleteRoutineAndSteps(routineId: Long): Boolean =
         deleteRoutineRow(routineId) == 1

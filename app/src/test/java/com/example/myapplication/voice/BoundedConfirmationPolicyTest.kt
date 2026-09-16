@@ -37,7 +37,9 @@ class BoundedConfirmationPolicyTest {
             "no keep it",
             "no, I want to keep it",
             "no leave it",
-            "no, don't delete it"
+            "no, don't delete it",
+            "actually no keep it",
+            "actually no, I want to keep it"
         ).forEach { text ->
             assertEquals(text, BoundedConfirmationResult.REJECT, resolve(text))
         }
