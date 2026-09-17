@@ -72,6 +72,12 @@ class ReadOnlyTaskContextStore {
         )
     }
 
+    /** Children are already ordered by TaskDao.getSubtasks; never sort by ID or title. */
+    @Synchronized
+    fun replaceSubtaskList(tasks: List<TaskEntity>) {
+        replace(TaskContextScope.SUBTASK_LIST, tasks, emptyMap())
+    }
+
     @Synchronized
     fun clear() {
         generation += 1

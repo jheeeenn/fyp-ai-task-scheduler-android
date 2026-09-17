@@ -86,6 +86,7 @@ object ContextItemReadPolicy {
         ContextItemReadResolution(ContextItemReadDisposition.NOT_APPLICABLE)
 
     private val SUPPORTED_SCOPES = setOf(
+        TaskContextScope.SUBTASK_LIST,
         TaskContextScope.RECENT_QUERY_RESULTS,
         TaskContextScope.DAILY_BRIEFING,
         TaskContextScope.CONTEXT_SUGGESTION,

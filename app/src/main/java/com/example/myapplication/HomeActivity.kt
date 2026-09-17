@@ -51,6 +51,9 @@ import com.example.myapplication.ai.agent.TaskAgentProcessingException
 import com.example.myapplication.ai.agent.ContextActionChangeSet
 import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.AppGuidanceCatalog
+import com.example.myapplication.ai.conversation.ConversationContextDetail
+import com.example.myapplication.ai.conversation.taskcontext.AuthoritativeSubtaskReader
+import com.example.myapplication.ai.conversation.taskcontext.BreakdownTaskContextPublisher
 import com.example.myapplication.ai.conversation.ConversationDecision
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
 import com.example.myapplication.ai.conversation.ConversationOrchestrator
@@ -4701,6 +4704,45 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             return
         }
 
+        if (validation.detail == ConversationContextDetail.SUBTASKS) {
+            val readRequestGeneration = assistantRequestGeneration
+            lifecycleScope.launch {
+                val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+                val speech = AuthoritativeSubtaskReader(
+                    readOnlyTaskContextStore, dao::getById, dao::getSubtasks,
+                    isCurrent = {
+                        assistantSession.assistantSessionActive &&
+                            assistantRequestGeneration == readRequestGeneration
+                    }
+                ).read(requireNotNull(validation.item).ref, taskContextCapture.snapshot.generation)
+                if (!assistantSession.assistantSessionActive ||
+                    assistantRequestGeneration != readRequestGeneration
+                ) return@launch
+                if (speech == null) {
+                    assistantSession.speak(
+                        "Those task results changed. Please repeat your task query.",
+                        listenAgain = true
+                    )
+                    return@launch
+                }
+                conversationOrchestrator.recordAuthoritativeContextRead(
+                    item = requireNotNull(validation.item),
+                    selectedRef = validation.item.ref,
+                    selectedDetail = validation.detail,
+                    capturedGeneration = taskContextCapture.snapshot.generation,
+                    finalSpeech = speech
+                )
+                conversationOrchestrator.clearInvalidContextFocus(readOnlyTaskContextStore.snapshot())
+                authoritativeRepeatState = AuthoritativeRepeatState(
+                    speech = speech,
+                    kind = RepeatableSpeechKind.CONTEXT_READ,
+                    contextGeneration = readOnlyTaskContextStore.currentGeneration()
+                )
+                assistantSession.speak(speech, listenAgain = true)
+            }
+            return
+        }
+
         val item = requireNotNull(validation.item)
         val speech = ReadOnlyTaskContextResponseRenderer.render(
             item = item,
@@ -7068,6 +7110,17 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 result.category == BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE
             ) {
                 refreshOverview()
+                val capture = BreakdownTaskContextPublisher(
+                    readOnlyTaskContextStore, dao::getById, dao::getSubtasks
+                ).publish(result)
+                if (capture != null) {
+                    val item = capture.snapshot.items.single()
+                    conversationOrchestrator.setAuthoritativeContextFocus(
+                        item = item,
+                        selectedRef = item.ref,
+                        capturedGeneration = capture.snapshot.generation
+                    )
+                }
             }
             if (!assistantSession.assistantSessionActive) return@launch
             val speech = when (result.category) {
@@ -7103,7 +7156,8 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     dateText = pendingSave.draft.dateText.orEmpty(),
                     timeText = pendingSave.draft.timeText.orEmpty(),
                     planItems = pendingSave.draft.proposedSubtasks,
-                    listenAgain = false,
+                    listenAgain = result.category == BreakdownSaveResultCategory.SUCCESS ||
+                        result.category == BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE,
                     fallbackSpeech = speech
                 )
             )

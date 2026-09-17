@@ -81,7 +81,7 @@ class HomeActivityTaskContextSourceTest {
     }
 
     @Test
-    fun contextReadIsValidatedAndRenderedBeforeTaskAgentWithoutRoomAccess() {
+    fun contextReadIsValidatedBeforeTaskAgentWithRoomAccessOnlyForSubtasks() {
         val contextReadBranch = source
             .substringAfter("ConversationRoute.CONTEXT_READ ->")
             .substringBefore("ConversationRoute.CONTEXT_ACTION ->")
@@ -98,7 +98,14 @@ class HomeActivityTaskContextSourceTest {
         assertTrue(contextReadExecutor.contains("recordAuthoritativeContextRead("))
         assertTrue(contextReadBranch.contains("return@launch"))
         assertTrue(contextBranchStart < taskAgentCall)
-        listOf(contextReadBranch, contextReadExecutor).forEach { body ->
+        val subtaskRead = contextReadExecutor
+            .substringAfter("if (validation.detail == ConversationContextDetail.SUBTASKS)")
+            .substringBefore("val speech = ReadOnlyTaskContextResponseRenderer.render(")
+        assertTrue(subtaskRead.contains("AuthoritativeSubtaskReader("))
+        assertTrue(subtaskRead.contains("dao::getById, dao::getSubtasks"))
+        assertTrue(subtaskRead.contains("listenAgain = true"))
+        val capturedRead = contextReadExecutor.substringAfter("val speech = ReadOnlyTaskContextResponseRenderer.render(")
+        listOf(contextReadBranch, capturedRead).forEach { body ->
             assertTrue(body.contains("agentOrchestrator").not())
             assertTrue(body.contains("AppDatabase").not())
             assertTrue(body.contains("taskDao()").not())

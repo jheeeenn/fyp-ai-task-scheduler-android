@@ -1,5 +1,7 @@
 package com.example.myapplication.ai.breakdown
 
+import com.example.myapplication.ai.conversation.*
+import com.example.myapplication.ai.conversation.taskcontext.*
 import com.example.myapplication.data.BreakdownTransactionResult
 import com.example.myapplication.data.BreakdownTransactionStatus
 import com.example.myapplication.data.TaskEntity
@@ -49,6 +51,7 @@ class BreakdownPersistenceCoordinatorTest {
             val result = coordinator.persist(existingSave(parent))
 
             assertEquals(BreakdownSaveResultCategory.SUCCESS, result.category)
+            assertEquals(parent.id, result.parentTaskId)
             assertEquals(1, existingCalls)
             assertEquals(0, newCalls)
             assertEquals(0, reminderCalls)
@@ -97,6 +100,43 @@ class BreakdownPersistenceCoordinatorTest {
             assertEquals("3:00 PM", storedParent!!.dueTime)
             assertEquals(steps(), storedTitles)
             assertTrue(result.reminderScheduled)
+            assertEquals(insertedParent.id, result.parentTaskId)
+            val context = ReadOnlyTaskContextStore()
+            val persistedParent = insertedParent.copy(title = "Persisted presentation")
+            val persistedChildren = steps().mapIndexed { index, title ->
+                TaskEntity(id = 100L + index, title = title, parentTaskId = insertedParent.id, subtaskOrder = index)
+            }
+            var fetchedId: Long? = null
+            val capture = requireNotNull(BreakdownTaskContextPublisher(
+                context,
+                { id -> fetchedId = id; persistedParent },
+                { persistedChildren }
+            ).publish(result))
+            assertEquals(insertedParent.id, fetchedId)
+            assertEquals(TaskContextScope.TASK_DETAIL, capture.snapshot.scope)
+            assertEquals("Persisted presentation", capture.snapshot.items.single().title)
+            val memory = ConversationSessionMemory()
+            val item = capture.snapshot.items.single()
+            memory.setAuthoritativeContextFocus(item, item.ref, capture.snapshot.generation)
+            val focus = requireNotNull(memory.contextFocusForGeneration(
+                capture.snapshot.generation, setOf(item.ref)
+            ))
+            assertEquals("T1", focus.ref)
+            val decision = ConversationDecision(
+                route = ConversationRoute.CONTEXT_READ,
+                contextRef = "T1",
+                contextDetail = ConversationContextDetail.SUBTASKS,
+                confidence = 1.0,
+                listenAgain = true
+            )
+            assertTrue(ReadOnlyTaskContextReadValidator.validate(
+                decision, capture.snapshot, context.currentGeneration(), "What are its subtasks?"
+            ).isValid)
+            assertEquals(
+                "Persisted presentation has two subtasks. First, Draft slides. Second, Practise delivery.",
+                AuthoritativeSubtaskReader(context, { persistedParent }, { persistedChildren })
+                    .read("T1", capture.snapshot.generation)
+            )
         }
 
     @Test
@@ -129,6 +169,7 @@ class BreakdownPersistenceCoordinatorTest {
             )
             assertEquals(2, result.insertedCount)
             assertFalse(result.reminderScheduled)
+            assertEquals(insertedParent.id, result.parentTaskId)
         }
 
     @Test

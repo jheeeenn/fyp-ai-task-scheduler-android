@@ -35,7 +35,8 @@ data class BreakdownSaveResult(
     val mode: BreakdownDraftMode,
     val requestedSubtaskCount: Int,
     val insertedCount: Int,
-    val reminderScheduled: Boolean = false
+    val reminderScheduled: Boolean = false,
+    val parentTaskId: Long? = null // Android-only; never included in model context or speech.
 )
 
 class BreakdownPersistenceCoordinator(
@@ -134,7 +135,8 @@ class BreakdownPersistenceCoordinator(
             mode,
             titles.size,
             transaction.insertedCount,
-            reminderScheduled
+            reminderScheduled,
+            transaction.parent?.id
         )
     }
 
@@ -143,7 +145,8 @@ class BreakdownPersistenceCoordinator(
         mode: BreakdownDraftMode,
         requestedCount: Int,
         insertedCount: Int,
-        reminderScheduled: Boolean = false
+        reminderScheduled: Boolean = false,
+        parentTaskId: Long? = null
     ): BreakdownSaveResult {
         DebugDiagnosticLog.event(
             "BREAKDOWN_TRANSACTION",
@@ -165,7 +168,8 @@ class BreakdownPersistenceCoordinator(
             mode = mode,
             requestedSubtaskCount = requestedCount,
             insertedCount = insertedCount,
-            reminderScheduled = reminderScheduled
+            reminderScheduled = reminderScheduled,
+            parentTaskId = parentTaskId
         )
     }
 }

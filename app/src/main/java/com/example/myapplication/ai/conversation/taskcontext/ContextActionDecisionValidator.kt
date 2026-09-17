@@ -48,6 +48,9 @@ object ContextActionDecisionValidator {
         if (capturedSnapshot.generation != currentGeneration) {
             return ValidatedContextAction(ContextActionValidationResult.STALE_GENERATION)
         }
+        if (capturedSnapshot.scope == TaskContextScope.SUBTASK_LIST) {
+            return ValidatedContextAction(ContextActionValidationResult.INVALID_ACTION)
+        }
         if (decision.contextAction != ConversationContextAction.UPDATE &&
             decision.contextAction != ConversationContextAction.RESCHEDULE &&
             decision.contextAction != ConversationContextAction.DELETE &&

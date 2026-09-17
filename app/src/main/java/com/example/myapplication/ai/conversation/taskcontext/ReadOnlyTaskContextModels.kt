@@ -6,7 +6,8 @@ enum class TaskContextScope {
     DAILY_BRIEFING,
     CONTEXT_SUGGESTION,
     TASK_MATCH_CHOICES,
-    TASK_DETAIL
+    TASK_DETAIL,
+    SUBTASK_LIST
 }
 
 data class ReadOnlyTaskContextItem(
