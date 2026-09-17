@@ -5,6 +5,8 @@ import com.example.myapplication.ai.TaskQueryPresentation
 import com.example.myapplication.ai.TaskCommandContradictionDetector
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionAuthorityBindingPolicy
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionAuthorityBindingResult
+import com.example.myapplication.ai.conversation.taskcontext.ContextReadTitleGroundingPolicy
+import com.example.myapplication.ai.conversation.taskcontext.ContextReadTitleGroundingResult
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetDecision
 import com.example.myapplication.ai.conversation.taskcontext.PendingContextActionTargetParser
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextItem
@@ -153,7 +155,8 @@ class ConversationOrchestrator(
             val canonicalDecision = parseCanonicalDecision(
                 rawContent = rawContent,
                 normalizedTextForTopLevelValidation = normalizedText,
-                topLevelRouteContext = topLevelRouteContext
+                topLevelRouteContext = topLevelRouteContext,
+                capturedTaskContextSnapshot = capturedTaskContextSnapshot
             )
             validateTaskRouteConsistency(normalizedText, canonicalDecision)
             validateOperationalBreakdownRouting(normalizedText, canonicalDecision)
@@ -293,7 +296,8 @@ class ConversationOrchestrator(
                     rawContent = repairContent,
                     source = SOURCE_SCHEMA_REPAIR,
                     normalizedTextForTopLevelValidation = normalizedText,
-                    topLevelRouteContext = topLevelRouteContext
+                    topLevelRouteContext = topLevelRouteContext,
+                    capturedTaskContextSnapshot = capturedTaskContextSnapshot
                 )
                 ConversationRepairProfile.NO_CONTEXT_MUTATION_REPAIR ->
                     parseCompactTaskCommandRepair(
@@ -484,7 +488,8 @@ class ConversationOrchestrator(
         source: String = SOURCE_CONVERSATION_AGENT,
         normalizedTextForTopLevelValidation: String? = null,
         topLevelRouteContext: ConversationTopLevelRouteConsistencyContext =
-            ConversationTopLevelRouteConsistencyContext()
+            ConversationTopLevelRouteConsistencyContext(),
+        capturedTaskContextSnapshot: ReadOnlyTaskContextSnapshot? = null
     ): ConversationDecision {
         val result = if (normalizedTextForTopLevelValidation == null) {
             parser.parseWithReport(rawContent)
@@ -499,15 +504,52 @@ class ConversationOrchestrator(
             )
         }
         val decision = result.decision.copy(source = source)
+        var groundedDecision = decision
+        if (normalizedTextForTopLevelValidation != null &&
+            capturedTaskContextSnapshot != null
+        ) {
+            val titleGrounding = ContextReadTitleGroundingPolicy.reconcile(
+                normalizedText = normalizedTextForTopLevelValidation,
+                decision = groundedDecision,
+                capturedSnapshot = capturedTaskContextSnapshot,
+                currentGeneration = capturedTaskContextSnapshot.generation
+            )
+            groundedDecision = when (titleGrounding.result) {
+                ContextReadTitleGroundingResult.MATCHED_MODEL_REF,
+                ContextReadTitleGroundingResult.GROUNDED_BLANK_MODEL_REF -> {
+                    Log.d(
+                        "CONTEXT_READ_TITLE_GROUNDING",
+                        "result=${titleGrounding.result} ref=${titleGrounding.expectedRef}"
+                    )
+                    titleGrounding.decision
+                }
+                ContextReadTitleGroundingResult.AMBIGUOUS_TITLE ->
+                    ConversationDecision(
+                        route = ConversationRoute.ASK_CLARIFICATION,
+                        reply = "More than one supplied task matches that title. Please say its position in the list.",
+                        confidence = groundedDecision.confidence,
+                        listenAgain = true,
+                        source = source
+                    )
+                ContextReadTitleGroundingResult.MODEL_REF_MISMATCH,
+                ContextReadTitleGroundingResult.STALE_GENERATION ->
+                    throw ConversationSchemaException(
+                        message = "CONTEXT_READ title evidence does not match the selected ref",
+                        decisionFailureCode = ConversationDecisionFailureCode.INVALID_CONTEXT_REF,
+                        failedRoute = ConversationRoute.CONTEXT_READ
+                    )
+                ContextReadTitleGroundingResult.NOT_APPLICABLE -> groundedDecision
+            }
+        }
         if (normalizedTextForTopLevelValidation != null) {
             validateTopLevelRouteConsistency(
                 normalizedText = normalizedTextForTopLevelValidation,
-                decision = decision,
+                decision = groundedDecision,
                 context = topLevelRouteContext
             )
-            ConversationDecisionContractValidator.validate(decision)
+            ConversationDecisionContractValidator.validate(groundedDecision)
         }
-        return decision
+        return groundedDecision
     }
 
     private fun validateOperationalBreakdownRouting(

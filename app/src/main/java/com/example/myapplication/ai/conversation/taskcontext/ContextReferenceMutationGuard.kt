@@ -99,14 +99,7 @@ object ContextReferenceMutationGuard {
     fun containsUniqueSuppliedTitle(
         text: String,
         snapshot: ReadOnlyTaskContextSnapshot
-    ): Boolean {
-        val normalized = text.trim().lowercase(Locale.ROOT)
-        if (normalized.isEmpty()) return false
-        val matches = snapshot.items.count { item ->
-            item.title.isNotBlank() && normalized.contains(item.title.lowercase(Locale.ROOT))
-        }
-        return matches == 1
-    }
+    ): Boolean = SuppliedTaskTitleMatcher.matches(text, snapshot).size == 1
 
     private val DEICTIC_TASK_REFERENCE = Regex("(?i)\\b(?:that|this)\\s+(?:task|one)\\b")
     private val FOCUS_PRONOUN = Regex("(?i)\\b(?:it|its|that one|that task)\\b")

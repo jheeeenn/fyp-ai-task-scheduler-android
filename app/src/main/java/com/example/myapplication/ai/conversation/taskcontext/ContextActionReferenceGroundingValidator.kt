@@ -153,7 +153,7 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
-        val titleMatches = suppliedTitleMatches(normalizedText, capturedSnapshot)
+        val titleMatches = SuppliedTaskTitleMatcher.matches(normalizedText, capturedSnapshot)
         if (titleMatches.size > 1) {
             return GroundedContextActionReference(
                 ContextActionReferenceGroundingResult.AMBIGUOUS_TITLE
@@ -234,28 +234,6 @@ object ContextActionReferenceGroundingValidator {
         return GroundedContextActionReference(validResult, expectedRef)
     }
 
-    private fun suppliedTitleMatches(
-        normalizedText: String,
-        snapshot: ReadOnlyTaskContextSnapshot
-    ): List<ReadOnlyTaskContextItem> {
-        val utterance = normalize(normalizedText)
-        if (utterance.isEmpty()) return emptyList()
-        return snapshot.items.filter { item ->
-            val title = normalize(item.title)
-            title.isNotEmpty() && TITLE_BOUNDARY_TEMPLATE
-                .replace("{{TITLE}}", Regex.escape(title))
-                .toRegex(RegexOption.IGNORE_CASE)
-                .containsMatchIn(utterance)
-        }
-    }
-
-    private fun normalize(value: String): String = value
-        .trim()
-        .replace(WHITESPACE, " ")
-        .lowercase(Locale.ROOT)
-
-    private const val TITLE_BOUNDARY_TEMPLATE = "(?<![\\p{L}\\p{N}_]){{TITLE}}(?![\\p{L}\\p{N}_])"
-    private val WHITESPACE = Regex("\\s+")
     private val FOCUS_REFERENCE = Regex(
         "(?i)\\b(?:it|its|that\\s+(?:task|one)|this\\s+(?:task|one))\\b"
     )
