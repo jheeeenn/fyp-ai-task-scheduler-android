@@ -71,10 +71,12 @@ class AuthoritativeSubtaskReaderTest {
         assertTrue(requireNotNull(speech).contains(child.title))
     }
 
-    @Test fun childContextDoesNotAuthorizeMutations() {
+    @Test fun childContextAuthorizesOnlyCompletionMutations() {
         val store = ReadOnlyTaskContextStore().apply { replaceSubtaskList(children) }
-        ConversationContextAction.entries.filter { it != ConversationContextAction.NONE }.forEach { action ->
-            assertFalse(ContextActionDecisionValidator.validate(
+        ConversationContextAction.entries.forEach { action ->
+            val expected = action == ConversationContextAction.MARK_DONE ||
+                action == ConversationContextAction.MARK_UNDONE
+            assertEquals(expected, ContextActionDecisionValidator.validate(
                 ConversationDecision(route = ConversationRoute.CONTEXT_ACTION, contextRef = "T1", contextAction = action, confidence = 1.0),
                 store.snapshot(), store.currentGeneration()
             ).isValid)

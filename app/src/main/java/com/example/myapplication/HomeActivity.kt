@@ -109,6 +109,7 @@ import com.example.myapplication.ai.conversation.taskcontext.ContextActionRepair
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionTargetValidator
 import com.example.myapplication.ai.conversation.taskcontext.TaskCompletionMutationPolicy
 import com.example.myapplication.ai.conversation.taskcontext.TaskCompletionReminderDirective
+import com.example.myapplication.ai.conversation.taskcontext.SubtaskCompletionContextRefresher
 import com.example.myapplication.ai.conversation.taskcontext.ContextActionReferenceGroundingValidator
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadValidationResult
 import com.example.myapplication.ai.conversation.taskcontext.ContextReadDetailCompatibilityPolicy
@@ -122,6 +123,7 @@ import com.example.myapplication.ai.conversation.taskcontext.PresentedQueryFocus
 import com.example.myapplication.ai.conversation.taskcontext.PresentedQueryFocusResult
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextStore
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextCapture
+import com.example.myapplication.ai.conversation.taskcontext.TaskContextScope
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextReadValidator
 import com.example.myapplication.ai.conversation.taskcontext.ReadOnlyTaskContextResponseRenderer
 import com.example.myapplication.ai.conversation.taskcontext.ValidatedContextRead
@@ -2024,18 +2026,30 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                                 return@launch
                             }
                             conversationOrchestrator.commitFinalDecision(conversationDecision)
-                            speakObservation(
-                                executeDeterministicTaskCompletion(
+                            val completionGrounding = if (pendingTargetAuthorityApplies) {
+                                "VALID_PENDING_TARGET"
+                            } else {
+                                grounding?.result?.name.orEmpty()
+                            }
+                            if (taskContextCapture.snapshot.scope == TaskContextScope.SUBTASK_LIST) {
+                                executeContextSubtaskCompletion(
+                                    requestToken = requestToken,
                                     task = requireNotNull(completionTask),
                                     action = validation.action,
-                                    grounding = if (pendingTargetAuthorityApplies) {
-                                        "VALID_PENDING_TARGET"
-                                    } else {
-                                        grounding?.result?.name.orEmpty()
-                                    },
-                                    targetRef = groundedRef
+                                    grounding = completionGrounding,
+                                    targetRef = groundedRef,
+                                    capturedGeneration = capturedGeneration
                                 )
-                            )
+                            } else {
+                                speakObservation(
+                                    executeDeterministicTaskCompletion(
+                                        task = requireNotNull(completionTask),
+                                        action = validation.action,
+                                        grounding = completionGrounding,
+                                        targetRef = groundedRef
+                                    )
+                                )
+                            }
                             return@launch
                         }
 
@@ -3983,6 +3997,52 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
             first.isDone == second.isDone &&
             first.parentTaskId == second.parentTaskId &&
             first.subtaskOrder == second.subtaskOrder
+
+    private suspend fun executeContextSubtaskCompletion(
+        requestToken: AssistantRequestToken,
+        task: TaskEntity,
+        action: ConversationContextAction,
+        grounding: String,
+        targetRef: String,
+        capturedGeneration: Long
+    ) {
+        val parentTaskId = task.parentTaskId ?: return
+        val observation = executeDeterministicTaskCompletion(
+            task = task,
+            action = action,
+            grounding = grounding,
+            targetRef = targetRef
+        ).copy(listenAgain = true)
+        val dao = AppDatabase.getInstance(this@HomeActivity).taskDao()
+        val refreshed = SubtaskCompletionContextRefresher(
+            store = readOnlyTaskContextStore,
+            getSubtasks = { parentId ->
+                withContext(Dispatchers.IO) { dao.getSubtasks(parentId) }
+            },
+            isCurrent = {
+                assistantSession.assistantSessionActive &&
+                    isAssistantRequestCurrent(requestToken)
+            }
+        ).refresh(
+            parentTaskId = parentTaskId,
+            affectedTaskId = task.id,
+            expectedGeneration = capturedGeneration
+        ) ?: return
+
+        val delivered = speakObservation(observation)
+        if (!delivered ||
+            !assistantSession.assistantSessionActive ||
+            !isAssistantRequestCurrent(requestToken) ||
+            readOnlyTaskContextStore.currentGeneration() != refreshed.capture.snapshot.generation
+        ) {
+            return
+        }
+        conversationOrchestrator.setAuthoritativeContextFocus(
+            item = refreshed.affectedItem,
+            selectedRef = refreshed.affectedItem.ref,
+            capturedGeneration = refreshed.capture.snapshot.generation
+        )
+    }
 
     private suspend fun executeDeterministicTaskCompletion(
         task: TaskEntity,

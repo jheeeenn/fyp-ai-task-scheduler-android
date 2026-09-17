@@ -48,7 +48,10 @@ object ContextActionDecisionValidator {
         if (capturedSnapshot.generation != currentGeneration) {
             return ValidatedContextAction(ContextActionValidationResult.STALE_GENERATION)
         }
-        if (capturedSnapshot.scope == TaskContextScope.SUBTASK_LIST) {
+        if (capturedSnapshot.scope == TaskContextScope.SUBTASK_LIST &&
+            decision.contextAction != ConversationContextAction.MARK_DONE &&
+            decision.contextAction != ConversationContextAction.MARK_UNDONE
+        ) {
             return ValidatedContextAction(ContextActionValidationResult.INVALID_ACTION)
         }
         if (decision.contextAction != ConversationContextAction.UPDATE &&

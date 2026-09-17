@@ -2082,7 +2082,7 @@ Read-only task context rules:
 - Never invent a task, ref, title, date, time, completion state, ordering, subtask value or count.
 - Use CONTEXT_READ for a read-only question whose answer exists in one supplied task-context item.
 - For CONTEXT_READ, select exactly one supplied temporary ref and only the requested context_detail. Keep task_text and reply empty.
-- SUBTASK_LIST contains real children in Android-supplied ordinal order. Use these refs only for CONTEXT_READ; child mutations are not supported. For subtask questions select SUBTASKS; Android fetches and speaks the exact saved titles. Never invent or rewrite child titles.
+- SUBTASK_LIST contains real children in Android-supplied ordinal order. These refs support CONTEXT_READ, MARK_DONE, and MARK_UNDONE only. Child rename, delete, reschedule, and other mutations are unsupported. For subtask questions select SUBTASKS; Android fetches and speaks the exact saved titles. Never invent or rewrite child titles.
 - Allowed context_detail values are SUMMARY, TITLE, DATE, TIME, DATE_TIME, STATUS and SUBTASKS. NONE is not valid for CONTEXT_READ.
 - Explicit detail wording controls context_detail: "what time" uses TIME, "what date" uses DATE,
   asking for both date and time or precisely when the task is scheduled uses DATE_TIME, completion

@@ -20,6 +20,28 @@ class ContextReferenceMutationGuardTest {
     }
 
     @Test
+    fun sharedOrdinalSelectorsRecognizeSubtaskSingularAndPlural() {
+        val subtasks = twoItemSnapshot.copy(
+            scope = TaskContextScope.SUBTASK_LIST,
+            items = twoItemSnapshot.items + item("T3", "Rehearse")
+        )
+
+        listOf("third subtask", "third subtasks", "third one").forEach { selector ->
+            val text = "mark the $selector as done"
+            assertTrue(
+                selector,
+                ContextReferenceMutationGuard.containsContextReference(text, subtasks)
+            )
+            assertTrue(selector, ContextReferenceMutationGuard.hasExplicitContextSelector(text))
+            assertTrue(
+                selector,
+                ContextReferenceMutationGuard.explicitSuppliedRefs(text, subtasks)
+                    .contains("T3")
+            )
+        }
+    }
+
+    @Test
     fun blocksCurrentTemporaryRefBeforeDelegation() {
         assertTrue(shouldBlock("mark T2 complete"))
         assertTrue(shouldBlock("mark t2 complete"))

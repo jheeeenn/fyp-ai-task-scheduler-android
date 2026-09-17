@@ -50,7 +50,7 @@ object ContextActionReferenceGroundingValidator {
     ): GroundedContextActionReference {
         val selectedRef = decision.contextRef.trim()
 
-        val spokenRefs = TEMPORARY_REF.findAll(normalizedText)
+        val spokenRefs = ContextReferenceSelectorPatterns.temporaryRef.findAll(normalizedText)
             .map { it.value.uppercase(Locale.ROOT) }
             .distinct()
             .toList()
@@ -67,12 +67,17 @@ object ContextActionReferenceGroundingValidator {
             )
         }
 
-        val ordinalPositions = sequenceOf(SUPPLIED_RESULT_ORDINAL, STANDALONE_SUPPLIED_ORDINAL)
+        val ordinalPositions = sequenceOf(
+            ContextReferenceSelectorPatterns.suppliedResultOrdinal,
+            ContextReferenceSelectorPatterns.standaloneSuppliedOrdinal
+        )
             .flatMap { pattern -> pattern.findAll(normalizedText) }
-            .map { match -> ordinalPosition(match.groupValues[1]) }
+            .map { match ->
+                ContextReferenceSelectorPatterns.ordinalPosition(match.groupValues[1])
+            }
             .filter { it > 0 }
             .toMutableList()
-        PAIR_SELECTOR.findAll(normalizedText)
+        ContextReferenceSelectorPatterns.pairSelector.findAll(normalizedText)
             .map { match ->
                 if (capturedSnapshot.items.size == 2) {
                     if (match.groupValues[1].equals("former", ignoreCase = true)) 1 else 2
@@ -249,32 +254,8 @@ object ContextActionReferenceGroundingValidator {
         .replace(WHITESPACE, " ")
         .lowercase(Locale.ROOT)
 
-    private fun ordinalPosition(value: String): Int = when (value.lowercase(Locale.ROOT)) {
-        "first", "1st" -> 1
-        "second", "2nd" -> 2
-        "third", "3rd" -> 3
-        "fourth", "4th" -> 4
-        "fifth", "5th" -> 5
-        "sixth", "6th" -> 6
-        "seventh", "7th" -> 7
-        "eighth", "8th" -> 8
-        else -> -1
-    }
-
-    private const val ORDINAL =
-        "first|second|third|fourth|fifth|sixth|seventh|eighth|1st|2nd|3rd|4th|5th|6th|7th|8th"
     private const val TITLE_BOUNDARY_TEMPLATE = "(?<![\\p{L}\\p{N}_]){{TITLE}}(?![\\p{L}\\p{N}_])"
     private val WHITESPACE = Regex("\\s+")
-    private val TEMPORARY_REF = Regex("(?i)(?<![A-Za-z0-9_])T[1-9][0-9]*(?![A-Za-z0-9_])")
-    private val SUPPLIED_RESULT_ORDINAL = Regex(
-        "(?i)\\b(?:the\\s+)?($ORDINAL)\\s+(?:one|task|result|item)\\b"
-    )
-    private val STANDALONE_SUPPLIED_ORDINAL = Regex(
-        "(?i)\\bthe\\s+($ORDINAL)(?=\\s*(?:$|to\\b|on\\b|for\\b))"
-    )
-    private val PAIR_SELECTOR = Regex(
-        "(?i)\\b(?:the\\s+)?(former|latter)\\s+(?:one|task|result|item)\\b"
-    )
     private val FOCUS_REFERENCE = Regex(
         "(?i)\\b(?:it|its|that\\s+(?:task|one)|this\\s+(?:task|one))\\b"
     )

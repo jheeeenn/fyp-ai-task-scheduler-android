@@ -388,6 +388,47 @@ class ContextActionReferenceGroundingValidatorTest {
     }
 
     @Test
+    fun ordinalSubtaskSingularPluralAndOneShareTheSuppliedOrder() {
+        val subtaskSnapshot = snapshot.copy(
+            scope = TaskContextScope.SUBTASK_LIST,
+            items = listOf(
+                item("T1", "Outline"),
+                item("T2", "Slides"),
+                item("T3", "Rehearse")
+            )
+        )
+        listOf("third subtask", "third subtasks", "third one").forEach { selector ->
+            val result = validateAgainst(
+                text = "mark the $selector as done",
+                selectedRef = "T3",
+                capturedSnapshot = subtaskSnapshot,
+                focus = null,
+                action = ConversationContextAction.MARK_DONE
+            )
+            assertEquals(selector, ContextActionReferenceGroundingResult.VALID_ORDINAL, result.result)
+            assertEquals(selector, "T3", result.ref)
+        }
+
+        val mismatch = validateAgainst(
+            text = "mark the third subtask as done",
+            selectedRef = "T2",
+            capturedSnapshot = subtaskSnapshot,
+            focus = null,
+            action = ConversationContextAction.MARK_DONE
+        )
+        assertEquals(ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH, mismatch.result)
+
+        val ambiguous = validateAgainst(
+            text = "mark the first subtask and third subtask as done",
+            selectedRef = "T3",
+            capturedSnapshot = subtaskSnapshot,
+            focus = null,
+            action = ConversationContextAction.MARK_DONE
+        )
+        assertEquals(ContextActionReferenceGroundingResult.SELECTED_REF_MISMATCH, ambiguous.result)
+    }
+
+    @Test
     fun formerAndLatterAreBoundedToAnExactPair() {
         assertEquals(
             ContextActionReferenceGroundingResult.VALID_ORDINAL,

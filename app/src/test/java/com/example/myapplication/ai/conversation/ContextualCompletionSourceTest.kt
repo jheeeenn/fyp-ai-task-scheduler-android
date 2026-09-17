@@ -45,6 +45,30 @@ class ContextualCompletionSourceTest {
     }
 
     @Test
+    fun subtaskCompletionRefreshesBeforeDeliveryThenFocusesTheAffectedChild() {
+        val route = source
+            .substringAfter("ConversationRoute.CONTEXT_ACTION -> {")
+            .substringBefore("ConversationRoute.QUERY_READING_CONTROL ->")
+        val helper = source
+            .substringAfter("private suspend fun executeContextSubtaskCompletion")
+            .substringBefore("private suspend fun executeDeterministicTaskCompletion")
+
+        assertTrue(route.contains("taskContextCapture.snapshot.scope == TaskContextScope.SUBTASK_LIST"))
+        assertTrue(route.contains("executeContextSubtaskCompletion("))
+        assertTrue(helper.contains("executeDeterministicTaskCompletion("))
+        assertTrue(helper.contains("SubtaskCompletionContextRefresher("))
+        assertTrue(helper.contains("dao.getSubtasks(parentId)"))
+        assertTrue(helper.contains("copy(listenAgain = true)"))
+        assertTrue(helper.contains("assistantSession.assistantSessionActive"))
+        assertTrue(helper.contains("isAssistantRequestCurrent(requestToken)"))
+        assertTrue(helper.contains("readOnlyTaskContextStore.currentGeneration()"))
+        assertTrue(
+            helper.indexOf("val delivered = speakObservation(observation)") <
+                helper.indexOf("conversationOrchestrator.setAuthoritativeContextFocus(")
+        )
+    }
+
+    @Test
     fun namedCompletionPathsStillUseNormalTaskMatchingThenSharedExecution() {
         val normalActions = source
             .substringAfter("// branches for actions")
