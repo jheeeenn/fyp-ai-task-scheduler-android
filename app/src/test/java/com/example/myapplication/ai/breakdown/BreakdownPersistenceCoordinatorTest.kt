@@ -116,7 +116,23 @@ class BreakdownPersistenceCoordinatorTest {
             assertEquals(TaskContextScope.TASK_DETAIL, capture.snapshot.scope)
             assertEquals("Persisted presentation", capture.snapshot.items.single().title)
             val memory = ConversationSessionMemory()
-            val item = capture.snapshot.items.single()
+            val observation = ExecutionObservation(
+                operation = ExecutionOperation.BREAKDOWN_TASK,
+                outcome = ExecutionOutcome.SUCCESS,
+                taskTitle = persistedParent.title,
+                taskCount = persistedChildren.size,
+                planItems = persistedChildren.map { it.title },
+                listenAgain = true,
+                fallbackSpeech = "I created the task breakdown."
+            )
+            memory.recordObservation(observation)
+            memory.recordPresentationSink(observation.fallbackSpeech)
+            val item = requireNotNull(
+                BreakdownPostSaveContextFocusPolicy.authoritativeItemOrNull(
+                    capture.snapshot,
+                    context.currentGeneration()
+                )
+            )
             memory.setAuthoritativeContextFocus(item, item.ref, capture.snapshot.generation)
             val focus = requireNotNull(memory.contextFocusForGeneration(
                 capture.snapshot.generation, setOf(item.ref)
@@ -132,6 +148,7 @@ class BreakdownPersistenceCoordinatorTest {
             assertTrue(ReadOnlyTaskContextReadValidator.validate(
                 decision, capture.snapshot, context.currentGeneration(), "What are its subtasks?"
             ).isValid)
+            assertEquals(focus.ref, decision.contextRef)
             assertEquals(
                 "Persisted presentation has two subtasks. First, Draft slides. Second, Practise delivery.",
                 AuthoritativeSubtaskReader(context, { persistedParent }, { persistedChildren })

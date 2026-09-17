@@ -84,6 +84,23 @@ class BreakdownIntegrationContractTest {
     }
 
     @Test
+    fun successfulBreakdownPublishesBeforeDeliveryAndEstablishesFocusAfterDelivery() {
+        val save = homeSource()
+            .substringAfter("private fun savePendingBreakdown")
+            .substringBefore("private fun handleBreakdownDraftFailure")
+        val publish = save.indexOf(").publish(result)")
+        val delivery = save.indexOf("val delivered = speakObservation(")
+        val focus = save.indexOf("conversationOrchestrator.setAuthoritativeContextFocus(")
+
+        assertTrue(publish >= 0)
+        assertTrue(delivery > publish)
+        assertTrue(focus > delivery)
+        assertTrue(save.contains("if (delivered && focusedItem != null)"))
+        assertTrue(save.contains("readOnlyTaskContextStore.currentGeneration()"))
+        assertTrue(save.contains("BreakdownPostSaveContextFocusPolicy.authoritativeItemOrNull("))
+    }
+
+    @Test
     fun newRootProposalIsNeutralAboutExistingTaskSearch() {
         val proposalBuilder = homeSource()
             .substringAfter("private fun buildBreakdownProposalSpeech")

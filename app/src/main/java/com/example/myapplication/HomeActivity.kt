@@ -53,6 +53,7 @@ import com.example.myapplication.ai.conversation.ConversationAgentClient
 import com.example.myapplication.ai.conversation.AppGuidanceCatalog
 import com.example.myapplication.ai.conversation.ConversationContextDetail
 import com.example.myapplication.ai.conversation.taskcontext.AuthoritativeSubtaskReader
+import com.example.myapplication.ai.conversation.taskcontext.BreakdownPostSaveContextFocusPolicy
 import com.example.myapplication.ai.conversation.taskcontext.BreakdownTaskContextPublisher
 import com.example.myapplication.ai.conversation.ConversationDecision
 import com.example.myapplication.ai.conversation.ConversationDecisionParser
@@ -2974,18 +2975,21 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
         }
     }
 
-    private suspend fun speakObservation(observation: ExecutionObservation) {
+    private suspend fun speakObservation(observation: ExecutionObservation): Boolean {
         val deliveryState = captureResponseVerbalizationDeliveryState()
-        if (!isResponseVerbalizationDeliveryCurrent(observation, deliveryState)) return
+        if (!isResponseVerbalizationDeliveryCurrent(observation, deliveryState)) return false
         val response = renderObservationResponse(observation)
+        var delivered = false
         val staleReason = ResponseVerbalizationDeliveryGuard.runIfCurrent(
             captured = deliveryState,
             current = captureResponseVerbalizationDeliveryState()
         ) {
             recordObservationResponse(observation, response)
             deliverObservationResponse(observation, response)
+            delivered = true
         }
         logStaleResponseVerbalization(observation, response, staleReason)
+        return delivered
     }
 
     private suspend fun speakRepeatableObservation(
@@ -7105,22 +7109,16 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 return@launch
             }
             homeFollowUpContext = HomeFollowUpContext.NONE
-            if (
+            val publishedParentContext = if (
                 result.category == BreakdownSaveResultCategory.SUCCESS ||
                 result.category == BreakdownSaveResultCategory.PARTIAL_REMINDER_FAILURE
             ) {
                 refreshOverview()
-                val capture = BreakdownTaskContextPublisher(
+                BreakdownTaskContextPublisher(
                     readOnlyTaskContextStore, dao::getById, dao::getSubtasks
                 ).publish(result)
-                if (capture != null) {
-                    val item = capture.snapshot.items.single()
-                    conversationOrchestrator.setAuthoritativeContextFocus(
-                        item = item,
-                        selectedRef = item.ref,
-                        capturedGeneration = capture.snapshot.generation
-                    )
-                }
+            } else {
+                null
             }
             if (!assistantSession.assistantSessionActive) return@launch
             val speech = when (result.category) {
@@ -7142,7 +7140,7 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                 BreakdownSaveResultCategory.FAILURE ->
                     "I could not save the task breakdown. Nothing was inserted."
             }
-            speakObservation(
+            val delivered = speakObservation(
                 ExecutionObservation(
                     operation = ExecutionOperation.BREAKDOWN_TASK,
                     outcome = when (result.category) {
@@ -7161,6 +7159,20 @@ open class HomeActivity : AccessibilityActivity(), AssistantVoiceHost {
                     fallbackSpeech = speech
                 )
             )
+            val publishedSnapshot = publishedParentContext?.snapshot
+            val focusedItem = publishedSnapshot?.let {
+                BreakdownPostSaveContextFocusPolicy.authoritativeItemOrNull(
+                    publishedSnapshot = it,
+                    currentGeneration = readOnlyTaskContextStore.currentGeneration()
+                )
+            }
+            if (delivered && focusedItem != null) {
+                conversationOrchestrator.setAuthoritativeContextFocus(
+                    item = focusedItem,
+                    selectedRef = focusedItem.ref,
+                    capturedGeneration = requireNotNull(publishedSnapshot).generation
+                )
+            }
         }
     }
 
